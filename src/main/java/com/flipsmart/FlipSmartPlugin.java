@@ -55,6 +55,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private FlipSmartApiClient apiClient;
 
+	@Inject
+	private net.runelite.client.ui.ClientToolbar clientToolbar;
+
 	// Store analysis results for items
 	@Getter
 	private final Map<Integer, FlipAnalysis> itemAnalysisCache = new ConcurrentHashMap<>();
@@ -65,6 +68,18 @@ public class FlipSmartPlugin extends Plugin
 	// Currently hovered item for display in overlay
 	@Getter
 	private volatile FlipAnalysis hoveredItemAnalysis;
+
+	// Flip Finder panel
+	private FlipFinderPanel flipFinderPanel;
+	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
+
+	// Player's current cash stack (detected from inventory)
+	@Getter
+	private int currentCashStack = 0;
+
+	// Auto-refresh timer for flip finder
+	private java.util.Timer flipFinderRefreshTimer;
+	private long lastFlipFinderRefresh = 0;
 
 	/**
 	 * Set the currently hovered item analysis for display in the overlay
@@ -81,11 +96,17 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.add(overlay);
 		overlayManager.add(inventoryOverlay);
 		
-		// If player is already logged in, sync RSN immediately
-		if (client.getGameState() == GameState.LOGGED_IN)
+		// Initialize Flip Finder panel
+		if (config.showFlipFinder())
 		{
-			syncRSN();
+			initializeFlipFinderPanel();
 		}
+
+		// Start auto-refresh timer for flip finder
+		startFlipFinderRefreshTimer();
+		
+		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
+		// Don't access client data during startup - must be on client thread
 	}
 
 	@Override
@@ -96,6 +117,15 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.remove(inventoryOverlay);
 		itemAnalysisCache.clear();
 		pendingAnalysisRequests.clear();
+		
+		// Remove flip finder panel
+		if (flipFinderNavButton != null)
+		{
+			clientToolbar.removeNavigation(flipFinderNavButton);
+		}
+		
+		// Stop auto-refresh timer
+		stopFlipFinderRefreshTimer();
 	}
 
 	@Subscribe
@@ -106,6 +136,13 @@ public class FlipSmartPlugin extends Plugin
 			log.info("Player logged in");
 			syncRSN();
 			checkInventoryItems();
+			updateCashStack();
+			
+			// Refresh flip finder with current cash stack
+			if (flipFinderPanel != null)
+			{
+				flipFinderPanel.refresh();
+			}
 		}
 	}
 	
@@ -137,6 +174,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		checkInventoryItems();
+		updateCashStack();
 	}
 
 	@Subscribe
@@ -321,6 +359,159 @@ public class FlipSmartPlugin extends Plugin
 			return String.format("%.1fK", amount / 1_000.0);
 		}
 		return String.valueOf(amount);
+	}
+
+	/**
+	 * Initialize the Flip Finder panel and add it to the sidebar
+	 */
+	private void initializeFlipFinderPanel()
+	{
+		flipFinderPanel = new FlipFinderPanel(config, apiClient)
+		{
+			@Override
+			protected Integer getCashStack()
+			{
+				return currentCashStack > 0 ? currentCashStack : null;
+			}
+		};
+
+		// Try to load custom icon from resources
+		java.awt.image.BufferedImage iconImage = null;
+		try
+		{
+			iconImage = net.runelite.client.util.ImageUtil.loadImageResource(getClass(), "/flip_finder_icon.png");
+		}
+		catch (Exception e)
+		{
+			log.debug("Could not load flip finder icon, using default icon");
+		}
+
+		// If custom icon not found, create a default one
+		if (iconImage == null)
+		{
+			iconImage = createDefaultIcon();
+		}
+
+		// Create navigation button
+		flipFinderNavButton = net.runelite.client.ui.NavigationButton.builder()
+			.tooltip("Flip Finder")
+			.icon(iconImage)
+			.priority(7)
+			.panel(flipFinderPanel)
+			.build();
+
+		clientToolbar.addNavigation(flipFinderNavButton);
+		log.info("Flip Finder panel initialized");
+	}
+
+	/**
+	 * Create a default icon for the Flip Finder button
+	 */
+	private java.awt.image.BufferedImage createDefaultIcon()
+	{
+		// Create a simple default icon
+		java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g = image.createGraphics();
+		g.setColor(java.awt.Color.ORANGE);
+		g.fillRect(2, 2, 12, 12);
+		g.setColor(java.awt.Color.WHITE);
+		g.drawString("F", 5, 12);
+		g.dispose();
+		return image;
+	}
+
+	/**
+	 * Update the player's current cash stack from inventory
+	 */
+	private void updateCashStack()
+	{
+		ItemContainer inventory = client.getItemContainer(93); // 93 = inventory
+		if (inventory == null)
+		{
+			currentCashStack = 0;
+			return;
+		}
+
+		int totalCash = 0;
+		Item[] items = inventory.getItems();
+
+		// Item IDs for coins
+		final int COINS_995 = 995;
+
+		for (Item item : items)
+		{
+			if (item.getId() == COINS_995)
+			{
+				totalCash += item.getQuantity();
+			}
+		}
+
+		if (totalCash != currentCashStack)
+		{
+			currentCashStack = totalCash;
+			log.debug("Updated cash stack: {}", currentCashStack);
+
+			// If cash stack changed significantly and we have a flip finder panel, refresh it
+			if (flipFinderPanel != null && totalCash > 100_000)
+			{
+				// Only auto-refresh if it's been more than 30 seconds since last refresh
+				long now = System.currentTimeMillis();
+				if (now - lastFlipFinderRefresh > 30_000)
+				{
+					lastFlipFinderRefresh = now;
+					flipFinderPanel.refresh();
+				}
+			}
+		}
+	}
+
+	/**
+	 * Start the auto-refresh timer for flip finder
+	 */
+	private void startFlipFinderRefreshTimer()
+	{
+		if (flipFinderRefreshTimer != null)
+		{
+			flipFinderRefreshTimer.cancel();
+		}
+
+		flipFinderRefreshTimer = new java.util.Timer("FlipFinderRefreshTimer", true);
+		
+		// Schedule refresh based on config
+		int refreshMinutes = Math.max(1, Math.min(60, config.flipFinderRefreshMinutes()));
+		long refreshIntervalMs = refreshMinutes * 60 * 1000L;
+
+		flipFinderRefreshTimer.scheduleAtFixedRate(new java.util.TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				if (flipFinderPanel != null && config.showFlipFinder())
+				{
+					javax.swing.SwingUtilities.invokeLater(() ->
+					{
+						log.debug("Auto-refreshing flip finder");
+						lastFlipFinderRefresh = System.currentTimeMillis();
+						flipFinderPanel.refresh();
+					});
+				}
+			}
+		}, refreshIntervalMs, refreshIntervalMs);
+
+		log.info("Flip Finder auto-refresh started (every {} minutes)", refreshMinutes);
+	}
+
+	/**
+	 * Stop the auto-refresh timer for flip finder
+	 */
+	private void stopFlipFinderRefreshTimer()
+	{
+		if (flipFinderRefreshTimer != null)
+		{
+			flipFinderRefreshTimer.cancel();
+			flipFinderRefreshTimer = null;
+			log.info("Flip Finder auto-refresh stopped");
+		}
 	}
 
 	@Provides

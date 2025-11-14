@@ -87,5 +87,70 @@ public interface FlipSmartConfig extends Config
 	{
 		return 50;
 	}
+
+	@ConfigItem(
+		keyName = "showFlipFinder",
+		name = "Show Flip Finder",
+		description = "Show the Flip Finder panel in the sidebar"
+	)
+	default boolean showFlipFinder()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "flipStyle",
+		name = "Flip Style",
+		description = "Your preferred flipping style"
+	)
+	default FlipStyle flipStyle()
+	{
+		return FlipStyle.BALANCED;
+	}
+
+	@ConfigItem(
+		keyName = "flipFinderLimit",
+		name = "Number of Recommendations",
+		description = "Number of flip recommendations to show (1-50)"
+	)
+	default int flipFinderLimit()
+	{
+		return 10;
+	}
+
+	@ConfigItem(
+		keyName = "flipFinderRefreshMinutes",
+		name = "Refresh Interval (minutes)",
+		description = "How often to refresh flip recommendations (1-60 minutes)"
+	)
+	default int flipFinderRefreshMinutes()
+	{
+		return 5;
+	}
+
+	enum FlipStyle
+	{
+		CONSERVATIVE("conservative"),
+		BALANCED("balanced"),
+		AGGRESSIVE("aggressive");
+
+		private final String apiValue;
+
+		FlipStyle(String apiValue)
+		{
+			this.apiValue = apiValue;
+		}
+
+		public String getApiValue()
+		{
+			return apiValue;
+		}
+
+		@Override
+		public String toString()
+		{
+			return name().charAt(0) + name().substring(1).toLowerCase();
+		}
+	}
 }
 

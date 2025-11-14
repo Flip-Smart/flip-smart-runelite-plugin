@@ -1,0 +1,399 @@
+package com.flipsmart;
+
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.client.ui.ColorScheme;
+import net.runelite.client.ui.PluginPanel;
+import net.runelite.client.ui.components.PluginErrorPanel;
+
+import javax.swing.*;
+import javax.swing.border.EmptyBorder;
+import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.util.ArrayList;
+import java.util.List;
+
+@Slf4j
+public class FlipFinderPanel extends PluginPanel
+{
+	private final FlipSmartConfig config;
+	private final FlipSmartApiClient apiClient;
+	private final JPanel listContainer = new JPanel();
+	private final JLabel statusLabel = new JLabel("Loading...");
+	private final JButton refreshButton = new JButton("Refresh");
+	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
+
+	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient)
+	{
+		super(false);
+		this.config = config;
+		this.apiClient = apiClient;
+
+		setLayout(new BorderLayout());
+		setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		// Header panel
+		JPanel headerPanel = new JPanel(new BorderLayout());
+		headerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		headerPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+		JLabel titleLabel = new JLabel("Flip Finder");
+		titleLabel.setForeground(Color.WHITE);
+		titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
+
+		refreshButton.setFocusable(false);
+		refreshButton.addActionListener(e -> refresh());
+
+		headerPanel.add(titleLabel, BorderLayout.WEST);
+		headerPanel.add(refreshButton, BorderLayout.EAST);
+
+		// Status panel
+		JPanel statusPanel = new JPanel(new BorderLayout());
+		statusPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		statusPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
+		statusLabel.setForeground(Color.LIGHT_GRAY);
+		statusLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		statusPanel.add(statusLabel, BorderLayout.CENTER);
+
+		// List container
+		listContainer.setLayout(new BoxLayout(listContainer, BoxLayout.Y_AXIS));
+		listContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		JScrollPane scrollPane = new JScrollPane(listContainer);
+		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		scrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
+		scrollPane.setBorder(BorderFactory.createEmptyBorder());
+
+		add(headerPanel, BorderLayout.NORTH);
+		add(statusPanel, BorderLayout.CENTER);
+		add(scrollPane, BorderLayout.SOUTH);
+
+		// Initial load
+		refresh();
+	}
+
+	/**
+	 * Refresh flip recommendations
+	 */
+	public void refresh()
+	{
+		statusLabel.setText("Loading recommendations...");
+		refreshButton.setEnabled(false);
+		listContainer.removeAll();
+		listContainer.revalidate();
+		listContainer.repaint();
+
+		// Fetch recommendations asynchronously
+		Integer cashStack = getCashStack();
+		String flipStyle = config.flipStyle().getApiValue();
+		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
+
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit).thenAccept(response ->
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				refreshButton.setEnabled(true);
+
+				if (response == null)
+				{
+					showError("Failed to fetch recommendations. Check your API settings.");
+					return;
+				}
+
+				if (response.getRecommendations() == null || response.getRecommendations().isEmpty())
+				{
+					showError("No flip recommendations found matching your criteria.");
+					return;
+				}
+
+				currentRecommendations.clear();
+				currentRecommendations.addAll(response.getRecommendations());
+
+				updateStatusLabel(response);
+				populateRecommendations(response.getRecommendations());
+			});
+		}).exceptionally(throwable ->
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				refreshButton.setEnabled(true);
+				showError("Error: " + throwable.getMessage());
+			});
+			return null;
+		});
+	}
+
+	/**
+	 * Get the player's current cash stack from inventory
+	 * Returns null if not available
+	 * Can be overridden by subclasses to provide actual cash stack
+	 */
+	protected Integer getCashStack()
+	{
+		// This will be overridden by the plugin
+		// For now, return null to get all recommendations
+		return null;
+	}
+
+	/**
+	 * Update the status label with response info
+	 */
+	private void updateStatusLabel(FlipFinderResponse response)
+	{
+		String flipStyleText = config.flipStyle().toString();
+		int count = response.getRecommendations().size();
+		
+		if (response.getCashStack() != null)
+		{
+			statusLabel.setText(String.format("%s | %d flips | Cash: %s",
+				flipStyleText,
+				count,
+				formatGP(response.getCashStack())));
+		}
+		else
+		{
+			statusLabel.setText(String.format("%s | %d flips", flipStyleText, count));
+		}
+	}
+
+	/**
+	 * Show an error message
+	 */
+	private void showError(String message)
+	{
+		statusLabel.setText("Error");
+		listContainer.removeAll();
+
+		PluginErrorPanel errorPanel = new PluginErrorPanel();
+		errorPanel.setContent("Flip Finder", message);
+		listContainer.add(errorPanel);
+
+		listContainer.revalidate();
+		listContainer.repaint();
+	}
+
+	/**
+	 * Populate the list with recommendations
+	 */
+	private void populateRecommendations(List<FlipRecommendation> recommendations)
+	{
+		listContainer.removeAll();
+
+		for (FlipRecommendation rec : recommendations)
+		{
+			listContainer.add(createRecommendationPanel(rec));
+			listContainer.add(Box.createRigidArea(new Dimension(0, 5)));
+		}
+
+		listContainer.revalidate();
+		listContainer.repaint();
+	}
+
+	/**
+	 * Create a panel for a single recommendation
+	 */
+	private JPanel createRecommendationPanel(FlipRecommendation rec)
+	{
+		JPanel panel = new JPanel();
+		panel.setLayout(new BorderLayout());
+		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
+		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+
+		// Item name and efficiency
+		JPanel topPanel = new JPanel(new BorderLayout());
+		topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel nameLabel = new JLabel(rec.getItemName());
+		nameLabel.setForeground(Color.WHITE);
+		nameLabel.setFont(new Font("Arial", Font.BOLD, 14));
+
+		JLabel efficiencyLabel = new JLabel(String.format("%.0f", rec.getEfficiencyScore()));
+		efficiencyLabel.setForeground(getEfficiencyColor(rec.getEfficiencyScore()));
+		efficiencyLabel.setFont(new Font("Arial", Font.BOLD, 14));
+
+		topPanel.add(nameLabel, BorderLayout.WEST);
+		topPanel.add(efficiencyLabel, BorderLayout.EAST);
+
+		// Details panel
+		JPanel detailsPanel = new JPanel();
+		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
+		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
+
+		// Buy/Sell prices
+		JLabel priceLabel = new JLabel(String.format("Buy: %s | Sell: %s",
+			formatGP(rec.getBuyPrice()),
+			formatGP(rec.getSellPrice())));
+		priceLabel.setForeground(Color.LIGHT_GRAY);
+		priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+
+		// Margin and ROI
+		JLabel marginLabel = new JLabel(String.format("Margin: %s (%s ROI)",
+			formatGP(rec.getMargin()),
+			rec.getFormattedROI()));
+		marginLabel.setForeground(new Color(100, 255, 100));
+		marginLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+
+		// Potential profit
+		JLabel profitLabel = new JLabel(String.format("Potential: %s | Limit: %d",
+			formatGP(rec.getPotentialProfit()),
+			rec.getBuyLimit()));
+		profitLabel.setForeground(new Color(255, 215, 0));
+		profitLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+
+		detailsPanel.add(priceLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(marginLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(profitLabel);
+
+		panel.add(topPanel, BorderLayout.NORTH);
+		panel.add(detailsPanel, BorderLayout.CENTER);
+
+		// Add click listener to expand/show more details
+		panel.addMouseListener(new MouseAdapter()
+		{
+			private boolean expanded = false;
+
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (!expanded)
+				{
+					// Add additional details
+					JPanel extraDetails = new JPanel();
+					extraDetails.setLayout(new BoxLayout(extraDetails, BoxLayout.Y_AXIS));
+					extraDetails.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					extraDetails.setBorder(new EmptyBorder(5, 0, 0, 0));
+
+					JLabel liquidityLabel = new JLabel(String.format("Liquidity: %.0f (%s) | %.0f/hr",
+						rec.getLiquidityScore(),
+						rec.getLiquidityRating(),
+						rec.getVolumePerHour()));
+					liquidityLabel.setForeground(Color.CYAN);
+					liquidityLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+
+					JLabel riskLabel = new JLabel(String.format("Risk: %.0f (%s)",
+						rec.getRiskScore(),
+						rec.getRiskRating()));
+					riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
+					riskLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+
+					extraDetails.add(liquidityLabel);
+					extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));
+					extraDetails.add(riskLabel);
+
+					panel.add(extraDetails, BorderLayout.SOUTH);
+					expanded = true;
+				}
+				else
+				{
+					// Remove extra details
+					if (panel.getComponentCount() > 2)
+					{
+						panel.remove(2);
+						expanded = false;
+					}
+				}
+
+				panel.revalidate();
+				panel.repaint();
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				panel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+			}
+		});
+
+		return panel;
+	}
+
+	/**
+	 * Get color based on efficiency score
+	 */
+	private Color getEfficiencyColor(double score)
+	{
+		if (score >= 80)
+		{
+			return new Color(100, 255, 100); // Bright green
+		}
+		else if (score >= 65)
+		{
+			return new Color(150, 255, 100); // Yellow-green
+		}
+		else if (score >= 50)
+		{
+			return new Color(255, 255, 100); // Yellow
+		}
+		else
+		{
+			return new Color(255, 150, 100); // Orange
+		}
+	}
+
+	/**
+	 * Get color based on risk score
+	 */
+	private Color getRiskColor(double score)
+	{
+		if (score <= 20)
+		{
+			return new Color(100, 255, 100); // Green
+		}
+		else if (score <= 40)
+		{
+			return new Color(150, 255, 100); // Yellow-green
+		}
+		else if (score <= 60)
+		{
+			return new Color(255, 255, 100); // Yellow
+		}
+		else
+		{
+			return new Color(255, 100, 100); // Red
+		}
+	}
+
+	/**
+	 * Format GP amount for display
+	 */
+	private String formatGP(int amount)
+	{
+		if (amount >= 1_000_000)
+		{
+			return String.format("%.1fM", amount / 1_000_000.0);
+		}
+		else if (amount >= 1_000)
+		{
+			return String.format("%.1fK", amount / 1_000.0);
+		}
+		return String.valueOf(amount);
+	}
+
+	/**
+	 * Set the cash stack for filtering recommendations
+	 */
+	public void setCashStack(Integer cashStack)
+	{
+		// This will trigger a refresh with the new cash stack
+		refresh();
+	}
+
+	/**
+	 * Get the current recommendations
+	 */
+	public List<FlipRecommendation> getCurrentRecommendations()
+	{
+		return new ArrayList<>(currentRecommendations);
+	}
+}
+

@@ -262,6 +262,94 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Fetch flip recommendations from the API
+	 */
+	public FlipFinderResponse getFlipRecommendations(Integer cashStack, String flipStyle, int limit)
+	{
+		String apiUrl = config.apiUrl();
+		if (apiUrl == null || apiUrl.isEmpty())
+		{
+			log.warn("API URL not configured");
+			return null;
+		}
+		
+		// Ensure we have a valid token
+		if (!ensureAuthenticated())
+		{
+			log.error("Failed to authenticate with API");
+			return null;
+		}
+
+		// Build URL with query parameters
+		StringBuilder urlBuilder = new StringBuilder();
+		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+		
+		if (cashStack != null)
+		{
+			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
+		}
+		
+		String url = urlBuilder.toString();
+		Request request = new Request.Builder()
+			.url(url)
+			.header("Authorization", "Bearer " + jwtToken)
+			.get()
+			.build();
+
+		try (Response response = httpClient.newCall(request).execute())
+		{
+			if (response.code() == 401)
+			{
+				// Token might have expired, try to re-authenticate once
+				log.debug("Received 401, attempting to re-authenticate");
+				jwtToken = null; // Clear the token
+				if (ensureAuthenticated())
+				{
+					// Retry the request with new token
+					Request retryRequest = new Request.Builder()
+						.url(url)
+						.header("Authorization", "Bearer " + jwtToken)
+						.get()
+						.build();
+					try (Response retryResponse = httpClient.newCall(retryRequest).execute())
+					{
+						if (!retryResponse.isSuccessful())
+						{
+							log.warn("API returned error for flip finder after re-auth: {}", retryResponse.code());
+							return null;
+						}
+						String jsonData = retryResponse.body().string();
+						return gson.fromJson(jsonData, FlipFinderResponse.class);
+					}
+				}
+				return null;
+			}
+			
+			if (!response.isSuccessful())
+			{
+				log.warn("API returned error for flip finder: {}", response.code());
+				return null;
+			}
+
+			String jsonData = response.body().string();
+			return gson.fromJson(jsonData, FlipFinderResponse.class);
+		}
+		catch (IOException e)
+		{
+			log.warn("Failed to fetch flip recommendations: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch flip recommendations asynchronously
+	 */
+	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(Integer cashStack, String flipStyle, int limit)
+	{
+		return CompletableFuture.supplyAsync(() -> getFlipRecommendations(cashStack, flipStyle, limit));
+	}
+
+	/**
 	 * Clear the analysis cache
 	 */
 	public void clearCache()
