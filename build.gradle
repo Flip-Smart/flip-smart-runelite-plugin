@@ -41,7 +41,7 @@ tasks.withType(Test).configureEach {
 tasks.register('runClient', JavaExec) {
 	group = 'application'
 	classpath = sourceSets.test.runtimeClasspath
-	mainClass.set('com.flippingtool.ExamplePluginTest')
+	mainClass.set('com.flipsmart.ExamplePluginTest')
 	jvmArgs '--add-exports', 'java.desktop/com.apple.eawt=ALL-UNNAMED'
 }
 

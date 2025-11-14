@@ -1,11 +1,11 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 
-@ConfigGroup("flippingtool")
-public interface FlippingToolConfig extends Config
+@ConfigGroup("flipsmart")
+public interface FlipSmartConfig extends Config
 {
 	@ConfigItem(
 		keyName = "showOverlay",

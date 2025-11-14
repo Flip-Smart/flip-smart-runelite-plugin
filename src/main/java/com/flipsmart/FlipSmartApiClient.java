@@ -1,4 +1,4 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -15,13 +15,13 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Singleton
-public class FlippingApiClient
+public class FlipSmartApiClient
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
-	private final FlippingToolConfig config;
+	private final FlipSmartConfig config;
 	
 	// Cache to avoid spamming the API
 	private final Map<Integer, CachedAnalysis> analysisCache = new ConcurrentHashMap<>();
@@ -32,7 +32,7 @@ public class FlippingApiClient
 	private long tokenExpiry = 0;
 
 	@Inject
-	public FlippingApiClient(FlippingToolConfig config)
+	public FlipSmartApiClient(FlipSmartConfig config)
 	{
 		this.config = config;
 		this.gson = new Gson();

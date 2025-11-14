@@ -1,4 +1,4 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import com.google.inject.Provides;
 import lombok.Getter;
@@ -32,13 +32,13 @@ import java.util.concurrent.ConcurrentHashMap;
 	description = "A tool to help with item flipping in the Grand Exchange",
 	tags = {"grand exchange", "flipping", "trading", "money making"}
 )
-public class FlippingToolPlugin extends Plugin
+public class FlipSmartPlugin extends Plugin
 {
 	@Inject
 	private Client client;
 
 	@Inject
-	private FlippingToolConfig config;
+	private FlipSmartConfig config;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -47,13 +47,13 @@ public class FlippingToolPlugin extends Plugin
 	private TooltipManager tooltipManager;
 
 	@Inject
-	private FlippingToolOverlay overlay;
+	private FlipSmartOverlay overlay;
 
 	@Inject
-	private FlippingInventoryOverlay inventoryOverlay;
+	private FlipSmartInventoryOverlay inventoryOverlay;
 
 	@Inject
-	private FlippingApiClient apiClient;
+	private FlipSmartApiClient apiClient;
 
 	// Store analysis results for items
 	@Getter
@@ -324,9 +324,9 @@ public class FlippingToolPlugin extends Plugin
 	}
 
 	@Provides
-	FlippingToolConfig provideConfig(ConfigManager configManager)
+	FlipSmartConfig provideConfig(ConfigManager configManager)
 	{
-		return configManager.getConfig(FlippingToolConfig.class);
+		return configManager.getConfig(FlipSmartConfig.class);
 	}
 }
 

@@ -1,4 +1,4 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import net.runelite.api.Client;
 import net.runelite.client.ui.overlay.OverlayPanel;
@@ -10,14 +10,14 @@ import javax.inject.Inject;
 import java.awt.*;
 import java.util.Map;
 
-public class FlippingToolOverlay extends OverlayPanel
+public class FlipSmartOverlay extends OverlayPanel
 {
 	private final Client client;
-	private final FlippingToolPlugin plugin;
-	private final FlippingToolConfig config;
+	private final FlipSmartPlugin plugin;
+	private final FlipSmartConfig config;
 
 	@Inject
-	private FlippingToolOverlay(Client client, FlippingToolPlugin plugin, FlippingToolConfig config)
+	private FlipSmartOverlay(Client client, FlipSmartPlugin plugin, FlipSmartConfig config)
 	{
 		this.client = client;
 		this.plugin = plugin;

@@ -53,7 +53,7 @@ cd flip-smart-runelite-plugin
 
 ### 3. Configure Run Configuration
 
-1. Open `src/test/java/com/flippingtool/ExamplePluginTest.java`
+1. Open `src/test/java/com/flipsmart/ExamplePluginTest.java`
 2. Right-click and select "Run 'ExamplePluginTest.main()'"
 3. If it fails, edit the run configuration:
    - Run → Edit Configurations
@@ -121,15 +121,15 @@ The plugin requires a Flip Smart API instance.
 ## Project Structure
 
 ```
-src/main/java/com/flippingtool/
-├── FlippingToolPlugin.java         # Main plugin (FlipSmart)
-├── FlippingToolConfig.java         # Configuration interface
-├── FlippingToolOverlay.java        # Info panel overlay
-├── FlippingInventoryOverlay.java   # Draws blue boxes on items
-├── FlippingApiClient.java          # HTTP client with caching
+src/main/java/com/flipsmart/
+├── FlipSmartPlugin.java            # Main plugin
+├── FlipSmartConfig.java            # Configuration interface
+├── FlipSmartOverlay.java           # Info panel overlay
+├── FlipSmartInventoryOverlay.java  # Draws blue boxes on items
+├── FlipSmartApiClient.java         # HTTP client with caching
 └── FlipAnalysis.java               # API response model
 
-src/test/java/com/flippingtool/
+src/test/java/com/flipsmart/
 └── ExamplePluginTest.java          # Test runner for development
 ```
 
