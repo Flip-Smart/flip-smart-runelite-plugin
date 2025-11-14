@@ -80,8 +80,12 @@ public class FlippingToolPlugin extends Plugin
 		log.info("Flipping Tool started!");
 		overlayManager.add(overlay);
 		overlayManager.add(inventoryOverlay);
-		// Don't check inventory here - must be called on client thread
-		// Will be checked when onGameStateChanged or onItemContainerChanged fires
+		
+		// If player is already logged in, sync RSN immediately
+		if (client.getGameState() == GameState.LOGGED_IN)
+		{
+			syncRSN();
+		}
 	}
 
 	@Override
@@ -100,7 +104,26 @@ public class FlippingToolPlugin extends Plugin
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			log.info("Player logged in");
+			syncRSN();
 			checkInventoryItems();
+		}
+	}
+	
+	/**
+	 * Sync the player's RSN with the API
+	 */
+	private void syncRSN()
+	{
+		if (client.getLocalPlayer() == null)
+		{
+			return;
+		}
+		
+		String rsn = client.getLocalPlayer().getName();
+		if (rsn != null && !rsn.isEmpty())
+		{
+			log.debug("Syncing RSN: {}", rsn);
+			apiClient.updateRSN(rsn);
 		}
 	}
 

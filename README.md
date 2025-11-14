@@ -40,8 +40,8 @@ An item is highlighted when:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/flipping-tool-runelite-plugin.git
-cd flipping-tool-runelite-plugin
+git clone https://github.com/Flip-Smart/flip-smart-runelite-plugin.git
+cd flip-smart-runelite-plugin
 ```
 
 ### 2. Open in IntelliJ IDEA

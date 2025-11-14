@@ -48,6 +48,27 @@ public interface FlippingToolConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "email",
+		name = "Email",
+		description = "Your account email for authentication"
+	)
+	default String email()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "password",
+		name = "Password",
+		description = "Your account password",
+		secret = true
+	)
+	default String password()
+	{
+		return "";
+	}
+
+	@ConfigItem(
 		keyName = "highlightGoodFlips",
 		name = "Highlight Good Flips",
 		description = "Highlight items in inventory that are good flips"
