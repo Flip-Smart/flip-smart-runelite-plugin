@@ -1,4 +1,4 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import net.runelite.api.Client;
 import net.runelite.api.widgets.WidgetItem;
@@ -8,14 +8,14 @@ import net.runelite.client.ui.overlay.components.TooltipComponent;
 import javax.inject.Inject;
 import java.awt.*;
 
-public class FlippingInventoryOverlay extends WidgetItemOverlay
+public class FlipSmartInventoryOverlay extends WidgetItemOverlay
 {
 	private final Client client;
-	private final FlippingToolPlugin plugin;
-	private final FlippingToolConfig config;
+	private final FlipSmartPlugin plugin;
+	private final FlipSmartConfig config;
 
 	@Inject
-	private FlippingInventoryOverlay(Client client, FlippingToolPlugin plugin, FlippingToolConfig config)
+	private FlipSmartInventoryOverlay(Client client, FlipSmartPlugin plugin, FlipSmartConfig config)
 	{
 		this.client = client;
 		this.plugin = plugin;

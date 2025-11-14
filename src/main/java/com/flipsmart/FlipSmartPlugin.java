@@ -1,4 +1,4 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import com.google.inject.Provides;
 import lombok.Getter;
@@ -28,17 +28,17 @@ import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Flipping Tool",
+	name = "Flip Smart",
 	description = "A tool to help with item flipping in the Grand Exchange",
 	tags = {"grand exchange", "flipping", "trading", "money making"}
 )
-public class FlippingToolPlugin extends Plugin
+public class FlipSmartPlugin extends Plugin
 {
 	@Inject
 	private Client client;
 
 	@Inject
-	private FlippingToolConfig config;
+	private FlipSmartConfig config;
 
 	@Inject
 	private OverlayManager overlayManager;
@@ -47,13 +47,13 @@ public class FlippingToolPlugin extends Plugin
 	private TooltipManager tooltipManager;
 
 	@Inject
-	private FlippingToolOverlay overlay;
+	private FlipSmartOverlay overlay;
 
 	@Inject
-	private FlippingInventoryOverlay inventoryOverlay;
+	private FlipSmartInventoryOverlay inventoryOverlay;
 
 	@Inject
-	private FlippingApiClient apiClient;
+	private FlipSmartApiClient apiClient;
 
 	// Store analysis results for items
 	@Getter
@@ -77,17 +77,21 @@ public class FlippingToolPlugin extends Plugin
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Flipping Tool started!");
+		log.info("Flip Smart started!");
 		overlayManager.add(overlay);
 		overlayManager.add(inventoryOverlay);
-		// Don't check inventory here - must be called on client thread
-		// Will be checked when onGameStateChanged or onItemContainerChanged fires
+		
+		// If player is already logged in, sync RSN immediately
+		if (client.getGameState() == GameState.LOGGED_IN)
+		{
+			syncRSN();
+		}
 	}
 
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("Flipping Tool stopped!");
+		log.info("Flip Smart stopped!");
 		overlayManager.remove(overlay);
 		overlayManager.remove(inventoryOverlay);
 		itemAnalysisCache.clear();
@@ -100,7 +104,26 @@ public class FlippingToolPlugin extends Plugin
 		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
 		{
 			log.info("Player logged in");
+			syncRSN();
 			checkInventoryItems();
+		}
+	}
+	
+	/**
+	 * Sync the player's RSN with the API
+	 */
+	private void syncRSN()
+	{
+		if (client.getLocalPlayer() == null)
+		{
+			return;
+		}
+		
+		String rsn = client.getLocalPlayer().getName();
+		if (rsn != null && !rsn.isEmpty())
+		{
+			log.debug("Syncing RSN: {}", rsn);
+			apiClient.updateRSN(rsn);
 		}
 	}
 
@@ -301,9 +324,9 @@ public class FlippingToolPlugin extends Plugin
 	}
 
 	@Provides
-	FlippingToolConfig provideConfig(ConfigManager configManager)
+	FlipSmartConfig provideConfig(ConfigManager configManager)
 	{
-		return configManager.getConfig(FlippingToolConfig.class);
+		return configManager.getConfig(FlipSmartConfig.class);
 	}
 }
 

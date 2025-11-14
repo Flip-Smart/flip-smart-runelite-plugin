@@ -1,4 +1,4 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;

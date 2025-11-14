@@ -1,11 +1,11 @@
-package com.flippingtool;
+package com.flipsmart;
 
 import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 
-@ConfigGroup("flippingtool")
-public interface FlippingToolConfig extends Config
+@ConfigGroup("flipsmart")
+public interface FlipSmartConfig extends Config
 {
 	@ConfigItem(
 		keyName = "showOverlay",
@@ -40,11 +40,32 @@ public interface FlippingToolConfig extends Config
 	@ConfigItem(
 		keyName = "apiUrl",
 		name = "API URL",
-		description = "URL of the flipping tool API"
+		description = "URL of the Flip Smart API"
 	)
 	default String apiUrl()
 	{
 		return "http://localhost:8000";
+	}
+
+	@ConfigItem(
+		keyName = "email",
+		name = "Email",
+		description = "Your account email for authentication"
+	)
+	default String email()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "password",
+		name = "Password",
+		description = "Your account password",
+		secret = true
+	)
+	default String password()
+	{
+		return "";
 	}
 
 	@ConfigItem(

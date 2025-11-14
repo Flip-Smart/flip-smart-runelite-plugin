@@ -1,6 +1,6 @@
-# Flipping Tool Plugin
+# Flip Smart Plugin
 
-A RuneLite plugin that integrates with the Flipping Tool API to automatically analyze items in your inventory and highlight profitable flipping opportunities with visual indicators.
+A RuneLite plugin that integrates with the Flip Smart API to automatically analyze items in your inventory and highlight profitable flipping opportunities with visual indicators.
 
 <img width="245" height="321" alt="Screenshot 2025-11-14 at 12 50 59 AM" src="https://github.com/user-attachments/assets/3a8d00f9-1466-43d4-9a29-0c3c0f50a965" />
 
@@ -10,7 +10,7 @@ A RuneLite plugin that integrates with the Flipping Tool API to automatically an
 ## Features
 
 - 🔍 **Inventory Insights** - Monitors all items in your inventory in real-time and highlights good potential flips
-- 📊 **API-Powered Analysis** - Queries the Flipping Tool API for comprehensive item analysis including:
+- 📊 **API-Powered Analysis** - Queries the Flip Smart API for comprehensive item analysis including:
   - Active buy and sell prices
   - Net profit margin after 2% GE tax
   - ROI percentage
@@ -33,15 +33,15 @@ An item is highlighted when:
 
 - Java 17 (for development)
 - RuneLite
-- Access to a Flipping Tool API instance (see Configuration below)
+- Access to a Flip Smart API instance (see Configuration below)
 
 ## Development Setup
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/flipping-tool-runelite-plugin.git
-cd flipping-tool-runelite-plugin
+git clone https://github.com/Flip-Smart/flip-smart-runelite-plugin.git
+cd flip-smart-runelite-plugin
 ```
 
 ### 2. Open in IntelliJ IDEA
@@ -53,7 +53,7 @@ cd flipping-tool-runelite-plugin
 
 ### 3. Configure Run Configuration
 
-1. Open `src/test/java/com/flippingtool/ExamplePluginTest.java`
+1. Open `src/test/java/com/flipsmart/ExamplePluginTest.java`
 2. Right-click and select "Run 'ExamplePluginTest.main()'"
 3. If it fails, edit the run configuration:
    - Run → Edit Configurations
@@ -77,17 +77,17 @@ RuneLite will launch with your plugin loaded!
 
 ### Setting Up the API Host
 
-The plugin requires a Flipping Tool API instance.
+The plugin requires a Flip Smart API instance.
 
 ### Testing the Plugin
 
 1. **Enable the plugin:**
    - Click the Configuration icon (wrench) in RuneLite
-   - Find "Flipping Tool" in the plugin list
+   - Find "Flip Smart" in the plugin list
    - Toggle it ON
 
 2. **Configure API settings:**
-   - Right-click "Flipping Tool" → Configure
+   - Right-click "Flip Smart" → Configure
    - **Set API URL** to your API host (required!)
      - Local development: `http://localhost:8000`
    - Set Minimum Efficiency Score: `50` (lower to see more items)
@@ -110,7 +110,7 @@ The plugin requires a Flipping Tool API instance.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| **API URL** | `http://localhost:8000` | **Required**: URL of the Flipping Tool API instance |
+| **API URL** | `http://localhost:8000` | **Required**: URL of the Flip Smart API instance |
 | **Show Overlay** | ✅ Enabled | Toggle the info panel display |
 | **Highlight Good Flips** | ✅ Enabled | Show blue boxes around good flip items |
 | **Minimum Efficiency Score** | 50 | Minimum score (0-100) to highlight items |
@@ -121,15 +121,15 @@ The plugin requires a Flipping Tool API instance.
 ## Project Structure
 
 ```
-src/main/java/com/flippingtool/
-├── FlippingToolPlugin.java         # Main plugin with inventory monitoring
-├── FlippingToolConfig.java         # Configuration interface
-├── FlippingToolOverlay.java        # Info panel overlay
-├── FlippingInventoryOverlay.java   # Draws blue boxes on items
-├── FlippingApiClient.java          # HTTP client with caching
+src/main/java/com/flipsmart/
+├── FlipSmartPlugin.java            # Main plugin
+├── FlipSmartConfig.java            # Configuration interface
+├── FlipSmartOverlay.java           # Info panel overlay
+├── FlipSmartInventoryOverlay.java  # Draws blue boxes on items
+├── FlipSmartApiClient.java         # HTTP client with caching
 └── FlipAnalysis.java               # API response model
 
-src/test/java/com/flippingtool/
+src/test/java/com/flipsmart/
 └── ExamplePluginTest.java          # Test runner for development
 ```
 
