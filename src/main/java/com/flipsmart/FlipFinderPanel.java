@@ -124,6 +124,8 @@ public class FlipFinderPanel extends PluginPanel
 		scrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		scrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		scrollPane.setBorder(BorderFactory.createEmptyBorder());
+		scrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+		scrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
 
 		add(topPanel, BorderLayout.NORTH);
 		add(scrollPane, BorderLayout.CENTER);
@@ -261,6 +263,8 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
 		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		// Ensure panel doesn't exceed container width
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
 		// Item name panel
 		JPanel topPanel = new JPanel(new BorderLayout());
@@ -307,10 +311,10 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
 
-		// Recommended Buy/Sell prices
+		// Recommended Buy/Sell prices (full format with commas for easy copying)
 		JLabel priceLabel = new JLabel(String.format("Buy: %s | Sell: %s",
-			formatGP(rec.getRecommendedBuyPrice()),
-			formatGP(rec.getRecommendedSellPrice())));
+			formatGPExact(rec.getRecommendedBuyPrice()),
+			formatGPExact(rec.getRecommendedSellPrice())));
 		priceLabel.setForeground(Color.LIGHT_GRAY);
 		priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
 
@@ -472,6 +476,14 @@ public class FlipFinderPanel extends PluginPanel
 			return String.format("%.1fK", amount / 1_000.0);
 		}
 		return String.valueOf(amount);
+	}
+
+	/**
+	 * Format GP amount with commas for exact input (e.g., "1,234,567")
+	 */
+	private String formatGPExact(int amount)
+	{
+		return String.format("%,d", amount);
 	}
 
 	/**
