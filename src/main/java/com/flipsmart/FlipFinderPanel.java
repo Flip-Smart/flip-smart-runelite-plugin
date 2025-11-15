@@ -262,11 +262,11 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
 		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 
-		// Item name and efficiency panel
+		// Item name panel
 		JPanel topPanel = new JPanel(new BorderLayout());
 		topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		// Left side: Item icon and name
+		// Item icon and name
 		JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
@@ -299,13 +299,7 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(iconLabel);
 		namePanel.add(nameLabel);
 
-		// Right side: Efficiency score
-		JLabel efficiencyLabel = new JLabel(String.format("%.0f", rec.getEfficiencyScore()));
-		efficiencyLabel.setForeground(getEfficiencyColor(rec.getEfficiencyScore()));
-		efficiencyLabel.setFont(new Font("Arial", Font.BOLD, 14));
-
 		topPanel.add(namePanel, BorderLayout.WEST);
-		topPanel.add(efficiencyLabel, BorderLayout.EAST);
 
 		// Details panel
 		JPanel detailsPanel = new JPanel();
