@@ -5,11 +5,14 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.client.config.ConfigManager;
@@ -84,6 +87,103 @@ public class FlipSmartPlugin extends Plugin
 	private java.util.Timer flipFinderRefreshTimer;
 	private long lastFlipFinderRefresh = 0;
 
+	// Track GE offers to detect when they complete
+	private final Map<Integer, TrackedOffer> trackedOffers = new ConcurrentHashMap<>();
+	
+	// Track login to avoid recording existing offers as new transactions
+	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
+	private int lastLoginTick = 0;
+	
+	// Track recommended prices from flip finder (item_id -> recommended_sell_price)
+	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
+
+	/**
+	 * Helper class to track GE offers
+	 */
+	private static class TrackedOffer
+	{
+		int itemId;
+		String itemName;
+		boolean isBuy;
+		int totalQuantity;
+		int price;
+		int previousQuantitySold;
+
+		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.totalQuantity = totalQuantity;
+			this.price = price;
+			this.previousQuantitySold = quantitySold;
+		}
+	}
+	
+	/**
+	 * Store recommended sell price when user views/acts on a flip recommendation
+	 */
+	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)
+	{
+		recommendedPrices.put(itemId, recommendedSellPrice);
+		log.debug("Stored recommended sell price for item {}: {}", itemId, recommendedSellPrice);
+	}
+	
+	/**
+	 * Get current pending buy orders (placed but not filled yet)
+	 */
+	public java.util.List<PendingOrder> getPendingBuyOrders()
+	{
+		java.util.List<PendingOrder> pendingOrders = new java.util.ArrayList<>();
+		
+		for (java.util.Map.Entry<Integer, TrackedOffer> entry : trackedOffers.entrySet())
+		{
+			TrackedOffer offer = entry.getValue();
+			
+			// Only include buy orders with 0 fills
+			if (offer.isBuy && offer.previousQuantitySold == 0)
+			{
+				Integer recommendedSellPrice = recommendedPrices.get(offer.itemId);
+				
+				PendingOrder pending = new PendingOrder(
+					offer.itemId,
+					offer.itemName, // Use cached name
+					offer.totalQuantity,
+					offer.price,
+					recommendedSellPrice,
+					entry.getKey() // slot
+				);
+				
+				pendingOrders.add(pending);
+			}
+		}
+		
+		return pendingOrders;
+	}
+	
+	/**
+	 * Helper class for pending orders
+	 */
+	public static class PendingOrder
+	{
+		public final int itemId;
+		public final String itemName;
+		public final int quantity;
+		public final int pricePerItem;
+		public final Integer recommendedSellPrice;
+		public final int slot;
+		
+		public PendingOrder(int itemId, String itemName, int quantity, int pricePerItem, Integer recommendedSellPrice, int slot)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.quantity = quantity;
+			this.pricePerItem = pricePerItem;
+			this.recommendedSellPrice = recommendedSellPrice;
+			this.slot = slot;
+		}
+	}
+
 	/**
 	 * Set the currently hovered item analysis for display in the overlay
 	 */
@@ -134,7 +234,16 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		if (gameStateChanged.getGameState() == GameState.LOGGED_IN)
+		GameState gameState = gameStateChanged.getGameState();
+		
+		// Track login/hopping to avoid recording existing GE offers
+		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
+		{
+			lastLoginTick = client.getTickCount();
+			log.debug("Login state change detected, setting lastLoginTick to {}", lastLoginTick);
+		}
+		
+		if (gameState == GameState.LOGGED_IN)
 		{
 			log.info("Player logged in");
 			syncRSN();
@@ -178,6 +287,203 @@ public class FlipSmartPlugin extends Plugin
 
 		checkInventoryItems();
 		updateCashStack();
+	}
+
+	@Subscribe
+	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged offerEvent)
+	{
+		final int slot = offerEvent.getSlot();
+		final GrandExchangeOffer offer = offerEvent.getOffer();
+
+		// Skip if game is not in LOGGED_IN state
+		if (client.getGameState() != GameState.LOGGED_IN && offer.getState() == GrandExchangeOfferState.EMPTY)
+		{
+			return;
+		}
+
+		int itemId = offer.getItemId();
+		int quantitySold = offer.getQuantitySold();
+		int totalQuantity = offer.getTotalQuantity();
+		int price = offer.getPrice();
+		int spent = offer.getSpent();
+		GrandExchangeOfferState state = offer.getState();
+		
+		// Get item name (must be called on client thread)
+		String itemName = itemManager.getItemComposition(itemId).getName();
+		
+		// Check if this is during the login burst window
+		int currentTick = client.getTickCount();
+		boolean isLoginBurst = (currentTick - lastLoginTick) <= GE_LOGIN_BURST_WINDOW;
+		
+		if (isLoginBurst && state != GrandExchangeOfferState.EMPTY)
+		{
+			// During login, just track existing offers without recording transactions
+			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
+			
+			boolean isBuy = state == GrandExchangeOfferState.BUYING || 
+							state == GrandExchangeOfferState.BOUGHT ||
+							state == GrandExchangeOfferState.CANCELLED_BUY;
+			
+			// Track the current state so future changes are detected correctly
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
+			return;
+		}
+
+		// Check if this is a buy or sell offer
+		boolean isBuy = state == GrandExchangeOfferState.BUYING || 
+						state == GrandExchangeOfferState.BOUGHT ||
+						state == GrandExchangeOfferState.CANCELLED_BUY;
+		
+		// Handle cancelled offers
+		if (state == GrandExchangeOfferState.CANCELLED_BUY || state == GrandExchangeOfferState.CANCELLED_SELL)
+		{
+			// Only record the cancellation if some items were actually filled
+			if (quantitySold > 0)
+			{
+				TrackedOffer previousOffer = trackedOffers.get(slot);
+				
+				// Check if we have any unfilled items that need to be recorded as cancelled
+				if (previousOffer != null && quantitySold > previousOffer.previousQuantitySold)
+				{
+					// Record the final partial fill before cancellation
+					int newQuantity = quantitySold - previousOffer.previousQuantitySold;
+					int pricePerItem = spent / quantitySold;
+
+					log.info("Recording final transaction before cancellation: {} {} x{} @ {} gp each",
+						isBuy ? "BUY" : "SELL",
+						previousOffer.itemName,
+						newQuantity,
+						pricePerItem);
+
+					// Get recommended sell price if available
+					Integer recommendedSellPrice = isBuy ? recommendedPrices.get(itemId) : null;
+					
+					apiClient.recordTransactionAsync(
+						itemId,
+						previousOffer.itemName,
+						isBuy,
+						newQuantity,
+						pricePerItem,
+						slot,
+						recommendedSellPrice
+					);
+				}
+				
+				log.info("Order cancelled: {} {} - {} items filled out of {}",
+					isBuy ? "BUY" : "SELL",
+					previousOffer != null ? previousOffer.itemName : itemName,
+					quantitySold,
+					totalQuantity);
+			}
+			else
+			{
+				TrackedOffer previousOffer = trackedOffers.get(slot);
+				log.info("Order cancelled with no fills: {} {}",
+					isBuy ? "BUY" : "SELL",
+					previousOffer != null ? previousOffer.itemName : itemName);
+			}
+			
+			// Clean up tracked offer
+			trackedOffers.remove(slot);
+			return;
+		}
+		
+		// Handle empty state (offer collected/cleared)
+		if (state == GrandExchangeOfferState.EMPTY)
+		{
+			trackedOffers.remove(slot);
+			return;
+		}
+
+		// Get the previously tracked offer for this slot
+		TrackedOffer previousOffer = trackedOffers.get(slot);
+
+		// Detect if quantity sold has increased (partial or full fill)
+		if (quantitySold > 0)
+		{
+			int newQuantity = 0;
+
+			if (previousOffer != null)
+			{
+				// Calculate how many items were just sold/bought
+				newQuantity = quantitySold - previousOffer.previousQuantitySold;
+			}
+			else
+			{
+				// First time seeing this offer with sold items
+				newQuantity = quantitySold;
+			}
+
+			// Record transaction if we have new items
+			if (newQuantity > 0)
+			{
+				// Calculate the actual price per item from the spent amount
+				int pricePerItem = spent / quantitySold;
+
+				log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{})",
+					isBuy ? "BUY" : "SELL",
+					itemName,
+					newQuantity,
+					pricePerItem,
+					slot,
+					quantitySold,
+					totalQuantity);
+
+				// Get recommended sell price if this was a buy from a recommendation
+				Integer recommendedSellPrice = isBuy ? recommendedPrices.get(itemId) : null;
+				
+				// Record the transaction asynchronously
+				apiClient.recordTransactionAsync(
+					itemId,
+					itemName,
+					isBuy,
+					newQuantity,
+					pricePerItem,
+					slot,
+					recommendedSellPrice
+				);
+				
+				// Clear recommended price after recording (only for buys)
+				if (isBuy && recommendedSellPrice != null)
+				{
+					recommendedPrices.remove(itemId);
+				}
+
+				// Refresh active flips panel if it exists
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() -> {
+						// Small delay to allow the backend to process
+						try
+						{
+							Thread.sleep(500);
+						}
+						catch (InterruptedException e)
+						{
+							// Ignore
+						}
+						// This will update both pending orders and active flips
+						flipFinderPanel.refresh();
+					});
+				}
+			}
+
+			// Update tracked offer
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
+		}
+		else
+		{
+			// New offer with no items sold yet, track it
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
+			
+			// If this is a new buy order, refresh the flip finder panel to show pending order
+			if (isBuy && previousOffer == null && flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> {
+					flipFinderPanel.updatePendingOrders(getPendingBuyOrders());
+				});
+			}
+		}
 	}
 
 	@Subscribe
@@ -369,7 +675,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void initializeFlipFinderPanel()
 	{
-		flipFinderPanel = new FlipFinderPanel(config, apiClient, itemManager)
+		flipFinderPanel = new FlipFinderPanel(config, apiClient, itemManager, this)
 		{
 			@Override
 			protected Integer getCashStack()

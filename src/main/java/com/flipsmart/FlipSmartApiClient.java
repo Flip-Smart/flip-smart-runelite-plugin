@@ -350,6 +350,346 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Record a Grand Exchange transaction
+	 */
+	public void recordTransaction(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem, Integer geSlot, Integer recommendedSellPrice)
+	{
+		String apiUrl = config.apiUrl();
+		if (apiUrl == null || apiUrl.isEmpty())
+		{
+			log.warn("API URL not configured");
+			return;
+		}
+		
+		// Ensure we have a valid token
+		if (!ensureAuthenticated())
+		{
+			log.error("Failed to authenticate with API");
+			return;
+		}
+
+		String url = String.format("%s/transactions", apiUrl);
+		
+		// Create JSON body
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty("item_id", itemId);
+		jsonBody.addProperty("item_name", itemName);
+		jsonBody.addProperty("is_buy", isBuy);
+		jsonBody.addProperty("quantity", quantity);
+		jsonBody.addProperty("price_per_item", pricePerItem);
+		if (geSlot != null)
+		{
+			jsonBody.addProperty("ge_slot", geSlot);
+		}
+		if (recommendedSellPrice != null)
+		{
+			jsonBody.addProperty("recommended_sell_price", recommendedSellPrice);
+		}
+		
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+		
+		Request request = new Request.Builder()
+			.url(url)
+			.post(body)
+			.header("Authorization", "Bearer " + jwtToken)
+			.build();
+		
+		try (Response response = httpClient.newCall(request).execute())
+		{
+			if (response.code() == 401)
+			{
+				// Token might have expired, try to re-authenticate once
+				jwtToken = null;
+				if (ensureAuthenticated())
+				{
+					// Retry the request with new token
+					Request retryRequest = new Request.Builder()
+						.url(url)
+						.post(body)
+						.header("Authorization", "Bearer " + jwtToken)
+						.build();
+					try (Response retryResponse = httpClient.newCall(retryRequest).execute())
+					{
+						if (retryResponse.isSuccessful())
+						{
+							String jsonData = retryResponse.body().string();
+							JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
+							log.info("Transaction recorded: {}", responseObj.get("message").getAsString());
+						}
+						else
+						{
+							log.warn("Failed to record transaction after re-auth: {}", retryResponse.code());
+						}
+					}
+				}
+				return;
+			}
+			
+			if (response.isSuccessful())
+			{
+				String jsonData = response.body().string();
+				JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
+				log.info("Transaction recorded: {}", responseObj.get("message").getAsString());
+			}
+			else
+			{
+				log.warn("Failed to record transaction: {}", response.code());
+			}
+		}
+		catch (IOException e)
+		{
+			log.warn("Failed to record transaction: {}", e.getMessage());
+		}
+	}
+
+	/**
+	 * Record a transaction asynchronously
+	 */
+	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem, Integer geSlot, Integer recommendedSellPrice)
+	{
+		return CompletableFuture.runAsync(() -> recordTransaction(itemId, itemName, isBuy, quantity, pricePerItem, geSlot, recommendedSellPrice));
+	}
+
+	/**
+	 * Fetch active flips from the API
+	 */
+	public ActiveFlipsResponse getActiveFlips()
+	{
+		String apiUrl = config.apiUrl();
+		if (apiUrl == null || apiUrl.isEmpty())
+		{
+			log.warn("API URL not configured");
+			return null;
+		}
+		
+		// Ensure we have a valid token
+		if (!ensureAuthenticated())
+		{
+			log.error("Failed to authenticate with API");
+			return null;
+		}
+
+		String url = String.format("%s/transactions/active-flips", apiUrl);
+		Request request = new Request.Builder()
+			.url(url)
+			.header("Authorization", "Bearer " + jwtToken)
+			.get()
+			.build();
+
+		try (Response response = httpClient.newCall(request).execute())
+		{
+			if (response.code() == 401)
+			{
+				// Token might have expired, try to re-authenticate once
+				jwtToken = null;
+				if (ensureAuthenticated())
+				{
+					// Retry the request with new token
+					Request retryRequest = new Request.Builder()
+						.url(url)
+						.header("Authorization", "Bearer " + jwtToken)
+						.get()
+						.build();
+					try (Response retryResponse = httpClient.newCall(retryRequest).execute())
+					{
+						if (!retryResponse.isSuccessful())
+						{
+							log.warn("API returned error for active flips after re-auth: {}", retryResponse.code());
+							return null;
+						}
+						String jsonData = retryResponse.body().string();
+						return gson.fromJson(jsonData, ActiveFlipsResponse.class);
+					}
+				}
+				return null;
+			}
+			
+			if (!response.isSuccessful())
+			{
+				log.warn("API returned error for active flips: {}", response.code());
+				return null;
+			}
+
+			String jsonData = response.body().string();
+			return gson.fromJson(jsonData, ActiveFlipsResponse.class);
+		}
+		catch (IOException e)
+		{
+			log.warn("Failed to fetch active flips: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch active flips asynchronously
+	 */
+	public CompletableFuture<ActiveFlipsResponse> getActiveFlipsAsync()
+	{
+		return CompletableFuture.supplyAsync(() -> getActiveFlips());
+	}
+
+	/**
+	 * Dismiss an active flip (remove from tracking)
+	 */
+	public boolean dismissActiveFlip(int itemId)
+	{
+		String apiUrl = config.apiUrl();
+		if (apiUrl == null || apiUrl.isEmpty())
+		{
+			log.warn("API URL not configured");
+			return false;
+		}
+		
+		// Ensure we have a valid token
+		if (!ensureAuthenticated())
+		{
+			log.error("Failed to authenticate with API");
+			return false;
+		}
+
+		String url = String.format("%s/transactions/active-flips/%d", apiUrl, itemId);
+		Request request = new Request.Builder()
+			.url(url)
+			.delete()
+			.header("Authorization", "Bearer " + jwtToken)
+			.build();
+
+		try (Response response = httpClient.newCall(request).execute())
+		{
+			if (response.code() == 401)
+			{
+				// Token might have expired, try to re-authenticate once
+				jwtToken = null;
+				if (ensureAuthenticated())
+				{
+					// Retry the request with new token
+					Request retryRequest = new Request.Builder()
+						.url(url)
+						.delete()
+						.header("Authorization", "Bearer " + jwtToken)
+						.build();
+					try (Response retryResponse = httpClient.newCall(retryRequest).execute())
+					{
+						if (retryResponse.isSuccessful())
+						{
+							log.info("Successfully dismissed active flip for item {}", itemId);
+							return true;
+						}
+						else
+						{
+							log.warn("Failed to dismiss active flip after re-auth: {}", retryResponse.code());
+							return false;
+						}
+					}
+				}
+				return false;
+			}
+			
+			if (response.isSuccessful())
+			{
+				log.info("Successfully dismissed active flip for item {}", itemId);
+				return true;
+			}
+			else
+			{
+				log.warn("Failed to dismiss active flip: {}", response.code());
+				return false;
+			}
+		}
+		catch (IOException e)
+		{
+			log.warn("Failed to dismiss active flip: {}", e.getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * Dismiss an active flip asynchronously
+	 */
+	public CompletableFuture<Boolean> dismissActiveFlipAsync(int itemId)
+	{
+		return CompletableFuture.supplyAsync(() -> dismissActiveFlip(itemId));
+	}
+
+	/**
+	 * Fetch completed flips from the API
+	 */
+	public CompletedFlipsResponse getCompletedFlips(int limit)
+	{
+		String apiUrl = config.apiUrl();
+		if (apiUrl == null || apiUrl.isEmpty())
+		{
+			log.warn("API URL not configured");
+			return null;
+		}
+		
+		// Ensure we have a valid token
+		if (!ensureAuthenticated())
+		{
+			log.error("Failed to authenticate with API");
+			return null;
+		}
+
+		String url = String.format("%s/flips/completed?limit=%d", apiUrl, limit);
+		Request request = new Request.Builder()
+			.url(url)
+			.header("Authorization", "Bearer " + jwtToken)
+			.get()
+			.build();
+
+		try (Response response = httpClient.newCall(request).execute())
+		{
+			if (response.code() == 401)
+			{
+				// Token might have expired, try to re-authenticate once
+				jwtToken = null;
+				if (ensureAuthenticated())
+				{
+					// Retry the request with new token
+					Request retryRequest = new Request.Builder()
+						.url(url)
+						.header("Authorization", "Bearer " + jwtToken)
+						.get()
+						.build();
+					try (Response retryResponse = httpClient.newCall(retryRequest).execute())
+					{
+						if (!retryResponse.isSuccessful())
+						{
+							log.warn("API returned error for completed flips after re-auth: {}", retryResponse.code());
+							return null;
+						}
+						String jsonData = retryResponse.body().string();
+						return gson.fromJson(jsonData, CompletedFlipsResponse.class);
+					}
+				}
+				return null;
+			}
+			
+			if (!response.isSuccessful())
+			{
+				log.warn("API returned error for completed flips: {}", response.code());
+				return null;
+			}
+
+			String jsonData = response.body().string();
+			return gson.fromJson(jsonData, CompletedFlipsResponse.class);
+		}
+		catch (IOException e)
+		{
+			log.warn("Failed to fetch completed flips: {}", e.getMessage());
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch completed flips asynchronously
+	 */
+	public CompletableFuture<CompletedFlipsResponse> getCompletedFlipsAsync(int limit)
+	{
+		return CompletableFuture.supplyAsync(() -> getCompletedFlips(limit));
+	}
+
+	/**
 	 * Clear the analysis cache
 	 */
 	public void clearCache()
