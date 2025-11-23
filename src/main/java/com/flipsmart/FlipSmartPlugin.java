@@ -43,6 +43,9 @@ public class FlipSmartPlugin extends Plugin
 	private FlipSmartOverlay overlay;
 
 	@Inject
+	private GrandExchangeOverlay geOverlay;
+
+	@Inject
 	private FlipSmartApiClient apiClient;
 
 	@Inject
@@ -165,6 +168,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		log.info("Flip Smart started!");
 		overlayManager.add(overlay);
+		overlayManager.add(geOverlay);
 		
 		// Initialize Flip Finder panel
 		if (config.showFlipFinder())
@@ -184,6 +188,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		log.info("Flip Smart stopped!");
 		overlayManager.remove(overlay);
+		overlayManager.remove(geOverlay);
 		
 		// Remove flip finder panel
 		if (flipFinderNavButton != null)
