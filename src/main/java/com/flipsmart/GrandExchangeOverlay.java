@@ -54,6 +54,8 @@ public class GrandExchangeOverlay extends Overlay
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
+	
+	private Point preferredLocation = new Point(100, 100);
 
 	@Inject
 	private GrandExchangeOverlay(Client client, FlipSmartConfig config, ItemManager itemManager)
@@ -62,9 +64,11 @@ public class GrandExchangeOverlay extends Overlay
 		this.config = config;
 		this.itemManager = itemManager;
 		
-		setPosition(OverlayPosition.TOP_CENTER);
+		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(OverlayPriority.MED);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
+		setMovable(true);
+		setResizable(false);
 		
 		getMenuEntries().add(new OverlayMenuEntry(RUNELITE_OVERLAY_CONFIG, OPTION_CONFIGURE, "GE Tracker"));
 	}
@@ -96,10 +100,9 @@ public class GrandExchangeOverlay extends Overlay
 		int iconColumnWidth = config.showGEItemIcons() ? (ICON_SIZE + ICON_OFFSET_X) : 0;
 		int totalWidth = textWidth + iconColumnWidth + (PADDING * 2);
 		
-		// Get preferred position (will be set by user dragging)
-		Point position = new Point(100, 100); // Default position
-		int x = position.x;
-		int y = position.y;
+		// Draw at (0,0) - the overlay system handles positioning
+		int x = 0;
+		int y = 0;
 		int currentY = y + PADDING + LINE_HEIGHT; // Start below top padding
 		
 		// Count lines to calculate height
@@ -319,9 +322,7 @@ public class GrandExchangeOverlay extends Overlay
 			drawCenteredString(graphics, "No offers", x, currentY, totalWidth);
 		}
 		
-		// Set bounds for dragging
-		setBounds(new Rectangle(x, y, totalWidth, totalHeight));
-		
+		// Return dimensions - overlay system uses this for the bounds/hit box
 		return new Dimension(totalWidth, totalHeight);
 	}
 	
