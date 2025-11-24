@@ -1,207 +1,189 @@
-# Flip Smart Plugin
+# Flip Smart RuneLite Plugin
 
-A RuneLite plugin that integrates with the Flip Smart API to automatically analyze items in your inventory and highlight profitable flipping opportunities with visual indicators.
+A RuneLite plugin that helps you find profitable items to flip in the Grand Exchange and automatically tracks your flipping progress.
 
-<img width="245" height="321" alt="Screenshot 2025-11-14 at 12 50 59 AM" src="https://github.com/user-attachments/assets/3a8d00f9-1466-43d4-9a29-0c3c0f50a965" />
+## 🔐 Authentication Required
 
-<img width="142" height="184" alt="Screenshot 2025-11-14 at 12 51 06 AM" src="https://github.com/user-attachments/assets/d4f067c7-fd22-41d9-a663-57f9b6be9135" />
+This plugin requires a **Flip Smart account** to use. You'll need to:
 
+1. Create an account on [Flip Smart](https://flipsmart.app) (or your hosted instance)
+2. Configure your credentials in the plugin settings:
+   - Open RuneLite configuration (wrench icon)
+   - Find "Flip Smart" and configure
+   - Enter your **Email** and **Password**
+   - Set the **API URL** (default: `http://localhost:8000`)
 
-## Features
+Without authentication, the plugin will not function.
 
-- 🔍 **Inventory Insights** - Monitors all items in your inventory in real-time and highlights good potential flips
-- 📊 **API-Powered Analysis** - Queries the Flip Smart API for comprehensive item analysis including:
-  - Active buy and sell prices
-  - Net profit margin after 2% GE tax
-  - ROI percentage
-  - Liquidity score (trade volume analysis)
-  - Risk assessment (price volatility)
-  - Overall efficiency scoring
-- 📈 **Smart Scoring** - Uses weighted efficiency algorithm combining:
-  - 40% ROI (return on investment)
-  - 30% Liquidity (how fast it trades)
-  - 30% Safety (inverse of risk)
-- 📱 **Info Overlay** - Shows details about the best flip opportunity in your inventory
+## ✨ Features
 
-## What Makes a "Good Flip"?
+### 📊 Flip Finder Panel
 
-An item is highlighted when:
-1. **Efficiency score ≥ 50** (configurable)
-2. **Net margin > 0** (profitable after GE tax)
+![Flip Finder Panel](./images/flip-finder.png)
 
-## Prerequisites
+A dedicated sidebar panel with three tabs to help you flip smarter:
 
-- Java 17 (for development)
-- RuneLite
-- Access to a Flip Smart API instance (see Configuration below)
+#### **Recommended Flips**
+- Get personalized flip recommendations based on your cash stack
+- Choose your flip style: **Conservative**, **Balanced**, or **Aggressive**
+- See detailed information for each flip:
+  - Recommended buy and sell prices
+  - Expected profit and ROI
+  - Item quantity and GE buy limit
+  - Liquidity and risk ratings
+- Click any item to see more details
 
-## Development Setup
+#### **Active Flips**
+- Automatically tracks items you've bought and are holding
+- Shows current profit potential with live market prices
+- Displays your total investment across all active flips
+- See pending GE buy orders that haven't filled yet
+- Right-click to dismiss flips you no longer want to track
 
-### 1. Clone the Repository
+#### **Completed Flips**
+- View your completed flip history
+- See profit/loss for each completed flip
+- Track your flipping performance over time
+- Click to expand and see flip duration and GE tax paid
 
-```bash
-git clone https://github.com/Flip-Smart/flip-smart-runelite-plugin.git
-cd flip-smart-runelite-plugin
-```
+### 📊 Grand Exchange Offer Overlay
 
-### 2. Open in IntelliJ IDEA
+![Grand Exchange Offer Overlay](./images/offer-overlay.png)
 
-1. Open IntelliJ IDEA
-2. File → Open → Select the project folder
-3. Wait for Gradle to import dependencies
-4. Set Project SDK to Java 17 (File → Project Structure → Project)
+A real-time on-screen display that shows all your active GE offers at a glance:
 
-### 3. Configure Run Configuration
+- **Live offer tracking**: See all 8 GE slots with their current status
+- **Progress bars**: Visual progress showing how much of each offer has filled
+- **Item details**: Item names, icons, quantities, and prices
+- **Buy/Sell indicators**: Color-coded to easily identify buy (green) vs sell (red) offers
+- **Movable & collapsible**: Click the coin icon to collapse/expand, drag to reposition
+- **Auto-hide empty slots**: Only shows active offers for a clean interface
 
-1. Open `src/test/java/com/flipsmart/ExamplePluginTest.java`
-2. Right-click and select "Run 'ExamplePluginTest.main()'"
-3. If it fails, edit the run configuration:
-   - Run → Edit Configurations
-   - Add VM options: `-ea --add-exports java.desktop/com.apple.eawt=ALL-UNNAMED`
-   - Apply and run again
+Perfect for monitoring multiple flips simultaneously without opening the GE interface!
 
-### 4. Run the Plugin
+### 🎯 Grand Exchange Integration
 
-**From IntelliJ:**
-- Run the `ExamplePluginTest` configuration
+The plugin automatically monitors your Grand Exchange activity:
+- **Detects buy orders** when you purchase items
+- **Detects sell orders** when you sell items
+- **Tracks profit/loss** automatically
+- **Links recommended prices** to your trades for better tracking
 
-**From terminal:**
-```bash
-export JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.17/libexec/openjdk.jdk/Contents/Home
-./gradlew runClient
-```
+### 💰 Smart Recommendations
 
-RuneLite will launch with your plugin loaded!
+Flip recommendations are tailored to your playstyle:
 
-## Configuration
+- **Conservative**: Low-risk, high-liquidity items with steady profits
+- **Balanced**: Mix of safety and profitability
+- **Aggressive**: Higher margins with more risk
 
-### Setting Up the API Host
+Recommendations consider:
+- Your available cash stack
+- Item liquidity (trade volume)
+- Price volatility and risk
+- ROI and profit margins
+- GE buy limits
 
-The plugin requires a Flip Smart API instance.
+### 📈 Real-Time Market Data
 
-### Testing the Plugin
+All prices and calculations are based on live market data:
+- Current buy and sell prices
+- Net profit after 2% GE tax
+- ROI percentages
+- Trade volume and liquidity scores
 
-1. **Enable the plugin:**
-   - Click the Configuration icon (wrench) in RuneLite
-   - Find "Flip Smart" in the plugin list
-   - Toggle it ON
+## ⚙️ Configuration
 
-2. **Configure API settings:**
-   - Right-click "Flip Smart" → Configure
-   - **Set API URL** to your API host (required!)
-     - Local development: `http://localhost:8000`
-   - Set Minimum Efficiency Score: `50` (lower to see more items)
-   - Enable "Highlight Good Flips"
+Access settings by right-clicking "Flip Smart" in the plugin list:
 
-3. **Test in-game:**
-   - Log into OSRS
-   - Add test items to your inventory:
-     - Fire runes (high efficiency - should be highlighted 🔵)
-     - Feathers (high efficiency - should be highlighted 🔵)
-     - Cannonballs (good efficiency - should be highlighted 🔵)
-   - Look for blue boxes around profitable items!
+### Authentication
+- **Email**: Your Flip Smart account email (required)
+- **Password**: Your account password (required)
+- **API URL**: The Flip Smart API URL (required)
 
-4. **Check the overlay panel** (top-left):
-   - Good Flips count
-   - Best item name
-   - Net margin and efficiency score
+### Flip Finder
+- **Enable Flip Finder**: Toggle the sidebar panel on/off
+- **Flip Style**: Choose Conservative, Balanced, or Aggressive
+- **Number of Recommendations**: How many flips to show (1-50)
+- **Refresh Interval**: How often to update recommendations (1-60 minutes)
+- **Minimum Profit**: Only show items above this profit threshold
 
-## Configuration Options
+### Display
+- **Show GE Tracker**: Toggle the Grand Exchange offer overlay on/off
+- **Show Item Names**: Display item names in the GE tracker
+- **Show Item Icons**: Display item icons in the GE tracker
+- **Show Detailed Info**: Show quantity, price per item, and total value in GE tracker
+- **Show Overlay**: Toggle the info overlay on/off
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| **API URL** | `http://localhost:8000` | **Required**: URL of the Flip Smart API instance |
-| **Show Overlay** | ✅ Enabled | Toggle the info panel display |
-| **Highlight Good Flips** | ✅ Enabled | Show blue boxes around good flip items |
-| **Minimum Efficiency Score** | 50 | Minimum score (0-100) to highlight items |
-| **Minimum Profit** | 100 GP | Display threshold for the overlay |
+### General
+- **Track History**: Save flip history across sessions
 
-⚠️ **Important**: You must configure a valid API URL for the plugin to work!
+## 🚀 Getting Started
 
-## Project Structure
+1. **Install the plugin** in RuneLite
+2. **Configure your credentials** in plugin settings (see Authentication section above)
+3. **Open the Flip Finder panel** from the RuneLite sidebar
+4. **Browse recommended flips** and choose items that fit your cash stack
+5. **Buy items in the GE** - they'll automatically appear in the "Active Flips" tab
+6. **Sell when ready** - completed flips move to the "Completed" tab
 
-```
-src/main/java/com/flipsmart/
-├── FlipSmartPlugin.java            # Main plugin
-├── FlipSmartConfig.java            # Configuration interface
-├── FlipSmartOverlay.java           # Info panel overlay
-├── FlipSmartInventoryOverlay.java  # Draws blue boxes on items
-├── FlipSmartApiClient.java         # HTTP client with caching
-└── FlipAnalysis.java               # API response model
+## 💡 Tips
 
-src/test/java/com/flipsmart/
-└── ExamplePluginTest.java          # Test runner for development
-```
+- **Start small**: Test with low-cost items to get familiar with the plugin
+- **Use the GE Overlay**: Keep the overlay open to monitor all your offers at a glance - click the coin icon to collapse it when not needed
+- **Check Active Flips**: Monitor your active flips to see current profit potential
+- **Use Recommended Prices**: When buying a recommended item, the plugin remembers the suggested sell price
+- **Watch your cash**: The plugin considers your cash stack when recommending flips
+- **Refresh recommendations**: Click the refresh button to get updated market data
+- **Dismiss items**: Right-click active flips to remove items you no longer want to track
 
-## API Response Example
+## 🎮 In-Game Usage
 
-The plugin processes responses from `/analysis/{item_id}`:
+1. Open the **Flip Finder** panel from the RuneLite sidebar
+2. Browse the **Recommended** tab for profitable flip opportunities
+3. Click items to expand and see detailed stats
+4. Go to the **Grand Exchange** and place your buy orders
+5. The **GE Overlay** will show your offers in real-time on screen
+6. When items fill, they appear in the **Active Flips** tab
+7. When you sell items, they move to the **Completed** tab
+8. Track your total profit in the Completed tab!
 
-```json
-{
-  "item_id": 554,
-  "item_name": "Fire rune",
-  "current_prices": {
-    "high": 5,
-    "low": 4,
-    "net_margin": 1,
-    "roi_percent": 25.0
-  },
-  "efficiency": {
-    "score": 93.3,
-    "rating": "Excellent"
-  },
-  "liquidity": {
-    "score": 100,
-    "rating": "Excellent"
-  },
-  "risk": {
-    "score": 15.2,
-    "rating": "Very Low"
-  }
-}
-```
+## 🛠️ Troubleshooting
 
-## Building for Distribution
+**Plugin shows "Failed to fetch recommendations"**
+- Check that your email and password are correct in settings
+- Verify the API URL is accessible and correct
+- Ensure you're logged into RuneLite
 
-To create a JAR for distribution:
+**No recommendations showing up**
+- Make sure you have enough cash in your inventory
+- Try lowering the "Minimum Profit" setting
+- Check that you're logged into OSRS
+- Try clicking the Refresh button
 
-```bash
-./gradlew build
-```
+**Active flips not updating**
+- Make sure you're at the Grand Exchange
+- Verify the items actually filled (check GE interface)
+- Try clicking Refresh in the Active Flips tab
 
-The JAR will be in `build/libs/`.
+**GE Overlay not showing**
+- Check that "Show GE Tracker" is enabled in Display settings
+- The overlay only shows when you have active GE offers (empty slots are hidden)
+- Try repositioning the overlay - it may be off-screen
+- Click the coin icon to expand if it's collapsed
 
-## Troubleshooting
-
-### No items are being highlighted
-- **Check API URL is configured correctly** in plugin settings
-- Test API connection: `curl https://your-api-url/analysis/554`
-- Lower the "Minimum Efficiency Score" in settings (try 30)
-- Check that items have positive margins
-
-### API connection errors
-- **Ensure API URL is correct** in plugin settings (most common issue!)
-- Verify the API host is accessible: `curl https://your-api-url/`
-- Check for firewall or network issues
-- Make sure you're using `https://` for public APIs or `http://` for local development
-
-### Build errors
-- Make sure Java 17 is set as the project SDK
-- Refresh Gradle dependencies: `./gradlew --refresh-dependencies`
-- Invalidate IntelliJ caches: File → Invalidate Caches / Restart
-
-## Dependencies
-
-- RuneLite API (latest.release)
-- OkHttp 4.9.0 (HTTP client, provided by RuneLite)
-- Gson 2.8.9 (JSON parsing, provided by RuneLite)
-- Lombok 1.18.30 (annotation processing)
-
-## License
+## 📝 License
 
 BSD 2-Clause License
 
-## Credits
+## 🙏 Credits
 
 Built with the [RuneLite Plugin Template](https://github.com/runelite/example-plugin)
+
+Inspired by excellent RuneLite flipping plugins:
+- [Flipping Utilities](https://github.com/Belieal/flipping-utilities) - Comprehensive GE flipping tracker
+- [Flipping Co-pilot](https://github.com/cbrewitt/flipping-copilot) - AI-powered flip recommendations
+
+---
+
+**Happy flipping!** 🎉
