@@ -12,6 +12,8 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.client.input.MouseListener;
+import net.runelite.client.input.MouseManager;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
@@ -19,6 +21,8 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
 
 import javax.inject.Inject;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -40,9 +44,6 @@ public class FlipSmartPlugin extends Plugin
 	private OverlayManager overlayManager;
 
 	@Inject
-	private FlipSmartOverlay overlay;
-
-	@Inject
 	private GrandExchangeOverlay geOverlay;
 
 	@Inject
@@ -53,6 +54,9 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private net.runelite.client.game.ItemManager itemManager;
+
+	@Inject
+	private MouseManager mouseManager;
 
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
@@ -167,8 +171,8 @@ public class FlipSmartPlugin extends Plugin
 	protected void startUp() throws Exception
 	{
 		log.info("Flip Smart started!");
-		overlayManager.add(overlay);
 		overlayManager.add(geOverlay);
+		mouseManager.registerMouseListener(overlayMouseListener);
 		
 		// Initialize Flip Finder panel
 		if (config.showFlipFinder())
@@ -187,8 +191,8 @@ public class FlipSmartPlugin extends Plugin
 	protected void shutDown() throws Exception
 	{
 		log.info("Flip Smart stopped!");
-		overlayManager.remove(overlay);
 		overlayManager.remove(geOverlay);
+		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
 		// Remove flip finder panel
 		if (flipFinderNavButton != null)
@@ -611,5 +615,72 @@ public class FlipSmartPlugin extends Plugin
 	{
 		return configManager.getConfig(FlipSmartConfig.class);
 	}
+	
+	// Mouse listener for GE overlay clicks
+	private final MouseListener overlayMouseListener = new MouseListener()
+	{
+		@Override
+		public java.awt.event.MouseEvent mouseClicked(java.awt.event.MouseEvent e)
+		{
+			// Get the overlay bounds
+			Rectangle overlayBounds = geOverlay.getBounds();
+			if (overlayBounds == null)
+			{
+				return e;
+			}
+			
+			// Convert absolute click to relative coordinates
+			Point relativeClick = new Point(
+				e.getX() - overlayBounds.x,
+				e.getY() - overlayBounds.y
+			);
+			
+			// Check if click is on the collapse button
+			Rectangle buttonBounds = geOverlay.getCollapseButtonBounds();
+			if (buttonBounds.contains(relativeClick))
+			{
+				geOverlay.toggleCollapse();
+				e.consume();
+			}
+			
+			return e;
+		}
+		
+		@Override
+		public java.awt.event.MouseEvent mousePressed(java.awt.event.MouseEvent e)
+		{
+			return e;
+		}
+		
+		@Override
+		public java.awt.event.MouseEvent mouseReleased(java.awt.event.MouseEvent e)
+		{
+			return e;
+		}
+		
+		@Override
+		public java.awt.event.MouseEvent mouseEntered(java.awt.event.MouseEvent e)
+		{
+			return e;
+		}
+		
+		@Override
+		public java.awt.event.MouseEvent mouseExited(java.awt.event.MouseEvent e)
+		{
+			return e;
+		}
+		
+		@Override
+		public java.awt.event.MouseEvent mouseDragged(java.awt.event.MouseEvent e)
+		{
+			return e;
+		}
+		
+		@Override
+		public java.awt.event.MouseEvent mouseMoved(java.awt.event.MouseEvent e)
+		{
+			return e;
+		}
+	};
 }
 

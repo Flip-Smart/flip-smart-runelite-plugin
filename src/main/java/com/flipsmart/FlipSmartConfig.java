@@ -138,23 +138,11 @@ public interface FlipSmartConfig extends Config
 	String displaySection = "display";
 
 	@ConfigItem(
-		keyName = "showOverlay",
-		name = "Show Overlay",
-		description = "Toggles the display of the flipping overlay",
-		section = displaySection,
-		position = 0
-	)
-	default boolean showOverlay()
-	{
-		return true;
-	}
-
-	@ConfigItem(
 		keyName = "showGEOverlay",
 		name = "Show GE Tracker",
 		description = "Display in-game Grand Exchange offer tracker",
 		section = displaySection,
-		position = 1
+		position = 0
 	)
 	default boolean showGEOverlay()
 	{
@@ -166,7 +154,7 @@ public interface FlipSmartConfig extends Config
 		name = "Show Item Names",
 		description = "Display item names in the GE tracker",
 		section = displaySection,
-		position = 2
+		position = 1
 	)
 	default boolean showGEItemNames()
 	{
@@ -178,7 +166,7 @@ public interface FlipSmartConfig extends Config
 		name = "Show Item Icons",
 		description = "Display item icons in the GE tracker",
 		section = displaySection,
-		position = 3
+		position = 2
 	)
 	default boolean showGEItemIcons()
 	{
@@ -190,35 +178,11 @@ public interface FlipSmartConfig extends Config
 		name = "Show Detailed Info",
 		description = "Show quantity, price per item, and total value",
 		section = displaySection,
-		position = 4
+		position = 3
 	)
 	default boolean showGEDetailedInfo()
 	{
-		return false;
-	}
-
-	@ConfigItem(
-		keyName = "hideEmptyGESlots",
-		name = "Hide Empty Slots",
-		description = "Hide empty GE slots in the tracker",
-		section = displaySection,
-		position = 5
-	)
-	default boolean hideEmptyGESlots()
-	{
 		return true;
-	}
-
-	@ConfigItem(
-		keyName = "compactGEOverlay",
-		name = "Compact Mode",
-		description = "Use compact layout with less spacing",
-		section = displaySection,
-		position = 6
-	)
-	default boolean compactGEOverlay()
-	{
-		return false;
 	}
 
 	// ============================================
