@@ -138,13 +138,49 @@ public interface FlipSmartConfig extends Config
 	String displaySection = "display";
 
 	@ConfigItem(
-		keyName = "showOverlay",
-		name = "Show Overlay",
-		description = "Toggles the display of the flipping overlay",
+		keyName = "showGEOverlay",
+		name = "Show GE Tracker",
+		description = "Display in-game Grand Exchange offer tracker",
 		section = displaySection,
 		position = 0
 	)
-	default boolean showOverlay()
+	default boolean showGEOverlay()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showGEItemNames",
+		name = "Show Item Names",
+		description = "Display item names in the GE tracker",
+		section = displaySection,
+		position = 1
+	)
+	default boolean showGEItemNames()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showGEItemIcons",
+		name = "Show Item Icons",
+		description = "Display item icons in the GE tracker",
+		section = displaySection,
+		position = 2
+	)
+	default boolean showGEItemIcons()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showGEDetailedInfo",
+		name = "Show Detailed Info",
+		description = "Show quantity, price per item, and total value",
+		section = displaySection,
+		position = 3
+	)
+	default boolean showGEDetailedInfo()
 	{
 		return true;
 	}
