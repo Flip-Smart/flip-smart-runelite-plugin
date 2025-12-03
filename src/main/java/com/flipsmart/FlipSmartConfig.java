@@ -9,21 +9,36 @@ import net.runelite.client.config.ConfigSection;
 public interface FlipSmartConfig extends Config
 {
 	// ============================================
-	// Authentication Section
+	// Advanced Section (API URL override only)
 	// ============================================
 	@ConfigSection(
-		name = "Authentication",
-		description = "Account settings for Flip Smart API",
+		name = "Advanced",
+		description = "Advanced settings",
+		position = 0,
+		closedByDefault = true
+	)
+	String advancedSection = "advanced";
+
+	@ConfigItem(
+		keyName = "apiUrl",
+		name = "API URL Override",
+		description = "Leave empty to use production server (https://flipsm.art). Only set this to override with a custom server URL.",
+		section = advancedSection,
 		position = 0
 	)
-	String authenticationSection = "authentication";
+	default String apiUrl()
+	{
+		return "";
+	}
+
+	// Hidden config items (not shown in UI, but used for persistence)
+	// These are accessed via ConfigManager directly
 
 	@ConfigItem(
 		keyName = "email",
-		name = "Email",
-		description = "Your account email for authentication",
-		section = authenticationSection,
-		position = 0
+		name = "",
+		description = "",
+		hidden = true
 	)
 	default String email()
 	{
@@ -32,27 +47,14 @@ public interface FlipSmartConfig extends Config
 
 	@ConfigItem(
 		keyName = "password",
-		name = "Password",
-		description = "Your account password",
-		secret = true,
-		section = authenticationSection,
-		position = 1
+		name = "",
+		description = "",
+		hidden = true,
+		secret = true
 	)
 	default String password()
 	{
 		return "";
-	}
-
-	@ConfigItem(
-		keyName = "apiUrl",
-		name = "API URL",
-		description = "URL of the Flip Smart API",
-		section = authenticationSection,
-		position = 2
-	)
-	default String apiUrl()
-	{
-		return "http://localhost:8000";
 	}
 
 	// ============================================

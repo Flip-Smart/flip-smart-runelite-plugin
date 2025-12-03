@@ -58,6 +58,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private MouseManager mouseManager;
 
+	@Inject
+	private ConfigManager configManager;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -229,6 +232,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 	}
+
 	
 	/**
 	 * Sync the player's RSN with the API
@@ -462,7 +466,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void initializeFlipFinderPanel()
 	{
-		flipFinderPanel = new FlipFinderPanel(config, apiClient, itemManager, this)
+		flipFinderPanel = new FlipFinderPanel(config, apiClient, itemManager, this, configManager)
 		{
 			@Override
 			protected Integer getCashStack()

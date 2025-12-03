@@ -1,6 +1,7 @@
 package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
@@ -22,6 +23,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final FlipSmartConfig config;
 	private final FlipSmartApiClient apiClient;
 	private final ItemManager itemManager;
+	private final ConfigManager configManager;
 	private final JPanel recommendedListContainer = new JPanel();
 	private final JPanel activeFlipsListContainer = new JPanel();
 	private final JPanel completedFlipsListContainer = new JPanel();
@@ -34,16 +36,161 @@ public class FlipFinderPanel extends PluginPanel
 	private final JTabbedPane tabbedPane = new JTabbedPane();
 	private final FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
 
-	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin)
+	// Login panel components
+	private JPanel loginPanel;
+	private JPanel mainPanel;
+	private JTextField emailField;
+	private JPasswordField passwordField;
+	private JLabel loginStatusLabel;
+	private JButton loginButton;
+	private JButton signupButton;
+	private boolean isAuthenticated = false;
+
+	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
 		super(false);
 		this.config = config;
 		this.apiClient = apiClient;
 		this.itemManager = itemManager;
 		this.plugin = plugin;
+		this.configManager = configManager;
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		// Build both panels
+		buildLoginPanel();
+		buildMainPanel();
+
+		// Start with login panel, then check authentication
+		add(loginPanel, BorderLayout.CENTER);
+		
+		// Check if already authenticated and switch to main panel if so
+		checkAuthenticationAndShow();
+	}
+
+	/**
+	 * Build the login/signup panel
+	 */
+	private void buildLoginPanel()
+	{
+		loginPanel = new JPanel();
+		loginPanel.setLayout(new BorderLayout());
+		loginPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		// Center content panel
+		JPanel contentPanel = new JPanel();
+		contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+		contentPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		contentPanel.setBorder(new EmptyBorder(40, 20, 40, 20));
+
+		// Title
+		JLabel titleLabel = new JLabel("Flip Smart");
+		titleLabel.setForeground(Color.WHITE);
+		titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		// Subtitle
+		JLabel subtitleLabel = new JLabel("Sign in to start flipping");
+		subtitleLabel.setForeground(Color.LIGHT_GRAY);
+		subtitleLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+		subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		// Email field
+		JLabel emailLabel = new JLabel("Email");
+		emailLabel.setForeground(Color.LIGHT_GRAY);
+		emailLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		emailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		emailField = new JTextField(20);
+		emailField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+		emailField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		emailField.setForeground(Color.WHITE);
+		emailField.setCaretColor(Color.WHITE);
+		emailField.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(5, 10, 5, 10)
+		));
+
+		// Password field
+		JLabel passwordLabel = new JLabel("Password");
+		passwordLabel.setForeground(Color.LIGHT_GRAY);
+		passwordLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		passwordLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+		passwordField = new JPasswordField(20);
+		passwordField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
+		passwordField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		passwordField.setForeground(Color.WHITE);
+		passwordField.setCaretColor(Color.WHITE);
+		passwordField.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(5, 10, 5, 10)
+		));
+
+		// Status label for messages
+		loginStatusLabel = new JLabel(" ");
+		loginStatusLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		loginStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
+
+		// Buttons panel
+		JPanel buttonsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
+		buttonsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		buttonsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
+
+		// Sign Up button
+		signupButton = new JButton("Sign Up");
+		signupButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		signupButton.setForeground(Color.WHITE);
+		signupButton.setFocusPainted(false);
+		signupButton.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(ColorScheme.BRAND_ORANGE),
+			BorderFactory.createEmptyBorder(8, 15, 8, 15)
+		));
+		signupButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		signupButton.addActionListener(e -> handleSignup());
+
+		// Login button
+		loginButton = new JButton("Login");
+		loginButton.setBackground(ColorScheme.BRAND_ORANGE);
+		loginButton.setForeground(Color.WHITE);
+		loginButton.setFocusPainted(false);
+		loginButton.setBorder(BorderFactory.createEmptyBorder(8, 15, 8, 15));
+		loginButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		loginButton.addActionListener(e -> handleLogin());
+
+		buttonsPanel.add(signupButton);
+		buttonsPanel.add(loginButton);
+
+		// Add components with spacing
+		contentPanel.add(titleLabel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+		contentPanel.add(subtitleLabel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 30)));
+		contentPanel.add(emailLabel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+		contentPanel.add(emailField);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+		contentPanel.add(passwordLabel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+		contentPanel.add(passwordField);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
+		contentPanel.add(buttonsPanel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+		contentPanel.add(loginStatusLabel);
+
+		// Center the content vertically
+		loginPanel.add(contentPanel, BorderLayout.CENTER);
+	}
+
+	/**
+	 * Build the main flip finder panel
+	 */
+	private void buildMainPanel()
+	{
+		mainPanel = new JPanel(new BorderLayout());
+		mainPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		// Header panel
 		JPanel headerPanel = new JPanel(new BorderLayout());
@@ -54,11 +201,28 @@ public class FlipFinderPanel extends PluginPanel
 		titleLabel.setForeground(Color.WHITE);
 		titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
 
+		// Right side buttons panel (logout + refresh)
+		JPanel rightButtonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+		rightButtonsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		// Logout button
+		JButton logoutButton = new JButton("Logout");
+		logoutButton.setFocusable(false);
+		logoutButton.setFont(new Font("Arial", Font.PLAIN, 11));
+		logoutButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		logoutButton.setForeground(Color.LIGHT_GRAY);
+		logoutButton.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
+		logoutButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		logoutButton.addActionListener(e -> handleLogout());
+
 		refreshButton.setFocusable(false);
 		refreshButton.addActionListener(e -> refresh());
 
+		rightButtonsPanel.add(logoutButton);
+		rightButtonsPanel.add(refreshButton);
+
 		headerPanel.add(titleLabel, BorderLayout.WEST);
-		headerPanel.add(refreshButton, BorderLayout.EAST);
+		headerPanel.add(rightButtonsPanel, BorderLayout.EAST);
 
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
@@ -68,17 +232,6 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel flipStyleLabel = new JLabel("Style: ");
 		flipStyleLabel.setForeground(Color.LIGHT_GRAY);
 		flipStyleLabel.setFont(new Font("Arial", Font.PLAIN, 12));
-
-		// Create flip style dropdown
-		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
-		flipStyleDropdown.setSelectedItem(config.flipStyle());
-		flipStyleDropdown.setFocusable(false);
-		flipStyleDropdown.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		flipStyleDropdown.setForeground(Color.WHITE);
-		flipStyleDropdown.addActionListener(e -> {
-			// Refresh recommendations when flip style changes
-			refresh();
-		});
 
 		// Custom renderer for better appearance
 		flipStyleDropdown.setRenderer(new DefaultListCellRenderer() {
@@ -238,11 +391,216 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		add(topPanel, BorderLayout.NORTH);
-		add(tabbedPane, BorderLayout.CENTER);
+		mainPanel.add(topPanel, BorderLayout.NORTH);
+		mainPanel.add(tabbedPane, BorderLayout.CENTER);
+	}
 
-		// Initial load
+	/**
+	 * Check if already authenticated and show appropriate panel
+	 */
+	private void checkAuthenticationAndShow()
+	{
+		// Try to authenticate silently with saved credentials
+		String email = config.email();
+		String password = config.password();
+		
+		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
+		{
+			// Pre-fill the email field
+			emailField.setText(email);
+			
+			// Try to authenticate in background
+			java.util.concurrent.CompletableFuture.runAsync(() -> {
+				FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
+				
+				SwingUtilities.invokeLater(() -> {
+					if (result.success)
+					{
+						showMainPanel();
+					}
+					else
+					{
+						// Stay on login panel, show message
+						loginStatusLabel.setText("Please login to continue");
+						loginStatusLabel.setForeground(Color.LIGHT_GRAY);
+					}
+				});
+			});
+		}
+	}
+
+	/**
+	 * Handle login button click
+	 */
+	private void handleLogin()
+	{
+		String email = emailField.getText().trim();
+		String password = new String(passwordField.getPassword());
+		
+		if (email.isEmpty() || password.isEmpty())
+		{
+			showLoginStatus("Please enter email and password", false);
+			return;
+		}
+		
+		setLoginButtonsEnabled(false);
+		showLoginStatus("Logging in...", true);
+		
+		java.util.concurrent.CompletableFuture.runAsync(() -> {
+			FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
+			
+			SwingUtilities.invokeLater(() -> {
+				setLoginButtonsEnabled(true);
+				
+				if (result.success)
+				{
+					// Save credentials for next session
+					saveCredentials(email, password);
+					
+					showLoginStatus(result.message, true);
+					// Small delay to show success message
+					Timer timer = new Timer(500, e -> showMainPanel());
+					timer.setRepeats(false);
+					timer.start();
+				}
+				else
+				{
+					showLoginStatus(result.message, false);
+				}
+			});
+		});
+	}
+
+	/**
+	 * Handle signup button click
+	 */
+	private void handleSignup()
+	{
+		String email = emailField.getText().trim();
+		String password = new String(passwordField.getPassword());
+		
+		if (email.isEmpty() || password.isEmpty())
+		{
+			showLoginStatus("Please enter email and password", false);
+			return;
+		}
+		
+		setLoginButtonsEnabled(false);
+		showLoginStatus("Creating account...", true);
+		
+		java.util.concurrent.CompletableFuture.runAsync(() -> {
+			FlipSmartApiClient.AuthResult result = apiClient.signup(email, password);
+			
+			SwingUtilities.invokeLater(() -> {
+				setLoginButtonsEnabled(true);
+				
+				if (result.success)
+				{
+					// Save credentials for next session
+					saveCredentials(email, password);
+					
+					showLoginStatus(result.message, true);
+					// Small delay to show success message
+					Timer timer = new Timer(500, e -> showMainPanel());
+					timer.setRepeats(false);
+					timer.start();
+				}
+				else
+				{
+					showLoginStatus(result.message, false);
+				}
+			});
+		});
+	}
+
+	/**
+	 * Save credentials for next session
+	 */
+	private void saveCredentials(String email, String password)
+	{
+		configManager.setConfiguration("flipsmart", "email", email);
+		configManager.setConfiguration("flipsmart", "password", password);
+	}
+
+	/**
+	 * Show status message on login panel
+	 */
+	private void showLoginStatus(String message, boolean success)
+	{
+		loginStatusLabel.setText(message);
+		loginStatusLabel.setForeground(success ? new Color(100, 255, 100) : new Color(255, 100, 100));
+	}
+
+	/**
+	 * Enable/disable login buttons during authentication
+	 */
+	private void setLoginButtonsEnabled(boolean enabled)
+	{
+		loginButton.setEnabled(enabled);
+		signupButton.setEnabled(enabled);
+		emailField.setEnabled(enabled);
+		passwordField.setEnabled(enabled);
+	}
+
+	/**
+	 * Switch from login panel to main panel
+	 */
+	private void showMainPanel()
+	{
+		isAuthenticated = true;
+		removeAll();
+		add(mainPanel, BorderLayout.CENTER);
+		revalidate();
+		repaint();
+		
+		// Load data
 		refresh();
+	}
+
+	/**
+	 * Switch from main panel to login panel (e.g., on auth error)
+	 */
+	public void showLoginPanel()
+	{
+		isAuthenticated = false;
+		removeAll();
+		add(loginPanel, BorderLayout.CENTER);
+		revalidate();
+		repaint();
+	}
+
+	/**
+	 * Handle logout button click
+	 */
+	private void handleLogout()
+	{
+		// Clear API client authentication
+		apiClient.clearAuth();
+		
+		// Clear password field but keep email
+		passwordField.setText("");
+		
+		// Reset status
+		loginStatusLabel.setText("Logged out successfully");
+		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
+		
+		// Show login panel
+		showLoginPanel();
+	}
+
+	// Create flip style dropdown here so it's available for both panels
+	{
+		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
+		flipStyleDropdown.setFocusable(false);
+		flipStyleDropdown.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		flipStyleDropdown.setForeground(Color.WHITE);
+		flipStyleDropdown.addActionListener(e -> {
+			// Refresh recommendations when flip style changes
+			if (isAuthenticated)
+			{
+				refresh();
+			}
+		});
 	}
 
 	/**

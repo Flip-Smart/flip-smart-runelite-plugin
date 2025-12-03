@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 public class FlipSmartApiClient
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+	private static final String PRODUCTION_API_URL = "https://flipsm.art";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -40,30 +41,65 @@ public class FlipSmartApiClient
 		this.gson = gson.newBuilder().create();
 		// Customize the injected OkHttpClient with our timeout requirements
 		this.httpClient = okHttpClient.newBuilder()
-			.connectTimeout(5, TimeUnit.SECONDS)
-			.readTimeout(10, TimeUnit.SECONDS)
+			.connectTimeout(15, TimeUnit.SECONDS)
+			.readTimeout(30, TimeUnit.SECONDS)
 			.build();
 	}
 
+	/**
+	 * Get the API URL to use. Returns the configured override URL if set,
+	 * otherwise returns the production URL.
+	 */
+	private String getApiUrl()
+	{
+		String configuredUrl = config.apiUrl();
+		if (configuredUrl == null || configuredUrl.isEmpty())
+		{
+			return PRODUCTION_API_URL;
+		}
+		return configuredUrl;
+	}
+
+	/**
+	 * Authentication result with status and message
+	 */
+	public static class AuthResult
+	{
+		public final boolean success;
+		public final String message;
+		
+		public AuthResult(boolean success, String message)
+		{
+			this.success = success;
+			this.message = message;
+		}
+	}
+	
 	/**
 	 * Authenticate with the API and obtain a JWT token via login
 	 */
 	private boolean authenticate()
 	{
-		String apiUrl = config.apiUrl();
-		String email = config.email();
-		String password = config.password();
+		AuthResult result = login(config.email(), config.password());
+		return result.success;
+	}
+	
+	/**
+	 * Login with email and password
+	 * @return AuthResult with success status and message
+	 */
+	public AuthResult login(String email, String password)
+	{
+		String apiUrl = getApiUrl();
 		
-		if (apiUrl == null || apiUrl.isEmpty())
+		if (email == null || email.isEmpty())
 		{
-			log.warn("API URL not configured");
-			return false;
+			return new AuthResult(false, "Please enter your email address");
 		}
 		
-		if (email == null || email.isEmpty() || password == null || password.isEmpty())
+		if (password == null || password.isEmpty())
 		{
-			log.warn("Email or password not configured. Please set your credentials in the plugin settings.");
-			return false;
+			return new AuthResult(false, "Please enter your password");
 		}
 		
 		String url = String.format("%s/auth/login", apiUrl);
@@ -83,12 +119,15 @@ public class FlipSmartApiClient
 		{
 			if (!response.isSuccessful())
 			{
-				log.error("Authentication failed with status code: {}", response.code());
 				if (response.code() == 401)
 				{
-					log.error("Incorrect email or password. Please check your credentials in the plugin settings.");
+					return new AuthResult(false, "Incorrect email or password");
 				}
-				return false;
+				else if (response.code() == 404)
+				{
+					return new AuthResult(false, "Account not found. Please sign up first.");
+				}
+				return new AuthResult(false, "Login failed (error " + response.code() + ")");
 			}
 			
 			String jsonData = response.body().string();
@@ -100,13 +139,95 @@ public class FlipSmartApiClient
 			tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
 			
 			log.info("Successfully authenticated with API");
-			return true;
+			return new AuthResult(true, "Login successful!");
 		}
 		catch (IOException e)
 		{
 			log.error("Failed to authenticate with API: {}", e.getMessage());
-			return false;
+			return new AuthResult(false, "Connection error: " + e.getMessage());
 		}
+	}
+	
+	/**
+	 * Sign up a new account with email and password
+	 * @return AuthResult with success status and message
+	 */
+	public AuthResult signup(String email, String password)
+	{
+		String apiUrl = getApiUrl();
+		
+		if (email == null || email.isEmpty())
+		{
+			return new AuthResult(false, "Please enter your email address");
+		}
+		
+		if (password == null || password.isEmpty())
+		{
+			return new AuthResult(false, "Please enter your password");
+		}
+		
+		if (password.length() < 6)
+		{
+			return new AuthResult(false, "Password must be at least 6 characters");
+		}
+		
+		String url = String.format("%s/auth/signup", apiUrl);
+		
+		// Create JSON body with email and password
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty("email", email);
+		jsonBody.addProperty("password", password);
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+		
+		Request request = new Request.Builder()
+			.url(url)
+			.post(body)
+			.build();
+		
+		try (Response response = httpClient.newCall(request).execute())
+		{
+			if (!response.isSuccessful())
+			{
+				if (response.code() == 400)
+				{
+					return new AuthResult(false, "Email already registered. Please login instead.");
+				}
+				return new AuthResult(false, "Sign up failed (error " + response.code() + ")");
+			}
+			
+			String jsonData = response.body().string();
+			JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
+			jwtToken = tokenResponse.get("access_token").getAsString();
+			
+			// JWT tokens from this API expire in 7 days, but we'll check earlier
+			// Set expiry to 6 days to refresh before actual expiry
+			tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
+			
+			log.info("Successfully signed up and authenticated with API");
+			return new AuthResult(true, "Account created successfully!");
+		}
+		catch (IOException e)
+		{
+			log.error("Failed to sign up with API: {}", e.getMessage());
+			return new AuthResult(false, "Connection error: " + e.getMessage());
+		}
+	}
+	
+	/**
+	 * Check if currently authenticated
+	 */
+	public boolean isAuthenticated()
+	{
+		return jwtToken != null && System.currentTimeMillis() < tokenExpiry;
+	}
+	
+	/**
+	 * Clear the current authentication token
+	 */
+	public void clearAuth()
+	{
+		jwtToken = null;
+		tokenExpiry = 0;
 	}
 	
 	/**
@@ -119,11 +240,7 @@ public class FlipSmartApiClient
 			return;
 		}
 		
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			return;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())
@@ -191,12 +308,7 @@ public class FlipSmartApiClient
 			return cached.getAnalysis();
 		}
 
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			log.warn("API URL not configured");
-			return null;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())
@@ -269,12 +381,7 @@ public class FlipSmartApiClient
 	 */
 	public FlipFinderResponse getFlipRecommendations(Integer cashStack, String flipStyle, int limit)
 	{
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			log.warn("API URL not configured");
-			return null;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())
@@ -357,12 +464,7 @@ public class FlipSmartApiClient
 	 */
 	public void recordTransaction(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem, Integer geSlot, Integer recommendedSellPrice)
 	{
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			log.warn("API URL not configured");
-			return;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())
@@ -458,12 +560,7 @@ public class FlipSmartApiClient
 	 */
 	public ActiveFlipsResponse getActiveFlips()
 	{
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			log.warn("API URL not configured");
-			return null;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())
@@ -536,12 +633,7 @@ public class FlipSmartApiClient
 	 */
 	public boolean dismissActiveFlip(int itemId)
 	{
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			log.warn("API URL not configured");
-			return false;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())
@@ -619,12 +711,7 @@ public class FlipSmartApiClient
 	 */
 	public CompletedFlipsResponse getCompletedFlips(int limit)
 	{
-		String apiUrl = config.apiUrl();
-		if (apiUrl == null || apiUrl.isEmpty())
-		{
-			log.warn("API URL not configured");
-			return null;
-		}
+		String apiUrl = getApiUrl();
 		
 		// Ensure we have a valid token
 		if (!ensureAuthenticated())

@@ -6,12 +6,11 @@ A RuneLite plugin that helps you find profitable items to flip in the Grand Exch
 
 This plugin requires a **Flip Smart account** to use. You'll need to:
 
-1. Create an account on [Flip Smart](https://flipsmart.app) (or your hosted instance)
+1. Create an account on [Flip Smart](https://flipsm.art)
 2. Configure your credentials in the plugin settings:
    - Open RuneLite configuration (wrench icon)
    - Find "Flip Smart" and configure
    - Enter your **Email** and **Password**
-   - Set the **API URL** (default: `http://localhost:8000`)
 
 Without authentication, the plugin will not function.
 
@@ -99,7 +98,7 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 ### Authentication
 - **Email**: Your Flip Smart account email (required)
 - **Password**: Your account password (required)
-- **API URL**: The Flip Smart API URL (required)
+- **API URL Override**: Optional - only set this to override the default production server (https://flipsm.art)
 
 ### Flip Finder
 - **Enable Flip Finder**: Toggle the sidebar panel on/off
