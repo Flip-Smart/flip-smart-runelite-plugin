@@ -27,7 +27,7 @@ public class FlipSmartApiClient
 	
 	// Cache to avoid spamming the API
 	private final Map<Integer, CachedAnalysis> analysisCache = new ConcurrentHashMap<>();
-	private static final long CACHE_DURATION_MS = 60_000; // 1 minute cache
+	private static final long CACHE_DURATION_MS = 180_000; // 3 minute cache
 	
 	// JWT token management
 	private volatile String jwtToken = null;
@@ -494,6 +494,7 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			FlipAnalysis analysis = gson.fromJson(jsonData, FlipAnalysis.class);
+			removedExpiredCacheEntries();
 			analysisCache.put(itemId, new CachedAnalysis(analysis));
 			return analysis;
 		});
@@ -633,6 +634,14 @@ public class FlipSmartApiClient
 	public void invalidateCache(int itemId)
 	{
 		analysisCache.remove(itemId);
+	}
+
+	/**
+	 * Removes expired entries from the cache
+	 */
+	private void removedExpiredCacheEntries()
+	{
+		analysisCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
 	}
 
 	/**

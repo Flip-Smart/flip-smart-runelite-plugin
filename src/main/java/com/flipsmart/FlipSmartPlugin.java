@@ -30,8 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 @PluginDescriptor(
 	name = "Flip Smart",
 	description = "A tool to help with item flipping in the Grand Exchange",
-	tags = {"grand exchange", "flipping", "trading", "money making"},
-	enabledByDefault = false
+	tags = {"grand exchange", "flipping", "trading", "money making"}
 )
 public class FlipSmartPlugin extends Plugin
 {
@@ -206,6 +205,9 @@ public class FlipSmartPlugin extends Plugin
 		
 		// Stop auto-refresh timer
 		stopFlipFinderRefreshTimer();
+		
+		// Clear API client cache
+		apiClient.clearCache();
 	}
 
 	@Subscribe
