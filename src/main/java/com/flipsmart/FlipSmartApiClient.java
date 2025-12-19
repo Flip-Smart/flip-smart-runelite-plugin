@@ -147,7 +147,8 @@ public class FlipSmartApiClient
 						return;
 					}
 
-					String jsonData = response.body() != null ? response.body().string() : "";
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
 					T result = responseHandler.apply(jsonData);
 					future.complete(result);
 				}
@@ -259,7 +260,8 @@ public class FlipSmartApiClient
 						return;
 					}
 					
-					String jsonData = response.body().string();
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
 					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
 					
 					synchronized (authLock)
@@ -369,7 +371,8 @@ public class FlipSmartApiClient
 						return;
 					}
 					
-					String jsonData = response.body().string();
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
 					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
 					
 					synchronized (authLock)
