@@ -607,8 +607,26 @@ public class FlipSmartApiClient
 	 */
 	public CompletableFuture<Boolean> dismissActiveFlipAsync(int itemId)
 	{
+		return dismissActiveFlipAsync(itemId, null);
+	}
+	
+	/**
+	 * Dismiss an active flip asynchronously with RSN support
+	 * @param itemId The item ID to dismiss
+	 * @param rsn Optional RSN to filter by (for multi-account support)
+	 */
+	public CompletableFuture<Boolean> dismissActiveFlipAsync(int itemId, String rsn)
+	{
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/transactions/active-flips/%d", apiUrl, itemId);
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/transactions/active-flips/%d?rsn=%s", apiUrl, itemId, rsn);
+		}
+		else
+		{
+			url = String.format("%s/transactions/active-flips/%d", apiUrl, itemId);
+		}
 		
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)

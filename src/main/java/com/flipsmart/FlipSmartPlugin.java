@@ -218,6 +218,7 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Mark an item as sold - removes it from the collected tracking.
 	 * Called when a sell transaction is recorded.
+	 * Also checks if inventory is empty for this item and auto-closes the active flip.
 	 */
 	public void markItemSold(int itemId)
 	{
@@ -225,6 +226,52 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("Removed item {} from collected tracking (sold)", itemId);
 		}
+		
+		// Check if inventory is empty for this item
+		// If so, auto-close the active flip (handles partial buy orders that were cancelled)
+		int inventoryCount = getInventoryCountForItem(itemId);
+		if (inventoryCount == 0)
+		{
+			log.info("Inventory empty for item {} after sale, auto-closing active flip", itemId);
+			apiClient.dismissActiveFlipAsync(itemId, currentRsn).thenAccept(success ->
+			{
+				if (success)
+				{
+					log.info("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
+					// Refresh the panel to reflect the change
+					if (flipFinderPanel != null)
+					{
+						javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refresh());
+					}
+				}
+			});
+		}
+	}
+	
+	/**
+	 * Get the count of a specific item in the player's inventory
+	 * @param itemId The item ID to check
+	 * @return The quantity of the item in inventory (0 if not found)
+	 */
+	private int getInventoryCountForItem(int itemId)
+	{
+		ItemContainer inventory = client.getItemContainer(93); // 93 = inventory
+		if (inventory == null)
+		{
+			return 0;
+		}
+		
+		int count = 0;
+		Item[] items = inventory.getItems();
+		for (Item item : items)
+		{
+			if (item.getId() == itemId)
+			{
+				count += item.getQuantity();
+			}
+		}
+		
+		return count;
 	}
 	
 	/**
