@@ -19,7 +19,7 @@ import java.util.function.Function;
 public class FlipSmartApiClient
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-	private static final String PRODUCTION_API_URL = "https://flipsm.art";
+	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;

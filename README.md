@@ -98,7 +98,7 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 ### Authentication
 - **Email**: Your Flip Smart account email (required)
 - **Password**: Your account password (required)
-- **API URL Override**: Optional - only set this to override the default production server (https://flipsm.art)
+- **API URL Override**: Optional - only set this to override the default production server (https://api.flipsm.art)
 
 ### Flip Finder
 - **Enable Flip Finder**: Toggle the sidebar panel on/off
