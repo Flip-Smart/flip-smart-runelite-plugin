@@ -1,5 +1,7 @@
 package com.flipsmart;
 
+import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -23,6 +25,8 @@ import net.runelite.client.ui.overlay.OverlayManager;
 import javax.inject.Inject;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.lang.reflect.Type;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -61,6 +65,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private ConfigManager configManager;
 
+	@Inject
+	private Gson gson;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -83,10 +90,25 @@ public class FlipSmartPlugin extends Plugin
 	// Track recommended prices from flip finder (item_id -> recommended_sell_price)
 	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
 
+	// Config keys for persisting offer state
+	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
+	
+	// Flag to track if we've synced offline fills on this login
+	private boolean offlineSyncCompleted = false;
+	
+	// Current RSN (set on login)
+	@Getter
+	private String currentRsn = null;
+	
+	// Track items collected from GE in current session (waiting to be sold)
+	// These should show as active flips even though they're no longer in GE slots
+	private final java.util.Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
+
 	/**
-	 * Helper class to track GE offers
+	 * Helper class to track GE offers (serializable for persistence)
 	 */
-	private static class TrackedOffer
+	public static class TrackedOffer
 	{
 		int itemId;
 		String itemName;
@@ -94,6 +116,9 @@ public class FlipSmartPlugin extends Plugin
 		int totalQuantity;
 		int price;
 		int previousQuantitySold;
+
+		// Default constructor for Gson deserialization
+		TrackedOffer() {}
 
 		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 		{
@@ -145,6 +170,61 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		return pendingOrders;
+	}
+	
+	/**
+	 * Get the set of item IDs currently in GE buy slots.
+	 */
+	public java.util.Set<Integer> getCurrentGEBuyItemIds()
+	{
+		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.isBuy)
+			{
+				itemIds.add(offer.itemId);
+			}
+		}
+		
+		return itemIds;
+	}
+	
+	/**
+	 * Get all active flip item IDs - items that should show as active flips.
+	 * This includes:
+	 * 1. Items currently in GE buy slots (pending or filled)
+	 * 2. Items collected from GE in this session (waiting to be sold)
+	 */
+	public java.util.Set<Integer> getActiveFlipItemIds()
+	{
+		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		
+		// Add items currently in GE buy slots
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.isBuy)
+			{
+				itemIds.add(offer.itemId);
+			}
+		}
+		
+		// Add items collected from GE (waiting to be sold)
+		itemIds.addAll(collectedItemIds);
+		
+		return itemIds;
+	}
+	
+	/**
+	 * Mark an item as sold - removes it from the collected tracking.
+	 * Called when a sell transaction is recorded.
+	 */
+	public void markItemSold(int itemId)
+	{
+		if (collectedItemIds.remove(itemId))
+		{
+			log.debug("Removed item {} from collected tracking (sold)", itemId);
+		}
 	}
 	
 	/**
@@ -219,7 +299,15 @@ public class FlipSmartPlugin extends Plugin
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
 			lastLoginTick = client.getTickCount();
+			offlineSyncCompleted = false;
+			collectedItemIds.clear(); // Reset collected tracking on login
 			log.debug("Login state change detected, setting lastLoginTick to {}", lastLoginTick);
+		}
+		
+		// Persist offer state when logging out
+		if (gameState == GameState.LOGIN_SCREEN)
+		{
+			persistOfferState();
 		}
 		
 		if (gameState == GameState.LOGGED_IN)
@@ -228,6 +316,15 @@ public class FlipSmartPlugin extends Plugin
 			syncRSN();
 			updateCashStack();
 			
+			// Schedule offline sync after a delay to ensure all GE events have been processed
+			// This must run AFTER syncRSN() so we have the correct RSN for the config key
+			if (!offlineSyncCompleted)
+			{
+				javax.swing.Timer syncTimer = new javax.swing.Timer(2000, e -> syncOfflineFills());
+				syncTimer.setRepeats(false);
+				syncTimer.start();
+			}
+			
 			// Refresh flip finder with current cash stack
 			if (flipFinderPanel != null)
 			{
@@ -235,10 +332,182 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 	}
+	
+	/**
+	 * Persist the current GE offer state to config for offline tracking.
+	 * Called when the player logs out.
+	 * Uses RSN-specific key to support multiple accounts.
+	 */
+	private void persistOfferState()
+	{
+		String key = getPersistedOffersKey();
+		
+		if (trackedOffers.isEmpty())
+		{
+			configManager.unsetConfiguration(CONFIG_GROUP, key);
+			log.debug("No tracked offers to persist for {}", currentRsn);
+			return;
+		}
+		
+		try
+		{
+			// Convert to a regular HashMap for serialization
+			Map<Integer, TrackedOffer> offersToSave = new HashMap<>(trackedOffers);
+			String json = gson.toJson(offersToSave);
+			configManager.setConfiguration(CONFIG_GROUP, key, json);
+			log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), currentRsn);
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to persist offer state for {}: {}", currentRsn, e.getMessage());
+		}
+	}
+	
+	/**
+	 * Load previously persisted offer state from config.
+	 * Called during login burst to compare with current state.
+	 * Uses RSN-specific key to support multiple accounts.
+	 */
+	private Map<Integer, TrackedOffer> loadPersistedOfferState()
+	{
+		String key = getPersistedOffersKey();
+		
+		try
+		{
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				return new HashMap<>();
+			}
+			
+			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
+			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
+			log.debug("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, currentRsn);
+			return offers != null ? offers : new HashMap<>();
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load persisted offer state for {}: {}", currentRsn, e.getMessage());
+			return new HashMap<>();
+		}
+	}
+	
+	/**
+	 * Sync fills that occurred while offline by comparing persisted state to current state.
+	 * Should be called after all login burst offer events have been processed.
+	 */
+	private void syncOfflineFills()
+	{
+		if (offlineSyncCompleted)
+		{
+			return;
+		}
+		offlineSyncCompleted = true;
+		
+		Map<Integer, TrackedOffer> persistedOffers = loadPersistedOfferState();
+		if (persistedOffers.isEmpty())
+		{
+			log.debug("No persisted offers to compare for offline sync");
+			return;
+		}
+		
+		log.info("Checking {} persisted offers against {} current offers for offline fills",
+			persistedOffers.size(), trackedOffers.size());
+		
+		for (Map.Entry<Integer, TrackedOffer> entry : trackedOffers.entrySet())
+		{
+			int slot = entry.getKey();
+			TrackedOffer currentOffer = entry.getValue();
+			TrackedOffer persistedOffer = persistedOffers.get(slot);
+			
+			if (persistedOffer == null)
+			{
+				// New offer placed while offline (unlikely but possible)
+				continue;
+			}
+			
+			// Check if the same item in the same slot
+			if (persistedOffer.itemId != currentOffer.itemId)
+			{
+				log.debug("Slot {} has different item (was {}, now {}), skipping offline sync for this slot",
+					slot, persistedOffer.itemId, currentOffer.itemId);
+				continue;
+			}
+			
+			// Check if more items were sold while offline
+			int offlineFills = currentOffer.previousQuantitySold - persistedOffer.previousQuantitySold;
+			if (offlineFills > 0)
+			{
+				log.info("Detected {} offline fills for {} (slot {}): {} -> {}",
+					offlineFills,
+					currentOffer.itemName,
+					slot,
+					persistedOffer.previousQuantitySold,
+					currentOffer.previousQuantitySold);
+				
+				// Record the offline transaction
+				Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
+				
+				apiClient.recordTransactionAsync(
+					currentOffer.itemId,
+					currentOffer.itemName,
+					currentOffer.isBuy,
+					offlineFills,
+					currentOffer.price,
+					slot,
+					recommendedSellPrice,
+					currentRsn
+				);
+			}
+		}
+		
+		// Check for offers that completed (became empty) while offline
+		for (Map.Entry<Integer, TrackedOffer> entry : persistedOffers.entrySet())
+		{
+			int slot = entry.getKey();
+			TrackedOffer persistedOffer = entry.getValue();
+			
+			if (!trackedOffers.containsKey(slot))
+			{
+				// This slot is now empty - the offer completed while offline
+				int remainingQuantity = persistedOffer.totalQuantity - persistedOffer.previousQuantitySold;
+				if (remainingQuantity > 0)
+				{
+					log.info("Detected completed offer while offline for {} (slot {}): {} remaining items filled",
+						persistedOffer.itemName, slot, remainingQuantity);
+					
+					Integer recommendedSellPrice = persistedOffer.isBuy ? recommendedPrices.get(persistedOffer.itemId) : null;
+					
+					apiClient.recordTransactionAsync(
+						persistedOffer.itemId,
+						persistedOffer.itemName,
+						persistedOffer.isBuy,
+						remainingQuantity,
+						persistedOffer.price,
+						slot,
+						recommendedSellPrice,
+						currentRsn
+					);
+				}
+			}
+		}
+		
+		// Clear persisted state after sync (RSN-specific key)
+		configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
+		log.info("Offline sync completed for {}", currentRsn);
+		
+		// Refresh the flip finder panel to show updated data after offline sync
+		if (flipFinderPanel != null)
+		{
+			javax.swing.Timer refreshTimer = new javax.swing.Timer(1000, e -> flipFinderPanel.refresh());
+			refreshTimer.setRepeats(false);
+			refreshTimer.start();
+		}
+	}
 
 	
 	/**
-	 * Sync the player's RSN with the API
+	 * Sync the player's RSN with the API and store locally
 	 */
 	private void syncRSN()
 	{
@@ -250,9 +519,22 @@ public class FlipSmartPlugin extends Plugin
 		String rsn = client.getLocalPlayer().getName();
 		if (rsn != null && !rsn.isEmpty())
 		{
+			currentRsn = rsn;
 			log.debug("Syncing RSN: {}", rsn);
 			apiClient.updateRSN(rsn);
 		}
+	}
+	
+	/**
+	 * Get the RSN-specific config key for persisted offers
+	 */
+	private String getPersistedOffersKey()
+	{
+		if (currentRsn == null || currentRsn.isEmpty())
+		{
+			return PERSISTED_OFFERS_KEY_PREFIX + "unknown";
+		}
+		return PERSISTED_OFFERS_KEY_PREFIX + currentRsn;
 	}
 
 	@Subscribe
@@ -304,6 +586,9 @@ public class FlipSmartPlugin extends Plugin
 			
 			// Track the current state so future changes are detected correctly
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
+			
+			// Note: offline sync is now scheduled from LOGGED_IN state change
+			// after syncRSN() to ensure correct RSN-specific config key
 			return;
 		}
 
@@ -343,7 +628,8 @@ public class FlipSmartPlugin extends Plugin
 						newQuantity,
 						pricePerItem,
 						slot,
-						recommendedSellPrice
+						recommendedSellPrice,
+						currentRsn
 					);
 				}
 				
@@ -369,7 +655,23 @@ public class FlipSmartPlugin extends Plugin
 		// Handle empty state (offer collected/cleared)
 		if (state == GrandExchangeOfferState.EMPTY)
 		{
-			trackedOffers.remove(slot);
+			TrackedOffer collectedOffer = trackedOffers.remove(slot);
+			
+			// Track collected buy offers so they still show as active flips until sold
+			if (collectedOffer != null && collectedOffer.isBuy && collectedOffer.previousQuantitySold > 0)
+			{
+				log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
+					collectedOffer.itemName, collectedOffer.previousQuantitySold);
+				collectedItemIds.add(collectedOffer.itemId);
+				
+				// Refresh panel to show updated state
+				if (flipFinderPanel != null)
+				{
+					javax.swing.Timer refreshTimer = new javax.swing.Timer(500, e -> flipFinderPanel.refresh());
+					refreshTimer.setRepeats(false);
+					refreshTimer.start();
+				}
+			}
 			return;
 		}
 
@@ -418,13 +720,20 @@ public class FlipSmartPlugin extends Plugin
 					newQuantity,
 					pricePerItem,
 					slot,
-					recommendedSellPrice
+					recommendedSellPrice,
+					currentRsn
 				);
 				
 				// Clear recommended price after recording (only for buys)
 				if (isBuy && recommendedSellPrice != null)
 				{
 					recommendedPrices.remove(itemId);
+				}
+				
+				// If this was a sell, remove from collected tracking
+				if (!isBuy)
+				{
+					markItemSold(itemId);
 				}
 
 				// Refresh active flips panel if it exists

@@ -681,7 +681,9 @@ public class FlipFinderPanel extends PluginPanel
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
 
-		apiClient.getActiveFlipsAsync().thenAccept(response ->
+		// Pass current RSN to filter data for the logged-in account
+		String rsn = plugin.getCurrentRsn();
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
@@ -694,7 +696,18 @@ public class FlipFinderPanel extends PluginPanel
 				currentActiveFlips.clear();
 				if (response.getActiveFlips() != null)
 				{
-					currentActiveFlips.addAll(response.getActiveFlips());
+					// Filter active flips to only show:
+					// 1. Items currently in GE buy slots
+					// 2. Items collected from GE in this session (waiting to be sold)
+					// This prevents showing old stale data while keeping recently collected items visible
+					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+					for (ActiveFlip flip : response.getActiveFlips())
+					{
+						if (activeItemIds.contains(flip.getItemId()))
+						{
+							currentActiveFlips.add(flip);
+						}
+					}
 				}
 
 				// Get pending orders from plugin
@@ -709,7 +722,18 @@ public class FlipFinderPanel extends PluginPanel
 				// Update status label with active flips info
 				if (!currentActiveFlips.isEmpty())
 				{
-					updateActiveFlipsStatus(response);
+					// Update with filtered count
+					int itemCount = currentActiveFlips.size();
+					int invested = currentActiveFlips.stream()
+						.mapToInt(ActiveFlip::getTotalInvested)
+						.sum();
+					if (tabbedPane.getSelectedIndex() == 1)
+					{
+						statusLabel.setText(String.format("%d active %s | %s invested",
+							itemCount,
+							itemCount == 1 ? "flip" : "flips",
+							formatGP(invested)));
+					}
 				}
 				else if (!pendingOrders.isEmpty())
 				{
@@ -752,8 +776,9 @@ public class FlipFinderPanel extends PluginPanel
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
 
-		// Fetch last 50 completed flips
-		apiClient.getCompletedFlipsAsync(50).thenAccept(response ->
+		// Fetch last 50 completed flips for current RSN
+		String rsn = plugin.getCurrentRsn();
+		apiClient.getCompletedFlipsAsync(50, rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
