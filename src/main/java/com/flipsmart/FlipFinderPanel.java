@@ -1372,16 +1372,17 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
 
-		// Row 1: Quantity (remaining/total) and Buy Price (exact price for easy GE input)
+		// Row 1: Quantity (sold/total) and Buy Price (exact price for easy GE input)
 		String qtyText;
-		if (flip.getOriginalQuantity() > 0 && flip.getOriginalQuantity() != flip.getTotalQuantity())
+		if (flip.getOriginalQuantity() > 0)
 		{
-			// Show remaining/total format when some items have been sold
-			qtyText = String.format("Qty: %d/%d", flip.getTotalQuantity(), flip.getOriginalQuantity());
+			// Show sold/total format (e.g., "0/200" means 0 sold out of 200)
+			int soldQuantity = flip.getOriginalQuantity() - flip.getTotalQuantity();
+			qtyText = String.format("Qty: %d/%d", soldQuantity, flip.getOriginalQuantity());
 		}
 		else
 		{
-			// Show just the quantity if nothing sold yet or original not available
+			// Fallback if original not available
 			qtyText = String.format(FORMAT_QTY, flip.getTotalQuantity());
 		}
 		JLabel qtyLabel = new JLabel(qtyText);
