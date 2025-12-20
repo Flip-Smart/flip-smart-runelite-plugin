@@ -319,7 +319,8 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		recommendedScrollPane.setBorder(BorderFactory.createEmptyBorder());
 		recommendedScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		recommendedScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+		// Always show scrollbar so layout always accounts for it
+		recommendedScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
 
 		// Active flips list container
 		activeFlipsListContainer.setLayout(new BoxLayout(activeFlipsListContainer, BoxLayout.Y_AXIS));
@@ -330,7 +331,8 @@ public class FlipFinderPanel extends PluginPanel
 		activeFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		activeFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
 		activeFlipsScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		activeFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+		// Always show scrollbar so layout always accounts for it
+		activeFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
 
 		// Completed flips list container
 		completedFlipsListContainer.setLayout(new BoxLayout(completedFlipsListContainer, BoxLayout.Y_AXIS));
@@ -341,7 +343,8 @@ public class FlipFinderPanel extends PluginPanel
 		completedFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		completedFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
 		completedFlipsScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		completedFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
+		// Always show scrollbar so layout always accounts for it
+		completedFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
 
 		// Create tabbed pane with custom UI for full-width tabs
 		tabbedPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -889,6 +892,8 @@ public class FlipFinderPanel extends PluginPanel
 
 		PluginErrorPanel errorPanel = new PluginErrorPanel();
 		errorPanel.setContent("Completed Flips", message);
+		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		completedFlipsListContainer.add(errorPanel);
 
 		completedFlipsListContainer.revalidate();
@@ -905,7 +910,10 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel emptyPanel = new JPanel();
 		emptyPanel.setLayout(new BoxLayout(emptyPanel, BoxLayout.Y_AXIS));
 		emptyPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		emptyPanel.setBorder(new EmptyBorder(60, 20, 60, 20));
+		emptyPanel.setBorder(new EmptyBorder(60, 15, 60, 15));
+		// Ensure panel fills width in BoxLayout
+		emptyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		emptyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
 		JLabel titleLabel = new JLabel("No completed flips");
 		titleLabel.setForeground(Color.WHITE);
@@ -913,9 +921,9 @@ public class FlipFinderPanel extends PluginPanel
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		JLabel instructionLabel = new JLabel("<html><center>Complete your first flip to see it here!<br>Buy and sell items to track your profits</center></html>");
+		JLabel instructionLabel = new JLabel("<html><center>Complete your first flip to see<br>it here! Buy and sell items to<br>track your profits</center></html>");
 		instructionLabel.setForeground(new Color(180, 180, 180));
-		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 13));
+		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -1064,6 +1072,8 @@ public class FlipFinderPanel extends PluginPanel
 
 		PluginErrorPanel errorPanel = new PluginErrorPanel();
 		errorPanel.setContent("Flip Finder", message);
+		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		recommendedListContainer.add(errorPanel);
 
 		recommendedListContainer.revalidate();
@@ -1079,6 +1089,8 @@ public class FlipFinderPanel extends PluginPanel
 
 		PluginErrorPanel errorPanel = new PluginErrorPanel();
 		errorPanel.setContent("Active Flips", message);
+		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		activeFlipsListContainer.add(errorPanel);
 
 		activeFlipsListContainer.revalidate();
@@ -1095,7 +1107,10 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel emptyPanel = new JPanel();
 		emptyPanel.setLayout(new BoxLayout(emptyPanel, BoxLayout.Y_AXIS));
 		emptyPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		emptyPanel.setBorder(new EmptyBorder(60, 20, 60, 20));
+		emptyPanel.setBorder(new EmptyBorder(60, 15, 60, 15));
+		// Ensure panel fills width in BoxLayout
+		emptyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		emptyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
 		// Main message
 		JLabel titleLabel = new JLabel("No active flips");
@@ -1104,10 +1119,10 @@ public class FlipFinderPanel extends PluginPanel
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		// Instructions
-		JLabel instructionLabel = new JLabel("<html><center>Buy items from the Recommended tab<br>to start tracking your flips</center></html>");
+		// Instructions - use smaller text to fit better
+		JLabel instructionLabel = new JLabel("<html><center>Buy items from the Recommended<br>tab to start tracking your flips</center></html>");
 		instructionLabel.setForeground(new Color(180, 180, 180));
-		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 13));
+		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -1149,17 +1164,18 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel panel = new JPanel();
 		panel.setLayout(new BorderLayout());
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
+		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
 		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		// Ensure panel doesn't exceed container width
+		// Ensure panel fills width in BoxLayout
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
 		// Item name panel
 		JPanel topPanel = new JPanel(new BorderLayout());
 		topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		// Item icon and name
-		JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Use BorderLayout for namePanel to prevent overflow
+		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
 		namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
 		// Get item image
@@ -1188,10 +1204,10 @@ public class FlipFinderPanel extends PluginPanel
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 14));
 
-		namePanel.add(iconLabel);
-		namePanel.add(nameLabel);
+		namePanel.add(iconLabel, BorderLayout.WEST);
+		namePanel.add(nameLabel, BorderLayout.CENTER);
 
-		topPanel.add(namePanel, BorderLayout.WEST);
+		topPanel.add(namePanel, BorderLayout.CENTER);
 
 		// Details panel
 		JPanel detailsPanel = new JPanel();
@@ -1677,13 +1693,16 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
 		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+		// Ensure panel fills width in BoxLayout
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
 		// Top section: Item icon and name
 		JPanel topPanel = new JPanel(new BorderLayout());
 		topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Use BorderLayout for namePanel to prevent overflow
+		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
 		namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
 		// Get item image
@@ -1708,14 +1727,14 @@ public class FlipFinderPanel extends PluginPanel
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
-		namePanel.add(iconLabel);
-		namePanel.add(nameLabel);
-		topPanel.add(namePanel, BorderLayout.WEST);
+		namePanel.add(iconLabel, BorderLayout.WEST);
+		namePanel.add(nameLabel, BorderLayout.CENTER);
+		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		// Details section with market data
-		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 5, 2));
+		// Details section with market data - use smaller padding and font
+		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 2, 1));
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
+		detailsPanel.setBorder(new EmptyBorder(3, 32, 0, 0));
 
 		// Row 1: Quantity (sold/total) and Buy Price (exact price for easy GE input)
 		String qtyText;
@@ -1732,30 +1751,30 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", formatGPExact(flip.getAverageBuyPrice())));
 		buyPriceLabel.setForeground(new Color(255, 120, 120)); // Light red for buy
-		buyPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		buyPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		// Row 2: Total Invested and Target Sell Price (exact price for GE input)
 		JLabel investedLabel = new JLabel(String.format("Invested: %s", formatGP(flip.getTotalInvested())));
 		investedLabel.setForeground(new Color(255, 200, 100)); // Gold
-		investedLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
+		investedLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 10));
 
 		// Fetch current market price for this item
-		JLabel sellPriceLabel = new JLabel("Sell: Loading...");
+		JLabel sellPriceLabel = new JLabel("Sell: ...");
 		sellPriceLabel.setForeground(new Color(120, 255, 120)); // Light green for sell
-		sellPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		sellPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		// Row 3: Potential Profit and ROI
-		JLabel profitLabel = new JLabel("Profit: Loading...");
+		JLabel profitLabel = new JLabel("Profit: ...");
 		profitLabel.setForeground(Color.LIGHT_GRAY);
-		profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
-		JLabel roiLabel = new JLabel("ROI: Loading...");
+		JLabel roiLabel = new JLabel("ROI: ...");
 		roiLabel.setForeground(Color.LIGHT_GRAY);
-		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		detailsPanel.add(qtyLabel);
 		detailsPanel.add(buyPriceLabel);
@@ -1939,13 +1958,16 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setLayout(new BorderLayout());
 		panel.setBackground(new Color(55, 55, 65)); // Slightly different color for pending
 		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+		// Ensure panel fills width in BoxLayout
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
 		// Top section: Item icon and name
 		JPanel topPanel = new JPanel(new BorderLayout());
 		topPanel.setBackground(new Color(55, 55, 65));
 
-		JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Use BorderLayout for namePanel to prevent overflow
+		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
 		namePanel.setBackground(new Color(55, 55, 65));
 
 		// Get item image
@@ -1970,14 +1992,14 @@ public class FlipFinderPanel extends PluginPanel
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
-		namePanel.add(iconLabel);
-		namePanel.add(nameLabel);
-		topPanel.add(namePanel, BorderLayout.WEST);
+		namePanel.add(iconLabel, BorderLayout.WEST);
+		namePanel.add(nameLabel, BorderLayout.CENTER);
+		topPanel.add(namePanel, BorderLayout.CENTER);
 
 		// Details section - same grid layout as active flips
-		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 5, 2));
+		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 2, 1));
 		detailsPanel.setBackground(new Color(55, 55, 65));
-		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
+		detailsPanel.setBorder(new EmptyBorder(3, 32, 0, 0));
 
 		// Row 1: Quantity (filled/total) and Offer Price
 		String qtyText;
@@ -1993,11 +2015,11 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		JLabel offerLabel = new JLabel(String.format("Offer: %s", formatGPExact(pending.pricePerItem)));
 		offerLabel.setForeground(new Color(255, 120, 120)); // Light red like buy prices
-		offerLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		offerLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		// Row 2: Invested (actual filled amount) and Target Sell
 		int actualInvestment = pending.quantityFilled * pending.pricePerItem;
@@ -2013,7 +2035,7 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		JLabel investedLabel = new JLabel(investedText);
 		investedLabel.setForeground(pending.quantityFilled > 0 ? new Color(255, 200, 100) : new Color(200, 200, 200));
-		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		JLabel sellLabel = new JLabel();
 		if (pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0)
@@ -2026,7 +2048,7 @@ public class FlipFinderPanel extends PluginPanel
 			sellLabel.setText("Sell: --");
 			sellLabel.setForeground(Color.LIGHT_GRAY);
 		}
-		sellLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		sellLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		// Row 3: Status and Expected ROI
 		String statusText;
@@ -2035,18 +2057,18 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			// Partially filled - show progress
 			int percent = (pending.quantityFilled * 100) / pending.quantity;
-			statusText = String.format("GE Slot %d: Filling (%d%%)", pending.slot + 1, percent);
+			statusText = String.format("Slot %d: %d%%", pending.slot + 1, percent);
 			statusColor = new Color(120, 200, 255); // Light blue for in-progress
 		}
 		else
 		{
 			// Waiting for first fill
-			statusText = String.format("GE Slot %d: Waiting", pending.slot + 1);
+			statusText = String.format("Slot %d: Waiting", pending.slot + 1);
 			statusColor = new Color(180, 180, 180);
 		}
 		JLabel slotStatusLabel = new JLabel(statusText);
 		slotStatusLabel.setForeground(statusColor);
-		slotStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		slotStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		JLabel roiLabel = new JLabel();
 		if (pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0)
@@ -2062,7 +2084,7 @@ public class FlipFinderPanel extends PluginPanel
 			roiLabel.setText("ROI: --");
 			roiLabel.setForeground(Color.LIGHT_GRAY);
 		}
-		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 		detailsPanel.add(qtyLabel);
 		detailsPanel.add(offerLabel);
@@ -2136,13 +2158,16 @@ public class FlipFinderPanel extends PluginPanel
 			new Color(60, 40, 40);  // Dark red for loss
 		panel.setBackground(backgroundColor);
 		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+		// Ensure panel fills width in BoxLayout
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
 		// Top section: Item icon and name
 		JPanel topPanel = new JPanel(new BorderLayout());
 		topPanel.setBackground(backgroundColor);
 
-		JPanel namePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Use BorderLayout for namePanel to prevent overflow
+		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
 		namePanel.setBackground(backgroundColor);
 
 		// Get item image
@@ -2167,14 +2192,14 @@ public class FlipFinderPanel extends PluginPanel
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
-		namePanel.add(iconLabel);
-		namePanel.add(nameLabel);
-		topPanel.add(namePanel, BorderLayout.WEST);
+		namePanel.add(iconLabel, BorderLayout.WEST);
+		namePanel.add(nameLabel, BorderLayout.CENTER);
+		topPanel.add(namePanel, BorderLayout.CENTER);
 
 		// Details section with profit/loss info
-		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 5, 2));
+		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 4, 2));
 		detailsPanel.setBackground(backgroundColor);
-		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
+		detailsPanel.setBorder(new EmptyBorder(3, 36, 0, 0));
 
 		// Row 1: Quantity and Buy Price
 		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, flip.getQuantity()));
