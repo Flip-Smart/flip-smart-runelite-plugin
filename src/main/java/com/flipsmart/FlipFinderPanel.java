@@ -25,6 +25,10 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String FORMAT_QTY = "Qty: %d";
 	private static final String FORMAT_SELL = "Sell: %s";
 	private static final String FORMAT_ROI = "ROI: %.1f%%";
+	
+	// Colors for focused/selected items
+	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
+	private static final Color COLOR_FOCUSED_BG = new Color(0, 60, 70);
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
@@ -56,6 +60,12 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton loginButton;
 	private JButton signupButton;
 	private boolean isAuthenticated = false;
+	
+	// EasyFlip focus tracking
+	private FocusedFlip currentFocus = null;
+	private JPanel currentFocusedPanel = null;
+	private int currentFocusedItemId = -1;
+	private java.util.function.Consumer<FocusedFlip> onFocusChanged;
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -675,6 +685,9 @@ public class FlipFinderPanel extends PluginPanel
 				updateStatusLabel(response);
 				populateRecommendations(response.getRecommendations());
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
+				
+				// Validate focus after refresh in case focused item is no longer recommended
+				validateFocus();
 			});
 		}).exceptionally(throwable ->
 		{
@@ -775,6 +788,9 @@ public class FlipFinderPanel extends PluginPanel
 				// Display both active flips and pending orders
 				displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
 				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+				
+				// Validate focus after refresh in case focused item is no longer active
+				validateFocus();
 			});
 		}).exceptionally(throwable ->
 		{
@@ -960,29 +976,37 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		
 		// Then show active flips (items collected, waiting to sell)
-		// Only skip an active flip if there's a pending order that appears to be the SAME transaction
-		// (matching itemId AND the pending order's filled quantity accounts for all the active flip quantity)
+		// Skip active flips if pending orders already account for those items (still in GE slots)
 		for (ActiveFlip flip : activeFlips)
 		{
 			java.util.List<FlipSmartPlugin.PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
 			
 			boolean shouldShow = true;
-			if (matchingPending != null)
+			if (matchingPending != null && !matchingPending.isEmpty())
 			{
-				// Check if any pending order fully accounts for this active flip
-				// This happens when the pending order is the source of the active flip data
+				// Sum up ALL filled quantities from pending orders for this item
+				// This handles multiple buy orders for the same item correctly
+				int totalPendingFilled = 0;
 				for (FlipSmartPlugin.PendingOrder pending : matchingPending)
 				{
-					// If the pending order's filled quantity matches the active flip's remaining quantity
-					// AND the prices are similar, it's likely the same transaction - skip to avoid duplicate
-					if (pending.quantityFilled == flip.getTotalQuantity() && 
-						Math.abs(pending.pricePerItem - flip.getAverageBuyPrice()) <= 1)
-					{
-						shouldShow = false;
-						log.debug("Skipping active flip {} - matches pending order in slot {} (qty: {}, price: {})",
-							flip.getItemName(), pending.slot, pending.quantityFilled, pending.pricePerItem);
-						break;
-					}
+					totalPendingFilled += pending.quantityFilled;
+				}
+				
+				// If pending orders account for ALL or MORE of the active flip quantity,
+				// skip the active flip to avoid showing duplicates
+				// (items are still in GE slots, not collected yet)
+				if (totalPendingFilled >= flip.getTotalQuantity())
+				{
+					shouldShow = false;
+					log.debug("Skipping active flip {} - pending orders account for {} items (flip has {})",
+						flip.getItemName(), totalPendingFilled, flip.getTotalQuantity());
+				}
+				else
+				{
+					// Some items were collected but pending orders still exist
+					// This could happen if you collected partial fills and have more pending
+					log.debug("Showing active flip {} - {} collected items not in pending ({} pending filled)",
+						flip.getItemName(), flip.getTotalQuantity() - totalPendingFilled, totalPendingFilled);
 				}
 			}
 			
@@ -1214,7 +1238,7 @@ public class FlipFinderPanel extends PluginPanel
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
-		// Add click listener to expand/show more details
+		// Add click listener for focus selection and expand/show more details
 		panel.addMouseListener(new MouseAdapter()
 		{
 			private boolean expanded = false;
@@ -1222,62 +1246,109 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				if (!expanded)
+				// Left click: set as EasyFlip focus
+				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1)
 				{
-					// Add additional details
-					JPanel extraDetails = new JPanel();
-					extraDetails.setLayout(new BoxLayout(extraDetails, BoxLayout.Y_AXIS));
-					extraDetails.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					extraDetails.setBorder(new EmptyBorder(5, 0, 0, 0));
-
-					JLabel liquidityLabel = new JLabel(String.format("Liquidity: %.0f (%s) | %.0f/hr",
-						rec.getLiquidityScore(),
-						rec.getLiquidityRating(),
-						rec.getVolumePerHour()));
-					liquidityLabel.setForeground(Color.CYAN);
-					liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
-
-					JLabel riskLabel = new JLabel(String.format("Risk: %.0f (%s)",
-						rec.getRiskScore(),
-						rec.getRiskRating()));
-					riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
-					riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
-
-					extraDetails.add(liquidityLabel);
-					extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));
-					extraDetails.add(riskLabel);
-
-					panel.add(extraDetails, BorderLayout.SOUTH);
-					expanded = true;
+					setFocus(rec, panel);
+					return;
 				}
-				else
+				
+				// Right click or double click: expand details
+				if (e.getButton() == MouseEvent.BUTTON3 || e.getClickCount() == 2)
 				{
-					// Remove extra details
-					if (panel.getComponentCount() > 2)
+					if (!expanded)
 					{
-						panel.remove(2);
-						expanded = false;
-					}
-				}
+						// Add additional details
+						JPanel extraDetails = new JPanel();
+						extraDetails.setLayout(new BoxLayout(extraDetails, BoxLayout.Y_AXIS));
+						extraDetails.setBackground(panel.getBackground());
+						extraDetails.setBorder(new EmptyBorder(5, 0, 0, 0));
 
-				panel.revalidate();
-				panel.repaint();
+						JLabel liquidityLabel = new JLabel(String.format("Liquidity: %.0f (%s) | %.0f/hr",
+							rec.getLiquidityScore(),
+							rec.getLiquidityRating(),
+							rec.getVolumePerHour()));
+						liquidityLabel.setForeground(Color.CYAN);
+						liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+
+						JLabel riskLabel = new JLabel(String.format("Risk: %.0f (%s)",
+							rec.getRiskScore(),
+							rec.getRiskRating()));
+						riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
+						riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+						
+						// Add focus hint
+						JLabel focusHint = new JLabel("Click to focus • Press hotkey to auto-fill GE");
+						focusHint.setForeground(COLOR_FOCUSED_BORDER);
+						focusHint.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+
+						extraDetails.add(liquidityLabel);
+						extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));
+						extraDetails.add(riskLabel);
+						extraDetails.add(Box.createRigidArea(new Dimension(0, 4)));
+						extraDetails.add(focusHint);
+
+						panel.add(extraDetails, BorderLayout.SOUTH);
+						expanded = true;
+					}
+					else
+					{
+						// Remove extra details
+						if (panel.getComponentCount() > 2)
+						{
+							panel.remove(2);
+							expanded = false;
+						}
+					}
+
+					panel.revalidate();
+					panel.repaint();
+				}
 			}
 
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				panel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+				if (currentFocus == null || currentFocus.getItemId() != rec.getItemId())
+				{
+					panel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+					updateChildBackgrounds(panel, ColorScheme.DARKER_GRAY_HOVER_COLOR);
+				}
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				if (currentFocus == null || currentFocus.getItemId() != rec.getItemId())
+				{
+					panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					updateChildBackgrounds(panel, ColorScheme.DARKER_GRAY_COLOR);
+				}
 			}
 		});
 
 		return panel;
+	}
+	
+	/**
+	 * Update child panel backgrounds
+	 */
+	private void updateChildBackgrounds(JPanel panel, Color color)
+	{
+		for (Component comp : panel.getComponents())
+		{
+			if (comp instanceof JPanel)
+			{
+				((JPanel) comp).setBackground(color);
+				for (Component child : ((JPanel) comp).getComponents())
+				{
+					if (child instanceof JPanel)
+					{
+						((JPanel) child).setBackground(color);
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -1344,6 +1415,256 @@ public class FlipFinderPanel extends PluginPanel
 	public List<FlipRecommendation> getCurrentRecommendations()
 	{
 		return new ArrayList<>(currentRecommendations);
+	}
+	
+	/**
+	 * Get the current active flips
+	 */
+	public List<ActiveFlip> getCurrentActiveFlips()
+	{
+		return new ArrayList<>(currentActiveFlips);
+	}
+	
+	/**
+	 * Check if an item exists in recommendations or active flips
+	 */
+	public boolean hasFlipForItem(int itemId)
+	{
+		// Check recommendations
+		for (FlipRecommendation rec : currentRecommendations)
+		{
+			if (rec.getItemId() == itemId)
+			{
+				return true;
+			}
+		}
+		// Check active flips
+		for (ActiveFlip flip : currentActiveFlips)
+		{
+			if (flip.getItemId() == itemId)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/**
+	 * Validate the current focus - clear it if the flip no longer exists
+	 */
+	public void validateFocus()
+	{
+		if (currentFocusedItemId <= 0)
+		{
+			return;
+		}
+		
+		// Check if the focused item still exists in recommendations or active flips
+		if (!hasFlipForItem(currentFocusedItemId))
+		{
+			log.debug("Clearing EasyFlip focus - item {} no longer in recommendations or active flips", currentFocusedItemId);
+			clearFocus();
+		}
+	}
+	
+	/**
+	 * Set the callback for when the focused flip changes
+	 */
+	public void setOnFocusChanged(java.util.function.Consumer<FocusedFlip> callback)
+	{
+		this.onFocusChanged = callback;
+	}
+	
+	/**
+	 * Set a recommendation as the current focus for EasyFlip
+	 */
+	private void setFocus(FlipRecommendation rec, JPanel panel)
+	{
+		// Create focused flip for buying
+		FocusedFlip newFocus = FocusedFlip.forBuy(
+			rec.getItemId(),
+			rec.getItemName(),
+			rec.getRecommendedBuyPrice(),
+			rec.getRecommendedQuantity(),
+			rec.getRecommendedSellPrice()
+		);
+		
+		updateFocus(newFocus, panel);
+	}
+	
+	/**
+	 * Set an active flip as the current focus for EasyFlip
+	 */
+	private void setFocus(ActiveFlip flip, JPanel panel)
+	{
+		// Determine sell price - use recommended if available, otherwise calculate
+		int sellPrice = flip.getRecommendedSellPrice() != null 
+			? flip.getRecommendedSellPrice() 
+			: (int)(flip.getAverageBuyPrice() * 1.05); // Default 5% markup
+		
+		// Create focused flip for selling
+		FocusedFlip newFocus = FocusedFlip.forSell(
+			flip.getItemId(),
+			flip.getItemName(),
+			sellPrice,
+			flip.getTotalQuantity()
+		);
+		
+		updateFocus(newFocus, panel);
+	}
+	
+	/**
+	 * Set a pending order as the current focus for EasyFlip (selling step)
+	 */
+	private void setFocus(FlipSmartPlugin.PendingOrder pending, JPanel panel)
+	{
+		// Pending orders that are filled should show sell step
+		int sellPrice = pending.recommendedSellPrice != null 
+			? pending.recommendedSellPrice 
+			: (int)(pending.pricePerItem * 1.05); // Default 5% markup
+		
+		// Create focused flip for selling the filled items
+		FocusedFlip newFocus = FocusedFlip.forSell(
+			pending.itemId,
+			pending.itemName,
+			sellPrice,
+			pending.quantityFilled > 0 ? pending.quantityFilled : pending.quantity
+		);
+		
+		updateFocus(newFocus, panel);
+	}
+	
+	/**
+	 * Update the current focus and visual state
+	 */
+	private void updateFocus(FocusedFlip newFocus, JPanel panel)
+	{
+		// Reset previous focused panel
+		if (currentFocusedPanel != null)
+		{
+			resetPanelStyle(currentFocusedPanel);
+		}
+		
+		// If clicking the same item, toggle off
+		if (currentFocus != null && currentFocus.getItemId() == newFocus.getItemId() 
+			&& currentFocus.getStep() == newFocus.getStep())
+		{
+			currentFocus = null;
+			currentFocusedPanel = null;
+			currentFocusedItemId = -1;
+			
+			if (onFocusChanged != null)
+			{
+				onFocusChanged.accept(null);
+			}
+			return;
+		}
+		
+		// Set new focus
+		currentFocus = newFocus;
+		currentFocusedPanel = panel;
+		currentFocusedItemId = newFocus.getItemId();
+		
+		// Update panel style to show focus
+		applyFocusedStyle(panel);
+		
+		// Notify callback
+		if (onFocusChanged != null)
+		{
+			onFocusChanged.accept(newFocus);
+		}
+		
+		log.info("Set EasyFlip focus: {} - {} at {} gp x{}", 
+			newFocus.getStep(), 
+			newFocus.getItemName(), 
+			newFocus.getCurrentStepPrice(),
+			newFocus.getCurrentStepQuantity());
+	}
+	
+	/**
+	 * Apply focused style to a panel
+	 */
+	private void applyFocusedStyle(JPanel panel)
+	{
+		panel.setBackground(COLOR_FOCUSED_BG);
+		panel.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(COLOR_FOCUSED_BORDER, 2),
+			BorderFactory.createEmptyBorder(6, 8, 6, 8)
+		));
+		
+		// Update child panel backgrounds
+		for (Component comp : panel.getComponents())
+		{
+			if (comp instanceof JPanel)
+			{
+				((JPanel) comp).setBackground(COLOR_FOCUSED_BG);
+				for (Component child : ((JPanel) comp).getComponents())
+				{
+					if (child instanceof JPanel)
+					{
+						((JPanel) child).setBackground(COLOR_FOCUSED_BG);
+					}
+				}
+			}
+		}
+		
+		panel.revalidate();
+		panel.repaint();
+	}
+	
+	/**
+	 * Reset a panel to its default style
+	 */
+	private void resetPanelStyle(JPanel panel)
+	{
+		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
+		
+		// Reset child panel backgrounds
+		for (Component comp : panel.getComponents())
+		{
+			if (comp instanceof JPanel)
+			{
+				((JPanel) comp).setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				for (Component child : ((JPanel) comp).getComponents())
+				{
+					if (child instanceof JPanel)
+					{
+						((JPanel) child).setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					}
+				}
+			}
+		}
+		
+		panel.revalidate();
+		panel.repaint();
+	}
+	
+	/**
+	 * Get the current focused flip
+	 */
+	public FocusedFlip getCurrentFocus()
+	{
+		return currentFocus;
+	}
+	
+	/**
+	 * Clear the current focus
+	 */
+	public void clearFocus()
+	{
+		if (currentFocusedPanel != null)
+		{
+			resetPanelStyle(currentFocusedPanel);
+		}
+		currentFocus = null;
+		currentFocusedPanel = null;
+		currentFocusedItemId = -1;
+		
+		if (onFocusChanged != null)
+		{
+			onFocusChanged.accept(null);
+		}
 	}
 
 	/**
@@ -1533,25 +1854,43 @@ public class FlipFinderPanel extends PluginPanel
 			});
 		}
 
-		// Add hover effect and context menu
+		// Add hover effect, click to focus, and context menu
 		panel.addMouseListener(new MouseAdapter()
 		{
 			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				// Left click: set as EasyFlip focus for selling
+				if (e.getButton() == MouseEvent.BUTTON1 && !e.isPopupTrigger())
+				{
+					setFocus(flip, panel);
+				}
+			}
+			
+			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				panel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
-				topPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
-				namePanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
-				detailsPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
+					|| !currentFocus.isSelling())
+				{
+					panel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+					topPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+					namePanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+					detailsPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+				}
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
+					|| !currentFocus.isSelling())
+				{
+					panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				}
 			}
 
 			@Override
@@ -1571,6 +1910,13 @@ public class FlipFinderPanel extends PluginPanel
 				if (e.isPopupTrigger())
 				{
 					JPopupMenu contextMenu = new JPopupMenu();
+					
+					// Add focus option
+					JMenuItem focusItem = new JMenuItem("Set as EasyFlip Focus (Sell)");
+					focusItem.addActionListener(ae -> setFocus(flip, panel));
+					contextMenu.add(focusItem);
+					
+					contextMenu.addSeparator();
 					
 					JMenuItem dismissItem = new JMenuItem("Dismiss from Active Flips");
 					dismissItem.addActionListener(ae -> dismissActiveFlip(flip));
@@ -1727,6 +2073,52 @@ public class FlipFinderPanel extends PluginPanel
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
+		
+		// Add click listener for focus selection
+		Color bgColor = new Color(55, 55, 65);
+		panel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				// Only allow focus if there are filled items to sell
+				if (pending.quantityFilled > 0 && e.getButton() == MouseEvent.BUTTON1)
+				{
+					setFocus(pending, panel);
+				}
+			}
+			
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				if (currentFocus == null || currentFocus.getItemId() != pending.itemId)
+				{
+					Color hoverColor = new Color(65, 65, 75);
+					panel.setBackground(hoverColor);
+					topPanel.setBackground(hoverColor);
+					namePanel.setBackground(hoverColor);
+					detailsPanel.setBackground(hoverColor);
+				}
+			}
+			
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				if (currentFocus == null || currentFocus.getItemId() != pending.itemId)
+				{
+					panel.setBackground(bgColor);
+					topPanel.setBackground(bgColor);
+					namePanel.setBackground(bgColor);
+					detailsPanel.setBackground(bgColor);
+				}
+			}
+		});
+		
+		// Set cursor to indicate clickable if filled
+		if (pending.quantityFilled > 0)
+		{
+			panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		}
 
 		return panel;
 	}

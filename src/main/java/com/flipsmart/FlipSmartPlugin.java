@@ -14,6 +14,8 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.client.callback.ClientThread;
+import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.config.ConfigManager;
@@ -52,9 +54,18 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private GrandExchangeOverlay geOverlay;
+	
+	@Inject
+	private EasyFlipOverlay easyFlipOverlay;
 
 	@Inject
 	private FlipSmartApiClient apiClient;
+	
+	@Inject
+	private KeyManager keyManager;
+	
+	@Inject
+	private ClientThread clientThread;
 
 	@Inject
 	private net.runelite.client.ui.ClientToolbar clientToolbar;
@@ -108,6 +119,9 @@ public class FlipSmartPlugin extends Plugin
 	// Track items collected from GE in current session (waiting to be sold)
 	// These should show as active flips even though they're no longer in GE slots
 	private final java.util.Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
+	
+	// EasyFlip input listener for hotkey handling
+	private EasyFlipInputListener easyFlipInputListener;
 
 	/**
 	 * Helper class to track GE offers (serializable for persistence)
@@ -328,7 +342,12 @@ public class FlipSmartPlugin extends Plugin
 	{
 		log.info("Flip Smart started!");
 		overlayManager.add(geOverlay);
+		overlayManager.add(easyFlipOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
+		
+		// Initialize EasyFlip input listener
+		easyFlipInputListener = new EasyFlipInputListener(client, clientThread, config, easyFlipOverlay);
+		keyManager.registerKeyListener(easyFlipInputListener);
 		
 		// Initialize Flip Finder panel
 		if (config.showFlipFinder())
@@ -347,8 +366,25 @@ public class FlipSmartPlugin extends Plugin
 	protected void shutDown() throws Exception
 	{
 		log.info("Flip Smart stopped!");
+		
+		// Persist offer state before shutting down (handles cases where client is closed without logout)
+		// Only persist if we have a valid RSN to avoid overwriting good data
+		if (currentRsn != null && !currentRsn.isEmpty())
+		{
+			persistOfferState();
+			log.info("Persisted offer state on shutdown for {}", currentRsn);
+		}
+		
 		overlayManager.remove(geOverlay);
+		overlayManager.remove(easyFlipOverlay);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
+		
+		// Unregister EasyFlip input listener
+		if (easyFlipInputListener != null)
+		{
+			keyManager.unregisterKeyListener(easyFlipInputListener);
+			easyFlipInputListener = null;
+		}
 		
 		// Remove flip finder panel
 		if (flipFinderNavButton != null)
@@ -416,15 +452,19 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void restoreCollectedItems()
 	{
+		String key = getCollectedItemsKey();
+		log.info("Attempting to restore collected items for RSN: {} (key: {})", currentRsn, key);
+		
 		java.util.Set<Integer> persisted = loadPersistedCollectedItems();
 		if (!persisted.isEmpty())
 		{
 			collectedItemIds.clear();
 			collectedItemIds.addAll(persisted);
-			log.info("Restored {} collected items from previous session (active flips)", persisted.size());
+			log.info("Restored {} collected items from previous session: {}", persisted.size(), persisted);
 		}
 		else
 		{
+			log.info("No collected items found in config for RSN: {}", currentRsn);
 			collectedItemIds.clear();
 		}
 	}
@@ -950,6 +990,9 @@ public class FlipSmartPlugin extends Plugin
 			// New offer with no items sold yet, track it
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
+			// Clear EasyFlip focus if this order matches the focused flip
+			clearEasyFlipFocusIfMatches(itemId, isBuy);
+			
 			// Refresh the flip finder panel when any new order is submitted
 			// This ensures sell orders show up immediately in active flips
 			if (previousOffer == null && flipFinderPanel != null)
@@ -959,6 +1002,36 @@ public class FlipSmartPlugin extends Plugin
 					// Also refresh active flips to pick up new sell orders
 					flipFinderPanel.refreshActiveFlips();
 				});
+			}
+		}
+	}
+	
+	/**
+	 * Clear the EasyFlip focus if the submitted order matches the focused item
+	 */
+	private void clearEasyFlipFocusIfMatches(int itemId, boolean isBuy)
+	{
+		FocusedFlip focusedFlip = easyFlipOverlay.getFocusedFlip();
+		if (focusedFlip == null)
+		{
+			return;
+		}
+		
+		// Clear focus if the item matches and the order type matches the step
+		if (focusedFlip.getItemId() == itemId)
+		{
+			boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
+			if (stepMatches)
+			{
+				log.info("Clearing EasyFlip focus - order submitted for {} ({})", 
+					focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
+				easyFlipOverlay.clearFocus();
+				
+				// Also update the panel's visual state
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+				}
 			}
 		}
 	}
@@ -976,6 +1049,23 @@ public class FlipSmartPlugin extends Plugin
 				return currentCashStack > 0 ? currentCashStack : null;
 			}
 		};
+		
+		// Connect EasyFlip focus callback
+		flipFinderPanel.setOnFocusChanged(focus -> {
+			easyFlipOverlay.setFocusedFlip(focus);
+			if (focus != null)
+			{
+				log.info("EasyFlip focus set: {} {} - {} @ {} gp", 
+					focus.getStep(),
+					focus.getItemName(),
+					focus.getCurrentStepQuantity(),
+					focus.getCurrentStepPrice());
+			}
+			else
+			{
+				log.info("EasyFlip focus cleared");
+			}
+		});
 
 		// Try to load custom icon from resources
 		java.awt.image.BufferedImage iconImage = null;

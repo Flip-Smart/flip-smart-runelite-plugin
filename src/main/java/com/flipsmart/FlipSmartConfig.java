@@ -4,6 +4,9 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Keybind;
+
+import java.awt.event.KeyEvent;
 
 @ConfigGroup("flipsmart")
 public interface FlipSmartConfig extends Config
@@ -188,12 +191,71 @@ public interface FlipSmartConfig extends Config
 	}
 
 	// ============================================
+	// EasyFlip Section (Quick GE Actions)
+	// ============================================
+	@ConfigSection(
+		name = "EasyFlip",
+		description = "Quick GE actions with hotkey support",
+		position = 3,
+		closedByDefault = false
+	)
+	String easyFlipSection = "easyFlip";
+
+	@ConfigItem(
+		keyName = "enableEasyFlip",
+		name = "Enable EasyFlip",
+		description = "Enable EasyFlip for quick buy/sell actions with hotkey",
+		section = easyFlipSection,
+		position = 0
+	)
+	default boolean enableEasyFlip()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "easyFlipHotkey",
+		name = "EasyFlip Hotkey",
+		description = "Hotkey to auto-fill price/quantity in GE (default: E)",
+		section = easyFlipSection,
+		position = 1
+	)
+	default Keybind easyFlipHotkey()
+	{
+		return new Keybind(KeyEvent.VK_E, 0);
+	}
+
+	@ConfigItem(
+		keyName = "highlightGEWidgets",
+		name = "Highlight GE Buttons",
+		description = "Highlight buy/sell buttons and input fields in the GE",
+		section = easyFlipSection,
+		position = 2
+	)
+	default boolean highlightGEWidgets()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showEasyFlipInfo",
+		name = "Show EasyFlip Info",
+		description = "Display focused flip info in the game",
+		section = easyFlipSection,
+		position = 3
+	)
+	default boolean showEasyFlipInfo()
+	{
+		return true;
+	}
+
+	// ============================================
 	// General Section
 	// ============================================
 	@ConfigSection(
 		name = "General",
 		description = "General plugin settings",
-		position = 3,
+		position = 4,
 		closedByDefault = true
 	)
 	String generalSection = "general";
