@@ -679,7 +679,7 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Refresh active flips
 	 */
-	private void refreshActiveFlips()
+	public void refreshActiveFlips()
 	{
 		activeFlipsListContainer.removeAll();
 		activeFlipsListContainer.revalidate();
@@ -700,16 +700,25 @@ public class FlipFinderPanel extends PluginPanel
 				currentActiveFlips.clear();
 				if (response.getActiveFlips() != null)
 				{
-					// Filter active flips to only show:
-					// 1. Items currently in GE buy slots
-					// 2. Items collected from GE in this session (waiting to be sold)
-					// This prevents showing old stale data while keeping recently collected items visible
+					// Filter active flips to only show items that are currently being tracked:
+					// 1. Items currently in GE buy slots (pending or filled)
+					// 2. Items currently in GE sell slots (waiting to fully sell)
+					// 3. Items collected from GE in this session (waiting to be sold)
+					// This prevents showing old stale data while keeping active items visible
 					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+					log.debug("Active flip filter: {} tracked item IDs, {} flips from backend",
+						activeItemIds.size(), response.getActiveFlips().size());
 					for (ActiveFlip flip : response.getActiveFlips())
 					{
 						if (activeItemIds.contains(flip.getItemId()))
 						{
 							currentActiveFlips.add(flip);
+							log.debug("Including active flip: {} (ID {})", flip.getItemName(), flip.getItemId());
+						}
+						else
+						{
+							log.debug("Filtering out active flip: {} (ID {}) - not in tracked items",
+								flip.getItemName(), flip.getItemId());
 						}
 					}
 				}
@@ -1530,8 +1539,8 @@ public class FlipFinderPanel extends PluginPanel
 			iconLabel.setPreferredSize(new Dimension(32, 32));
 		}
 
-		JLabel nameLabel = new JLabel(pending.itemName + " [PENDING]");
-		nameLabel.setForeground(new Color(255, 200, 100)); // Yellow to indicate pending
+		JLabel nameLabel = new JLabel(pending.itemName);
+		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
 		namePanel.add(iconLabel);

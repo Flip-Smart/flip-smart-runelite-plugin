@@ -194,19 +194,18 @@ public class FlipSmartPlugin extends Plugin
 	 * Get all active flip item IDs - items that should show as active flips.
 	 * This includes:
 	 * 1. Items currently in GE buy slots (pending or filled)
-	 * 2. Items collected from GE in this session (waiting to be sold)
+	 * 2. Items currently in GE sell slots (pending sale)
+	 * 3. Items collected from GE in this session (waiting to be sold)
 	 */
 	public java.util.Set<Integer> getActiveFlipItemIds()
 	{
 		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
 		
-		// Add items currently in GE buy slots
+		// Add items currently in ANY GE slots (buy OR sell)
+		// Items in sell slots are still part of an active flip until sold
 		for (TrackedOffer offer : trackedOffers.values())
 		{
-			if (offer.isBuy)
-			{
-				itemIds.add(offer.itemId);
-			}
+			itemIds.add(offer.itemId);
 		}
 		
 		// Add items collected from GE (waiting to be sold)
@@ -218,7 +217,8 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Mark an item as sold - removes it from the collected tracking.
 	 * Called when a sell transaction is recorded.
-	 * Also checks if inventory is empty for this item and auto-closes the active flip.
+	 * Also checks if inventory is empty AND no active GE sell slot for this item,
+	 * then auto-closes the active flip.
 	 */
 	public void markItemSold(int itemId)
 	{
@@ -227,24 +227,42 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Removed item {} from collected tracking (sold)", itemId);
 		}
 		
-		// Check if inventory is empty for this item
-		// If so, auto-close the active flip (handles partial buy orders that were cancelled)
-		int inventoryCount = getInventoryCountForItem(itemId);
-		if (inventoryCount == 0)
+		// Check if this item is still in a GE sell slot (not yet fully sold)
+		boolean hasActiveSellSlot = false;
+		for (TrackedOffer offer : trackedOffers.values())
 		{
-			log.info("Inventory empty for item {} after sale, auto-closing active flip", itemId);
-			apiClient.dismissActiveFlipAsync(itemId, currentRsn).thenAccept(success ->
+			if (offer.itemId == itemId && !offer.isBuy)
 			{
-				if (success)
+				hasActiveSellSlot = true;
+				break;
+			}
+		}
+		
+		// Only auto-close if inventory is empty AND there's no active sell slot
+		// This prevents closing flips that are still selling in the GE
+		if (!hasActiveSellSlot)
+		{
+			int inventoryCount = getInventoryCountForItem(itemId);
+			if (inventoryCount == 0)
+			{
+				log.info("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
+				apiClient.dismissActiveFlipAsync(itemId, currentRsn).thenAccept(success ->
 				{
-					log.info("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
-					// Refresh the panel to reflect the change
-					if (flipFinderPanel != null)
+					if (Boolean.TRUE.equals(success))
 					{
-						javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refresh());
+						log.info("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
+						// Refresh the panel to reflect the change
+						if (flipFinderPanel != null)
+						{
+							javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refresh());
+						}
 					}
-				}
-			});
+				});
+			}
+		}
+		else
+		{
+			log.debug("Item {} still has active sell slot, keeping flip open", itemId);
 		}
 	}
 	
@@ -516,25 +534,20 @@ public class FlipSmartPlugin extends Plugin
 			
 			if (!trackedOffers.containsKey(slot))
 			{
-				// This slot is now empty - the offer completed while offline
-				int remainingQuantity = persistedOffer.totalQuantity - persistedOffer.previousQuantitySold;
-				if (remainingQuantity > 0)
+				// This slot is now empty - the offer either completed, was cancelled, or was collected while offline
+				// We CANNOT safely assume it completed with all remaining items - it may have been cancelled
+				// with only partial fills. The safest approach is to NOT auto-record anything here.
+				// The actual fill amount should have been recorded when the items were collected in-game.
+				log.info("Slot {} is now empty (was tracking {} x{}). Cannot determine if completed or cancelled offline - skipping auto-record.",
+					slot, persistedOffer.itemName, persistedOffer.totalQuantity);
+				
+				// If this was a buy with some items already filled, add to collected tracking
+				// so the user can still sell those items and complete the flip
+				if (persistedOffer.isBuy && persistedOffer.previousQuantitySold > 0)
 				{
-					log.info("Detected completed offer while offline for {} (slot {}): {} remaining items filled",
-						persistedOffer.itemName, slot, remainingQuantity);
-					
-					Integer recommendedSellPrice = persistedOffer.isBuy ? recommendedPrices.get(persistedOffer.itemId) : null;
-					
-					apiClient.recordTransactionAsync(
-						persistedOffer.itemId,
-						persistedOffer.itemName,
-						persistedOffer.isBuy,
-						remainingQuantity,
-						persistedOffer.price,
-						slot,
-						recommendedSellPrice,
-						currentRsn
-					);
+					log.info("Adding {} to collected tracking (had {} items filled before going offline)",
+						persistedOffer.itemName, persistedOffer.previousQuantitySold);
+					collectedItemIds.add(persistedOffer.itemId);
 				}
 			}
 		}
@@ -694,6 +707,20 @@ public class FlipSmartPlugin extends Plugin
 					previousOffer != null ? previousOffer.itemName : itemName);
 			}
 			
+			// For cancelled BUY orders with partial fills, track the items as collected
+			// so they still show as active flips until the user sells them
+			if (isBuy && quantitySold > 0)
+			{
+				log.info("Cancelled buy order had {} items filled - tracking until sold", quantitySold);
+				collectedItemIds.add(itemId);
+				
+				// Refresh panel to show the flip is still active
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
+				}
+			}
+			
 			// Clean up tracked offer
 			trackedOffers.remove(slot);
 			return;
@@ -804,11 +831,14 @@ public class FlipSmartPlugin extends Plugin
 			// New offer with no items sold yet, track it
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
-			// If this is a new buy order, refresh the flip finder panel to show pending order
-			if (isBuy && previousOffer == null && flipFinderPanel != null)
+			// Refresh the flip finder panel when any new order is submitted
+			// This ensures sell orders show up immediately in active flips
+			if (previousOffer == null && flipFinderPanel != null)
 			{
 				javax.swing.SwingUtilities.invokeLater(() -> {
 					flipFinderPanel.updatePendingOrders(getPendingBuyOrders());
+					// Also refresh active flips to pick up new sell orders
+					flipFinderPanel.refreshActiveFlips();
 				});
 			}
 		}
