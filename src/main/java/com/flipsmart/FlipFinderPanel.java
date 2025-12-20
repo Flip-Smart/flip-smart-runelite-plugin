@@ -1683,6 +1683,38 @@ public class FlipFinderPanel extends PluginPanel
 			onFocusChanged.accept(null);
 		}
 	}
+	
+	/**
+	 * Set focus from external source (e.g., auto-focus when setting up a sell offer).
+	 * This sets the logical focus without highlighting a specific panel.
+	 */
+	public void setExternalFocus(FocusedFlip focus)
+	{
+		if (focus == null)
+		{
+			clearFocus();
+			return;
+		}
+		
+		// Clear any existing panel highlight
+		if (currentFocusedPanel != null)
+		{
+			resetPanelStyle(currentFocusedPanel);
+			currentFocusedPanel = null;
+		}
+		
+		// Set the focus state
+		currentFocus = focus;
+		currentFocusedItemId = focus.getItemId();
+		
+		// Note: We don't have a panel to highlight since this was set externally
+		// The EasyFlip overlay will show the focused item info
+		
+		log.info("External focus set: {} - {} at {} gp", 
+			focus.isBuying() ? "BUY" : "SELL",
+			focus.getItemName(),
+			focus.getCurrentStepPrice());
+	}
 
 	/**
 	 * Create a panel for an active flip with current market data

@@ -14,6 +14,10 @@ import net.runelite.api.ItemContainer;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ScriptPostFired;
+import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.VarbitID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
@@ -766,6 +770,87 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		updateCashStack();
+	}
+
+	@Subscribe
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		// Check if the GE offer setup screen was just built
+		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
+		{
+			return;
+		}
+		
+		// Check if this is a SELL offer (type 1 = sell, type 0 = buy)
+		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
+		if (offerType != 1)
+		{
+			// Not a sell offer, don't auto-focus
+			return;
+		}
+		
+		// Get the item ID being set up for sale
+		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (itemId <= 0)
+		{
+			return;
+		}
+		
+		// Check if we have an active flip for this item and auto-focus on it
+		autoFocusOnActiveFlip(itemId);
+	}
+	
+	/**
+	 * Auto-focus on an active flip when the player sets up a sell offer for that item.
+	 * This helps them see the recommended sell price without manually clicking in the panel.
+	 */
+	private void autoFocusOnActiveFlip(int itemId)
+	{
+		String rsn = getCurrentRsnSafe().orElse(null);
+		
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
+		{
+			if (response == null || response.getActiveFlips() == null)
+			{
+				return;
+			}
+			
+			// Find an active flip matching this item
+			for (ActiveFlip flip : response.getActiveFlips())
+			{
+				if (flip.getItemId() == itemId)
+				{
+					// Found a matching active flip - create a FocusedFlip for selling
+					int sellPrice = flip.getRecommendedSellPrice() != null 
+						? flip.getRecommendedSellPrice() 
+						: (int)(flip.getAverageBuyPrice() * 1.05); // Default 5% markup
+					
+					FocusedFlip focus = FocusedFlip.forSell(
+						flip.getItemId(),
+						flip.getItemName(),
+						sellPrice,
+						flip.getTotalQuantity()
+					);
+					
+					// Set the focus
+					easyFlipOverlay.setFocusedFlip(focus);
+					
+					log.info("Auto-focused on active flip for sell: {} @ {} gp", 
+						flip.getItemName(), sellPrice);
+					
+					// Also update the panel's visual state if it exists
+					if (flipFinderPanel != null)
+					{
+						javax.swing.SwingUtilities.invokeLater(() -> 
+							flipFinderPanel.setExternalFocus(focus));
+					}
+					
+					return;
+				}
+			}
+			
+			log.debug("No active flip found for item {} when setting up sell offer", itemId);
+		});
 	}
 
 	@Subscribe
