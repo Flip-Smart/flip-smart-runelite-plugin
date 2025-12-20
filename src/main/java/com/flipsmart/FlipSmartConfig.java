@@ -132,22 +132,34 @@ public interface FlipSmartConfig extends Config
 
 	@ConfigItem(
 		keyName = "showGEOverlay",
-		name = "Show GE Tracker",
-		description = "Display in-game Grand Exchange offer tracker",
+		name = "Show Exchange Viewer",
+		description = "Display in-game Grand Exchange offer tracker (hidden when at the GE area)",
 		section = displaySection,
 		position = 0
 	)
 	default boolean showGEOverlay()
 	{
-		return true;
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "exchangeViewerSize",
+		name = "Display Size",
+		description = "Size of the Exchange Viewer overlay",
+		section = displaySection,
+		position = 1
+	)
+	default ExchangeViewerSize exchangeViewerSize()
+	{
+		return ExchangeViewerSize.FULL;
 	}
 
 	@ConfigItem(
 		keyName = "showGEItemNames",
 		name = "Show Item Names",
-		description = "Display item names in the GE tracker",
+		description = "Display item names in the Exchange Viewer (Full mode only)",
 		section = displaySection,
-		position = 1
+		position = 2
 	)
 	default boolean showGEItemNames()
 	{
@@ -157,9 +169,9 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "showGEItemIcons",
 		name = "Show Item Icons",
-		description = "Display item icons in the GE tracker",
+		description = "Display item icons in the Exchange Viewer",
 		section = displaySection,
-		position = 2
+		position = 3
 	)
 	default boolean showGEItemIcons()
 	{
@@ -169,9 +181,9 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "showGEDetailedInfo",
 		name = "Show Detailed Info",
-		description = "Show quantity, price per item, and total value",
+		description = "Show quantity, price per item, and total value (Full mode only)",
 		section = displaySection,
-		position = 3
+		position = 4
 	)
 	default boolean showGEDetailedInfo()
 	{
@@ -285,6 +297,28 @@ public interface FlipSmartConfig extends Config
 		public String toString()
 		{
 			return name().charAt(0) + name().substring(1).toLowerCase();
+		}
+	}
+
+	// ============================================
+	// Exchange Viewer Display Size Enum
+	// ============================================
+	enum ExchangeViewerSize
+	{
+		FULL("Full"),
+		COMPACT("Compact");
+
+		private final String displayName;
+
+		ExchangeViewerSize(String displayName)
+		{
+			this.displayName = displayName;
+		}
+
+		@Override
+		public String toString()
+		{
+			return displayName;
 		}
 	}
 }
