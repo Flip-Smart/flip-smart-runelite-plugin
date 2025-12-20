@@ -41,6 +41,11 @@ public class FlipFinderPanel extends PluginPanel
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
 	private final transient FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
+	
+	// Scroll panes for preserving scroll position during refresh
+	private JScrollPane recommendedScrollPane;
+	private JScrollPane activeFlipsScrollPane;
+	private JScrollPane completedFlipsScrollPane;
 
 	// Login panel components
 	private JPanel loginPanel;
@@ -299,7 +304,7 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedListContainer.setLayout(new BoxLayout(recommendedListContainer, BoxLayout.Y_AXIS));
 		recommendedListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JScrollPane recommendedScrollPane = new JScrollPane(recommendedListContainer);
+		recommendedScrollPane = new JScrollPane(recommendedListContainer);
 		recommendedScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		recommendedScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		recommendedScrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -310,7 +315,7 @@ public class FlipFinderPanel extends PluginPanel
 		activeFlipsListContainer.setLayout(new BoxLayout(activeFlipsListContainer, BoxLayout.Y_AXIS));
 		activeFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JScrollPane activeFlipsScrollPane = new JScrollPane(activeFlipsListContainer);
+		activeFlipsScrollPane = new JScrollPane(activeFlipsListContainer);
 		activeFlipsScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		activeFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		activeFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -321,7 +326,7 @@ public class FlipFinderPanel extends PluginPanel
 		completedFlipsListContainer.setLayout(new BoxLayout(completedFlipsListContainer, BoxLayout.Y_AXIS));
 		completedFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JScrollPane completedFlipsScrollPane = new JScrollPane(completedFlipsListContainer);
+		completedFlipsScrollPane = new JScrollPane(completedFlipsListContainer);
 		completedFlipsScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		completedFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		completedFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
@@ -622,6 +627,9 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshRecommendations()
 	{
+		// Save scroll position before refresh
+		final int scrollPos = getScrollPosition(recommendedScrollPane);
+		
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		recommendedListContainer.removeAll();
@@ -644,12 +652,14 @@ public class FlipFinderPanel extends PluginPanel
 				if (response == null)
 				{
 					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+					restoreScrollPosition(recommendedScrollPane, scrollPos);
 					return;
 				}
 
 				if (response.getRecommendations() == null || response.getRecommendations().isEmpty())
 				{
 					showErrorInRecommended("No flip recommendations found matching your criteria.");
+					restoreScrollPosition(recommendedScrollPane, scrollPos);
 					return;
 				}
 
@@ -664,6 +674,7 @@ public class FlipFinderPanel extends PluginPanel
 
 				updateStatusLabel(response);
 				populateRecommendations(response.getRecommendations());
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
 		}).exceptionally(throwable ->
 		{
@@ -671,6 +682,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				refreshButton.setEnabled(true);
 				showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
 			return null;
 		});
@@ -681,6 +693,9 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	public void refreshActiveFlips()
 	{
+		// Save scroll position before refresh
+		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
+		
 		activeFlipsListContainer.removeAll();
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
@@ -694,6 +709,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (response == null)
 				{
 					showErrorInActiveFlips("Failed to fetch active flips. Check your API settings.");
+					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 					return;
 				}
 
@@ -729,6 +745,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
 				{
 					showNoActiveFlips();
+					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 					return;
 				}
 
@@ -757,10 +774,15 @@ public class FlipFinderPanel extends PluginPanel
 
 				// Display both active flips and pending orders
 				displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
+				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 			});
 		}).exceptionally(throwable ->
 		{
-			SwingUtilities.invokeLater(() -> showErrorInActiveFlips(ERROR_PREFIX + throwable.getMessage()));
+			SwingUtilities.invokeLater(() ->
+			{
+				showErrorInActiveFlips(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+			});
 			return null;
 		});
 	}
@@ -784,6 +806,9 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshCompletedFlips()
 	{
+		// Save scroll position before refresh
+		final int scrollPos = getScrollPosition(completedFlipsScrollPane);
+		
 		completedFlipsListContainer.removeAll();
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
@@ -797,6 +822,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (response == null)
 				{
 					showErrorInCompletedFlips("Failed to fetch completed flips. Check your API settings.");
+					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 					return;
 				}
 
@@ -809,6 +835,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentCompletedFlips.isEmpty())
 				{
 					showNoCompletedFlips();
+					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 					return;
 				}
 
@@ -824,10 +851,15 @@ public class FlipFinderPanel extends PluginPanel
 				}
 
 				populateCompletedFlips(currentCompletedFlips);
+				restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 			});
 		}).exceptionally(throwable ->
 		{
-			SwingUtilities.invokeLater(() -> showErrorInCompletedFlips(ERROR_PREFIX + throwable.getMessage()));
+			SwingUtilities.invokeLater(() ->
+			{
+				showErrorInCompletedFlips(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(completedFlipsScrollPane, scrollPos);
+			});
 			return null;
 		});
 	}
@@ -1868,6 +1900,32 @@ public class FlipFinderPanel extends PluginPanel
 				});
 			});
 		}
+	}
+	
+	/**
+	 * Get the current scroll position of a scroll pane.
+	 */
+	private int getScrollPosition(JScrollPane scrollPane)
+	{
+		if (scrollPane == null || scrollPane.getVerticalScrollBar() == null)
+		{
+			return 0;
+		}
+		return scrollPane.getVerticalScrollBar().getValue();
+	}
+	
+	/**
+	 * Restore the scroll position of a scroll pane after content refresh.
+	 * Uses invokeLater to ensure layout is complete before restoring.
+	 */
+	private void restoreScrollPosition(JScrollPane scrollPane, int position)
+	{
+		if (scrollPane == null || scrollPane.getVerticalScrollBar() == null || position <= 0)
+		{
+			return;
+		}
+		// Use invokeLater to restore after layout is complete
+		SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(position));
 	}
 }
 
