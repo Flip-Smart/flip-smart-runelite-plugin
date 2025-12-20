@@ -249,7 +249,7 @@ public class FlipSmartPlugin extends Plugin
 			if (inventoryCount == 0)
 			{
 				log.info("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
-				apiClient.dismissActiveFlipAsync(itemId, currentRsn).thenAccept(success ->
+				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe()).thenAccept(success ->
 				{
 					if (Boolean.TRUE.equals(success))
 					{
@@ -571,7 +571,7 @@ public class FlipSmartPlugin extends Plugin
 					currentOffer.price,
 					slot,
 					recommendedSellPrice,
-					currentRsn
+					getCurrentRsnSafe()
 				);
 			}
 		}
@@ -623,6 +623,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (client.getLocalPlayer() == null)
 		{
+			log.warn("syncRSN called but getLocalPlayer() is null");
 			return;
 		}
 		
@@ -630,9 +631,36 @@ public class FlipSmartPlugin extends Plugin
 		if (rsn != null && !rsn.isEmpty())
 		{
 			currentRsn = rsn;
-			log.debug("Syncing RSN: {}", rsn);
+			log.info("RSN synced: {}", rsn);
 			apiClient.updateRSN(rsn);
 		}
+		else
+		{
+			log.warn("syncRSN: player name is null or empty");
+		}
+	}
+	
+	/**
+	 * Get the current RSN, attempting to fetch from client if not cached.
+	 * This ensures we always have the RSN when recording transactions.
+	 */
+	private String getCurrentRsnSafe()
+	{
+		if (currentRsn != null && !currentRsn.isEmpty())
+		{
+			return currentRsn;
+		}
+		
+		// Try to get RSN from client if not cached
+		if (client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null)
+		{
+			currentRsn = client.getLocalPlayer().getName();
+			log.info("RSN fetched from client on-demand: {}", currentRsn);
+			return currentRsn;
+		}
+		
+		log.warn("Unable to determine RSN - transactions will be recorded without RSN");
+		return null;
 	}
 	
 	/**
@@ -776,7 +804,7 @@ public class FlipSmartPlugin extends Plugin
 						pricePerItem,
 						slot,
 						recommendedSellPrice,
-						currentRsn
+						getCurrentRsnSafe()
 					);
 				}
 				
@@ -882,7 +910,7 @@ public class FlipSmartPlugin extends Plugin
 					pricePerItem,
 					slot,
 					recommendedSellPrice,
-					currentRsn
+					getCurrentRsnSafe()
 				);
 				
 				// Clear recommended price after recording (only for buys)
