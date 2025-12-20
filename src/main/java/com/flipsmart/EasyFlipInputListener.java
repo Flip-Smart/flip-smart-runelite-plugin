@@ -9,6 +9,7 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
+import java.awt.Canvas;
 import java.awt.event.KeyEvent;
 
 /**
@@ -37,10 +38,18 @@ public class EasyFlipInputListener implements KeyListener
 		this.easyFlipOverlay = easyFlipOverlay;
 	}
 	
+	// Track if we should consume the next keyTyped event
+	private volatile boolean consumeNextKeyTyped = false;
+	
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
-		// Not used
+		// Consume keyTyped event if we handled the corresponding keyPressed
+		if (consumeNextKeyTyped)
+		{
+			consumeNextKeyTyped = false;
+			e.consume();
+		}
 	}
 	
 	@Override
@@ -63,6 +72,9 @@ public class EasyFlipInputListener implements KeyListener
 		{
 			return;
 		}
+		
+		// Mark that we should consume the next keyTyped event to prevent 'e' being typed
+		consumeNextKeyTyped = true;
 		
 		// Execute everything on client thread since we need to access client APIs
 		clientThread.invokeLater(() -> {
@@ -126,12 +138,14 @@ public class EasyFlipInputListener implements KeyListener
 		
 		// Check if we're in an input mode (chatbox input dialog)
 		int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+		log.info("EasyFlip action - inputType: {}", inputType);
 		
 		if (inputType != 0)
 		{
 			// Input dialog is open - fill the value
 			// inputType 7 = numeric input (price/quantity)
 			// inputType 6 = text input (search)
+			// inputType 14 = chatbox search (GE item search)
 			if (inputType == 7)
 			{
 				// Determine if it's price or quantity based on context
@@ -148,23 +162,62 @@ public class EasyFlipInputListener implements KeyListener
 					sendChatMessage(focusedFlip.getItemName() + " quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
 				}
 			}
-			else if (inputType == 6)
-			{
-				// Text input - likely search, enter item name
-				client.setVarcStrValue(VarClientStr.INPUT_TEXT, focusedFlip.getItemName());
-				log.info("Auto-filled search: {}", focusedFlip.getItemName());
-				sendChatMessage("Searching for " + focusedFlip.getItemName());
-			}
 			else
 			{
-				log.debug("Unknown input type: {}", inputType);
-				showInfoMessage(focusedFlip);
+				// Other input type - assume it's a text/search input (could be GE search)
+				fillSearchInput(focusedFlip.getItemName(), inputType);
 			}
 		}
 		else
 		{
-			// Not in an input field - show info message
-			showInfoMessage(focusedFlip);
+			// Not in an input field - check if GE search widget is visible
+			// Try various known GE search widget IDs
+			log.info("No input type detected (inputType=0), checking for GE search widgets...");
+			
+			// Check multiple possible search widget locations
+			int[][] searchWidgets = {
+				{162, 53}, // Offer container search
+				{162, 24}, // Possible search location
+				{465, 57}, // GE search bar
+				{465, 7},  // GE search button
+				{162, 1},  // Offer search
+			};
+			
+			boolean foundSearch = false;
+			for (int[] widgetId : searchWidgets)
+			{
+				Widget searchWidget = client.getWidget(widgetId[0], widgetId[1]);
+				if (searchWidget != null)
+				{
+					log.info("Widget {}:{} - hidden: {}, text: '{}'", 
+						widgetId[0], widgetId[1], searchWidget.isHidden(), searchWidget.getText());
+				}
+			}
+			
+			// Check if there's any active chatbox search by checking VarClientStr values
+			String currentInput = client.getVarcStrValue(VarClientStr.INPUT_TEXT);
+			String chatboxTyped = client.getVarcStrValue(VarClientStr.CHATBOX_TYPED_TEXT);
+			log.info("Current INPUT_TEXT: '{}', CHATBOX_TYPED_TEXT: '{}'", currentInput, chatboxTyped);
+			
+			// Try setting the search text anyway - it might work even if widget isn't visible
+			Widget geSearchWidget = client.getWidget(162, 53);
+			Widget geSearchBar = client.getWidget(465, 7);
+			
+			if ((geSearchWidget != null && !geSearchWidget.isHidden()) || 
+				(geSearchBar != null && !geSearchBar.isHidden()) ||
+				(chatboxTyped != null && !chatboxTyped.isEmpty()))
+			{
+				// GE search is open - try to fill it
+				fillSearchInput(focusedFlip.getItemName(), 0);
+				foundSearch = true;
+			}
+			
+			if (!foundSearch)
+			{
+				// Not in an input field - show info message
+				log.info("No search widget found, showing info message");
+				showInfoMessage(focusedFlip);
+			}
 		}
 	}
 	
@@ -190,6 +243,41 @@ public class EasyFlipInputListener implements KeyListener
 	private void setInputValue(int value)
 	{
 		client.setVarcStrValue(VarClientStr.INPUT_TEXT, String.valueOf(value));
+	}
+	
+	/**
+	 * Fill search input with item name by simulating keyboard input.
+	 * MUST be called on client thread.
+	 */
+	private void fillSearchInput(String itemName, int inputType)
+	{
+		log.info("Filling search input for inputType {}: {}", inputType, itemName);
+		
+		// Simulate typing each character into the search box
+		Canvas canvas = client.getCanvas();
+		if (canvas == null)
+		{
+			log.warn("Canvas is null, cannot simulate typing");
+			return;
+		}
+		
+		// Type each character
+		for (char c : itemName.toCharArray())
+		{
+			// Create and dispatch keyTyped event for each character
+			KeyEvent keyTyped = new KeyEvent(
+				canvas,
+				KeyEvent.KEY_TYPED,
+				System.currentTimeMillis(),
+				0,  // no modifiers
+				KeyEvent.VK_UNDEFINED,
+				c
+			);
+			canvas.dispatchEvent(keyTyped);
+		}
+		
+		log.info("Simulated typing: {}", itemName);
+		sendChatMessage("Search filled: " + itemName);
 	}
 	
 	/**
@@ -394,12 +482,19 @@ public class EasyFlipInputListener implements KeyListener
 		
 		if (chatText != null && !chatText.isEmpty())
 		{
-			// But allow if we're in GE numeric input
+			// Allow if we're in GE input (numeric, text, or chatbox search)
 			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
-			if (inputType == 7 || inputType == 6)
+			if (inputType == 7 || inputType == 6 || inputType == 14)
 			{
 				return false; // Allow hotkey in GE inputs
 			}
+			
+			// Also allow if GE is open (might be in search)
+			if (isGrandExchangeOpen())
+			{
+				return false;
+			}
+			
 			return true;
 		}
 		return false;
