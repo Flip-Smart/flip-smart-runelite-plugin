@@ -195,27 +195,25 @@ public class GrandExchangeOverlay extends Overlay
 			{
 				continue;
 			}
-			else
+			
+			hasActiveOffers = true;
+			lineCount++; // Slot line
+			if (config.showGEItemNames()) lineCount++; // Item name line
+			lineCount++; // Progress bar line (always present now)
+			
+			// Check if there's another non-empty slot for divider
+			boolean needsDivider = false;
+			for (int nextSlot = i + 1; nextSlot < offers.length; nextSlot++)
 			{
-				hasActiveOffers = true;
-				lineCount++; // Slot line
-				if (config.showGEItemNames()) lineCount++; // Item name line
-				lineCount++; // Progress bar line (always present now)
-				
-				// Check if there's another non-empty slot for divider
-				boolean needsDivider = false;
-				for (int nextSlot = i + 1; nextSlot < offers.length; nextSlot++)
+				if (offers[nextSlot].getState() != GrandExchangeOfferState.EMPTY)
 				{
-					if (offers[nextSlot].getState() != GrandExchangeOfferState.EMPTY)
-					{
-						needsDivider = true;
-						break;
-					}
+					needsDivider = true;
+					break;
 				}
-				if (needsDivider)
-				{
-					dividerCount++;
-				}
+			}
+			if (needsDivider)
+			{
+				dividerCount++;
 			}
 		}
 		

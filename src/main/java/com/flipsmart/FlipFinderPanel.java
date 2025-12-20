@@ -1710,7 +1710,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Note: We don't have a panel to highlight since this was set externally
 		// The EasyFlip overlay will show the focused item info
 		
-		log.info("External focus set: {} - {} at {} gp", 
+		log.debug("External focus set: {} - {} at {} gp", 
 			focus.isBuying() ? "BUY" : "SELL",
 			focus.getItemName(),
 			focus.getCurrentStepPrice());
