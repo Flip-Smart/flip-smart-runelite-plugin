@@ -19,7 +19,7 @@ import java.util.function.Function;
 public class FlipSmartApiClient
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-	private static final String PRODUCTION_API_URL = "https://flipsm.art";
+	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -147,7 +147,8 @@ public class FlipSmartApiClient
 						return;
 					}
 
-					String jsonData = response.body() != null ? response.body().string() : "";
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
 					T result = responseHandler.apply(jsonData);
 					future.complete(result);
 				}
@@ -259,7 +260,8 @@ public class FlipSmartApiClient
 						return;
 					}
 					
-					String jsonData = response.body().string();
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
 					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
 					
 					synchronized (authLock)
@@ -369,7 +371,8 @@ public class FlipSmartApiClient
 						return;
 					}
 					
-					String jsonData = response.body().string();
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
 					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
 					
 					synchronized (authLock)
@@ -530,7 +533,7 @@ public class FlipSmartApiClient
 	 */
 	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, boolean isBuy, 
 														  int quantity, int pricePerItem, Integer geSlot, 
-														  Integer recommendedSellPrice)
+														  Integer recommendedSellPrice, String rsn)
 	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/transactions", apiUrl);
@@ -550,6 +553,10 @@ public class FlipSmartApiClient
 		{
 			jsonBody.addProperty("recommended_sell_price", recommendedSellPrice);
 		}
+		if (rsn != null && !rsn.isEmpty())
+		{
+			jsonBody.addProperty("rsn", rsn);
+		}
 		
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 		
@@ -560,18 +567,27 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
-			log.info("Transaction recorded: {}", responseObj.get("message").getAsString());
+			log.info("Transaction recorded for {}: {}", rsn, responseObj.get("message").getAsString());
 			return null;
 		}).thenApply(v -> null);
 	}
 
 	/**
 	 * Fetch active flips from the API asynchronously
+	 * @param rsn Optional RSN to filter by (for multi-account support)
 	 */
-	public CompletableFuture<ActiveFlipsResponse> getActiveFlipsAsync()
+	public CompletableFuture<ActiveFlipsResponse> getActiveFlipsAsync(String rsn)
 	{
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/transactions/active-flips", apiUrl);
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/transactions/active-flips?rsn=%s", apiUrl, rsn);
+		}
+		else
+		{
+			url = String.format("%s/transactions/active-flips", apiUrl);
+		}
 		
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -580,14 +596,40 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 			gson.fromJson(jsonData, ActiveFlipsResponse.class));
 	}
+	
+	/**
+	 * Fetch active flips from the API asynchronously (all RSNs)
+	 */
+	public CompletableFuture<ActiveFlipsResponse> getActiveFlipsAsync()
+	{
+		return getActiveFlipsAsync(null);
+	}
 
 	/**
 	 * Dismiss an active flip asynchronously
 	 */
 	public CompletableFuture<Boolean> dismissActiveFlipAsync(int itemId)
 	{
+		return dismissActiveFlipAsync(itemId, null);
+	}
+	
+	/**
+	 * Dismiss an active flip asynchronously with RSN support
+	 * @param itemId The item ID to dismiss
+	 * @param rsn Optional RSN to filter by (for multi-account support)
+	 */
+	public CompletableFuture<Boolean> dismissActiveFlipAsync(int itemId, String rsn)
+	{
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/transactions/active-flips/%d", apiUrl, itemId);
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/transactions/active-flips/%d?rsn=%s", apiUrl, itemId, rsn);
+		}
+		else
+		{
+			url = String.format("%s/transactions/active-flips/%d", apiUrl, itemId);
+		}
 		
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -606,11 +648,21 @@ public class FlipSmartApiClient
 
 	/**
 	 * Fetch completed flips from the API asynchronously
+	 * @param limit Maximum number of flips to return
+	 * @param rsn Optional RSN to filter by (for multi-account support)
 	 */
-	public CompletableFuture<CompletedFlipsResponse> getCompletedFlipsAsync(int limit)
+	public CompletableFuture<CompletedFlipsResponse> getCompletedFlipsAsync(int limit, String rsn)
 	{
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/flips/completed?limit=%d", apiUrl, limit);
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/flips/completed?limit=%d&rsn=%s", apiUrl, limit, rsn);
+		}
+		else
+		{
+			url = String.format("%s/flips/completed?limit=%d", apiUrl, limit);
+		}
 		
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -618,6 +670,14 @@ public class FlipSmartApiClient
 		
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 			gson.fromJson(jsonData, CompletedFlipsResponse.class));
+	}
+	
+	/**
+	 * Fetch completed flips from the API asynchronously (all RSNs)
+	 */
+	public CompletableFuture<CompletedFlipsResponse> getCompletedFlipsAsync(int limit)
+	{
+		return getCompletedFlipsAsync(limit, null);
 	}
 
 	/**

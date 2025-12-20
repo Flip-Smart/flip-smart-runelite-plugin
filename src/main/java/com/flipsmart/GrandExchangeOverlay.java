@@ -3,21 +3,17 @@ package com.flipsmart;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.api.SpriteID;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayMenuEntry;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.OverlayPriority;
-import net.runelite.client.ui.overlay.components.BackgroundComponent;
 import net.runelite.client.util.AsyncBufferedImage;
 
 import javax.inject.Inject;
 import java.awt.*;
-import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.text.DecimalFormat;
 
@@ -49,28 +45,23 @@ public class GrandExchangeOverlay extends Overlay
 	private static final int PADDING = 8;
 	private static final int LINE_HEIGHT = 17;
 	private static final int ICON_SIZE = 32;
-	private static final int ICON_OFFSET_X = 8;
-	private static final int DIVIDER_PADDING = 6;
 	private static final int PROGRESS_BAR_WIDTH = 60;
 	private static final int PROGRESS_BAR_HEIGHT = 14;
 	
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
-	private final SpriteManager spriteManager;
 	
-	private Point preferredLocation = new Point(100, 100);
 	private boolean isCollapsed = false;
 	private Rectangle collapseButtonBounds = new Rectangle();
 	private BufferedImage geIcon;
 
 	@Inject
-	private GrandExchangeOverlay(Client client, FlipSmartConfig config, ItemManager itemManager, SpriteManager spriteManager)
+	private GrandExchangeOverlay(Client client, FlipSmartConfig config, ItemManager itemManager)
 	{
 		this.client = client;
 		this.config = config;
 		this.itemManager = itemManager;
-		this.spriteManager = spriteManager;
 		
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(OverlayPriority.MED);
@@ -283,30 +274,25 @@ public class GrandExchangeOverlay extends Overlay
 			double percentage = totalQuantity > 0 ? (quantitySold * 100.0) / totalQuantity : 0;
 			String itemName = itemManager.getItemComposition(itemId).getName();
 			
-			// Determine status
+			// Determine status color based on offer state
 			Color statusColor;
-			String statusText;
 			
 			switch (state)
 			{
 				case BOUGHT:
 				case SOLD:
 					statusColor = COLOR_COMPLETE;
-					statusText = "100%";
 					break;
 				case CANCELLED_BUY:
 				case CANCELLED_SELL:
 					statusColor = COLOR_CANCELLED;
-					statusText = "Cancelled";
 					break;
 				case BUYING:
 				case SELLING:
 					statusColor = isBuy ? COLOR_BUY : COLOR_SELL;
-					statusText = PERCENTAGE_FORMAT.format(percentage) + "%";
 					break;
 				default:
 					statusColor = COLOR_EMPTY;
-					statusText = "0%";
 			}
 			
 		// Draw divider BEFORE this item (except for first item)

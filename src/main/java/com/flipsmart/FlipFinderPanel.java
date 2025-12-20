@@ -13,17 +13,23 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
 public class FlipFinderPanel extends PluginPanel
 {
-	private final FlipSmartConfig config;
-	private final FlipSmartApiClient apiClient;
-	private final ItemManager itemManager;
-	private final ConfigManager configManager;
+	// Constants for duplicated literals
+	private static final String FONT_ARIAL = "Arial";
+	private static final String ERROR_PREFIX = "Error: ";
+	private static final String FORMAT_QTY = "Qty: %d";
+	private static final String FORMAT_SELL = "Sell: %s";
+	private static final String FORMAT_ROI = "ROI: %.1f%%";
+
+	private final transient FlipSmartConfig config;
+	private final transient FlipSmartApiClient apiClient;
+	private final transient ItemManager itemManager;
+	private final transient ConfigManager configManager;
 	private final JPanel recommendedListContainer = new JPanel();
 	private final JPanel activeFlipsListContainer = new JPanel();
 	private final JPanel completedFlipsListContainer = new JPanel();
@@ -34,7 +40,12 @@ public class FlipFinderPanel extends PluginPanel
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
-	private final FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
+	private final transient FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
+	
+	// Scroll panes for preserving scroll position during refresh
+	private JScrollPane recommendedScrollPane;
+	private JScrollPane activeFlipsScrollPane;
+	private JScrollPane completedFlipsScrollPane;
 
 	// Login panel components
 	private JPanel loginPanel;
@@ -54,6 +65,19 @@ public class FlipFinderPanel extends PluginPanel
 		this.itemManager = itemManager;
 		this.plugin = plugin;
 		this.configManager = configManager;
+
+		// Initialize flip style dropdown so it's available for both panels
+		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
+		flipStyleDropdown.setFocusable(false);
+		flipStyleDropdown.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		flipStyleDropdown.setForeground(Color.WHITE);
+		flipStyleDropdown.addActionListener(e -> {
+			// Refresh recommendations when flip style changes
+			if (isAuthenticated)
+			{
+				refresh();
+			}
+		});
 
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -87,19 +111,19 @@ public class FlipFinderPanel extends PluginPanel
 		// Title
 		JLabel titleLabel = new JLabel("Flip Smart");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font("Arial", Font.BOLD, 24));
+		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 24));
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		// Subtitle
 		JLabel subtitleLabel = new JLabel("Sign in to start flipping");
 		subtitleLabel.setForeground(Color.LIGHT_GRAY);
-		subtitleLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+		subtitleLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
 		subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		// Email field
 		JLabel emailLabel = new JLabel("Email");
 		emailLabel.setForeground(Color.LIGHT_GRAY);
-		emailLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		emailLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 		emailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		emailField = new JTextField(20);
@@ -115,7 +139,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Password field
 		JLabel passwordLabel = new JLabel("Password");
 		passwordLabel.setForeground(Color.LIGHT_GRAY);
-		passwordLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		passwordLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 		passwordLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		passwordField = new JPasswordField(20);
@@ -130,7 +154,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Status label for messages
 		loginStatusLabel = new JLabel(" ");
-		loginStatusLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		loginStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 		loginStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 
@@ -199,7 +223,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel titleLabel = new JLabel("Flip Finder");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
+		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 16));
 
 		// Right side buttons panel (logout + refresh)
 		JPanel rightButtonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
@@ -208,7 +232,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Logout button
 		JButton logoutButton = new JButton("Logout");
 		logoutButton.setFocusable(false);
-		logoutButton.setFont(new Font("Arial", Font.PLAIN, 11));
+		logoutButton.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 		logoutButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		logoutButton.setForeground(Color.LIGHT_GRAY);
 		logoutButton.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
@@ -231,7 +255,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel flipStyleLabel = new JLabel("Style: ");
 		flipStyleLabel.setForeground(Color.LIGHT_GRAY);
-		flipStyleLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		flipStyleLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 
 		// Custom renderer for better appearance
 		flipStyleDropdown.setRenderer(new DefaultListCellRenderer() {
@@ -265,7 +289,7 @@ public class FlipFinderPanel extends PluginPanel
 		statusPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		statusPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
 		statusLabel.setForeground(Color.LIGHT_GRAY);
-		statusLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		statusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 		statusPanel.add(statusLabel, BorderLayout.CENTER);
 
 		// Combine controls and status into top panel
@@ -280,39 +304,39 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedListContainer.setLayout(new BoxLayout(recommendedListContainer, BoxLayout.Y_AXIS));
 		recommendedListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JScrollPane recommendedScrollPane = new JScrollPane(recommendedListContainer);
+		recommendedScrollPane = new JScrollPane(recommendedListContainer);
 		recommendedScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		recommendedScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		recommendedScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		recommendedScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-		recommendedScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+		recommendedScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		recommendedScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
 		// Active flips list container
 		activeFlipsListContainer.setLayout(new BoxLayout(activeFlipsListContainer, BoxLayout.Y_AXIS));
 		activeFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JScrollPane activeFlipsScrollPane = new JScrollPane(activeFlipsListContainer);
+		activeFlipsScrollPane = new JScrollPane(activeFlipsListContainer);
 		activeFlipsScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		activeFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		activeFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		activeFlipsScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-		activeFlipsScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+		activeFlipsScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		activeFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
 		// Completed flips list container
 		completedFlipsListContainer.setLayout(new BoxLayout(completedFlipsListContainer, BoxLayout.Y_AXIS));
 		completedFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		JScrollPane completedFlipsScrollPane = new JScrollPane(completedFlipsListContainer);
+		completedFlipsScrollPane = new JScrollPane(completedFlipsListContainer);
 		completedFlipsScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		completedFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
 		completedFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		completedFlipsScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-		completedFlipsScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+		completedFlipsScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		completedFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
 		// Create tabbed pane with custom UI for full-width tabs
 		tabbedPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		tabbedPane.setForeground(Color.WHITE);
-		tabbedPane.setTabPlacement(JTabbedPane.TOP);
+		tabbedPane.setTabPlacement(SwingConstants.TOP);
 		
 		// Custom UI to make tabs fill the full width
 		tabbedPane.setUI(new javax.swing.plaf.basic.BasicTabbedPaneUI() {
@@ -588,21 +612,6 @@ public class FlipFinderPanel extends PluginPanel
 		showLoginPanel();
 	}
 
-	// Create flip style dropdown here so it's available for both panels
-	{
-		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
-		flipStyleDropdown.setFocusable(false);
-		flipStyleDropdown.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		flipStyleDropdown.setForeground(Color.WHITE);
-		flipStyleDropdown.addActionListener(e -> {
-			// Refresh recommendations when flip style changes
-			if (isAuthenticated)
-			{
-				refresh();
-			}
-		});
-	}
-
 	/**
 	 * Refresh flip recommendations, active flips, and completed flips
 	 */
@@ -618,6 +627,9 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshRecommendations()
 	{
+		// Save scroll position before refresh
+		final int scrollPos = getScrollPosition(recommendedScrollPane);
+		
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		recommendedListContainer.removeAll();
@@ -640,12 +652,14 @@ public class FlipFinderPanel extends PluginPanel
 				if (response == null)
 				{
 					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+					restoreScrollPosition(recommendedScrollPane, scrollPos);
 					return;
 				}
 
 				if (response.getRecommendations() == null || response.getRecommendations().isEmpty())
 				{
 					showErrorInRecommended("No flip recommendations found matching your criteria.");
+					restoreScrollPosition(recommendedScrollPane, scrollPos);
 					return;
 				}
 
@@ -660,13 +674,15 @@ public class FlipFinderPanel extends PluginPanel
 
 				updateStatusLabel(response);
 				populateRecommendations(response.getRecommendations());
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
 		}).exceptionally(throwable ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
 				refreshButton.setEnabled(true);
-				showErrorInRecommended("Error: " + throwable.getMessage());
+				showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
 			return null;
 		});
@@ -675,26 +691,52 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Refresh active flips
 	 */
-	private void refreshActiveFlips()
+	public void refreshActiveFlips()
 	{
+		// Save scroll position before refresh
+		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
+		
 		activeFlipsListContainer.removeAll();
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
 
-		apiClient.getActiveFlipsAsync().thenAccept(response ->
+		// Pass current RSN to filter data for the logged-in account
+		String rsn = plugin.getCurrentRsnSafe().orElse(null);
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
 				if (response == null)
 				{
 					showErrorInActiveFlips("Failed to fetch active flips. Check your API settings.");
+					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 					return;
 				}
 
 				currentActiveFlips.clear();
 				if (response.getActiveFlips() != null)
 				{
-					currentActiveFlips.addAll(response.getActiveFlips());
+					// Filter active flips to only show items that are currently being tracked:
+					// 1. Items currently in GE buy slots (pending or filled)
+					// 2. Items currently in GE sell slots (waiting to fully sell)
+					// 3. Items collected from GE in this session (waiting to be sold)
+					// This prevents showing old stale data while keeping active items visible
+					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+					log.debug("Active flip filter: {} tracked item IDs, {} flips from backend",
+						activeItemIds.size(), response.getActiveFlips().size());
+					for (ActiveFlip flip : response.getActiveFlips())
+					{
+						if (activeItemIds.contains(flip.getItemId()))
+						{
+							currentActiveFlips.add(flip);
+							log.debug("Including active flip: {} (ID {})", flip.getItemName(), flip.getItemId());
+						}
+						else
+						{
+							log.debug("Filtering out active flip: {} (ID {}) - not in tracked items",
+								flip.getItemName(), flip.getItemId());
+						}
+					}
 				}
 
 				// Get pending orders from plugin
@@ -703,13 +745,25 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
 				{
 					showNoActiveFlips();
+					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 					return;
 				}
 
 				// Update status label with active flips info
 				if (!currentActiveFlips.isEmpty())
 				{
-					updateActiveFlipsStatus(response);
+					// Update with filtered count
+					int itemCount = currentActiveFlips.size();
+					int invested = currentActiveFlips.stream()
+						.mapToInt(ActiveFlip::getTotalInvested)
+						.sum();
+					if (tabbedPane.getSelectedIndex() == 1)
+					{
+						statusLabel.setText(String.format("%d active %s | %s invested",
+							itemCount,
+							itemCount == 1 ? "flip" : "flips",
+							formatGP(invested)));
+					}
 				}
 				else if (!pendingOrders.isEmpty())
 				{
@@ -720,12 +774,14 @@ public class FlipFinderPanel extends PluginPanel
 
 				// Display both active flips and pending orders
 				displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
+				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 			});
 		}).exceptionally(throwable ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
-				showErrorInActiveFlips("Error: " + throwable.getMessage());
+				showErrorInActiveFlips(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 			});
 			return null;
 		});
@@ -733,7 +789,9 @@ public class FlipFinderPanel extends PluginPanel
 	
 	/**
 	 * Update pending orders display (called when GE offers change)
+	 * @param pendingOrders the list of pending orders (used to trigger refresh)
 	 */
+	@SuppressWarnings("unused")
 	public void updatePendingOrders(java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders)
 	{
 		// Only update if we're on the Active Flips tab
@@ -748,18 +806,23 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshCompletedFlips()
 	{
+		// Save scroll position before refresh
+		final int scrollPos = getScrollPosition(completedFlipsScrollPane);
+		
 		completedFlipsListContainer.removeAll();
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
 
-		// Fetch last 50 completed flips
-		apiClient.getCompletedFlipsAsync(50).thenAccept(response ->
+		// Fetch last 50 completed flips for current RSN
+		String rsn = plugin.getCurrentRsnSafe().orElse(null);
+		apiClient.getCompletedFlipsAsync(50, rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
 				if (response == null)
 				{
 					showErrorInCompletedFlips("Failed to fetch completed flips. Check your API settings.");
+					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 					return;
 				}
 
@@ -772,6 +835,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentCompletedFlips.isEmpty())
 				{
 					showNoCompletedFlips();
+					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 					return;
 				}
 
@@ -787,12 +851,14 @@ public class FlipFinderPanel extends PluginPanel
 				}
 
 				populateCompletedFlips(currentCompletedFlips);
+				restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 			});
 		}).exceptionally(throwable ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
-				showErrorInCompletedFlips("Error: " + throwable.getMessage());
+				showErrorInCompletedFlips(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 			});
 			return null;
 		});
@@ -827,13 +893,13 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel titleLabel = new JLabel("No completed flips");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
+		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 16));
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		JLabel instructionLabel = new JLabel("<html><center>Complete your first flip to see it here!<br>Buy and sell items to track your profits</center></html>");
 		instructionLabel.setForeground(new Color(180, 180, 180));
-		instructionLabel.setFont(new Font("Arial", Font.PLAIN, 13));
+		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 13));
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -867,13 +933,23 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Display both active flips and pending orders
+	 * Display both active flips and pending orders.
+	 * Pending orders (items still in GE buy slots) take priority over active flips
+	 * to avoid showing duplicates when an item is partially filled.
 	 */
 	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders)
 	{
 		activeFlipsListContainer.removeAll();
 		
-		// First show pending orders (orders not yet filled)
+		// Build a map of pending orders by itemId for smart deduplication
+		// Key: itemId, Value: list of pending orders for that item
+		java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId = new java.util.HashMap<>();
+		for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
+		{
+			pendingByItemId.computeIfAbsent(pending.itemId, k -> new java.util.ArrayList<>()).add(pending);
+		}
+		
+		// First show pending orders (items currently in GE buy slots)
 		if (!pendingOrders.isEmpty())
 		{
 			for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
@@ -883,32 +959,42 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 		
-		// Then show active flips (items that have filled)
+		// Then show active flips (items collected, waiting to sell)
+		// Only skip an active flip if there's a pending order that appears to be the SAME transaction
+		// (matching itemId AND the pending order's filled quantity accounts for all the active flip quantity)
 		for (ActiveFlip flip : activeFlips)
 		{
-			activeFlipsListContainer.add(createActiveFlipPanel(flip));
-			activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
+			java.util.List<FlipSmartPlugin.PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
+			
+			boolean shouldShow = true;
+			if (matchingPending != null)
+			{
+				// Check if any pending order fully accounts for this active flip
+				// This happens when the pending order is the source of the active flip data
+				for (FlipSmartPlugin.PendingOrder pending : matchingPending)
+				{
+					// If the pending order's filled quantity matches the active flip's remaining quantity
+					// AND the prices are similar, it's likely the same transaction - skip to avoid duplicate
+					if (pending.quantityFilled == flip.getTotalQuantity() && 
+						Math.abs(pending.pricePerItem - flip.getAverageBuyPrice()) <= 1)
+					{
+						shouldShow = false;
+						log.debug("Skipping active flip {} - matches pending order in slot {} (qty: {}, price: {})",
+							flip.getItemName(), pending.slot, pending.quantityFilled, pending.pricePerItem);
+						break;
+					}
+				}
+			}
+			
+			if (shouldShow)
+			{
+				activeFlipsListContainer.add(createActiveFlipPanel(flip));
+				activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
+			}
 		}
 
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
-	}
-
-	/**
-	 * Update status label with active flips information
-	 */
-	private void updateActiveFlipsStatus(ActiveFlipsResponse response)
-	{
-		int itemCount = response.getTotalItems();
-		int invested = response.getTotalInvested();
-		
-		if (tabbedPane.getSelectedIndex() == 1) // Active Flips tab
-		{
-			statusLabel.setText(String.format("%d active %s | %s invested",
-				itemCount,
-				itemCount == 1 ? "flip" : "flips",
-				formatGP(invested)));
-		}
 	}
 
 	/**
@@ -990,14 +1076,14 @@ public class FlipFinderPanel extends PluginPanel
 		// Main message
 		JLabel titleLabel = new JLabel("No active flips");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font("Arial", Font.BOLD, 16));
+		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 16));
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		// Instructions
 		JLabel instructionLabel = new JLabel("<html><center>Buy items from the Recommended tab<br>to start tracking your flips</center></html>");
 		instructionLabel.setForeground(new Color(180, 180, 180));
-		instructionLabel.setFont(new Font("Arial", Font.PLAIN, 13));
+		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 13));
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -1029,23 +1115,6 @@ public class FlipFinderPanel extends PluginPanel
 
 		recommendedListContainer.revalidate();
 		recommendedListContainer.repaint();
-	}
-
-	/**
-	 * Populate the active flips list
-	 */
-	private void populateActiveFlips(List<ActiveFlip> activeFlips)
-	{
-		activeFlipsListContainer.removeAll();
-
-		for (ActiveFlip flip : activeFlips)
-		{
-			activeFlipsListContainer.add(createActiveFlipPanel(flip));
-			activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
-		}
-
-		activeFlipsListContainer.revalidate();
-		activeFlipsListContainer.repaint();
 	}
 
 	/**
@@ -1093,7 +1162,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(rec.getItemName());
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font("Arial", Font.BOLD, 14));
+		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 14));
 
 		namePanel.add(iconLabel);
 		namePanel.add(nameLabel);
@@ -1111,28 +1180,28 @@ public class FlipFinderPanel extends PluginPanel
 			formatGPExact(rec.getRecommendedBuyPrice()),
 			formatGPExact(rec.getRecommendedSellPrice())));
 		priceLabel.setForeground(Color.LIGHT_GRAY);
-		priceLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		priceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 
 		// Quantity
 		JLabel quantityLabel = new JLabel(String.format("Qty: %d (Limit: %d)",
 			rec.getRecommendedQuantity(),
 			rec.getBuyLimit()));
 		quantityLabel.setForeground(new Color(200, 200, 255));
-		quantityLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		quantityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 
 		// Margin and ROI
 		JLabel marginLabel = new JLabel(String.format("Margin: %s (%s ROI)",
 			formatGP(rec.getMargin()),
 			rec.getFormattedROI()));
 		marginLabel.setForeground(new Color(100, 255, 100));
-		marginLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		marginLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 
 		// Potential profit and total cost
 		JLabel profitLabel = new JLabel(String.format("Profit: %s | Cost: %s",
 			formatGP(rec.getPotentialProfit()),
 			formatGP(rec.getTotalCost())));
 		profitLabel.setForeground(new Color(255, 215, 0));
-		profitLabel.setFont(new Font("Arial", Font.PLAIN, 12));
+		profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
 
 		detailsPanel.add(priceLabel);
 		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
@@ -1166,13 +1235,13 @@ public class FlipFinderPanel extends PluginPanel
 						rec.getLiquidityRating(),
 						rec.getVolumePerHour()));
 					liquidityLabel.setForeground(Color.CYAN);
-					liquidityLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+					liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 					JLabel riskLabel = new JLabel(String.format("Risk: %.0f (%s)",
 						rec.getRiskScore(),
 						rec.getRiskRating()));
 					riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
-					riskLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+					riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 					extraDetails.add(liquidityLabel);
 					extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));
@@ -1209,29 +1278,6 @@ public class FlipFinderPanel extends PluginPanel
 		});
 
 		return panel;
-	}
-
-	/**
-	 * Get color based on efficiency score
-	 */
-	private Color getEfficiencyColor(double score)
-	{
-		if (score >= 80)
-		{
-			return new Color(100, 255, 100); // Bright green
-		}
-		else if (score >= 65)
-		{
-			return new Color(150, 255, 100); // Yellow-green
-		}
-		else if (score >= 50)
-		{
-			return new Color(255, 255, 100); // Yellow
-		}
-		else
-		{
-			return new Color(255, 150, 100); // Orange
-		}
 	}
 
 	/**
@@ -1283,7 +1329,9 @@ public class FlipFinderPanel extends PluginPanel
 
 	/**
 	 * Set the cash stack for filtering recommendations
+	 * @param cashStack the cash stack value (used to trigger refresh)
 	 */
+	@SuppressWarnings("unused")
 	public void setCashStack(Integer cashStack)
 	{
 		// This will trigger a refresh with the new cash stack
@@ -1337,7 +1385,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(flip.getItemName());
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font("Arial", Font.BOLD, 13));
+		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
 		namePanel.add(iconLabel);
 		namePanel.add(nameLabel);
@@ -1348,33 +1396,45 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
 
-		// Row 1: Quantity and Buy Price (exact price for easy GE input)
-		JLabel qtyLabel = new JLabel(String.format("Qty: %d", flip.getTotalQuantity()));
+		// Row 1: Quantity (sold/total) and Buy Price (exact price for easy GE input)
+		String qtyText;
+		if (flip.getOriginalQuantity() > 0)
+		{
+			// Show sold/total format (e.g., "0/200" means 0 sold out of 200)
+			int soldQuantity = flip.getOriginalQuantity() - flip.getTotalQuantity();
+			qtyText = String.format("Qty: %d/%d", soldQuantity, flip.getOriginalQuantity());
+		}
+		else
+		{
+			// Fallback if original not available
+			qtyText = String.format(FORMAT_QTY, flip.getTotalQuantity());
+		}
+		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", formatGPExact(flip.getAverageBuyPrice())));
 		buyPriceLabel.setForeground(new Color(255, 120, 120)); // Light red for buy
-		buyPriceLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		buyPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		// Row 2: Total Invested and Target Sell Price (exact price for GE input)
 		JLabel investedLabel = new JLabel(String.format("Invested: %s", formatGP(flip.getTotalInvested())));
 		investedLabel.setForeground(new Color(255, 200, 100)); // Gold
-		investedLabel.setFont(new Font("Arial", Font.BOLD, 11));
+		investedLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
 
 		// Fetch current market price for this item
 		JLabel sellPriceLabel = new JLabel("Sell: Loading...");
 		sellPriceLabel.setForeground(new Color(120, 255, 120)); // Light green for sell
-		sellPriceLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		sellPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		// Row 3: Potential Profit and ROI
 		JLabel profitLabel = new JLabel("Profit: Loading...");
 		profitLabel.setForeground(Color.LIGHT_GRAY);
-		profitLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel roiLabel = new JLabel("ROI: Loading...");
 		roiLabel.setForeground(Color.LIGHT_GRAY);
-		roiLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		detailsPanel.add(qtyLabel);
 		detailsPanel.add(buyPriceLabel);
@@ -1393,7 +1453,7 @@ public class FlipFinderPanel extends PluginPanel
 			int recommendedSellPrice = flip.getRecommendedSellPrice();
 			
 			// Update sell price
-			sellPriceLabel.setText(String.format("Sell: %s", formatGPExact(recommendedSellPrice)));
+			sellPriceLabel.setText(String.format(FORMAT_SELL, formatGPExact(recommendedSellPrice)));
 
 			// Calculate GE tax (2% capped at 5M)
 			int geTax = Math.min((int)(recommendedSellPrice * 0.02), 5_000_000);
@@ -1411,12 +1471,12 @@ public class FlipFinderPanel extends PluginPanel
 				: formatGPExact(totalProfit);
 			profitLabel.setText(String.format("Profit: %s", profitText));
 			profitLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-			profitLabel.setFont(new Font("Arial", Font.BOLD, 11));
+			profitLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
 
 			// Update ROI label with color
-			roiLabel.setText(String.format("ROI: %.1f%%", roi));
+			roiLabel.setText(String.format(FORMAT_ROI, roi));
 			roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-			roiLabel.setFont(new Font("Arial", Font.BOLD, 11));
+			roiLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
 		}
 		else
 		{
@@ -1449,12 +1509,12 @@ public class FlipFinderPanel extends PluginPanel
 								: formatGPExact(totalProfit);
 							profitLabel.setText(String.format("Profit: %s*", profitText));
 							profitLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-							profitLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+							profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 							// Update ROI label with color
 							roiLabel.setText(String.format("ROI: %.1f%%*", roi));
 							roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-							roiLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+							roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 						}
 						else
 						{
@@ -1560,9 +1620,9 @@ public class FlipFinderPanel extends PluginPanel
 			iconLabel.setPreferredSize(new Dimension(32, 32));
 		}
 
-		JLabel nameLabel = new JLabel(pending.itemName + " [PENDING]");
-		nameLabel.setForeground(new Color(255, 200, 100)); // Yellow to indicate pending
-		nameLabel.setFont(new Font("Arial", Font.BOLD, 13));
+		JLabel nameLabel = new JLabel(pending.itemName);
+		nameLabel.setForeground(Color.WHITE);
+		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
 		namePanel.add(iconLabel);
 		namePanel.add(nameLabel);
@@ -1573,25 +1633,46 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBackground(new Color(55, 55, 65));
 		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
 
-		// Row 1: Quantity and Offer Price
-		JLabel qtyLabel = new JLabel(String.format("Qty: %d", pending.quantity));
+		// Row 1: Quantity (filled/total) and Offer Price
+		String qtyText;
+		if (pending.quantityFilled > 0)
+		{
+			// Show progress: filled/total
+			qtyText = String.format("Qty: %d/%d", pending.quantityFilled, pending.quantity);
+		}
+		else
+		{
+			// Show just total if nothing filled yet
+			qtyText = String.format("Qty: 0/%d", pending.quantity);
+		}
+		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel offerLabel = new JLabel(String.format("Offer: %s", formatGPExact(pending.pricePerItem)));
 		offerLabel.setForeground(new Color(255, 120, 120)); // Light red like buy prices
-		offerLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		offerLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		// Row 2: Invested (potential) and Target Sell
+		// Row 2: Invested (actual filled amount) and Target Sell
+		int actualInvestment = pending.quantityFilled * pending.pricePerItem;
 		int potentialInvestment = pending.quantity * pending.pricePerItem;
-		JLabel investedLabel = new JLabel(String.format("If filled: %s", formatGP(potentialInvestment)));
-		investedLabel.setForeground(new Color(200, 200, 200));
-		investedLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		String investedText;
+		if (pending.quantityFilled > 0)
+		{
+			investedText = String.format("Invested: %s", formatGP(actualInvestment));
+		}
+		else
+		{
+			investedText = String.format("If filled: %s", formatGP(potentialInvestment));
+		}
+		JLabel investedLabel = new JLabel(investedText);
+		investedLabel.setForeground(pending.quantityFilled > 0 ? new Color(255, 200, 100) : new Color(200, 200, 200));
+		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel sellLabel = new JLabel();
 		if (pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0)
 		{
-			sellLabel.setText(String.format("Sell: %s", formatGPExact(pending.recommendedSellPrice)));
+			sellLabel.setText(String.format(FORMAT_SELL, formatGPExact(pending.recommendedSellPrice)));
 			sellLabel.setForeground(new Color(120, 255, 120)); // Light green for sell
 		}
 		else
@@ -1599,12 +1680,27 @@ public class FlipFinderPanel extends PluginPanel
 			sellLabel.setText("Sell: --");
 			sellLabel.setForeground(Color.LIGHT_GRAY);
 		}
-		sellLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		sellLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		// Row 3: Status and Expected ROI
-		JLabel statusLabel = new JLabel(String.format("GE Slot %d: Waiting", pending.slot + 1));
-		statusLabel.setForeground(new Color(180, 180, 180));
-		statusLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		String statusText;
+		Color statusColor;
+		if (pending.quantityFilled > 0)
+		{
+			// Partially filled - show progress
+			int percent = (pending.quantityFilled * 100) / pending.quantity;
+			statusText = String.format("GE Slot %d: Filling (%d%%)", pending.slot + 1, percent);
+			statusColor = new Color(120, 200, 255); // Light blue for in-progress
+		}
+		else
+		{
+			// Waiting for first fill
+			statusText = String.format("GE Slot %d: Waiting", pending.slot + 1);
+			statusColor = new Color(180, 180, 180);
+		}
+		JLabel slotStatusLabel = new JLabel(statusText);
+		slotStatusLabel.setForeground(statusColor);
+		slotStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel roiLabel = new JLabel();
 		if (pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0)
@@ -1612,7 +1708,7 @@ public class FlipFinderPanel extends PluginPanel
 			int geTax = Math.min((int)(pending.recommendedSellPrice * 0.02), 5_000_000);
 			int profitPerItem = pending.recommendedSellPrice - pending.pricePerItem - geTax;
 			double roi = (profitPerItem * 100.0) / pending.pricePerItem;
-			roiLabel.setText(String.format("ROI: %.1f%%", roi));
+			roiLabel.setText(String.format(FORMAT_ROI, roi));
 			roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
 		}
 		else
@@ -1620,13 +1716,13 @@ public class FlipFinderPanel extends PluginPanel
 			roiLabel.setText("ROI: --");
 			roiLabel.setForeground(Color.LIGHT_GRAY);
 		}
-		roiLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		detailsPanel.add(qtyLabel);
 		detailsPanel.add(offerLabel);
 		detailsPanel.add(investedLabel);
 		detailsPanel.add(sellLabel);
-		detailsPanel.add(statusLabel);
+		detailsPanel.add(slotStatusLabel);
 		detailsPanel.add(roiLabel);
 
 		panel.add(topPanel, BorderLayout.NORTH);
@@ -1677,7 +1773,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(flip.getItemName());
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font("Arial", Font.BOLD, 13));
+		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
 
 		namePanel.add(iconLabel);
 		namePanel.add(nameLabel);
@@ -1689,22 +1785,22 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
 
 		// Row 1: Quantity and Buy Price
-		JLabel qtyLabel = new JLabel(String.format("Qty: %d", flip.getQuantity()));
+		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, flip.getQuantity()));
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", formatGPExact(flip.getBuyPricePerItem())));
 		buyPriceLabel.setForeground(new Color(255, 120, 120));
-		buyPriceLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		buyPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		// Row 2: Invested and Sell Price
 		JLabel investedLabel = new JLabel(String.format("Cost: %s", formatGP(flip.getBuyTotal())));
 		investedLabel.setForeground(new Color(200, 200, 200));
-		investedLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		JLabel sellPriceLabel = new JLabel(String.format("Sell: %s", formatGPExact(flip.getSellPricePerItem())));
+		JLabel sellPriceLabel = new JLabel(String.format(FORMAT_SELL, formatGPExact(flip.getSellPricePerItem())));
 		sellPriceLabel.setForeground(new Color(120, 255, 120));
-		sellPriceLabel.setFont(new Font("Arial", Font.PLAIN, 11));
+		sellPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		// Row 3: Net Profit and ROI
 		JLabel profitLabel = new JLabel(String.format("Profit: %s", formatGP(flip.getNetProfit())));
@@ -1712,11 +1808,11 @@ public class FlipFinderPanel extends PluginPanel
 			new Color(100, 255, 100) : // Bright green
 			new Color(255, 100, 100);  // Bright red
 		profitLabel.setForeground(profitColor);
-		profitLabel.setFont(new Font("Arial", Font.BOLD, 11));
+		profitLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
 
-		JLabel roiLabel = new JLabel(String.format("ROI: %.1f%%", flip.getRoiPercent()));
+		JLabel roiLabel = new JLabel(String.format(FORMAT_ROI, flip.getRoiPercent()));
 		roiLabel.setForeground(profitColor);
-		roiLabel.setFont(new Font("Arial", Font.BOLD, 11));
+		roiLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
 
 		detailsPanel.add(qtyLabel);
 		detailsPanel.add(buyPriceLabel);
@@ -1754,12 +1850,12 @@ public class FlipFinderPanel extends PluginPanel
 
 					JLabel durationLabel = new JLabel(String.format("Duration: %s", duration));
 					durationLabel.setForeground(new Color(180, 180, 180));
-					durationLabel.setFont(new Font("Arial", Font.PLAIN, 10));
+					durationLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 					// GE Tax
 					JLabel taxLabel = new JLabel(String.format("GE Tax: %s", formatGP(flip.getGeTax())));
 					taxLabel.setForeground(new Color(180, 180, 180));
-					taxLabel.setFont(new Font("Arial", Font.PLAIN, 10));
+					taxLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
 					extraDetails.add(durationLabel);
 					extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));
@@ -1793,7 +1889,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		int result = JOptionPane.showConfirmDialog(
 			this,
-			String.format("Remove %s from active flips?\n\nThis will hide it from tracking.\nUse this if you sold/used the items outside of the GE.", flip.getItemName()),
+			String.format("Remove %s from active flips?%n%nThis will hide it from tracking.%nUse this if you sold/used the items outside of the GE.", flip.getItemName()),
 			"Dismiss Active Flip",
 			JOptionPane.YES_NO_OPTION,
 			JOptionPane.QUESTION_MESSAGE
@@ -1806,7 +1902,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				SwingUtilities.invokeLater(() ->
 				{
-					if (success)
+					if (Boolean.TRUE.equals(success))
 					{
 						// Refresh the active flips list
 						refreshActiveFlips();
@@ -1829,6 +1925,32 @@ public class FlipFinderPanel extends PluginPanel
 				});
 			});
 		}
+	}
+	
+	/**
+	 * Get the current scroll position of a scroll pane.
+	 */
+	private int getScrollPosition(JScrollPane scrollPane)
+	{
+		if (scrollPane == null || scrollPane.getVerticalScrollBar() == null)
+		{
+			return 0;
+		}
+		return scrollPane.getVerticalScrollBar().getValue();
+	}
+	
+	/**
+	 * Restore the scroll position of a scroll pane after content refresh.
+	 * Uses invokeLater to ensure layout is complete before restoring.
+	 */
+	private void restoreScrollPosition(JScrollPane scrollPane, int position)
+	{
+		if (scrollPane == null || scrollPane.getVerticalScrollBar() == null || position <= 0)
+		{
+			return;
+		}
+		// Use invokeLater to restore after layout is complete
+		SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(position));
 	}
 }
 

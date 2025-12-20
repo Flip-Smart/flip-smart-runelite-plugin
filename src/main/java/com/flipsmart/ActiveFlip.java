@@ -18,6 +18,9 @@ public class ActiveFlip
 	@SerializedName("total_quantity")
 	private int totalQuantity;
 
+	@SerializedName("original_quantity")
+	private int originalQuantity;
+
 	@SerializedName("average_buy_price")
 	private int averageBuyPrice;
 
