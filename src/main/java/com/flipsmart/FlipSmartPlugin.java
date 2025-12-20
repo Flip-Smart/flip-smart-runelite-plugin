@@ -93,6 +93,7 @@ public class FlipSmartPlugin extends Plugin
 	// Config keys for persisting offer state
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
+	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	
 	// Flag to track if we've synced offline fills on this login
 	private boolean offlineSyncCompleted = false;
@@ -141,7 +142,8 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Get current pending buy orders (placed but not filled yet)
+	 * Get current buy orders in GE slots (pending or partially filled).
+	 * These are buy orders that haven't been fully collected yet.
 	 */
 	public java.util.List<PendingOrder> getPendingBuyOrders()
 	{
@@ -151,15 +153,16 @@ public class FlipSmartPlugin extends Plugin
 		{
 			TrackedOffer offer = entry.getValue();
 			
-			// Only include buy orders with 0 fills
-			if (offer.isBuy && offer.previousQuantitySold == 0)
+			// Include all buy orders (pending or partially filled)
+			if (offer.isBuy)
 			{
 				Integer recommendedSellPrice = recommendedPrices.get(offer.itemId);
 				
 				PendingOrder pending = new PendingOrder(
 					offer.itemId,
-					offer.itemName, // Use cached name
+					offer.itemName,
 					offer.totalQuantity,
+					offer.previousQuantitySold, // How many filled so far
 					offer.price,
 					recommendedSellPrice,
 					entry.getKey() // slot
@@ -299,16 +302,18 @@ public class FlipSmartPlugin extends Plugin
 	{
 		public final int itemId;
 		public final String itemName;
-		public final int quantity;
+		public final int quantity;        // Total quantity ordered
+		public final int quantityFilled;  // How many have been filled so far
 		public final int pricePerItem;
 		public final Integer recommendedSellPrice;
 		public final int slot;
 		
-		public PendingOrder(int itemId, String itemName, int quantity, int pricePerItem, Integer recommendedSellPrice, int slot)
+		public PendingOrder(int itemId, String itemName, int quantity, int quantityFilled, int pricePerItem, Integer recommendedSellPrice, int slot)
 		{
 			this.itemId = itemId;
 			this.itemName = itemName;
 			this.quantity = quantity;
+			this.quantityFilled = quantityFilled;
 			this.pricePerItem = pricePerItem;
 			this.recommendedSellPrice = recommendedSellPrice;
 			this.slot = slot;
@@ -365,7 +370,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			lastLoginTick = client.getTickCount();
 			offlineSyncCompleted = false;
-			collectedItemIds.clear(); // Reset collected tracking on login
+			// Note: Don't clear collectedItemIds here - we'll restore them after RSN is known
 			log.debug("Login state change detected, setting lastLoginTick to {}", lastLoginTick);
 		}
 		
@@ -380,6 +385,10 @@ public class FlipSmartPlugin extends Plugin
 			log.info("Player logged in");
 			syncRSN();
 			updateCashStack();
+			
+			// Restore collected items from config (items bought but not yet sold)
+			// Must be after syncRSN() so we have the correct RSN for the config key
+			restoreCollectedItems();
 			
 			// Schedule offline sync after a delay to ensure all GE events have been processed
 			// This must run AFTER syncRSN() so we have the correct RSN for the config key
@@ -399,32 +408,73 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
+	 * Restore collected item IDs from persisted config.
+	 * These are items that were bought but not yet sold when the player logged out.
+	 */
+	private void restoreCollectedItems()
+	{
+		java.util.Set<Integer> persisted = loadPersistedCollectedItems();
+		if (!persisted.isEmpty())
+		{
+			collectedItemIds.clear();
+			collectedItemIds.addAll(persisted);
+			log.info("Restored {} collected items from previous session (active flips)", persisted.size());
+		}
+		else
+		{
+			collectedItemIds.clear();
+		}
+	}
+	
+	/**
 	 * Persist the current GE offer state to config for offline tracking.
 	 * Called when the player logs out.
 	 * Uses RSN-specific key to support multiple accounts.
 	 */
 	private void persistOfferState()
 	{
-		String key = getPersistedOffersKey();
+		String offersKey = getPersistedOffersKey();
+		String collectedKey = getCollectedItemsKey();
 		
+		// Persist tracked offers
 		if (trackedOffers.isEmpty())
 		{
-			configManager.unsetConfiguration(CONFIG_GROUP, key);
+			configManager.unsetConfiguration(CONFIG_GROUP, offersKey);
 			log.debug("No tracked offers to persist for {}", currentRsn);
-			return;
+		}
+		else
+		{
+			try
+			{
+				Map<Integer, TrackedOffer> offersToSave = new HashMap<>(trackedOffers);
+				String json = gson.toJson(offersToSave);
+				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
+				log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), currentRsn);
+			}
+			catch (Exception e)
+			{
+				log.error("Failed to persist offer state for {}: {}", currentRsn, e.getMessage());
+			}
 		}
 		
-		try
+		// Persist collected item IDs (items bought but not yet sold)
+		if (collectedItemIds.isEmpty())
 		{
-			// Convert to a regular HashMap for serialization
-			Map<Integer, TrackedOffer> offersToSave = new HashMap<>(trackedOffers);
-			String json = gson.toJson(offersToSave);
-			configManager.setConfiguration(CONFIG_GROUP, key, json);
-			log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), currentRsn);
+			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
+			log.debug("No collected items to persist for {}", currentRsn);
 		}
-		catch (Exception e)
+		else
 		{
-			log.error("Failed to persist offer state for {}: {}", currentRsn, e.getMessage());
+			try
+			{
+				String json = gson.toJson(new java.util.ArrayList<>(collectedItemIds));
+				configManager.setConfiguration(CONFIG_GROUP, collectedKey, json);
+				log.info("Persisted {} collected item IDs for {} (active flips)", collectedItemIds.size(), currentRsn);
+			}
+			catch (Exception e)
+			{
+				log.error("Failed to persist collected items for {}: {}", currentRsn, e.getMessage());
+			}
 		}
 	}
 	
@@ -595,6 +645,43 @@ public class FlipSmartPlugin extends Plugin
 			return PERSISTED_OFFERS_KEY_PREFIX + "unknown";
 		}
 		return PERSISTED_OFFERS_KEY_PREFIX + currentRsn;
+	}
+	
+	private String getCollectedItemsKey()
+	{
+		if (currentRsn == null || currentRsn.isEmpty())
+		{
+			return COLLECTED_ITEMS_KEY_PREFIX + "unknown";
+		}
+		return COLLECTED_ITEMS_KEY_PREFIX + currentRsn;
+	}
+	
+	/**
+	 * Load previously persisted collected item IDs from config.
+	 * These are items that were bought but not yet sold when the player logged out.
+	 */
+	private java.util.Set<Integer> loadPersistedCollectedItems()
+	{
+		String key = getCollectedItemsKey();
+		
+		try
+		{
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				return new java.util.HashSet<>();
+			}
+			
+			Type type = new TypeToken<java.util.List<Integer>>(){}.getType();
+			java.util.List<Integer> items = gson.fromJson(json, type);
+			log.debug("Loaded {} persisted collected items for {}", items != null ? items.size() : 0, currentRsn);
+			return items != null ? new java.util.HashSet<>(items) : new java.util.HashSet<>();
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load persisted collected items for {}: {}", currentRsn, e.getMessage());
+			return new java.util.HashSet<>();
+		}
 	}
 
 	@Subscribe

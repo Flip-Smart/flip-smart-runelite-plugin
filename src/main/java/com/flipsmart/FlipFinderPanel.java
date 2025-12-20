@@ -901,13 +901,22 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Display both active flips and pending orders
+	 * Display both active flips and pending orders.
+	 * Pending orders (items still in GE buy slots) take priority over active flips
+	 * to avoid showing duplicates when an item is partially filled.
 	 */
 	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders)
 	{
 		activeFlipsListContainer.removeAll();
 		
-		// First show pending orders (orders not yet filled)
+		// Collect item IDs from pending orders to avoid duplicates
+		java.util.Set<Integer> pendingItemIds = new java.util.HashSet<>();
+		for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
+		{
+			pendingItemIds.add(pending.itemId);
+		}
+		
+		// First show pending orders (items currently in GE buy slots)
 		if (!pendingOrders.isEmpty())
 		{
 			for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
@@ -917,11 +926,15 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 		
-		// Then show active flips (items that have filled)
+		// Then show active flips (items collected, waiting to sell)
+		// Skip any items that are already shown as pending orders
 		for (ActiveFlip flip : activeFlips)
 		{
-			activeFlipsListContainer.add(createActiveFlipPanel(flip));
-			activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
+			if (!pendingItemIds.contains(flip.getItemId()))
+			{
+				activeFlipsListContainer.add(createActiveFlipPanel(flip));
+				activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
+			}
 		}
 
 		activeFlipsListContainer.revalidate();
@@ -1327,8 +1340,19 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
 
-		// Row 1: Quantity and Buy Price (exact price for easy GE input)
-		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, flip.getTotalQuantity()));
+		// Row 1: Quantity (remaining/total) and Buy Price (exact price for easy GE input)
+		String qtyText;
+		if (flip.getOriginalQuantity() > 0 && flip.getOriginalQuantity() != flip.getTotalQuantity())
+		{
+			// Show remaining/total format when some items have been sold
+			qtyText = String.format("Qty: %d/%d", flip.getTotalQuantity(), flip.getOriginalQuantity());
+		}
+		else
+		{
+			// Show just the quantity if nothing sold yet or original not available
+			qtyText = String.format(FORMAT_QTY, flip.getTotalQuantity());
+		}
+		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
 		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
@@ -1552,8 +1576,19 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBackground(new Color(55, 55, 65));
 		detailsPanel.setBorder(new EmptyBorder(3, 38, 0, 0));
 
-		// Row 1: Quantity and Offer Price
-		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, pending.quantity));
+		// Row 1: Quantity (filled/total) and Offer Price
+		String qtyText;
+		if (pending.quantityFilled > 0)
+		{
+			// Show progress: filled/total
+			qtyText = String.format("Qty: %d/%d", pending.quantityFilled, pending.quantity);
+		}
+		else
+		{
+			// Show just total if nothing filled yet
+			qtyText = String.format("Qty: 0/%d", pending.quantity);
+		}
+		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
 		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
@@ -1561,10 +1596,20 @@ public class FlipFinderPanel extends PluginPanel
 		offerLabel.setForeground(new Color(255, 120, 120)); // Light red like buy prices
 		offerLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		// Row 2: Invested (potential) and Target Sell
+		// Row 2: Invested (actual filled amount) and Target Sell
+		int actualInvestment = pending.quantityFilled * pending.pricePerItem;
 		int potentialInvestment = pending.quantity * pending.pricePerItem;
-		JLabel investedLabel = new JLabel(String.format("If filled: %s", formatGP(potentialInvestment)));
-		investedLabel.setForeground(new Color(200, 200, 200));
+		String investedText;
+		if (pending.quantityFilled > 0)
+		{
+			investedText = String.format("Invested: %s", formatGP(actualInvestment));
+		}
+		else
+		{
+			investedText = String.format("If filled: %s", formatGP(potentialInvestment));
+		}
+		JLabel investedLabel = new JLabel(investedText);
+		investedLabel.setForeground(pending.quantityFilled > 0 ? new Color(255, 200, 100) : new Color(200, 200, 200));
 		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel sellLabel = new JLabel();
@@ -1581,8 +1626,23 @@ public class FlipFinderPanel extends PluginPanel
 		sellLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		// Row 3: Status and Expected ROI
-		JLabel slotStatusLabel = new JLabel(String.format("GE Slot %d: Waiting", pending.slot + 1));
-		slotStatusLabel.setForeground(new Color(180, 180, 180));
+		String statusText;
+		Color statusColor;
+		if (pending.quantityFilled > 0)
+		{
+			// Partially filled - show progress
+			int percent = (pending.quantityFilled * 100) / pending.quantity;
+			statusText = String.format("GE Slot %d: Filling (%d%%)", pending.slot + 1, percent);
+			statusColor = new Color(120, 200, 255); // Light blue for in-progress
+		}
+		else
+		{
+			// Waiting for first fill
+			statusText = String.format("GE Slot %d: Waiting", pending.slot + 1);
+			statusColor = new Color(180, 180, 180);
+		}
+		JLabel slotStatusLabel = new JLabel(statusText);
+		slotStatusLabel.setForeground(statusColor);
 		slotStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
 		JLabel roiLabel = new JLabel();
