@@ -28,6 +28,7 @@ import java.awt.Rectangle;
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
@@ -38,6 +39,8 @@ import java.util.concurrent.ConcurrentHashMap;
 )
 public class FlipSmartPlugin extends Plugin
 {
+	private static final int INVENTORY_CONTAINER_ID = 93;
+
 	@Inject
 	private Client client;
 
@@ -249,7 +252,7 @@ public class FlipSmartPlugin extends Plugin
 			if (inventoryCount == 0)
 			{
 				log.info("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
-				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe()).thenAccept(success ->
+				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe().orElse(null)).thenAccept(success ->
 				{
 					if (Boolean.TRUE.equals(success))
 					{
@@ -276,7 +279,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private int getInventoryCountForItem(int itemId)
 	{
-		ItemContainer inventory = client.getItemContainer(93); // 93 = inventory
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
 		if (inventory == null)
 		{
 			return 0;
@@ -571,7 +574,7 @@ public class FlipSmartPlugin extends Plugin
 					currentOffer.price,
 					slot,
 					recommendedSellPrice,
-					getCurrentRsnSafe()
+					getCurrentRsnSafe().orElse(null)
 				);
 			}
 		}
@@ -642,13 +645,14 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Get the current RSN, attempting to fetch from client if not cached.
-	 * This ensures we always have the RSN when recording transactions.
+	 * Returns Optional.empty() if RSN cannot be determined.
+	 * This ensures callers explicitly handle the case where RSN is unavailable.
 	 */
-	private String getCurrentRsnSafe()
+	public Optional<String> getCurrentRsnSafe()
 	{
 		if (currentRsn != null && !currentRsn.isEmpty())
 		{
-			return currentRsn;
+			return Optional.of(currentRsn);
 		}
 		
 		// Try to get RSN from client if not cached
@@ -656,11 +660,11 @@ public class FlipSmartPlugin extends Plugin
 		{
 			currentRsn = client.getLocalPlayer().getName();
 			log.info("RSN fetched from client on-demand: {}", currentRsn);
-			return currentRsn;
+			return Optional.of(currentRsn);
 		}
 		
 		log.warn("Unable to determine RSN - transactions will be recorded without RSN");
-		return null;
+		return Optional.empty();
 	}
 	
 	/**
@@ -804,7 +808,7 @@ public class FlipSmartPlugin extends Plugin
 						pricePerItem,
 						slot,
 						recommendedSellPrice,
-						getCurrentRsnSafe()
+						getCurrentRsnSafe().orElse(null)
 					);
 				}
 				
@@ -910,7 +914,7 @@ public class FlipSmartPlugin extends Plugin
 					pricePerItem,
 					slot,
 					recommendedSellPrice,
-					getCurrentRsnSafe()
+					getCurrentRsnSafe().orElse(null)
 				);
 				
 				// Clear recommended price after recording (only for buys)
@@ -1023,7 +1027,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void updateCashStack()
 	{
-		ItemContainer inventory = client.getItemContainer(93); // 93 = inventory
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
 		if (inventory == null)
 		{
 			currentCashStack = 0;

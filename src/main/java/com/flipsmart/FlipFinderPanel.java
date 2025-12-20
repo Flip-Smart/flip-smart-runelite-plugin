@@ -701,7 +701,7 @@ public class FlipFinderPanel extends PluginPanel
 		activeFlipsListContainer.repaint();
 
 		// Pass current RSN to filter data for the logged-in account
-		String rsn = plugin.getCurrentRsn();
+		String rsn = plugin.getCurrentRsnSafe().orElse(null);
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
@@ -814,7 +814,7 @@ public class FlipFinderPanel extends PluginPanel
 		completedFlipsListContainer.repaint();
 
 		// Fetch last 50 completed flips for current RSN
-		String rsn = plugin.getCurrentRsn();
+		String rsn = plugin.getCurrentRsnSafe().orElse(null);
 		apiClient.getCompletedFlipsAsync(50, rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
@@ -941,11 +941,12 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		activeFlipsListContainer.removeAll();
 		
-		// Collect item IDs from pending orders to avoid duplicates
-		java.util.Set<Integer> pendingItemIds = new java.util.HashSet<>();
+		// Build a map of pending orders by itemId for smart deduplication
+		// Key: itemId, Value: list of pending orders for that item
+		java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId = new java.util.HashMap<>();
 		for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
 		{
-			pendingItemIds.add(pending.itemId);
+			pendingByItemId.computeIfAbsent(pending.itemId, k -> new java.util.ArrayList<>()).add(pending);
 		}
 		
 		// First show pending orders (items currently in GE buy slots)
@@ -959,10 +960,33 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		
 		// Then show active flips (items collected, waiting to sell)
-		// Skip any items that are already shown as pending orders
+		// Only skip an active flip if there's a pending order that appears to be the SAME transaction
+		// (matching itemId AND the pending order's filled quantity accounts for all the active flip quantity)
 		for (ActiveFlip flip : activeFlips)
 		{
-			if (!pendingItemIds.contains(flip.getItemId()))
+			java.util.List<FlipSmartPlugin.PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
+			
+			boolean shouldShow = true;
+			if (matchingPending != null)
+			{
+				// Check if any pending order fully accounts for this active flip
+				// This happens when the pending order is the source of the active flip data
+				for (FlipSmartPlugin.PendingOrder pending : matchingPending)
+				{
+					// If the pending order's filled quantity matches the active flip's remaining quantity
+					// AND the prices are similar, it's likely the same transaction - skip to avoid duplicate
+					if (pending.quantityFilled == flip.getTotalQuantity() && 
+						Math.abs(pending.pricePerItem - flip.getAverageBuyPrice()) <= 1)
+					{
+						shouldShow = false;
+						log.debug("Skipping active flip {} - matches pending order in slot {} (qty: {}, price: {})",
+							flip.getItemName(), pending.slot, pending.quantityFilled, pending.pricePerItem);
+						break;
+					}
+				}
+			}
+			
+			if (shouldShow)
 			{
 				activeFlipsListContainer.add(createActiveFlipPanel(flip));
 				activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
