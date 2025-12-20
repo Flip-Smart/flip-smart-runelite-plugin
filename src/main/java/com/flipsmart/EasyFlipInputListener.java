@@ -139,13 +139,13 @@ public class EasyFlipInputListener implements KeyListener
 				{
 					setInputValue(focusedFlip.getCurrentStepPrice());
 					log.info("Auto-filled price: {}", focusedFlip.getCurrentStepPrice());
-					sendChatMessage("Price set to " + String.format("%,d", focusedFlip.getCurrentStepPrice()) + " gp");
+					sendChatMessage(focusedFlip.getItemName() + " price set to " + String.format("%,d", focusedFlip.getCurrentStepPrice()) + " gp");
 				}
 				else
 				{
 					setInputValue(focusedFlip.getCurrentStepQuantity());
 					log.info("Auto-filled quantity: {}", focusedFlip.getCurrentStepQuantity());
-					sendChatMessage("Quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
+					sendChatMessage(focusedFlip.getItemName() + " quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
 				}
 			}
 			else if (inputType == 6)
@@ -174,13 +174,13 @@ public class EasyFlipInputListener implements KeyListener
 	 */
 	private void showInfoMessage(FocusedFlip focusedFlip)
 	{
-		String action = focusedFlip.isBuying() ? "BUY" : "SELL";
-		String msg = String.format("EasyFlip: %s %s | Price: %,d | Qty: %d - Click price/qty button then press hotkey",
-			action,
+		// Send as two messages to avoid truncation
+		String msg1 = String.format("%s: %,d gp @ %,d",
 			focusedFlip.getItemName(),
 			focusedFlip.getCurrentStepPrice(),
 			focusedFlip.getCurrentStepQuantity());
-		sendChatMessage(msg);
+		sendChatMessage(msg1);
+		sendChatMessage("Use hot key [E] to auto fill price/quantity");
 	}
 	
 	/**
@@ -414,7 +414,7 @@ public class EasyFlipInputListener implements KeyListener
 		client.addChatMessage(
 			net.runelite.api.ChatMessageType.GAMEMESSAGE,
 			"",
-			"<col=00ddf0>[FlipSmart]</col> " + message,
+			"<col=ffaa00>[FlipSmart]</col> " + message,
 			null
 		);
 	}

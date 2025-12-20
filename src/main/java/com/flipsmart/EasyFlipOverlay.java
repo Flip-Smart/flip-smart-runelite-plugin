@@ -106,7 +106,7 @@ public class EasyFlipOverlay extends Overlay
 		
 		// Calculate panel dimensions
 		String hotkeyText = String.format("Press [%s] to set price/qty", getHotkeyName());
-		String stepText = focusedFlip.isBuying() ? "► BUY" : "► SELL";
+		String stepText = focusedFlip.isBuying() ? "BUY" : "SELL";
 		String itemText = focusedFlip.getItemName();
 		String priceText = "Price: " + PRICE_FORMAT.format(focusedFlip.getCurrentStepPrice()) + " gp";
 		String qtyText = "Qty: " + PRICE_FORMAT.format(focusedFlip.getCurrentStepQuantity());
