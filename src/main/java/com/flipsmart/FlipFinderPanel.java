@@ -651,9 +651,9 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Fetch recommendations asynchronously
 		Integer cashStack = getCashStack();
-		// Use the selected flip style from dropdown instead of config
+		// Use the selected flip style from dropdown
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
-		String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : config.flipStyle().getApiValue();
+		String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
 		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
 
 		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit).thenAccept(response ->
@@ -1046,7 +1046,8 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void updateStatusLabel(FlipFinderResponse response)
 	{
-		String flipStyleText = config.flipStyle().toString();
+		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+		String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
 		int count = response.getRecommendations().size();
 		
 		if (response.getCashStack() != null)

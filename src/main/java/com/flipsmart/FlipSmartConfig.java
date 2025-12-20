@@ -84,23 +84,11 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "flipStyle",
-		name = "Flip Style",
-		description = "Your preferred flipping style",
-		section = flipFinderSection,
-		position = 1
-	)
-	default FlipStyle flipStyle()
-	{
-		return FlipStyle.BALANCED;
-	}
-
-	@ConfigItem(
 		keyName = "flipFinderLimit",
 		name = "Number of Recommendations",
 		description = "Number of flip recommendations to show (1-50)",
 		section = flipFinderSection,
-		position = 2
+		position = 1
 	)
 	default int flipFinderLimit()
 	{
