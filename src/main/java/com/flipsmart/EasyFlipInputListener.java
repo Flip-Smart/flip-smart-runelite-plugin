@@ -10,7 +10,6 @@ import net.runelite.client.callback.ClientThread;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
-import java.awt.Canvas;
 import java.awt.event.KeyEvent;
 
 /**
@@ -31,10 +30,8 @@ public class EasyFlipInputListener implements KeyListener
 	private static final int GE_OFFER_GROUP = 162;
 	
 	// GE Interface child IDs
-	private static final int GE_SEARCH_BAR_CHILD = 7;
 	private static final int GE_QUANTITY_CHILD = 24;
 	private static final int GE_PRICE_CHILD = 25;
-	private static final int GE_OFFER_SEARCH_CHILD = 53;
 	
 	// VarClientInt.INPUT_TYPE values
 	private static final int INPUT_TYPE_NONE = 0;
@@ -44,15 +41,6 @@ public class EasyFlipInputListener implements KeyListener
 	
 	// Chat message prefix
 	private static final String CHAT_MESSAGE_PREFIX = "<col=ffaa00>[FlipSmart]</col> ";
-	
-	// Widget locations to check for search state (group ID, child ID)
-	private static final int[][] SEARCH_WIDGETS = {
-		{162, 53}, // Offer container search
-		{162, 24}, // Possible search location
-		{465, 57}, // GE search bar
-		{465, 7},  // GE search button
-		{162, 1},  // Offer search
-	};
 	
 	// Widget groups to scan for price/quantity dialog title
 	private static final int[] CHATBOX_WIDGET_GROUPS = {162, 163, 164, 217, 219, 229, 548, 161};
@@ -189,52 +177,17 @@ public class EasyFlipInputListener implements KeyListener
 			}
 			else
 			{
-				// Other input type - assume it's a text/search input (could be GE search)
-				fillSearchInput(focusedFlip.getItemName(), inputType);
+				// Text/search input - we don't auto-fill search to avoid macro detection
+				// Just show a helpful message
+				sendChatMessage("Search for: " + focusedFlip.getItemName());
+				sendChatMessage("Press [E] in price/quantity input to auto-fill");
 			}
 		}
 		else
 		{
-			// Not in an input field - check if GE search widget is visible
-			// Try various known GE search widget IDs
-			log.debug("No input type detected (inputType=0), checking for GE search widgets...");
-			
-			// Check multiple possible search widget locations
-			boolean foundSearch = false;
-			for (int[] widgetId : SEARCH_WIDGETS)
-			{
-				Widget searchWidget = client.getWidget(widgetId[0], widgetId[1]);
-				if (searchWidget != null)
-				{
-				log.debug("Widget {}:{} - hidden: {}, text: '{}'", 
-					widgetId[0], widgetId[1], searchWidget.isHidden(), searchWidget.getText());
-				}
-			}
-			
-			// Check if there's any active chatbox search by checking VarClientStr values
-			String currentInput = client.getVarcStrValue(VarClientStr.INPUT_TEXT);
-			String chatboxTyped = client.getVarcStrValue(VarClientStr.CHATBOX_TYPED_TEXT);
-			log.debug("Current INPUT_TEXT: '{}', CHATBOX_TYPED_TEXT: '{}'", currentInput, chatboxTyped);
-			
-			// Try setting the search text anyway - it might work even if widget isn't visible
-			Widget geSearchWidget = client.getWidget(GE_OFFER_GROUP, GE_OFFER_SEARCH_CHILD);
-			Widget geSearchBar = client.getWidget(GE_INTERFACE_GROUP, GE_SEARCH_BAR_CHILD);
-			
-			if ((geSearchWidget != null && !geSearchWidget.isHidden()) || 
-				(geSearchBar != null && !geSearchBar.isHidden()) ||
-				(chatboxTyped != null && !chatboxTyped.isEmpty()))
-			{
-				// GE search is open - try to fill it
-				fillSearchInput(focusedFlip.getItemName(), 0);
-				foundSearch = true;
-			}
-			
-			if (!foundSearch)
-			{
-				// Not in an input field - show info message
-				log.debug("No search widget found, showing info message");
-				showInfoMessage(focusedFlip);
-			}
+			// Not in an input field - show info message
+			log.debug("No input active, showing info message");
+			showInfoMessage(focusedFlip);
 		}
 	}
 	
@@ -265,41 +218,6 @@ public class EasyFlipInputListener implements KeyListener
 		// Run the script to rebuild/refresh the chatbox input display
 		// This makes the value visible in the input field
 		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, valueStr);
-	}
-	
-	/**
-	 * Fill search input with item name by simulating keyboard input.
-	 * MUST be called on client thread.
-	 */
-	private void fillSearchInput(String itemName, int inputType)
-	{
-		log.debug("Filling search input for inputType {}: {}", inputType, itemName);
-		
-		// Simulate typing each character into the search box
-		Canvas canvas = client.getCanvas();
-		if (canvas == null)
-		{
-			log.warn("Canvas is null, cannot simulate typing");
-			return;
-		}
-		
-		// Type each character
-		for (char c : itemName.toCharArray())
-		{
-			// Create and dispatch keyTyped event for each character
-			KeyEvent keyTyped = new KeyEvent(
-				canvas,
-				KeyEvent.KEY_TYPED,
-				System.currentTimeMillis(),
-				0,  // no modifiers
-				KeyEvent.VK_UNDEFINED,
-				c
-			);
-			canvas.dispatchEvent(keyTyped);
-		}
-		
-		log.debug("Simulated typing: {}", itemName);
-		sendChatMessage("Search filled: " + itemName);
 	}
 	
 	/**
