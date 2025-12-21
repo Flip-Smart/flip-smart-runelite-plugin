@@ -2,6 +2,7 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.ScriptID;
 import net.runelite.api.VarClientInt;
 import net.runelite.api.VarClientStr;
 import net.runelite.api.widgets.Widget;
@@ -237,12 +238,17 @@ public class EasyFlipInputListener implements KeyListener
 	}
 	
 	/**
-	 * Set the current input field value.
+	 * Set the current input field value and refresh the display.
 	 * MUST be called on client thread.
 	 */
 	private void setInputValue(int value)
 	{
-		client.setVarcStrValue(VarClientStr.INPUT_TEXT, String.valueOf(value));
+		String valueStr = String.valueOf(value);
+		client.setVarcStrValue(VarClientStr.INPUT_TEXT, valueStr);
+		
+		// Run the script to rebuild/refresh the chatbox input display
+		// This makes the value visible in the input field
+		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, valueStr);
 	}
 	
 	/**
