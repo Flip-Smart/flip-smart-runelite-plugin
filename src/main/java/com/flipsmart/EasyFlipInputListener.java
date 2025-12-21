@@ -30,6 +30,39 @@ public class EasyFlipInputListener implements KeyListener
 	private static final int GE_INTERFACE_GROUP = 465;
 	private static final int GE_OFFER_GROUP = 162;
 	
+	// GE Interface child IDs
+	private static final int GE_SEARCH_BAR_CHILD = 7;
+	private static final int GE_QUANTITY_CHILD = 24;
+	private static final int GE_PRICE_CHILD = 25;
+	private static final int GE_OFFER_SEARCH_CHILD = 53;
+	
+	// VarClientInt.INPUT_TYPE values
+	private static final int INPUT_TYPE_NONE = 0;
+	private static final int INPUT_TYPE_TEXT = 6;
+	private static final int INPUT_TYPE_NUMERIC = 7;
+	private static final int INPUT_TYPE_CHATBOX_SEARCH = 14;
+	
+	// Chat message prefix
+	private static final String CHAT_MESSAGE_PREFIX = "<col=ffaa00>[FlipSmart]</col> ";
+	
+	// Widget locations to check for search state (group ID, child ID)
+	private static final int[][] SEARCH_WIDGETS = {
+		{162, 53}, // Offer container search
+		{162, 24}, // Possible search location
+		{465, 57}, // GE search bar
+		{465, 7},  // GE search button
+		{162, 1},  // Offer search
+	};
+	
+	// Widget groups to scan for price/quantity dialog title
+	private static final int[] CHATBOX_WIDGET_GROUPS = {162, 163, 164, 217, 219, 229, 548, 161};
+	
+	// Parent widgets to check for static/dynamic children with price/quantity text
+	private static final int[][] CHATBOX_PARENT_WIDGETS = {
+		{162, 0}, {162, 1}, {162, 5}, {162, 24},
+		{217, 0}, {217, 4}, {217, 5}, {217, 6}
+	};
+	
 	@Inject
 	public EasyFlipInputListener(Client client, ClientThread clientThread, FlipSmartConfig config, EasyFlipOverlay easyFlipOverlay)
 	{
@@ -124,13 +157,7 @@ public class EasyFlipInputListener implements KeyListener
 	private void handleEasyFlipAction(FocusedFlip focusedFlip)
 	{
 		// Check if we're in a GE interface
-		Widget geInterface = client.getWidget(GE_INTERFACE_GROUP, 0);
-		Widget offerSetup = client.getWidget(GE_OFFER_GROUP, 0);
-		
-		boolean inGE = (geInterface != null && !geInterface.isHidden()) || 
-					   (offerSetup != null && !offerSetup.isHidden());
-		
-		if (!inGE)
+		if (!isGrandExchangeOpen())
 		{
 			log.debug("GE not open, showing info message");
 			sendChatMessage("Open a GE slot and search for " + focusedFlip.getItemName() + " first!");
@@ -139,27 +166,24 @@ public class EasyFlipInputListener implements KeyListener
 		
 		// Check if we're in an input mode (chatbox input dialog)
 		int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
-		log.info("EasyFlip action - inputType: {}", inputType);
+		log.debug("EasyFlip action - inputType: {}", inputType);
 		
-		if (inputType != 0)
+		if (inputType != INPUT_TYPE_NONE)
 		{
 			// Input dialog is open - fill the value
-			// inputType 7 = numeric input (price/quantity)
-			// inputType 6 = text input (search)
-			// inputType 14 = chatbox search (GE item search)
-			if (inputType == 7)
+			if (inputType == INPUT_TYPE_NUMERIC)
 			{
 				// Determine if it's price or quantity based on context
 				if (isLikelyPriceInput())
 				{
 					setInputValue(focusedFlip.getCurrentStepPrice());
-					log.info("Auto-filled price: {}", focusedFlip.getCurrentStepPrice());
+					log.debug("Auto-filled price: {}", focusedFlip.getCurrentStepPrice());
 					sendChatMessage(focusedFlip.getItemName() + " price set to " + String.format("%,d", focusedFlip.getCurrentStepPrice()) + " gp");
 				}
 				else
 				{
 					setInputValue(focusedFlip.getCurrentStepQuantity());
-					log.info("Auto-filled quantity: {}", focusedFlip.getCurrentStepQuantity());
+					log.debug("Auto-filled quantity: {}", focusedFlip.getCurrentStepQuantity());
 					sendChatMessage(focusedFlip.getItemName() + " quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
 				}
 			}
@@ -173,36 +197,28 @@ public class EasyFlipInputListener implements KeyListener
 		{
 			// Not in an input field - check if GE search widget is visible
 			// Try various known GE search widget IDs
-			log.info("No input type detected (inputType=0), checking for GE search widgets...");
+			log.debug("No input type detected (inputType=0), checking for GE search widgets...");
 			
 			// Check multiple possible search widget locations
-			int[][] searchWidgets = {
-				{162, 53}, // Offer container search
-				{162, 24}, // Possible search location
-				{465, 57}, // GE search bar
-				{465, 7},  // GE search button
-				{162, 1},  // Offer search
-			};
-			
 			boolean foundSearch = false;
-			for (int[] widgetId : searchWidgets)
+			for (int[] widgetId : SEARCH_WIDGETS)
 			{
 				Widget searchWidget = client.getWidget(widgetId[0], widgetId[1]);
 				if (searchWidget != null)
 				{
-					log.info("Widget {}:{} - hidden: {}, text: '{}'", 
-						widgetId[0], widgetId[1], searchWidget.isHidden(), searchWidget.getText());
+				log.debug("Widget {}:{} - hidden: {}, text: '{}'", 
+					widgetId[0], widgetId[1], searchWidget.isHidden(), searchWidget.getText());
 				}
 			}
 			
 			// Check if there's any active chatbox search by checking VarClientStr values
 			String currentInput = client.getVarcStrValue(VarClientStr.INPUT_TEXT);
 			String chatboxTyped = client.getVarcStrValue(VarClientStr.CHATBOX_TYPED_TEXT);
-			log.info("Current INPUT_TEXT: '{}', CHATBOX_TYPED_TEXT: '{}'", currentInput, chatboxTyped);
+			log.debug("Current INPUT_TEXT: '{}', CHATBOX_TYPED_TEXT: '{}'", currentInput, chatboxTyped);
 			
 			// Try setting the search text anyway - it might work even if widget isn't visible
-			Widget geSearchWidget = client.getWidget(162, 53);
-			Widget geSearchBar = client.getWidget(465, 7);
+			Widget geSearchWidget = client.getWidget(GE_OFFER_GROUP, GE_OFFER_SEARCH_CHILD);
+			Widget geSearchBar = client.getWidget(GE_INTERFACE_GROUP, GE_SEARCH_BAR_CHILD);
 			
 			if ((geSearchWidget != null && !geSearchWidget.isHidden()) || 
 				(geSearchBar != null && !geSearchBar.isHidden()) ||
@@ -216,7 +232,7 @@ public class EasyFlipInputListener implements KeyListener
 			if (!foundSearch)
 			{
 				// Not in an input field - show info message
-				log.info("No search widget found, showing info message");
+				log.debug("No search widget found, showing info message");
 				showInfoMessage(focusedFlip);
 			}
 		}
@@ -257,7 +273,7 @@ public class EasyFlipInputListener implements KeyListener
 	 */
 	private void fillSearchInput(String itemName, int inputType)
 	{
-		log.info("Filling search input for inputType {}: {}", inputType, itemName);
+		log.debug("Filling search input for inputType {}: {}", inputType, itemName);
 		
 		// Simulate typing each character into the search box
 		Canvas canvas = client.getCanvas();
@@ -282,7 +298,7 @@ public class EasyFlipInputListener implements KeyListener
 			canvas.dispatchEvent(keyTyped);
 		}
 		
-		log.info("Simulated typing: {}", itemName);
+		log.debug("Simulated typing: {}", itemName);
 		sendChatMessage("Search filled: " + itemName);
 	}
 	
@@ -295,9 +311,7 @@ public class EasyFlipInputListener implements KeyListener
 	{
 		// Scan ALL visible widgets in chatbox-related groups for the dialog title
 		// The OSRS chatbox input dialog title can appear in various locations
-		int[] widgetGroups = {162, 163, 164, 217, 219, 229, 548, 161};
-		
-		for (int groupId : widgetGroups)
+		for (int groupId : CHATBOX_WIDGET_GROUPS)
 		{
 			// Check children 0-100 for each group
 			for (int childId = 0; childId <= 100; childId++)
@@ -311,8 +325,7 @@ public class EasyFlipInputListener implements KeyListener
 		}
 		
 		// Also try checking static and dynamic children of key parent widgets
-		int[][] parentWidgets = {{162, 0}, {162, 1}, {162, 5}, {162, 24}, {217, 0}, {217, 4}, {217, 5}, {217, 6}};
-		for (int[] parent : parentWidgets)
+		for (int[] parent : CHATBOX_PARENT_WIDGETS)
 		{
 			Widget parentWidget = client.getWidget(parent[0], parent[1]);
 			if (parentWidget != null)
@@ -372,8 +385,7 @@ public class EasyFlipInputListener implements KeyListener
 			return geStateResult;
 		}
 		
-		log.info("Could not determine input type from widgets or GE state, defaulting to quantity. " +
-			"Enable debug logging to see widget scan results.");
+		log.debug("Could not determine input type from widgets or GE state, defaulting to quantity");
 		// Default to quantity - user can press again for price
 		return false;
 	}
@@ -386,8 +398,8 @@ public class EasyFlipInputListener implements KeyListener
 	{
 		// GE offer setup widget children for quantity and price displays
 		// Widget 465:24 = Quantity display, 465:25 = Price display (may vary)
-		Widget quantityWidget = client.getWidget(465, 24);
-		Widget priceWidget = client.getWidget(465, 25);
+		Widget quantityWidget = client.getWidget(GE_INTERFACE_GROUP, GE_QUANTITY_CHILD);
+		Widget priceWidget = client.getWidget(GE_INTERFACE_GROUP, GE_PRICE_CHILD);
 		
 		String quantityText = (quantityWidget != null && !quantityWidget.isHidden()) ? quantityWidget.getText() : null;
 		String priceText = (priceWidget != null && !priceWidget.isHidden()) ? priceWidget.getText() : null;
@@ -404,12 +416,12 @@ public class EasyFlipInputListener implements KeyListener
 		// user is probably now setting price
 		if (currentQuantity > 1)
 		{
-			log.info("GE quantity already set to {}, likely setting PRICE now", currentQuantity);
+			log.debug("GE quantity already set to {}, likely setting PRICE now", currentQuantity);
 			return Boolean.TRUE;
 		}
 		
 		// If quantity is still at default (1 or 0), user is probably setting quantity first
-		log.info("GE quantity appears at default ({}), likely setting QUANTITY", currentQuantity);
+		log.debug("GE quantity appears at default ({}), likely setting QUANTITY", currentQuantity);
 		return Boolean.FALSE;
 	}
 	
@@ -425,7 +437,7 @@ public class EasyFlipInputListener implements KeyListener
 		try
 		{
 			// Remove commas, "coins", "gp", and any other non-numeric characters
-			String numericOnly = text.replaceAll("[^0-9]", "");
+			String numericOnly = text.replaceAll("\\D", "");
 			if (numericOnly.isEmpty())
 			{
 				return 0;
@@ -465,13 +477,13 @@ public class EasyFlipInputListener implements KeyListener
 			// "Set a price for each item" = price input
 			if (lowerText.contains("price") && !lowerText.contains("price:"))
 			{
-				log.info("Detected PRICE input from {}: '{}'", source, text);
+				log.debug("Detected PRICE input from {}: '{}'", source, text);
 				return Boolean.TRUE;
 			}
 			// "How many do you wish to" = quantity input
 			if (lowerText.contains("how many"))
 			{
-				log.info("Detected QUANTITY input from {}: '{}'", source, text);
+				log.debug("Detected QUANTITY input from {}: '{}'", source, text);
 				return Boolean.FALSE;
 			}
 		}
@@ -486,24 +498,20 @@ public class EasyFlipInputListener implements KeyListener
 	{
 		String chatText = client.getVarcStrValue(VarClientStr.CHATBOX_TYPED_TEXT);
 		
-		if (chatText != null && !chatText.isEmpty())
+		if (chatText == null || chatText.isEmpty())
 		{
-			// Allow if we're in GE input (numeric, text, or chatbox search)
-			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
-			if (inputType == 7 || inputType == 6 || inputType == 14)
-			{
-				return false; // Allow hotkey in GE inputs
-			}
-			
-			// Also allow if GE is open (might be in search)
-			if (isGrandExchangeOpen())
-			{
-				return false;
-			}
-			
-			return true;
+			return false;
 		}
-		return false;
+		
+		// Allow if we're in GE input (numeric, text, or chatbox search)
+		int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+		if (inputType == INPUT_TYPE_NUMERIC || inputType == INPUT_TYPE_TEXT || inputType == INPUT_TYPE_CHATBOX_SEARCH)
+		{
+			return false; // Allow hotkey in GE inputs
+		}
+		
+		// Also allow if GE is open (might be in search)
+		return !isGrandExchangeOpen();
 	}
 	
 	/**
@@ -515,7 +523,7 @@ public class EasyFlipInputListener implements KeyListener
 		client.addChatMessage(
 			net.runelite.api.ChatMessageType.GAMEMESSAGE,
 			"",
-			"<col=ffaa00>[FlipSmart]</col> " + message,
+			CHAT_MESSAGE_PREFIX + message,
 			null
 		);
 	}

@@ -56,6 +56,7 @@ public class GrandExchangeOverlay extends Overlay
 	private static final int ICON_SIZE = 32;
 	private static final int PROGRESS_BAR_WIDTH = 60;
 	private static final int PROGRESS_BAR_HEIGHT = 14;
+	private static final int MAX_ITEM_NAME_LENGTH = 12;
 	
 	// Compact mode constants
 	private static final int COMPACT_LINE_HEIGHT = 14;
@@ -447,9 +448,9 @@ public class GrandExchangeOverlay extends Overlay
 			String itemName = itemManager.getItemComposition(itemId).getName();
 			
 			// Truncate item name if too long
-			if (itemName.length() > 12)
+			if (itemName.length() > MAX_ITEM_NAME_LENGTH)
 			{
-				itemName = itemName.substring(0, 11) + "..";
+				itemName = itemName.substring(0, MAX_ITEM_NAME_LENGTH - 1) + "..";
 			}
 			
 			Color statusColor = getStatusColor(state, isBuy);

@@ -815,42 +815,57 @@ public class FlipSmartPlugin extends Plugin
 				return;
 			}
 			
-			// Find an active flip matching this item
-			for (ActiveFlip flip : response.getActiveFlips())
+			// Find and focus on matching active flip
+			ActiveFlip matchingFlip = findActiveFlipForItem(response.getActiveFlips(), itemId);
+			if (matchingFlip != null)
 			{
-				if (flip.getItemId() == itemId)
-				{
-					// Found a matching active flip - create a FocusedFlip for selling
-					int sellPrice = flip.getRecommendedSellPrice() != null 
-						? flip.getRecommendedSellPrice() 
-						: (int)(flip.getAverageBuyPrice() * 1.05); // Default 5% markup
-					
-					FocusedFlip focus = FocusedFlip.forSell(
-						flip.getItemId(),
-						flip.getItemName(),
-						sellPrice,
-						flip.getTotalQuantity()
-					);
-					
-					// Set the focus
-					easyFlipOverlay.setFocusedFlip(focus);
-					
-					log.info("Auto-focused on active flip for sell: {} @ {} gp", 
-						flip.getItemName(), sellPrice);
-					
-					// Also update the panel's visual state if it exists
-					if (flipFinderPanel != null)
-					{
-						javax.swing.SwingUtilities.invokeLater(() -> 
-							flipFinderPanel.setExternalFocus(focus));
-					}
-					
-					return;
-				}
+				setFocusForSell(matchingFlip);
 			}
-			
-			log.debug("No active flip found for item {} when setting up sell offer", itemId);
+			else
+			{
+				log.debug("No active flip found for item {} when setting up sell offer", itemId);
+			}
 		});
+	}
+	
+	/**
+	 * Find an active flip matching the given item ID.
+	 */
+	private ActiveFlip findActiveFlipForItem(java.util.List<ActiveFlip> flips, int itemId)
+	{
+		for (ActiveFlip flip : flips)
+		{
+			if (flip.getItemId() == itemId)
+			{
+				return flip;
+			}
+		}
+		return null;
+	}
+	
+	/**
+	 * Set the EasyFlip focus for selling an active flip.
+	 */
+	private void setFocusForSell(ActiveFlip flip)
+	{
+		int sellPrice = flip.getRecommendedSellPrice() != null 
+			? flip.getRecommendedSellPrice() 
+			: (int)(flip.getAverageBuyPrice() * 1.05); // Default 5% markup
+		
+		FocusedFlip focus = FocusedFlip.forSell(
+			flip.getItemId(),
+			flip.getItemName(),
+			sellPrice,
+			flip.getTotalQuantity()
+		);
+		
+		easyFlipOverlay.setFocusedFlip(focus);
+		log.info("Auto-focused on active flip for sell: {} @ {} gp", flip.getItemName(), sellPrice);
+		
+		if (flipFinderPanel != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
+		}
 	}
 
 	@Subscribe

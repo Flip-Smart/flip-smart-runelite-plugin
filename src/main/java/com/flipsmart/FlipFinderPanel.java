@@ -62,10 +62,10 @@ public class FlipFinderPanel extends PluginPanel
 	private boolean isAuthenticated = false;
 	
 	// EasyFlip focus tracking
-	private FocusedFlip currentFocus = null;
-	private JPanel currentFocusedPanel = null;
-	private int currentFocusedItemId = -1;
-	private java.util.function.Consumer<FocusedFlip> onFocusChanged;
+	private transient FocusedFlip currentFocus = null;
+	private transient JPanel currentFocusedPanel = null;
+	private transient int currentFocusedItemId = -1;
+	private transient java.util.function.Consumer<FocusedFlip> onFocusChanged;
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -1588,7 +1588,14 @@ public class FlipFinderPanel extends PluginPanel
 		// Notify callback
 		if (onFocusChanged != null)
 		{
-			onFocusChanged.accept(newFocus);
+			try
+			{
+				onFocusChanged.accept(newFocus);
+			}
+			catch (Exception e)
+			{
+				log.warn("Error in onFocusChanged callback", e);
+			}
 		}
 		
 		log.info("Set EasyFlip focus: {} - {} at {} gp x{}", 
