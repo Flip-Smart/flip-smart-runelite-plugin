@@ -3,8 +3,6 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
-import net.runelite.api.VarClientInt;
-import net.runelite.api.VarClientStr;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.input.KeyListener;
@@ -17,7 +15,6 @@ import java.awt.event.KeyEvent;
  * Handles the hotkey press to auto-fill price and quantity in the GE.
  */
 @Slf4j
-@SuppressWarnings("deprecation") // VarClientStr and VarClientInt are deprecated but still functional
 public class EasyFlipInputListener implements KeyListener
 {
 	private final Client client;
@@ -33,7 +30,12 @@ public class EasyFlipInputListener implements KeyListener
 	private static final int GE_QUANTITY_CHILD = 24;
 	private static final int GE_PRICE_CHILD = 25;
 	
-	// VarClientInt.INPUT_TYPE values
+	// Varc IDs (raw IDs to avoid deprecated VarClientInt/VarClientStr)
+	private static final int VARC_INT_INPUT_TYPE = 5;
+	private static final int VARC_STR_INPUT_TEXT = 335;
+	private static final int VARC_STR_CHATBOX_TYPED_TEXT = 336;
+	
+	// Input type values
 	private static final int INPUT_TYPE_NONE = 0;
 	private static final int INPUT_TYPE_TEXT = 6;
 	private static final int INPUT_TYPE_NUMERIC = 7;
@@ -153,7 +155,7 @@ public class EasyFlipInputListener implements KeyListener
 		}
 		
 		// Check if we're in an input mode (chatbox input dialog)
-		int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+		int inputType = client.getVarcIntValue(VARC_INT_INPUT_TYPE);
 		log.debug("EasyFlip action - inputType: {}", inputType);
 		
 		if (inputType != INPUT_TYPE_NONE)
@@ -213,7 +215,7 @@ public class EasyFlipInputListener implements KeyListener
 	private void setInputValue(int value)
 	{
 		String valueStr = String.valueOf(value);
-		client.setVarcStrValue(VarClientStr.INPUT_TEXT, valueStr);
+		client.setVarcStrValue(VARC_STR_INPUT_TEXT, valueStr);
 		
 		// Run the script to rebuild/refresh the chatbox input display
 		// This makes the value visible in the input field
@@ -414,7 +416,7 @@ public class EasyFlipInputListener implements KeyListener
 	 */
 	private boolean isTypingInChat()
 	{
-		String chatText = client.getVarcStrValue(VarClientStr.CHATBOX_TYPED_TEXT);
+		String chatText = client.getVarcStrValue(VARC_STR_CHATBOX_TYPED_TEXT);
 		
 		if (chatText == null || chatText.isEmpty())
 		{
@@ -422,7 +424,7 @@ public class EasyFlipInputListener implements KeyListener
 		}
 		
 		// Allow if we're in GE input (numeric, text, or chatbox search)
-		int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+		int inputType = client.getVarcIntValue(VARC_INT_INPUT_TYPE);
 		if (inputType == INPUT_TYPE_NUMERIC || inputType == INPUT_TYPE_TEXT || inputType == INPUT_TYPE_CHATBOX_SEARCH)
 		{
 			return false; // Allow hotkey in GE inputs
