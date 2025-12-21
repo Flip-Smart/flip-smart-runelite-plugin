@@ -3,18 +3,22 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
+import net.runelite.api.VarClientInt;
+import net.runelite.api.VarClientStr;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
 import java.awt.event.KeyEvent;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Key listener for the EasyFlip feature.
  * Handles the hotkey press to auto-fill price and quantity in the GE.
  */
 @Slf4j
+@SuppressWarnings("deprecation") // VarClientStr and VarClientInt are deprecated but still functional in RuneLite
 public class EasyFlipInputListener implements KeyListener
 {
 	private final Client client;
@@ -30,16 +34,8 @@ public class EasyFlipInputListener implements KeyListener
 	private static final int GE_QUANTITY_CHILD = 24;
 	private static final int GE_PRICE_CHILD = 25;
 	
-	// Varc IDs (raw IDs to avoid deprecated VarClientInt/VarClientStr)
-	private static final int VARC_INT_INPUT_TYPE = 5;
-	private static final int VARC_STR_INPUT_TEXT = 335;
-	private static final int VARC_STR_CHATBOX_TYPED_TEXT = 336;
-	
-	// Input type values
-	private static final int INPUT_TYPE_NONE = 0;
-	private static final int INPUT_TYPE_TEXT = 6;
+	// Input type value for numeric input dialogs (from VarClientInt.INPUT_TYPE)
 	private static final int INPUT_TYPE_NUMERIC = 7;
-	private static final int INPUT_TYPE_CHATBOX_SEARCH = 14;
 	
 	// Chat message prefix
 	private static final String CHAT_MESSAGE_PREFIX = "<col=ffaa00>[FlipSmart]</col> ";
@@ -62,16 +58,19 @@ public class EasyFlipInputListener implements KeyListener
 		this.easyFlipOverlay = easyFlipOverlay;
 	}
 	
-	// Track if we should consume the next keyTyped event
-	private volatile boolean consumeNextKeyTyped = false;
+	// Track the keyPressed event we're handling to consume its corresponding keyTyped
+	private final AtomicReference<KeyEvent> handledKeyPressedEvent = new AtomicReference<>(null);
 	
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
-		// Consume keyTyped event if we handled the corresponding keyPressed
-		if (consumeNextKeyTyped)
+		// Only consume if this keyTyped corresponds to a keyPressed we handled
+		// Check by comparing the key character
+		KeyEvent handled = handledKeyPressedEvent.get();
+		if (handled != null && 
+			Character.toLowerCase(e.getKeyChar()) == Character.toLowerCase(handled.getKeyChar()))
 		{
-			consumeNextKeyTyped = false;
+			handledKeyPressedEvent.set(null);
 			e.consume();
 		}
 	}
@@ -97,28 +96,30 @@ public class EasyFlipInputListener implements KeyListener
 			return;
 		}
 		
-		// Mark that we should consume the next keyTyped event to prevent 'e' being typed
-		consumeNextKeyTyped = true;
-		
-		// Execute everything on client thread since we need to access client APIs
-		clientThread.invokeLater(() -> {
-			// Check if typing in chat (must be on client thread)
-			if (isTypingInChat())
-			{
-				return;
-			}
-			
+		// Use synchronous invoke to check conditions BEFORE consuming the event
+		// Only intercept 'E' when in a numeric input (price/quantity dialog)
+		clientThread.invoke(() -> {
 			// Check if GE is open (must be on client thread)
 			if (!isGrandExchangeOpen())
 			{
+				// Don't consume - GE not open, let 'E' pass through
 				return;
 			}
 			
+			// ONLY intercept when in a numeric input dialog (price/quantity)
+			// This allows 'E' to work normally in item search and chat
+			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+			if (inputType != INPUT_TYPE_NUMERIC)
+			{
+				// Not in price/quantity input - let 'E' pass through
+				return;
+			}
+			
+			// We're in a numeric input - consume and handle
+			handledKeyPressedEvent.set(e);
+			e.consume();
 			handleEasyFlipAction(focusedFlip);
 		});
-		
-		// Consume the event to prevent it from being passed to the game
-		e.consume();
 	}
 	
 	@Override
@@ -142,70 +143,24 @@ public class EasyFlipInputListener implements KeyListener
 	
 	/**
 	 * Handle the EasyFlip action - auto-fill price/quantity in GE.
+	 * Called only when in a numeric input dialog.
 	 * MUST be called on client thread.
 	 */
 	private void handleEasyFlipAction(FocusedFlip focusedFlip)
 	{
-		// Check if we're in a GE interface
-		if (!isGrandExchangeOpen())
+		// Determine if it's price or quantity based on context
+		if (isLikelyPriceInput())
 		{
-			log.debug("GE not open, showing info message");
-			sendChatMessage("Open a GE slot and search for " + focusedFlip.getItemName() + " first!");
-			return;
-		}
-		
-		// Check if we're in an input mode (chatbox input dialog)
-		int inputType = client.getVarcIntValue(VARC_INT_INPUT_TYPE);
-		log.debug("EasyFlip action - inputType: {}", inputType);
-		
-		if (inputType != INPUT_TYPE_NONE)
-		{
-			// Input dialog is open - fill the value
-			if (inputType == INPUT_TYPE_NUMERIC)
-			{
-				// Determine if it's price or quantity based on context
-				if (isLikelyPriceInput())
-				{
-					setInputValue(focusedFlip.getCurrentStepPrice());
-					log.debug("Auto-filled price: {}", focusedFlip.getCurrentStepPrice());
-					sendChatMessage(focusedFlip.getItemName() + " price set to " + String.format("%,d", focusedFlip.getCurrentStepPrice()) + " gp");
-				}
-				else
-				{
-					setInputValue(focusedFlip.getCurrentStepQuantity());
-					log.debug("Auto-filled quantity: {}", focusedFlip.getCurrentStepQuantity());
-					sendChatMessage(focusedFlip.getItemName() + " quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
-				}
-			}
-			else
-			{
-				// Text/search input - we don't auto-fill search to avoid macro detection
-				// Just show a helpful message
-				sendChatMessage("Search for: " + focusedFlip.getItemName());
-				sendChatMessage("Press [E] in price/quantity input to auto-fill");
-			}
+			setInputValue(focusedFlip.getCurrentStepPrice());
+			log.debug("Auto-filled price: {}", focusedFlip.getCurrentStepPrice());
+			sendChatMessage(focusedFlip.getItemName() + " price set to " + String.format("%,d", focusedFlip.getCurrentStepPrice()) + " gp");
 		}
 		else
 		{
-			// Not in an input field - show info message
-			log.debug("No input active, showing info message");
-			showInfoMessage(focusedFlip);
+			setInputValue(focusedFlip.getCurrentStepQuantity());
+			log.debug("Auto-filled quantity: {}", focusedFlip.getCurrentStepQuantity());
+			sendChatMessage(focusedFlip.getItemName() + " quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
 		}
-	}
-	
-	/**
-	 * Show info message about the focused flip.
-	 * MUST be called on client thread.
-	 */
-	private void showInfoMessage(FocusedFlip focusedFlip)
-	{
-		// Send as two messages to avoid truncation
-		String msg1 = String.format("%s: %,d gp @ %,d",
-			focusedFlip.getItemName(),
-			focusedFlip.getCurrentStepPrice(),
-			focusedFlip.getCurrentStepQuantity());
-		sendChatMessage(msg1);
-		sendChatMessage("Use hot key [E] to auto fill price/quantity");
 	}
 	
 	/**
@@ -215,7 +170,7 @@ public class EasyFlipInputListener implements KeyListener
 	private void setInputValue(int value)
 	{
 		String valueStr = String.valueOf(value);
-		client.setVarcStrValue(VARC_STR_INPUT_TEXT, valueStr);
+		client.setVarcStrValue(VarClientStr.INPUT_TEXT, valueStr);
 		
 		// Run the script to rebuild/refresh the chatbox input display
 		// This makes the value visible in the input field
@@ -408,30 +363,6 @@ public class EasyFlipInputListener implements KeyListener
 			}
 		}
 		return null;
-	}
-	
-	/**
-	 * Check if the user is typing in the regular chat.
-	 * MUST be called on client thread.
-	 */
-	private boolean isTypingInChat()
-	{
-		String chatText = client.getVarcStrValue(VARC_STR_CHATBOX_TYPED_TEXT);
-		
-		if (chatText == null || chatText.isEmpty())
-		{
-			return false;
-		}
-		
-		// Allow if we're in GE input (numeric, text, or chatbox search)
-		int inputType = client.getVarcIntValue(VARC_INT_INPUT_TYPE);
-		if (inputType == INPUT_TYPE_NUMERIC || inputType == INPUT_TYPE_TEXT || inputType == INPUT_TYPE_CHATBOX_SEARCH)
-		{
-			return false; // Allow hotkey in GE inputs
-		}
-		
-		// Also allow if GE is open (might be in search)
-		return !isGrandExchangeOpen();
 	}
 	
 	/**
