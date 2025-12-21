@@ -45,9 +45,9 @@ A dedicated sidebar panel with three tabs to help you flip smarter:
 - Track your flipping performance over time
 - Click to expand and see flip duration and GE tax paid
 
-### 📊 Grand Exchange Offer Overlay
+### 📊 Exchange Viewer Overlay
 
-![Grand Exchange Offer Overlay](./images/offer-overlay.png)
+![Exchange Viewer Overlay](./images/offer-overlay.png)
 
 A real-time on-screen display that shows all your active GE offers at a glance:
 
@@ -55,8 +55,9 @@ A real-time on-screen display that shows all your active GE offers at a glance:
 - **Progress bars**: Visual progress showing how much of each offer has filled
 - **Item details**: Item names, icons, quantities, and prices
 - **Buy/Sell indicators**: Color-coded to easily identify buy (green) vs sell (red) offers
-- **Movable & collapsible**: Click the coin icon to collapse/expand, drag to reposition
+- **Multiple display sizes**: Choose between Full or Compact (mini) layouts
 - **Auto-hide empty slots**: Only shows active offers for a clean interface
+- **Smart visibility**: Automatically hides when at the Grand Exchange, shows everywhere else
 
 Perfect for monitoring multiple flips simultaneously without opening the GE interface!
 
@@ -108,11 +109,11 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 - **Minimum Profit**: Only show items above this profit threshold
 
 ### Display
-- **Show GE Tracker**: Toggle the Grand Exchange offer overlay on/off
-- **Show Item Names**: Display item names in the GE tracker
-- **Show Item Icons**: Display item icons in the GE tracker
-- **Show Detailed Info**: Show quantity, price per item, and total value in GE tracker
-- **Show Overlay**: Toggle the info overlay on/off
+- **Show Exchange Viewer**: Toggle the Grand Exchange offer overlay on/off (disabled by default, hides when at the GE area)
+- **Display Size**: Choose between Full or Compact (mini) layouts
+- **Show Item Names**: Display item names in the Exchange Viewer (Full mode only)
+- **Show Item Icons**: Display item icons in the Exchange Viewer
+- **Show Detailed Info**: Show quantity, price per item, and total value (Full mode only)
 
 ### General
 - **Track History**: Save flip history across sessions
@@ -129,7 +130,8 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 ## 💡 Tips
 
 - **Start small**: Test with low-cost items to get familiar with the plugin
-- **Use the GE Overlay**: Keep the overlay open to monitor all your offers at a glance - click the coin icon to collapse it when not needed
+- **Use the Exchange Viewer**: Enable it in Display settings to monitor all your offers at a glance anywhere in the game
+- **Try different sizes**: Use Compact mode for minimal screen usage
 - **Check Active Flips**: Monitor your active flips to see current profit potential
 - **Use Recommended Prices**: When buying a recommended item, the plugin remembers the suggested sell price
 - **Watch your cash**: The plugin considers your cash stack when recommending flips
@@ -142,7 +144,7 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 2. Browse the **Recommended** tab for profitable flip opportunities
 3. Click items to expand and see detailed stats
 4. Go to the **Grand Exchange** and place your buy orders
-5. The **GE Overlay** will show your offers in real-time on screen
+5. Close the GE interface and the **Exchange Viewer** will show your offers in real-time on screen
 6. When items fill, they appear in the **Active Flips** tab
 7. When you sell items, they move to the **Completed** tab
 8. Track your total profit in the Completed tab!
@@ -165,11 +167,12 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 - Verify the items actually filled (check GE interface)
 - Try clicking Refresh in the Active Flips tab
 
-**GE Overlay not showing**
-- Check that "Show GE Tracker" is enabled in Display settings
+**Exchange Viewer not showing**
+- Check that "Show Exchange Viewer" is enabled in Display settings (it's disabled by default)
+- The overlay hides when you're at the Grand Exchange area - walk away to see it
+- You must open the GE at least once per session to load your offers
 - The overlay only shows when you have active GE offers (empty slots are hidden)
 - Try repositioning the overlay - it may be off-screen
-- Click the coin icon to expand if it's collapsed
 
 ## 📝 License
 

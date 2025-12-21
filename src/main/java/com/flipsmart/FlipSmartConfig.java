@@ -4,6 +4,9 @@ import net.runelite.client.config.Config;
 import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
+import net.runelite.client.config.Keybind;
+
+import java.awt.event.KeyEvent;
 
 @ConfigGroup("flipsmart")
 public interface FlipSmartConfig extends Config
@@ -81,23 +84,11 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "flipStyle",
-		name = "Flip Style",
-		description = "Your preferred flipping style",
-		section = flipFinderSection,
-		position = 1
-	)
-	default FlipStyle flipStyle()
-	{
-		return FlipStyle.BALANCED;
-	}
-
-	@ConfigItem(
 		keyName = "flipFinderLimit",
 		name = "Number of Recommendations",
 		description = "Number of flip recommendations to show (1-50)",
 		section = flipFinderSection,
-		position = 2
+		position = 1
 	)
 	default int flipFinderLimit()
 	{
@@ -141,22 +132,34 @@ public interface FlipSmartConfig extends Config
 
 	@ConfigItem(
 		keyName = "showGEOverlay",
-		name = "Show GE Tracker",
-		description = "Display in-game Grand Exchange offer tracker",
+		name = "Show Exchange Viewer",
+		description = "Display in-game Grand Exchange offer tracker (hidden when at the GE area)",
 		section = displaySection,
 		position = 0
 	)
 	default boolean showGEOverlay()
 	{
-		return true;
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "exchangeViewerSize",
+		name = "Display Size",
+		description = "Size of the Exchange Viewer overlay",
+		section = displaySection,
+		position = 1
+	)
+	default ExchangeViewerSize exchangeViewerSize()
+	{
+		return ExchangeViewerSize.FULL;
 	}
 
 	@ConfigItem(
 		keyName = "showGEItemNames",
 		name = "Show Item Names",
-		description = "Display item names in the GE tracker",
+		description = "Display item names in the Exchange Viewer (Full mode only)",
 		section = displaySection,
-		position = 1
+		position = 2
 	)
 	default boolean showGEItemNames()
 	{
@@ -166,9 +169,9 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "showGEItemIcons",
 		name = "Show Item Icons",
-		description = "Display item icons in the GE tracker",
+		description = "Display item icons in the Exchange Viewer",
 		section = displaySection,
-		position = 2
+		position = 3
 	)
 	default boolean showGEItemIcons()
 	{
@@ -178,11 +181,70 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "showGEDetailedInfo",
 		name = "Show Detailed Info",
-		description = "Show quantity, price per item, and total value",
+		description = "Show quantity, price per item, and total value (Full mode only)",
 		section = displaySection,
-		position = 3
+		position = 4
 	)
 	default boolean showGEDetailedInfo()
+	{
+		return true;
+	}
+
+	// ============================================
+	// EasyFlip Section (Quick GE Actions)
+	// ============================================
+	@ConfigSection(
+		name = "EasyFlip",
+		description = "Quick GE actions with hotkey support",
+		position = 3,
+		closedByDefault = false
+	)
+	String easyFlipSection = "easyFlip";
+
+	@ConfigItem(
+		keyName = "enableEasyFlip",
+		name = "Enable EasyFlip",
+		description = "Enable EasyFlip for quick buy/sell actions with hotkey",
+		section = easyFlipSection,
+		position = 0
+	)
+	default boolean enableEasyFlip()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "easyFlipHotkey",
+		name = "EasyFlip Hotkey",
+		description = "Hotkey to auto-fill price/quantity in GE (default: E)",
+		section = easyFlipSection,
+		position = 1
+	)
+	default Keybind easyFlipHotkey()
+	{
+		return new Keybind(KeyEvent.VK_E, 0);
+	}
+
+	@ConfigItem(
+		keyName = "highlightGEWidgets",
+		name = "Highlight GE Buttons",
+		description = "Highlight buy/sell buttons and input fields in the GE",
+		section = easyFlipSection,
+		position = 2
+	)
+	default boolean highlightGEWidgets()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showEasyFlipInfo",
+		name = "Show EasyFlip Info",
+		description = "Display focused flip info in the game",
+		section = easyFlipSection,
+		position = 3
+	)
+	default boolean showEasyFlipInfo()
 	{
 		return true;
 	}
@@ -193,7 +255,7 @@ public interface FlipSmartConfig extends Config
 	@ConfigSection(
 		name = "General",
 		description = "General plugin settings",
-		position = 3,
+		position = 4,
 		closedByDefault = true
 	)
 	String generalSection = "general";
@@ -235,6 +297,28 @@ public interface FlipSmartConfig extends Config
 		public String toString()
 		{
 			return name().charAt(0) + name().substring(1).toLowerCase();
+		}
+	}
+
+	// ============================================
+	// Exchange Viewer Display Size Enum
+	// ============================================
+	enum ExchangeViewerSize
+	{
+		FULL("Full"),
+		COMPACT("Compact");
+
+		private final String displayName;
+
+		ExchangeViewerSize(String displayName)
+		{
+			this.displayName = displayName;
+		}
+
+		@Override
+		public String toString()
+		{
+			return displayName;
 		}
 	}
 }
