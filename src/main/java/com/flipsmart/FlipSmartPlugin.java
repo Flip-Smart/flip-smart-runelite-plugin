@@ -60,7 +60,7 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeOverlay geOverlay;
 	
 	@Inject
-	private EasyFlipOverlay easyFlipOverlay;
+	private FlipAssistOverlay flipAssistOverlay;
 
 	@Inject
 	private FlipSmartApiClient apiClient;
@@ -124,8 +124,8 @@ public class FlipSmartPlugin extends Plugin
 	// These should show as active flips even though they're no longer in GE slots
 	private final java.util.Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
 	
-	// EasyFlip input listener for hotkey handling
-	private EasyFlipInputListener easyFlipInputListener;
+	// Flip Assist input listener for hotkey handling
+	private FlipAssistInputListener flipAssistInputListener;
 
 	/**
 	 * Helper class to track GE offers (serializable for persistence)
@@ -346,12 +346,12 @@ public class FlipSmartPlugin extends Plugin
 	{
 		log.info("Flip Smart started!");
 		overlayManager.add(geOverlay);
-		overlayManager.add(easyFlipOverlay);
+		overlayManager.add(flipAssistOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
 		
-		// Initialize EasyFlip input listener
-		easyFlipInputListener = new EasyFlipInputListener(client, clientThread, config, easyFlipOverlay);
-		keyManager.registerKeyListener(easyFlipInputListener);
+		// Initialize Flip Assist input listener for hotkey support
+		flipAssistInputListener = new FlipAssistInputListener(client, clientThread, config, flipAssistOverlay);
+		keyManager.registerKeyListener(flipAssistInputListener);
 		
 		// Initialize Flip Finder panel
 		if (config.showFlipFinder())
@@ -380,14 +380,14 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		overlayManager.remove(geOverlay);
-		overlayManager.remove(easyFlipOverlay);
+		overlayManager.remove(flipAssistOverlay);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
-		// Unregister EasyFlip input listener
-		if (easyFlipInputListener != null)
+		// Unregister Flip Assist input listener
+		if (flipAssistInputListener != null)
 		{
-			keyManager.unregisterKeyListener(easyFlipInputListener);
-			easyFlipInputListener = null;
+			keyManager.unregisterKeyListener(flipAssistInputListener);
+			flipAssistInputListener = null;
 		}
 		
 		// Remove flip finder panel
@@ -859,7 +859,7 @@ public class FlipSmartPlugin extends Plugin
 			flip.getTotalQuantity()
 		);
 		
-		easyFlipOverlay.setFocusedFlip(focus);
+		flipAssistOverlay.setFocusedFlip(focus);
 		log.info("Auto-focused on active flip for sell: {} @ {} gp", flip.getItemName(), sellPrice);
 		
 		if (flipFinderPanel != null)
@@ -1091,7 +1091,7 @@ public class FlipSmartPlugin extends Plugin
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
 			// Clear EasyFlip focus if this order matches the focused flip
-			clearEasyFlipFocusIfMatches(itemId, isBuy);
+			clearFlipAssistFocusIfMatches(itemId, isBuy);
 			
 			// Refresh the flip finder panel when any new order is submitted
 			// This ensures sell orders show up immediately in active flips
@@ -1109,9 +1109,9 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Clear the EasyFlip focus if the submitted order matches the focused item
 	 */
-	private void clearEasyFlipFocusIfMatches(int itemId, boolean isBuy)
+	private void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
-		FocusedFlip focusedFlip = easyFlipOverlay.getFocusedFlip();
+		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null)
 		{
 			return;
@@ -1123,9 +1123,9 @@ public class FlipSmartPlugin extends Plugin
 			boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
 			if (stepMatches)
 			{
-				log.info("Clearing EasyFlip focus - order submitted for {} ({})", 
+				log.info("Clearing Flip Assist focus - order submitted for {} ({})", 
 					focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
-				easyFlipOverlay.clearFocus();
+				flipAssistOverlay.clearFocus();
 				
 				// Also update the panel's visual state
 				if (flipFinderPanel != null)
@@ -1150,12 +1150,12 @@ public class FlipSmartPlugin extends Plugin
 			}
 		};
 		
-		// Connect EasyFlip focus callback
+		// Connect Flip Assist focus callback
 		flipFinderPanel.setOnFocusChanged(focus -> {
-			easyFlipOverlay.setFocusedFlip(focus);
+			flipAssistOverlay.setFocusedFlip(focus);
 			if (focus != null)
 			{
-				log.info("EasyFlip focus set: {} {} - {} @ {} gp", 
+				log.info("Flip Assist focus set: {} {} - {} @ {} gp", 
 					focus.getStep(),
 					focus.getItemName(),
 					focus.getCurrentStepQuantity(),
@@ -1163,7 +1163,8 @@ public class FlipSmartPlugin extends Plugin
 			}
 			else
 			{
-				log.info("EasyFlip focus cleared");
+				log.info("Flip Assist focus cleared");
+				flipAssistOverlay.clearFocus();
 			}
 		});
 

@@ -191,36 +191,36 @@ public interface FlipSmartConfig extends Config
 	}
 
 	// ============================================
-	// EasyFlip Section (Quick GE Actions)
+	// Flip Assistant Section (Guided Workflow + Quick Actions)
 	// ============================================
 	@ConfigSection(
-		name = "EasyFlip",
-		description = "Quick GE actions with hotkey support",
+		name = "Flip Assistant",
+		description = "Guided step-by-step flip workflow with hotkey support",
 		position = 3,
 		closedByDefault = false
 	)
-	String easyFlipSection = "easyFlip";
+	String flipAssistantSection = "flipAssistant";
 
 	@ConfigItem(
-		keyName = "enableEasyFlip",
-		name = "Enable EasyFlip",
-		description = "Enable EasyFlip for quick buy/sell actions with hotkey",
-		section = easyFlipSection,
+		keyName = "enableFlipAssistant",
+		name = "Enable Flip Assistant",
+		description = "Show the guided flip assistant panel when focusing on a flip",
+		section = flipAssistantSection,
 		position = 0
 	)
-	default boolean enableEasyFlip()
+	default boolean enableFlipAssistant()
 	{
 		return true;
 	}
 
 	@ConfigItem(
 		keyName = "easyFlipHotkey",
-		name = "EasyFlip Hotkey",
+		name = "Auto-Fill Hotkey",
 		description = "Hotkey to auto-fill price/quantity in GE (default: E)",
-		section = easyFlipSection,
+		section = flipAssistantSection,
 		position = 1
 	)
-	default Keybind easyFlipHotkey()
+	default Keybind flipAssistHotkey()
 	{
 		return new Keybind(KeyEvent.VK_E, 0);
 	}
@@ -229,7 +229,7 @@ public interface FlipSmartConfig extends Config
 		keyName = "highlightGEWidgets",
 		name = "Highlight GE Buttons",
 		description = "Highlight buy/sell buttons and input fields in the GE",
-		section = easyFlipSection,
+		section = flipAssistantSection,
 		position = 2
 	)
 	default boolean highlightGEWidgets()
@@ -238,15 +238,15 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "showEasyFlipInfo",
-		name = "Show EasyFlip Info",
-		description = "Display focused flip info in the game",
-		section = easyFlipSection,
+		keyName = "showAssistantAlways",
+		name = "Show When GE Closed",
+		description = "Show assistant even when Grand Exchange is not open",
+		section = flipAssistantSection,
 		position = 3
 	)
-	default boolean showEasyFlipInfo()
+	default boolean showAssistantAlways()
 	{
-		return true;
+		return false;
 	}
 
 	// ============================================
@@ -255,7 +255,7 @@ public interface FlipSmartConfig extends Config
 	@ConfigSection(
 		name = "General",
 		description = "General plugin settings",
-		position = 4,
+		position = 5,
 		closedByDefault = true
 	)
 	String generalSection = "general";

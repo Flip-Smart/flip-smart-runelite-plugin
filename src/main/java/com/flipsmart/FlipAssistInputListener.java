@@ -8,6 +8,7 @@ import net.runelite.api.VarClientStr;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.Keybind;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
@@ -17,17 +18,17 @@ import java.awt.event.KeyEvent;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Key listener for the EasyFlip feature.
+ * Key listener for the Flip Assist feature.
  * Handles the hotkey press to auto-fill price and quantity in the GE.
  */
 @Slf4j
 @SuppressWarnings("deprecation") // VarClientStr and VarClientInt are deprecated but still functional in RuneLite
-public class EasyFlipInputListener implements KeyListener
+public class FlipAssistInputListener implements KeyListener
 {
 	private final Client client;
 	private final ClientThread clientThread;
 	private final FlipSmartConfig config;
-	private final EasyFlipOverlay easyFlipOverlay;
+	private final FlipAssistOverlay flipAssistOverlay;
 	
 	// GE Interface group IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -54,12 +55,12 @@ public class EasyFlipInputListener implements KeyListener
 	};
 	
 	@Inject
-	public EasyFlipInputListener(Client client, ClientThread clientThread, FlipSmartConfig config, EasyFlipOverlay easyFlipOverlay)
+	public FlipAssistInputListener(Client client, ClientThread clientThread, FlipSmartConfig config, FlipAssistOverlay flipAssistOverlay)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
 		this.config = config;
-		this.easyFlipOverlay = easyFlipOverlay;
+		this.flipAssistOverlay = flipAssistOverlay;
 	}
 	
 	// Track the keyPressed event we're handling to consume its corresponding keyTyped
@@ -82,54 +83,74 @@ public class EasyFlipInputListener implements KeyListener
 	@Override
 	public void keyPressed(KeyEvent e)
 	{
-		if (!config.enableEasyFlip())
-		{
-			return;
-		}
+		log.debug("Key pressed: {} (code={})", e.getKeyChar(), e.getKeyCode());
 		
 		// Check if the hotkey matches
-		if (!config.easyFlipHotkey().matches(e))
+		Keybind hotkey = config.flipAssistHotkey();
+		log.debug("Configured hotkey: {}", hotkey);
+		
+		if (!hotkey.matches(e))
 		{
+			log.debug("Key does not match hotkey - passing through");
 			return;
 		}
 		
+		log.debug("Flip Assist hotkey matched!");
+		
 		// Don't trigger if no focused flip (this doesn't need client thread)
-		FocusedFlip focusedFlip = easyFlipOverlay.getFocusedFlip();
+		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null)
 		{
+			log.debug("No focused flip - ignoring hotkey");
 			return;
 		}
+		
+		log.debug("Focused flip: {} (buying={})", focusedFlip.getItemName(), focusedFlip.isBuying());
 		
 		// Use synchronous invoke to check conditions BEFORE consuming the event
 		clientThread.invoke(() -> {
 			// Check if GE is open (must be on client thread)
 			if (!isGrandExchangeOpen())
 			{
-				// Don't consume - GE not open, let 'E' pass through
+				log.debug("GE not open - ignoring hotkey");
 				return;
 			}
 			
 			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+			log.debug("GE input type: {}", inputType);
 			
-			// Handle GE item search - press E to select the item
-			if (inputType == INPUT_TYPE_GE_ITEM_SEARCH && hasSearchResults())
+			// Handle GE item search - press hotkey to select the first result
+			// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
+			if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
 			{
-				handledKeyPressedEvent.set(e);
-				e.consume();
-				selectFirstSearchResult();
+				if (hasSearchResults())
+				{
+					log.debug("In item search with results - selecting first result");
+					handledKeyPressedEvent.set(e);
+					e.consume();
+					selectFirstSearchResult();
+					flipAssistOverlay.updateStep();
+				}
+				else
+				{
+					log.debug("In item search but no results yet - letting key pass through");
+				}
 				return;
 			}
 			
 			// Handle numeric input (price/quantity)
 			if (inputType == INPUT_TYPE_NUMERIC)
 			{
+				log.debug("In numeric input - auto-filling");
 				handledKeyPressedEvent.set(e);
 				e.consume();
-				handleEasyFlipAction(focusedFlip);
+				handleFlipAssistAction(focusedFlip);
+				// Update overlay step after action
+				flipAssistOverlay.updateStep();
 				return;
 			}
 			
-			// Not in a supported input type - let the key pass through
+			log.debug("Not in supported input type ({}) - ignoring", inputType);
 		});
 	}
 	
@@ -153,11 +174,11 @@ public class EasyFlipInputListener implements KeyListener
 	}
 	
 	/**
-	 * Handle the EasyFlip action - auto-fill price/quantity in GE.
+	 * Handle the Flip Assist action - auto-fill price/quantity in GE.
 	 * Called only when in a numeric input dialog.
 	 * MUST be called on client thread.
 	 */
-	private void handleEasyFlipAction(FocusedFlip focusedFlip)
+	private void handleFlipAssistAction(FocusedFlip focusedFlip)
 	{
 		// Determine if it's price or quantity based on context
 		if (isLikelyPriceInput())
@@ -462,3 +483,4 @@ public class EasyFlipInputListener implements KeyListener
 		focusManager.dispatchKeyEvent(enterReleased);
 	}
 }
+

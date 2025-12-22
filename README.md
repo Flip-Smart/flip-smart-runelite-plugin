@@ -69,6 +69,25 @@ The plugin automatically monitors your Grand Exchange activity:
 - **Tracks profit/loss** automatically
 - **Links recommended prices** to your trades for better tracking
 
+### 🧭 Flip Assistant (Guided Workflow)
+
+A floating step-by-step guide that walks you through the entire flip process:
+
+- **Visual progress tracker**: Horizontal step indicators showing your position in the flip journey
+- **Dynamic instructions**: Context-aware prompts that update based on your current GE state
+- **Hotkey hints**: See exactly when to press your EasyFlip hotkey for quantity and price
+- **Profit preview**: Live profit calculations before you even complete the flip
+- **Animated feedback**: Pulsing indicators draw attention to your current action
+- **Warm amber theme**: Distinctive UI that's easy to spot but doesn't clash with the game
+
+The assistant automatically detects:
+- When you're searching for an item (prompts to press Enter/hotkey)
+- When you need to set quantity (shows recommended qty, hotkey hint)
+- When you need to set price (shows recommended price, hotkey hint)  
+- When you need to confirm the offer
+
+Perfect for learning the flip workflow or staying focused during multi-item flips!
+
 ### 💰 Smart Recommendations
 
 Flip recommendations are tailored to your playstyle:
@@ -115,6 +134,10 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 - **Show Item Icons**: Display item icons in the Exchange Viewer
 - **Show Detailed Info**: Show quantity, price per item, and total value (Full mode only)
 
+### Flip Assistant
+- **Enable Flip Assistant**: Toggle the guided workflow overlay on/off
+- **Show When GE Closed**: Keep the assistant visible even outside the Grand Exchange
+
 ### General
 - **Track History**: Save flip history across sessions
 
@@ -142,12 +165,17 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 
 1. Open the **Flip Finder** panel from the RuneLite sidebar
 2. Browse the **Recommended** tab for profitable flip opportunities
-3. Click items to expand and see detailed stats
-4. Go to the **Grand Exchange** and place your buy orders
+3. **Click an item** to set it as your focus - the **Flip Assistant** will appear
+4. Go to the **Grand Exchange** - the assistant guides you through each step:
+   - It auto-selects your item in the search
+   - Press your hotkey (default: E) when prompted to set quantity
+   - Press hotkey again when prompted to set price
+   - Click confirm to place your offer
 5. Close the GE interface and the **Exchange Viewer** will show your offers in real-time on screen
 6. When items fill, they appear in the **Active Flips** tab
-7. When you sell items, they move to the **Completed** tab
-8. Track your total profit in the Completed tab!
+7. Click the active flip to focus on it for selling - the assistant guides the sell process
+8. When you sell items, they move to the **Completed** tab
+9. Track your total profit in the Completed tab!
 
 ## 🛠️ Troubleshooting
 
