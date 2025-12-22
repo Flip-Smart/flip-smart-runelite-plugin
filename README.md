@@ -174,6 +174,16 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 - The overlay only shows when you have active GE offers (empty slots are hidden)
 - Try repositioning the overlay - it may be off-screen
 
+## 🛠️ Development
+
+To run the plugin locally for development/testing:
+
+```bash
+JAVA_HOME=~/Library/Java/JavaVirtualMachines/ms-21.0.9/Contents/Home ./gradlew runClient
+```
+
+This launches RuneLite with the Flip Smart plugin loaded for testing.
+
 ## 📝 License
 
 BSD 2-Clause License
