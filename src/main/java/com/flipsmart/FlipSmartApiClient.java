@@ -506,7 +506,7 @@ public class FlipSmartApiClient
 	/**
 	 * Fetch flip recommendations from the API asynchronously
 	 */
-	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(Integer cashStack, String flipStyle, int limit)
+	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(Integer cashStack, String flipStyle, int limit, Integer randomSeed)
 	{
 		String apiUrl = getApiUrl();
 		
@@ -517,6 +517,11 @@ public class FlipSmartApiClient
 		if (cashStack != null)
 		{
 			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
+		}
+		
+		if (randomSeed != null)
+		{
+			urlBuilder.append(String.format("&random_seed=%d", randomSeed));
 		}
 		
 		String url = urlBuilder.toString();

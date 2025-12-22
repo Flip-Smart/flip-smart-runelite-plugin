@@ -15,6 +15,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 public class FlipFinderPanel extends PluginPanel
@@ -250,7 +251,7 @@ public class FlipFinderPanel extends PluginPanel
 		logoutButton.addActionListener(e -> handleLogout());
 
 		refreshButton.setFocusable(false);
-		refreshButton.addActionListener(e -> refresh());
+		refreshButton.addActionListener(e -> refresh(true));
 
 		rightButtonsPanel.add(logoutButton);
 		rightButtonsPanel.add(refreshButton);
@@ -626,19 +627,32 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Refresh flip recommendations, active flips, and completed flips
+	 * Refresh flip recommendations, active flips, and completed flips.
+	 * Uses deterministic recommendations (no randomization) for auto-refresh.
 	 */
 	public void refresh()
 	{
-		refreshRecommendations();
+		refresh(false);
+	}
+
+	/**
+	 * Refresh flip recommendations, active flips, and completed flips.
+	 *
+	 * @param shuffleSuggestions if true, randomizes suggestions within quality tiers (for manual refresh)
+	 */
+	public void refresh(boolean shuffleSuggestions)
+	{
+		refreshRecommendations(shuffleSuggestions);
 		refreshActiveFlips();
 		refreshCompletedFlips();
 	}
 
 	/**
 	 * Refresh recommended flips
+	 *
+	 * @param shuffleSuggestions if true, randomizes suggestions within quality tiers
 	 */
-	private void refreshRecommendations()
+	private void refreshRecommendations(boolean shuffleSuggestions)
 	{
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
@@ -655,8 +669,11 @@ public class FlipFinderPanel extends PluginPanel
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 		String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
 		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
+		// Only generate random seed for manual refresh to get variety in suggestions
+		// Auto-refresh keeps same items so user can focus on setting up flips
+		Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
 
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit).thenAccept(response ->
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
