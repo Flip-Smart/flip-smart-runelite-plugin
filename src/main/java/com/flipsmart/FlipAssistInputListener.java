@@ -15,6 +15,7 @@ import javax.inject.Inject;
 import java.awt.Canvas;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -36,7 +37,6 @@ public class FlipAssistInputListener implements KeyListener
 	
 	// GE Interface child IDs
 	private static final int GE_QUANTITY_CHILD = 24;
-	private static final int GE_PRICE_CHILD = 25;
 	
 	// Input type values (from VarClientInt.INPUT_TYPE)
 	private static final int INPUT_TYPE_NUMERIC = 7;
@@ -83,41 +83,29 @@ public class FlipAssistInputListener implements KeyListener
 	@Override
 	public void keyPressed(KeyEvent e)
 	{
-		log.debug("Key pressed: {} (code={})", e.getKeyChar(), e.getKeyCode());
-		
 		// Check if the hotkey matches
 		Keybind hotkey = config.flipAssistHotkey();
-		log.debug("Configured hotkey: {}", hotkey);
-		
 		if (!hotkey.matches(e))
 		{
-			log.debug("Key does not match hotkey - passing through");
 			return;
 		}
-		
-		log.debug("Flip Assist hotkey matched!");
 		
 		// Don't trigger if no focused flip (this doesn't need client thread)
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null)
 		{
-			log.debug("No focused flip - ignoring hotkey");
 			return;
 		}
-		
-		log.debug("Focused flip: {} (buying={})", focusedFlip.getItemName(), focusedFlip.isBuying());
 		
 		// Use synchronous invoke to check conditions BEFORE consuming the event
 		clientThread.invoke(() -> {
 			// Check if GE is open (must be on client thread)
 			if (!isGrandExchangeOpen())
 			{
-				log.debug("GE not open - ignoring hotkey");
 				return;
 			}
 			
 			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
-			log.debug("GE input type: {}", inputType);
 			
 			// Handle GE item search - press hotkey to select the first result
 			// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
@@ -125,15 +113,10 @@ public class FlipAssistInputListener implements KeyListener
 			{
 				if (hasSearchResults())
 				{
-					log.debug("In item search with results - selecting first result");
 					handledKeyPressedEvent.set(e);
 					e.consume();
 					selectFirstSearchResult();
 					flipAssistOverlay.updateStep();
-				}
-				else
-				{
-					log.debug("In item search but no results yet - letting key pass through");
 				}
 				return;
 			}
@@ -141,16 +124,11 @@ public class FlipAssistInputListener implements KeyListener
 			// Handle numeric input (price/quantity)
 			if (inputType == INPUT_TYPE_NUMERIC)
 			{
-				log.debug("In numeric input - auto-filling");
 				handledKeyPressedEvent.set(e);
 				e.consume();
 				handleFlipAssistAction(focusedFlip);
-				// Update overlay step after action
 				flipAssistOverlay.updateStep();
-				return;
 			}
-			
-			log.debug("Not in supported input type ({}) - ignoring", inputType);
 		});
 	}
 	
@@ -184,13 +162,11 @@ public class FlipAssistInputListener implements KeyListener
 		if (isLikelyPriceInput())
 		{
 			setInputValue(focusedFlip.getCurrentStepPrice());
-			log.debug("Auto-filled price: {}", focusedFlip.getCurrentStepPrice());
 			sendChatMessage(focusedFlip.getItemName() + " price set to " + String.format("%,d", focusedFlip.getCurrentStepPrice()) + " gp");
 		}
 		else
 		{
 			setInputValue(focusedFlip.getCurrentStepQuantity());
-			log.debug("Auto-filled quantity: {}", focusedFlip.getCurrentStepQuantity());
 			sendChatMessage(focusedFlip.getItemName() + " quantity set to " + String.format("%,d", focusedFlip.getCurrentStepQuantity()));
 		}
 	}
@@ -223,10 +199,10 @@ public class FlipAssistInputListener implements KeyListener
 			// Check children 0-100 for each group
 			for (int childId = 0; childId <= 100; childId++)
 			{
-				Boolean result = checkWidgetForPriceKeyword(groupId, childId);
-				if (result != null)
+				Optional<Boolean> result = checkWidgetForPriceKeyword(groupId, childId);
+				if (result.isPresent())
 				{
-					return result;
+					return result.get();
 				}
 			}
 		}
@@ -238,98 +214,74 @@ public class FlipAssistInputListener implements KeyListener
 			if (parentWidget != null)
 			{
 				// Check static children
-				Widget[] staticChildren = parentWidget.getStaticChildren();
-				if (staticChildren != null)
+				Optional<Boolean> staticResult = checkChildrenForPriceKeyword(parentWidget.getStaticChildren());
+				if (staticResult.isPresent())
 				{
-					for (int i = 0; i < staticChildren.length; i++)
-					{
-						Widget child = staticChildren[i];
-						if (child != null && !child.isHidden())
-						{
-							Boolean result = checkTextForPriceKeyword(child.getText(), "static child " + i + " of " + parent[0] + ":" + parent[1]);
-							if (result != null) return result;
-						}
-					}
+					return staticResult.get();
 				}
 				
 				// Check dynamic children
-				Widget[] dynamicChildren = parentWidget.getDynamicChildren();
-				if (dynamicChildren != null)
+				Optional<Boolean> dynamicResult = checkChildrenForPriceKeyword(parentWidget.getDynamicChildren());
+				if (dynamicResult.isPresent())
 				{
-					for (int i = 0; i < dynamicChildren.length; i++)
-					{
-						Widget child = dynamicChildren[i];
-						if (child != null && !child.isHidden())
-						{
-							Boolean result = checkTextForPriceKeyword(child.getText(), "dynamic child " + i + " of " + parent[0] + ":" + parent[1]);
-							if (result != null) return result;
-						}
-					}
+					return dynamicResult.get();
 				}
 				
 				// Check nested children
-				Widget[] nestedChildren = parentWidget.getNestedChildren();
-				if (nestedChildren != null)
+				Optional<Boolean> nestedResult = checkChildrenForPriceKeyword(parentWidget.getNestedChildren());
+				if (nestedResult.isPresent())
 				{
-					for (int i = 0; i < nestedChildren.length; i++)
-					{
-						Widget child = nestedChildren[i];
-						if (child != null && !child.isHidden())
-						{
-							Boolean result = checkTextForPriceKeyword(child.getText(), "nested child " + i + " of " + parent[0] + ":" + parent[1]);
-							if (result != null) return result;
-						}
-					}
+					return nestedResult.get();
 				}
 			}
 		}
 		
 		// Fallback: Check the GE interface state to determine what we're setting
 		// If quantity field has a non-default value, we're probably setting price
-		Boolean geStateResult = determineFromGEState();
-		if (geStateResult != null)
+		return determineFromGEState();
+	}
+	
+	/**
+	 * Check an array of widget children for price/quantity keywords.
+	 */
+	private Optional<Boolean> checkChildrenForPriceKeyword(Widget[] children)
+	{
+		if (children == null)
 		{
-			return geStateResult;
+			return Optional.empty();
 		}
-		
-		log.debug("Could not determine input type from widgets or GE state, defaulting to quantity");
-		// Default to quantity - user can press again for price
-		return false;
+		for (Widget child : children)
+		{
+			if (child != null && !child.isHidden())
+			{
+				Optional<Boolean> result = checkTextForPriceKeyword(child.getText());
+				if (result.isPresent())
+				{
+					return result;
+				}
+			}
+		}
+		return Optional.empty();
 	}
 	
 	/**
 	 * Try to determine price vs quantity input based on GE interface state.
 	 * If quantity is already set to a non-default value, we're likely setting price.
+	 * @return true if likely price input, false if likely quantity input
 	 */
-	private Boolean determineFromGEState()
+	private boolean determineFromGEState()
 	{
 		// GE offer setup widget children for quantity and price displays
-		// Widget 465:24 = Quantity display, 465:25 = Price display (may vary)
 		Widget quantityWidget = client.getWidget(GE_INTERFACE_GROUP, GE_QUANTITY_CHILD);
-		Widget priceWidget = client.getWidget(GE_INTERFACE_GROUP, GE_PRICE_CHILD);
 		
 		String quantityText = (quantityWidget != null && !quantityWidget.isHidden()) ? quantityWidget.getText() : null;
-		String priceText = (priceWidget != null && !priceWidget.isHidden()) ? priceWidget.getText() : null;
-		
-		log.debug("GE state check - Quantity widget text: '{}', Price widget text: '{}'", quantityText, priceText);
 		
 		// Parse quantity from text (e.g., "6,000" -> 6000)
 		int currentQuantity = parseNumberFromText(quantityText);
-		int currentPrice = parseNumberFromText(priceText);
-		
-		log.debug("GE state check - Parsed quantity: {}, price: {}", currentQuantity, currentPrice);
 		
 		// If quantity has been set (> 1, since default is often 1) and we're in an input,
 		// user is probably now setting price
-		if (currentQuantity > 1)
-		{
-			log.debug("GE quantity already set to {}, likely setting PRICE now", currentQuantity);
-			return Boolean.TRUE;
-		}
-		
-		// If quantity is still at default (1 or 0), user is probably setting quantity first
-		log.debug("GE quantity appears at default ({}), likely setting QUANTITY", currentQuantity);
-		return Boolean.FALSE;
+		return currentQuantity > 1;
 	}
 	
 	/**
@@ -359,24 +311,23 @@ public class FlipAssistInputListener implements KeyListener
 	
 	/**
 	 * Check a specific widget for price/quantity keywords.
-	 * Returns Boolean.TRUE if price, Boolean.FALSE if quantity, null if no match.
+	 * Returns Optional containing true if price, false if quantity, empty if no match.
 	 */
-	private Boolean checkWidgetForPriceKeyword(int groupId, int childId)
+	private Optional<Boolean> checkWidgetForPriceKeyword(int groupId, int childId)
 	{
 		Widget widget = client.getWidget(groupId, childId);
 		if (widget != null && !widget.isHidden())
 		{
-			String text = widget.getText();
-			return checkTextForPriceKeyword(text, groupId + ":" + childId);
+			return checkTextForPriceKeyword(widget.getText());
 		}
-		return null;
+		return Optional.empty();
 	}
 	
 	/**
 	 * Check text for price/quantity keywords.
-	 * Returns Boolean.TRUE if price, Boolean.FALSE if quantity, null if no match.
+	 * Returns Optional containing true if price, false if quantity, empty if no match.
 	 */
-	private Boolean checkTextForPriceKeyword(String text, String source)
+	private Optional<Boolean> checkTextForPriceKeyword(String text)
 	{
 		if (text != null && !text.isEmpty())
 		{
@@ -384,17 +335,15 @@ public class FlipAssistInputListener implements KeyListener
 			// "Set a price for each item" = price input
 			if (lowerText.contains("price") && !lowerText.contains("price:"))
 			{
-				log.debug("Detected PRICE input from {}: '{}'", source, text);
-				return Boolean.TRUE;
+				return Optional.of(Boolean.TRUE);
 			}
 			// "How many do you wish to" = quantity input
 			if (lowerText.contains("how many"))
 			{
-				log.debug("Detected QUANTITY input from {}: '{}'", source, text);
-				return Boolean.FALSE;
+				return Optional.of(Boolean.FALSE);
 			}
 		}
-		return null;
+		return Optional.empty();
 	}
 	
 	/**
@@ -440,11 +389,8 @@ public class FlipAssistInputListener implements KeyListener
 		Canvas canvas = client.getCanvas();
 		if (canvas == null)
 		{
-			log.debug("Cannot select search result: canvas is null");
 			return;
 		}
-		
-		log.debug("Dispatching Enter key to select first search result");
 		
 		// Create and dispatch Enter key press event
 		KeyEvent enterPressed = new KeyEvent(

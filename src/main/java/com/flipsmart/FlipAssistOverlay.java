@@ -54,6 +54,7 @@ public class FlipAssistOverlay extends Overlay
 	
 	// Layout constants (compact for smaller screens)
 	private static final int PANEL_WIDTH = 195;
+	private static final int PANEL_HEIGHT = 170;
 	private static final int PADDING = 6;
 	private static final int SECTION_PADDING = 10;  // Inner padding for sections
 	private static final int ICON_SIZE = 28;
@@ -62,6 +63,13 @@ public class FlipAssistOverlay extends Overlay
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
 	private static final int GE_OFFER_GROUP = 162;
+	private static final int GE_OFFER_PANEL_CHILD = 26;
+	
+	// GE Offer Panel child indices (within widget 465:26)
+	private static final int GE_QTY_CHILD_START = 31;
+	private static final int GE_QTY_CHILD_END = 36;
+	private static final int GE_PRICE_CHILD_START = 38;
+	private static final int GE_PRICE_CHILD_END = 44;
 	
 	// Input types from VarClientInt.INPUT_TYPE
 	private static final int INPUT_TYPE_NUMERIC = 7;
@@ -253,7 +261,7 @@ public class FlipAssistOverlay extends Overlay
 		double pulsePhase = (elapsed % PULSE_DURATION) / (double) PULSE_DURATION;
 		float pulseAlpha = (float) (0.5 + 0.5 * Math.sin(pulsePhase * 2 * Math.PI));
 		
-		int panelHeight = calculatePanelHeight();
+		int panelHeight = PANEL_HEIGHT;
 		
 		// Draw outer glow (animated)
 		Color glowColor = new Color(
@@ -498,19 +506,6 @@ public class FlipAssistOverlay extends Overlay
 	}
 	
 	/**
-	 * Calculate the total panel height based on content
-	 */
-	private int calculatePanelHeight()
-	{
-		// Header (icon + name): ~32px
-		// Step progress: ~46px (reduced gap)
-		// Current action box: ~44px
-		// Summary: ~38px
-		// Padding: ~10px
-		return 170;
-	}
-	
-	/**
 	 * Format the step description with dynamic values
 	 */
 	private String formatStepDescription()
@@ -723,8 +718,7 @@ public class FlipAssistOverlay extends Overlay
 	 */
 	private int getCurrentQuantityFromGE()
 	{
-		// The offer setup panel is at widget 465:26
-		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, 26);
+		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_PANEL_CHILD);
 		if (offerPanel == null || offerPanel.isHidden())
 		{
 			return 0;
@@ -737,8 +731,7 @@ public class FlipAssistOverlay extends Overlay
 		}
 		
 		// Look for quantity value - it's the numeric child after "Quantity:" label
-		// Typically at index 34, but scan nearby indices to be safe
-		for (int i = 31; i <= 36; i++)
+		for (int i = GE_QTY_CHILD_START; i <= GE_QTY_CHILD_END; i++)
 		{
 			if (i >= children.length)
 			{
@@ -775,11 +768,9 @@ public class FlipAssistOverlay extends Overlay
 	 */
 	private int getCurrentPriceFromGE()
 	{
-		// The offer setup panel is at widget 465:26
-		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, 26);
+		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_PANEL_CHILD);
 		if (offerPanel == null || offerPanel.isHidden())
 		{
-			// Fallback to old method
 			return getCurrentPriceFromGEFallback();
 		}
 		
@@ -789,8 +780,8 @@ public class FlipAssistOverlay extends Overlay
 			return getCurrentPriceFromGEFallback();
 		}
 		
-		// Look for price value - it contains "coins" and is around index 41
-		for (int i = 38; i <= 44; i++)
+		// Look for price value - it contains "coins"
+		for (int i = GE_PRICE_CHILD_START; i <= GE_PRICE_CHILD_END; i++)
 		{
 			if (i >= children.length)
 			{
@@ -946,8 +937,7 @@ public class FlipAssistOverlay extends Overlay
 				int[] varps = client.getVarps();
 				varps[VarPlayerID.GE_LAST_SEARCHED] = itemId;
 				client.queueChangedVarp(VarPlayerID.GE_LAST_SEARCHED);
-				log.debug("Set GE last searched item to: {} (ID: {})", 
-					focusedFlip != null ? focusedFlip.getItemName() : "unknown", itemId);
+				// Successfully set last searched item
 			}
 			catch (Exception e)
 			{
