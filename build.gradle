@@ -42,7 +42,7 @@ tasks.register('runClient', JavaExec) {
 	group = 'application'
 	classpath = sourceSets.test.runtimeClasspath
 	mainClass.set('com.flipsmart.ExamplePluginTest')
-	jvmArgs '--add-exports', 'java.desktop/com.apple.eawt=ALL-UNNAMED'
+	jvmArgs '-ea', '--add-exports', 'java.desktop/com.apple.eawt=ALL-UNNAMED'
 }
 
 tasks.register('shadowJar', Jar) {

@@ -1,9 +1,10 @@
 package com.flipsmart;
 
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -50,16 +51,17 @@ public class EasyFlipOverlay extends Overlay
 	private static final int GE_OFFER_GROUP = 162;
 	
 	private final Client client;
+	private final ClientThread clientThread;
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
 	
-	@Setter
 	private FocusedFlip focusedFlip;
 	
 	@Inject
-	private EasyFlipOverlay(Client client, FlipSmartConfig config, ItemManager itemManager)
+	private EasyFlipOverlay(Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
 	{
 		this.client = client;
+		this.clientThread = clientThread;
 		this.config = config;
 		this.itemManager = itemManager;
 		
@@ -67,6 +69,53 @@ public class EasyFlipOverlay extends Overlay
 		setPosition(OverlayPosition.BOTTOM_LEFT);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
 		setMovable(true);
+	}
+	
+	/**
+	 * Set the focused flip and optionally pre-fill the GE "last searched" item.
+	 * When user clicks Buy/Sell on an empty GE slot, the search will auto-populate with this item.
+	 * 
+	 * @param focusedFlip The flip to focus on, or null to clear focus
+	 */
+	public void setFocusedFlip(FocusedFlip focusedFlip)
+	{
+		this.focusedFlip = focusedFlip;
+		
+		// Pre-fill the GE "last searched" item when focusing on a flip
+		if (focusedFlip != null && config.enableEasyFlip())
+		{
+			setGELastSearchedItem(focusedFlip.getItemId());
+		}
+	}
+	
+	/**
+	 * Set the GE "last searched" item ID.
+	 * This makes the item auto-populate in the GE search box when user clicks Buy/Sell.
+	 * 
+	 * This is compliant with Jagex rules because:
+	 * 1. It only sets a preference value (like remembering your last search)
+	 * 2. User must still manually click Buy/Sell to open the search
+	 * 3. User must still manually select the item and confirm the offer
+	 * 4. No automation of actual trading actions
+	 * 
+	 * @param itemId The item ID to set as last searched
+	 */
+	private void setGELastSearchedItem(int itemId)
+	{
+		clientThread.invokeLater(() -> {
+			try
+			{
+				int[] varps = client.getVarps();
+				varps[VarPlayerID.GE_LAST_SEARCHED] = itemId;
+				client.queueChangedVarp(VarPlayerID.GE_LAST_SEARCHED);
+				log.debug("Set GE last searched item to: {} (ID: {})", 
+					focusedFlip != null ? focusedFlip.getItemName() : "unknown", itemId);
+			}
+			catch (Exception e)
+			{
+				log.warn("Failed to set GE last searched item: {}", e.getMessage());
+			}
+		});
 	}
 	
 	@Override

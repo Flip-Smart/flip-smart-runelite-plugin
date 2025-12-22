@@ -5,11 +5,14 @@ import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
 import net.runelite.api.VarClientInt;
 import net.runelite.api.VarClientStr;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
+import java.awt.Canvas;
+import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -34,8 +37,9 @@ public class EasyFlipInputListener implements KeyListener
 	private static final int GE_QUANTITY_CHILD = 24;
 	private static final int GE_PRICE_CHILD = 25;
 	
-	// Input type value for numeric input dialogs (from VarClientInt.INPUT_TYPE)
+	// Input type values (from VarClientInt.INPUT_TYPE)
 	private static final int INPUT_TYPE_NUMERIC = 7;
+	private static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 	
 	// Chat message prefix
 	private static final String CHAT_MESSAGE_PREFIX = "<col=ffaa00>[FlipSmart]</col> ";
@@ -97,7 +101,6 @@ public class EasyFlipInputListener implements KeyListener
 		}
 		
 		// Use synchronous invoke to check conditions BEFORE consuming the event
-		// Only intercept 'E' when in a numeric input (price/quantity dialog)
 		clientThread.invoke(() -> {
 			// Check if GE is open (must be on client thread)
 			if (!isGrandExchangeOpen())
@@ -106,19 +109,27 @@ public class EasyFlipInputListener implements KeyListener
 				return;
 			}
 			
-			// ONLY intercept when in a numeric input dialog (price/quantity)
-			// This allows 'E' to work normally in item search and chat
 			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
-			if (inputType != INPUT_TYPE_NUMERIC)
+			
+			// Handle GE item search - press E to select the item
+			if (inputType == INPUT_TYPE_GE_ITEM_SEARCH && hasSearchResults())
 			{
-				// Not in price/quantity input - let 'E' pass through
+				handledKeyPressedEvent.set(e);
+				e.consume();
+				selectFirstSearchResult();
 				return;
 			}
 			
-			// We're in a numeric input - consume and handle
-			handledKeyPressedEvent.set(e);
-			e.consume();
-			handleEasyFlipAction(focusedFlip);
+			// Handle numeric input (price/quantity)
+			if (inputType == INPUT_TYPE_NUMERIC)
+			{
+				handledKeyPressedEvent.set(e);
+				e.consume();
+				handleEasyFlipAction(focusedFlip);
+				return;
+			}
+			
+			// Not in a supported input type - let the key pass through
 		});
 	}
 	
@@ -377,5 +388,77 @@ public class EasyFlipInputListener implements KeyListener
 			CHAT_MESSAGE_PREFIX + message,
 			null
 		);
+	}
+	
+	/**
+	 * Check if there are GE search results displayed.
+	 * MUST be called on client thread.
+	 */
+	private boolean hasSearchResults()
+	{
+		// Check if the search results widget exists and has children
+		Widget searchResults = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
+		if (searchResults == null || searchResults.isHidden())
+		{
+			return false;
+		}
+		
+		Widget[] children = searchResults.getDynamicChildren();
+		// Each search result has 3 children (icon, name, ?)
+		return children != null && children.length >= 3;
+	}
+	
+	/**
+	 * Select the first item in the GE search results by dispatching Enter key.
+	 * This simulates the user pressing Enter to confirm their search selection.
+	 * MUST be called on client thread.
+	 */
+	private void selectFirstSearchResult()
+	{
+		// Get the game canvas to dispatch the key event to
+		Canvas canvas = client.getCanvas();
+		if (canvas == null)
+		{
+			log.debug("Cannot select search result: canvas is null");
+			return;
+		}
+		
+		log.debug("Dispatching Enter key to select first search result");
+		
+		// Create and dispatch Enter key press event
+		KeyEvent enterPressed = new KeyEvent(
+			canvas,
+			KeyEvent.KEY_PRESSED,
+			System.currentTimeMillis(),
+			0,  // no modifiers
+			KeyEvent.VK_ENTER,
+			KeyEvent.CHAR_UNDEFINED
+		);
+		
+		// Create and dispatch Enter key typed event
+		KeyEvent enterTyped = new KeyEvent(
+			canvas,
+			KeyEvent.KEY_TYPED,
+			System.currentTimeMillis(),
+			0,  // no modifiers
+			KeyEvent.VK_UNDEFINED,
+			'\n'
+		);
+		
+		// Create and dispatch Enter key released event
+		KeyEvent enterReleased = new KeyEvent(
+			canvas,
+			KeyEvent.KEY_RELEASED,
+			System.currentTimeMillis(),
+			0,  // no modifiers
+			KeyEvent.VK_ENTER,
+			KeyEvent.CHAR_UNDEFINED
+		);
+		
+		// Dispatch through the keyboard focus manager to properly route to the game
+		KeyboardFocusManager focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+		focusManager.dispatchKeyEvent(enterPressed);
+		focusManager.dispatchKeyEvent(enterTyped);
+		focusManager.dispatchKeyEvent(enterReleased);
 	}
 }
