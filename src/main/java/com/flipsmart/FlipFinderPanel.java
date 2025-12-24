@@ -13,6 +13,9 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
@@ -30,6 +33,16 @@ public class FlipFinderPanel extends PluginPanel
 	// Colors for focused/selected items
 	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
 	private static final Color COLOR_FOCUSED_BG = new Color(0, 60, 70);
+	
+	// Time-based sell price thresholds (in minutes)
+	// High volume items (>500k daily trades): switch to loss-minimizing after 10 min
+	private static final int HIGH_VOLUME_THRESHOLD = 500_000;
+	private static final int HIGH_VOLUME_TIME_MINUTES = 10;
+	// Regular items: switch after 20 min
+	private static final int REGULAR_TIME_MINUTES = 20;
+	// High value items (>250M): give them 30 min before loss-minimizing
+	private static final int HIGH_VALUE_THRESHOLD = 250_000_000;
+	private static final int HIGH_VALUE_TIME_MINUTES = 30;
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
@@ -1527,24 +1540,42 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Set an active flip as the current focus for Flip Assist
+	 * Set an active flip as the current focus for Flip Assist.
+	 * Fetches current market data to determine the smart sell price.
 	 */
 	private void setFocus(ActiveFlip flip, JPanel panel)
 	{
-		// Determine sell price - use recommended if available, otherwise calculate
-		int sellPrice = flip.getRecommendedSellPrice() != null 
-			? flip.getRecommendedSellPrice() 
-			: (int)(flip.getAverageBuyPrice() * 1.05); // Default 5% markup
-		
-		// Create focused flip for selling
-		FocusedFlip newFocus = FocusedFlip.forSell(
-			flip.getItemId(),
-			flip.getItemName(),
-			sellPrice,
-			flip.getTotalQuantity()
-		);
-		
-		updateFocus(newFocus, panel);
+		// Fetch current market data to calculate smart sell price
+		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
+		{
+			Integer currentMarketPrice = null;
+			Integer dailyVolume = null;
+			
+			if (analysis != null && analysis.getCurrentPrices() != null)
+			{
+				FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
+				currentMarketPrice = prices.getHigh();
+				
+				if (analysis.getLiquidity() != null && analysis.getLiquidity().getTotalVolumePerHour() != null)
+				{
+					dailyVolume = (int)(analysis.getLiquidity().getTotalVolumePerHour() * 24);
+				}
+			}
+			
+			// Calculate smart sell price
+			Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice, dailyVolume);
+			int sellPrice = smartSellPrice != null ? smartSellPrice : calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
+			
+			// Create focused flip for selling
+			FocusedFlip newFocus = FocusedFlip.forSell(
+				flip.getItemId(),
+				flip.getItemName(),
+				sellPrice,
+				flip.getTotalQuantity()
+			);
+			
+			SwingUtilities.invokeLater(() -> updateFocus(newFocus, panel));
+		});
 	}
 	
 	/**
@@ -1788,10 +1819,14 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		// Details section with market data - use smaller padding and font
-		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 2, 1));
+		// Details section with market data - use fixed column widths for tighter layout
+		JPanel detailsPanel = new JPanel(new GridBagLayout());
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailsPanel.setBorder(new EmptyBorder(3, 32, 0, 0));
+		detailsPanel.setBorder(new EmptyBorder(3, 0, 0, 0));
+		
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.anchor = GridBagConstraints.WEST;
+		gbc.insets = new Insets(1, 0, 1, 15); // 15px gap between columns
 
 		// Row 1: Quantity (sold/total) and Buy Price (exact price for easy GE input)
 		String qtyText;
@@ -1833,102 +1868,89 @@ public class FlipFinderPanel extends PluginPanel
 		roiLabel.setForeground(Color.LIGHT_GRAY);
 		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
-		detailsPanel.add(qtyLabel);
-		detailsPanel.add(buyPriceLabel);
-		detailsPanel.add(investedLabel);
-		detailsPanel.add(sellPriceLabel);
-		detailsPanel.add(profitLabel);
-		detailsPanel.add(roiLabel);
+		// Add labels with GridBagLayout - columns stay compact
+		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 0; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(buyPriceLabel, gbc);
+		gbc.gridx = 0; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(investedLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(sellPriceLabel, gbc);
+		gbc.gridx = 0; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(profitLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(roiLabel, gbc);
+		
+		// Add horizontal glue to prevent stretching
+		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
+		detailsPanel.add(Box.createHorizontalGlue(), gbc);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
-		// Use recommended sell price if available, otherwise fetch current market price
-		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
+		// Always fetch current market data to make smart sell price decisions
+		// The logic considers: recommended price, time elapsed, volume, and current market
+		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
 		{
-			// Use recommended price from when the flip was suggested
-			int recommendedSellPrice = flip.getRecommendedSellPrice();
-			
-			// Update sell price
-			sellPriceLabel.setText(String.format(FORMAT_SELL, formatGPExact(recommendedSellPrice)));
-
-			// Calculate GE tax (2% capped at 5M)
-			int geTax = Math.min((int)(recommendedSellPrice * 0.02), 5_000_000);
-			
-			// Calculate potential profit (per item)
-			int profitPerItem = recommendedSellPrice - flip.getAverageBuyPrice() - geTax;
-			int totalProfit = profitPerItem * flip.getTotalQuantity();
-
-			// Calculate ROI
-			double roi = (profitPerItem * 100.0) / flip.getAverageBuyPrice();
-
-			// Update profit label with color
-			String profitText = Math.abs(totalProfit) >= 100_000 
-				? formatGP(totalProfit) 
-				: formatGPExact(totalProfit);
-			profitLabel.setText(String.format("Profit: %s", profitText));
-			profitLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-			profitLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
-
-			// Update ROI label with color
-			roiLabel.setText(String.format(FORMAT_ROI, roi));
-			roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-			roiLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
-		}
-		else
-		{
-			// Fallback: fetch current market price
-			apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
+			SwingUtilities.invokeLater(() ->
 			{
-				SwingUtilities.invokeLater(() ->
+				Integer currentMarketPrice = null;
+				Integer dailyVolume = null;
+				
+				if (analysis != null && analysis.getCurrentPrices() != null)
 				{
-					if (analysis != null && analysis.getCurrentPrices() != null)
+					FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
+					currentMarketPrice = prices.getHigh();
+					
+					// Try to get daily volume from liquidity info
+					if (analysis.getLiquidity() != null && analysis.getLiquidity().getTotalVolumePerHour() != null)
 					{
-						FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
-						Integer currentSellPrice = prices.getHigh();
-						Integer geTax = prices.getGeTax();
-
-						if (currentSellPrice != null && geTax != null)
-						{
-							// Update sell price with exact number for easy GE input
-							sellPriceLabel.setText(String.format("Sell: %s*", formatGPExact(currentSellPrice)));
-
-							// Calculate potential profit (per item)
-							int profitPerItem = currentSellPrice - flip.getAverageBuyPrice() - geTax;
-							int totalProfit = profitPerItem * flip.getTotalQuantity();
-
-							// Calculate ROI
-							double roi = (profitPerItem * 100.0) / flip.getAverageBuyPrice();
-
-							// Update profit label with color
-							String profitText = Math.abs(totalProfit) >= 100_000 
-								? formatGP(totalProfit) 
-								: formatGPExact(totalProfit);
-							profitLabel.setText(String.format("Profit: %s*", profitText));
-							profitLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-							profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
-
-							// Update ROI label with color
-							roiLabel.setText(String.format("ROI: %.1f%%*", roi));
-							roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-							roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
-						}
-						else
-						{
-							sellPriceLabel.setText("Sell: N/A");
-							profitLabel.setText("Profit: N/A");
-							roiLabel.setText("ROI: N/A");
-						}
+						dailyVolume = (int)(analysis.getLiquidity().getTotalVolumePerHour() * 24);
 					}
-					else
+				}
+				
+				// Calculate smart sell price based on time, volume, and profitability
+				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice, dailyVolume);
+				boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
+				
+				if (smartSellPrice != null && smartSellPrice > 0)
+				{
+					// Mark with * if we switched to loss-minimizing mode
+					String priceSuffix = pastThreshold ? "*" : "";
+					sellPriceLabel.setText(String.format("Sell: %s%s", formatGPExact(smartSellPrice), priceSuffix));
+
+					// Calculate GE tax (2% capped at 5M)
+					int geTax = Math.min((int)(smartSellPrice * 0.02), 5_000_000);
+					
+					// Calculate potential profit (per item)
+					int profitPerItem = smartSellPrice - flip.getAverageBuyPrice() - geTax;
+					int totalProfit = profitPerItem * flip.getTotalQuantity();
+
+					// Calculate ROI
+					double roi = (profitPerItem * 100.0) / flip.getAverageBuyPrice();
+
+					// Update profit label with color
+					String profitText = Math.abs(totalProfit) >= 100_000 
+						? formatGP(totalProfit) 
+						: formatGPExact(totalProfit);
+					profitLabel.setText(String.format("Profit: %s%s", profitText, priceSuffix));
+					profitLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
+					profitLabel.setFont(new Font(FONT_ARIAL, pastThreshold ? Font.PLAIN : Font.BOLD, 11));
+
+					// Update ROI label with color
+					roiLabel.setText(String.format("ROI: %.1f%%%s", roi, priceSuffix));
+					roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
+					roiLabel.setFont(new Font(FONT_ARIAL, pastThreshold ? Font.PLAIN : Font.BOLD, 11));
+					
+					// Show warning tooltip if past threshold and losing money
+					if (pastThreshold && totalProfit < 0)
 					{
-						sellPriceLabel.setText("Sell: N/A");
-						profitLabel.setText("Profit: N/A");
-						roiLabel.setText("ROI: N/A");
+						panel.setToolTipText("Price adjusted to minimize loss. Original recommended price was not achievable.");
 					}
-				});
+				}
+				else
+				{
+					sellPriceLabel.setText("Sell: N/A");
+					profitLabel.setText("Profit: N/A");
+					roiLabel.setText("ROI: N/A");
+				}
 			});
-		}
+		});
 
 		// Add hover effect, click to focus, and context menu
 		panel.addMouseListener(new MouseAdapter()
@@ -2053,10 +2075,14 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		// Details section - same grid layout as active flips
-		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 2, 1));
+		// Details section - use GridBagLayout for tighter column spacing
+		JPanel detailsPanel = new JPanel(new GridBagLayout());
 		detailsPanel.setBackground(new Color(55, 55, 65));
-		detailsPanel.setBorder(new EmptyBorder(3, 32, 0, 0));
+		detailsPanel.setBorder(new EmptyBorder(3, 0, 0, 0));
+		
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.anchor = GridBagConstraints.WEST;
+		gbc.insets = new Insets(1, 0, 1, 15); // 15px gap between columns
 
 		// Row 1: Quantity (filled/total) and Offer Price
 		String qtyText;
@@ -2143,12 +2169,17 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
 
-		detailsPanel.add(qtyLabel);
-		detailsPanel.add(offerLabel);
-		detailsPanel.add(investedLabel);
-		detailsPanel.add(sellLabel);
-		detailsPanel.add(slotStatusLabel);
-		detailsPanel.add(roiLabel);
+		// Add labels with GridBagLayout - columns stay compact
+		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 0; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(offerLabel, gbc);
+		gbc.gridx = 0; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(investedLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(sellLabel, gbc);
+		gbc.gridx = 0; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(slotStatusLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(roiLabel, gbc);
+		
+		// Add horizontal glue to prevent stretching
+		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
+		detailsPanel.add(Box.createHorizontalGlue(), gbc);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
@@ -2253,10 +2284,14 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		// Details section with profit/loss info
-		JPanel detailsPanel = new JPanel(new GridLayout(3, 2, 4, 2));
+		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
+		JPanel detailsPanel = new JPanel(new GridBagLayout());
 		detailsPanel.setBackground(backgroundColor);
-		detailsPanel.setBorder(new EmptyBorder(3, 36, 0, 0));
+		detailsPanel.setBorder(new EmptyBorder(3, 0, 0, 0));
+		
+		GridBagConstraints gbc = new GridBagConstraints();
+		gbc.anchor = GridBagConstraints.WEST;
+		gbc.insets = new Insets(1, 0, 1, 15); // 15px gap between columns
 
 		// Row 1: Quantity and Buy Price
 		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, flip.getQuantity()));
@@ -2288,12 +2323,17 @@ public class FlipFinderPanel extends PluginPanel
 		roiLabel.setForeground(profitColor);
 		roiLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
 
-		detailsPanel.add(qtyLabel);
-		detailsPanel.add(buyPriceLabel);
-		detailsPanel.add(investedLabel);
-		detailsPanel.add(sellPriceLabel);
-		detailsPanel.add(profitLabel);
-		detailsPanel.add(roiLabel);
+		// Add labels with GridBagLayout - columns stay compact
+		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 0; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(buyPriceLabel, gbc);
+		gbc.gridx = 0; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(investedLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(sellPriceLabel, gbc);
+		gbc.gridx = 0; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(profitLabel, gbc);
+		gbc.gridx = 1; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(roiLabel, gbc);
+		
+		// Add horizontal glue to prevent stretching
+		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
+		detailsPanel.add(Box.createHorizontalGlue(), gbc);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
@@ -2425,6 +2465,128 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		// Use invokeLater to restore after layout is complete
 		SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(position));
+	}
+	
+	/**
+	 * Calculate the sell price threshold time for an active flip.
+	 * Returns the number of minutes after which we should switch from 
+	 * profit-first to loss-minimizing strategy.
+	 * 
+	 * Rules:
+	 * - High volume items (>500k daily): 10 minutes
+	 * - High value items (>250M buy price): 30 minutes
+	 * - Regular items: 20 minutes
+	 */
+	private int getSellPriceThresholdMinutes(ActiveFlip flip, Integer dailyVolume)
+	{
+		// High value items get more time
+		if (flip.getAverageBuyPrice() >= HIGH_VALUE_THRESHOLD)
+		{
+			return HIGH_VALUE_TIME_MINUTES;
+		}
+		
+		// High volume items should sell quickly
+		if (dailyVolume != null && dailyVolume >= HIGH_VOLUME_THRESHOLD)
+		{
+			return HIGH_VOLUME_TIME_MINUTES;
+		}
+		
+		// Regular items
+		return REGULAR_TIME_MINUTES;
+	}
+	
+	/**
+	 * Check if an active flip has exceeded its time threshold and should
+	 * switch to loss-minimizing sell price.
+	 */
+	private boolean shouldUseLossMinimizingPrice(ActiveFlip flip, Integer dailyVolume)
+	{
+		String buyTimeStr = flip.getLastBuyTime();
+		if (buyTimeStr == null || buyTimeStr.isEmpty())
+		{
+			return false;
+		}
+		
+		try
+		{
+			Instant buyTime = Instant.parse(buyTimeStr);
+			Duration elapsed = Duration.between(buyTime, Instant.now());
+			int thresholdMinutes = getSellPriceThresholdMinutes(flip, dailyVolume);
+			return elapsed.toMinutes() >= thresholdMinutes;
+		}
+		catch (DateTimeParseException e)
+		{
+			log.debug("Failed to parse buy time: {}", buyTimeStr);
+			return false;
+		}
+	}
+	
+	/**
+	 * Calculate the minimum profitable sell price for an active flip.
+	 * This is the price that would result in zero profit after tax.
+	 * Formula: minSellPrice = buyPrice / (1 - taxRate)
+	 * Adding 1gp ensures a small profit.
+	 */
+	private int calculateMinProfitableSellPrice(int buyPrice)
+	{
+		// GE tax is 2%, so to break even: sellPrice * 0.98 = buyPrice
+		// sellPrice = buyPrice / 0.98
+		// Add 1gp to ensure profit
+		return (int) Math.ceil(buyPrice / 0.98) + 1;
+	}
+	
+	/**
+	 * Determine the smart sell price for an active flip.
+	 * 
+	 * Strategy:
+	 * 1. First try to sell at the recommended price (profitable)
+	 * 2. If no recommended price, calculate minimum profitable price
+	 * 3. After time threshold, switch to current market price to minimize loss
+	 * 
+	 * @param flip The active flip
+	 * @param currentMarketPrice The current instant sell price from market
+	 * @param dailyVolume Daily trade volume (optional)
+	 * @return The recommended sell price, or null to indicate need to fetch market price
+	 */
+	private Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice, Integer dailyVolume)
+	{
+		int buyPrice = flip.getAverageBuyPrice();
+		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
+		
+		// Check if we've exceeded the time threshold
+		boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
+		
+		if (pastThreshold && currentMarketPrice != null)
+		{
+			// Past threshold: prioritize selling, even at potential loss
+			// Use current market price, but at minimum use the market price
+			// that gives best chance of selling
+			return currentMarketPrice;
+		}
+		
+		// Before threshold: prioritize profit
+		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
+		{
+			// Use recommended price if it's profitable
+			return flip.getRecommendedSellPrice();
+		}
+		
+		// No recommended price or it's not profitable - use minimum profitable price
+		// but only if market price is higher (otherwise the flip was never good)
+		if (currentMarketPrice != null && currentMarketPrice >= minProfitablePrice)
+		{
+			return minProfitablePrice;
+		}
+		
+		// Market price is below profitable threshold
+		// Before time threshold: still try to sell at profitable price
+		// After threshold: this would be handled above
+		if (flip.getRecommendedSellPrice() != null)
+		{
+			return flip.getRecommendedSellPrice();
+		}
+		
+		return minProfitablePrice;
 	}
 }
 
