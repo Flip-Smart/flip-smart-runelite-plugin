@@ -62,7 +62,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton signupButton;
 	private boolean isAuthenticated = false;
 	
-	// EasyFlip focus tracking
+	// Flip Assist focus tracking
 	private transient FocusedFlip currentFocus = null;
 	private transient JPanel currentFocusedPanel = null;
 	private transient int currentFocusedItemId = -1;
@@ -1280,7 +1280,7 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				// Left click: set as EasyFlip focus
+				// Left click: set as Flip Assist focus
 				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1)
 				{
 					setFocus(rec, panel);
@@ -1496,7 +1496,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Check if the focused item still exists in recommendations or active flips
 		if (!hasFlipForItem(currentFocusedItemId))
 		{
-			log.debug("Clearing EasyFlip focus - item {} no longer in recommendations or active flips", currentFocusedItemId);
+			log.debug("Clearing Flip Assist focus - item {} no longer in recommendations or active flips", currentFocusedItemId);
 			clearFocus();
 		}
 	}
@@ -1510,7 +1510,7 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Set a recommendation as the current focus for EasyFlip
+	 * Set a recommendation as the current focus for Flip Assist
 	 */
 	private void setFocus(FlipRecommendation rec, JPanel panel)
 	{
@@ -1527,7 +1527,7 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Set an active flip as the current focus for EasyFlip
+	 * Set an active flip as the current focus for Flip Assist
 	 */
 	private void setFocus(ActiveFlip flip, JPanel panel)
 	{
@@ -1548,7 +1548,7 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Set a pending order as the current focus for EasyFlip (selling step)
+	 * Set a pending order as the current focus for Flip Assist (selling step)
 	 */
 	private void setFocus(FlipSmartPlugin.PendingOrder pending, JPanel panel)
 	{
@@ -1615,7 +1615,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 		
-		log.info("Set EasyFlip focus: {} - {} at {} gp x{}", 
+		log.info("Set Flip Assist focus: {} - {} at {} gp x{}", 
 			newFocus.getStep(), 
 			newFocus.getItemName(), 
 			newFocus.getCurrentStepPrice(),
@@ -1732,7 +1732,7 @@ public class FlipFinderPanel extends PluginPanel
 		currentFocusedItemId = focus.getItemId();
 		
 		// Note: We don't have a panel to highlight since this was set externally
-		// The EasyFlip overlay will show the focused item info
+		// The Flip Assist overlay will show the focused item info
 		
 		log.debug("External focus set: {} - {} at {} gp", 
 			focus.isBuying() ? "BUY" : "SELL",
@@ -1936,7 +1936,7 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				// Left click: set as EasyFlip focus for selling
+				// Left click: set as Flip Assist focus for selling
 				if (e.getButton() == MouseEvent.BUTTON1 && !e.isPopupTrigger())
 				{
 					setFocus(flip, panel);
@@ -1988,7 +1988,7 @@ public class FlipFinderPanel extends PluginPanel
 					JPopupMenu contextMenu = new JPopupMenu();
 					
 					// Add focus option
-					JMenuItem focusItem = new JMenuItem("Set as EasyFlip Focus (Sell)");
+					JMenuItem focusItem = new JMenuItem("Set as Flip Assist Focus (Sell)");
 					focusItem.addActionListener(ae -> setFocus(flip, panel));
 					contextMenu.add(focusItem);
 					
