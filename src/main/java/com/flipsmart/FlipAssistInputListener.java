@@ -3,8 +3,6 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
-import net.runelite.api.VarClientInt;
-import net.runelite.api.VarClientStr;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
@@ -23,7 +21,6 @@ import java.util.concurrent.atomic.AtomicReference;
  * Handles the hotkey press to auto-fill price and quantity in the GE.
  */
 @Slf4j
-@SuppressWarnings("deprecation") // VarClientStr and VarClientInt are deprecated but still functional in RuneLite
 public class FlipAssistInputListener implements KeyListener
 {
 	private final Client client;
@@ -38,7 +35,11 @@ public class FlipAssistInputListener implements KeyListener
 	// GE Interface child IDs
 	private static final int GE_QUANTITY_CHILD = 24;
 	
-	// Input type values (from VarClientInt.INPUT_TYPE)
+	// VarClient IDs (raw values to avoid deprecated API)
+	private static final int VARCLIENT_INPUT_TYPE = 5;
+	private static final int VARCLIENT_INPUT_TEXT = 359;
+	
+	// Input type values
 	private static final int INPUT_TYPE_NUMERIC = 7;
 	private static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 	
@@ -105,7 +106,7 @@ public class FlipAssistInputListener implements KeyListener
 				return;
 			}
 			
-			int inputType = client.getVarcIntValue(VarClientInt.INPUT_TYPE);
+			int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
 			
 			// Handle GE item search - press hotkey to select the first result
 			// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
@@ -178,7 +179,7 @@ public class FlipAssistInputListener implements KeyListener
 	private void setInputValue(int value)
 	{
 		String valueStr = String.valueOf(value);
-		client.setVarcStrValue(VarClientStr.INPUT_TEXT, valueStr);
+		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, valueStr);
 		
 		// Run the script to rebuild/refresh the chatbox input display
 		// This makes the value visible in the input field
