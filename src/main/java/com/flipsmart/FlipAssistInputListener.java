@@ -42,8 +42,8 @@ public class FlipAssistInputListener implements KeyListener
 	private static final int INPUT_TYPE_NUMERIC = 7;
 	private static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 	
-	// Chat message prefix
-	private static final String CHAT_MESSAGE_PREFIX = "<col=ffaa00>[FlipSmart]</col> ";
+	// Chat message prefix - cyan color for visibility
+	private static final String CHAT_MESSAGE_PREFIX = "<col=00e5ff>[FlipSmart]</col> ";
 	
 	// Widget groups to scan for price/quantity dialog title
 	private static final int[] CHATBOX_WIDGET_GROUPS = {162, 163, 164, 217, 219, 229, 548, 161};

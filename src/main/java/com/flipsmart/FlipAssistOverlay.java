@@ -39,10 +39,10 @@ public class FlipAssistOverlay extends Overlay
 	
 	// Unique color theme - warm amber/gold gradient theme (distinct from other plugins)
 	private static final Color COLOR_BG_DARK = new Color(25, 22, 18, 245);
-	private static final Color COLOR_BG_PANEL = new Color(35, 30, 24, 240);
+	private static final Color COLOR_BG_PANEL = new Color(55, 52, 48, 240);  // Lighter grey for inner sections
+	private static final Color COLOR_BORDER = new Color(10, 10, 10);  // Black border
 	private static final Color COLOR_ACCENT = new Color(255, 185, 50);  // Warm amber
 	private static final Color COLOR_ACCENT_GLOW = new Color(255, 185, 50, 60);
-	private static final Color COLOR_ACCENT_DIM = new Color(255, 185, 50, 120);
 	private static final Color COLOR_TEXT = new Color(245, 240, 230);
 	private static final Color COLOR_TEXT_DIM = new Color(160, 150, 140);
 	private static final Color COLOR_BUY = new Color(100, 220, 130);
@@ -53,7 +53,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final Color COLOR_STEP_PENDING = new Color(80, 75, 70);
 	
 	// Layout constants (compact for smaller screens)
-	private static final int PANEL_WIDTH = 195;
+	private static final int PANEL_WIDTH = 220;
 	private static final int PANEL_HEIGHT = 170;
 	private static final int PADDING = 6;
 	private static final int SECTION_PADDING = 10;  // Inner padding for sections
@@ -277,9 +277,9 @@ public class FlipAssistOverlay extends Overlay
 		graphics.setColor(COLOR_BG_DARK);
 		graphics.fillRoundRect(0, 0, PANEL_WIDTH, panelHeight, 12, 12);
 		
-		// Draw accent border
-		graphics.setColor(COLOR_ACCENT_DIM);
-		graphics.setStroke(new BasicStroke(2));
+		// Draw thin black border
+		graphics.setColor(COLOR_BORDER);
+		graphics.setStroke(new BasicStroke(1));
 		graphics.drawRoundRect(0, 0, PANEL_WIDTH, panelHeight, 12, 12);
 		
 		int y = PADDING;
@@ -304,6 +304,9 @@ public class FlipAssistOverlay extends Overlay
 	 */
 	private int renderHeader(Graphics2D graphics, int y)
 	{
+		// Add top padding so header isn't squished
+		y += 4;
+		
 		// Item icon
 		AsyncBufferedImage itemImage = itemManager.getImage(focusedFlip.getItemId());
 		if (itemImage != null)
@@ -331,12 +334,9 @@ public class FlipAssistOverlay extends Overlay
 	 */
 	private int renderStepProgress(Graphics2D graphics, int y, float pulseAlpha)
 	{
-		// Draw section background
-		graphics.setColor(COLOR_BG_PANEL);
-		graphics.fillRoundRect(SECTION_PADDING, y, PANEL_WIDTH - SECTION_PADDING * 2, 52, 6, 6);
-		
-		y += 6;
-		int startX = SECTION_PADDING + 10;
+		// No background - cleaner look
+		y += 4;
+		int startX = 20;
 		
 		// Determine which steps to show based on buy/sell phase
 		FlipAssistStep[] stepsToShow;
@@ -364,17 +364,18 @@ public class FlipAssistOverlay extends Overlay
 		
 		// Draw horizontal step indicators
 		int stepX = startX;
-		int stepWidth = (PANEL_WIDTH - SECTION_PADDING * 2 - 20) / (stepsToShow.length - 1);
+		int stepWidth = (PANEL_WIDTH - 40) / (stepsToShow.length - 1);
 		
 		for (int i = 0; i < stepsToShow.length; i++)
 		{
-			// Draw connecting line (except for first)
+			// Draw connecting line (except for first) - shorter lines with gaps
 			if (i > 0)
 			{
 				graphics.setColor(i <= currentStepIndex ? COLOR_STEP_COMPLETE : COLOR_STEP_PENDING);
 				graphics.setStroke(new BasicStroke(2));
-				graphics.drawLine(stepX - stepWidth + STEP_INDICATOR_SIZE / 2, y + STEP_INDICATOR_SIZE / 2,
-					stepX - STEP_INDICATOR_SIZE / 2, y + STEP_INDICATOR_SIZE / 2);
+				int lineGap = 6;  // Gap from each circle
+				graphics.drawLine(stepX - stepWidth + STEP_INDICATOR_SIZE / 2 + lineGap, y + STEP_INDICATOR_SIZE / 2,
+					stepX - STEP_INDICATOR_SIZE / 2 - lineGap, y + STEP_INDICATOR_SIZE / 2);
 			}
 			
 			// Draw step circle
@@ -427,7 +428,7 @@ public class FlipAssistOverlay extends Overlay
 			stepX += stepWidth;
 		}
 		
-		return y + 40;
+		return y + 34;
 	}
 	
 	/**
@@ -435,12 +436,13 @@ public class FlipAssistOverlay extends Overlay
 	 */
 	private int renderCurrentAction(Graphics2D graphics, int y, float pulseAlpha)
 	{
-		// Less gap from progress bar
-		
 		// Draw action box with pulsing border
 		int boxHeight = 42;
-		graphics.setColor(new Color(40, 35, 28));
-		graphics.fillRoundRect(SECTION_PADDING, y, PANEL_WIDTH - SECTION_PADDING * 2, boxHeight, 6, 6);
+		int boxMargin = 10;
+		int boxWidth = PANEL_WIDTH - boxMargin * 2;
+		
+		graphics.setColor(new Color(45, 42, 38));
+		graphics.fillRoundRect(boxMargin, y, boxWidth, boxHeight, 6, 6);
 		
 		// Pulsing border for emphasis
 		Color borderColor = new Color(
@@ -450,22 +452,24 @@ public class FlipAssistOverlay extends Overlay
 			(int)(150 + 100 * pulseAlpha)
 		);
 		graphics.setColor(borderColor);
-		graphics.setStroke(new BasicStroke(2));
-		graphics.drawRoundRect(SECTION_PADDING, y, PANEL_WIDTH - SECTION_PADDING * 2, boxHeight, 6, 6);
+		graphics.setStroke(new BasicStroke(1.5f));
+		graphics.drawRoundRect(boxMargin, y, boxWidth, boxHeight, 6, 6);
 		
-		// Action title
+		// Action title - centered horizontally and vertically positioned
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		graphics.setColor(COLOR_ACCENT);
-		graphics.drawString(currentStep.getTitle(), SECTION_PADDING + 6, y + 15);
+		String title = currentStep.getTitle();
+		int titleWidth = graphics.getFontMetrics().stringWidth(title);
+		graphics.drawString(title, (PANEL_WIDTH - titleWidth) / 2, y + 18);
 		
-		// Action description with dynamic values
+		// Action description - centered horizontally and vertically positioned
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		graphics.setColor(COLOR_TEXT);
 		String description = formatStepDescription();
-		graphics.drawString(description, SECTION_PADDING + 6, y + 30);
+		int descWidth = graphics.getFontMetrics().stringWidth(description);
+		graphics.drawString(description, (PANEL_WIDTH - descWidth) / 2, y + 34);
 		
-		// Consistent spacing below (same as padding above summary values)
-		return y + boxHeight + 2;
+		return y + boxHeight + 4;
 	}
 	
 	/**
@@ -598,62 +602,50 @@ public class FlipAssistOverlay extends Overlay
 	/**
 	 * Check if offer setup screen is open.
 	 * This is when the player has clicked a Buy/Sell slot and can set quantity/price.
-	 * We detect this by checking multiple possible indicators.
+	 * We detect this by checking for the offer panel (465:26) with BOTH "Quantity:" 
+	 * AND a price value containing "coins".
 	 */
 	private boolean isOfferSetupOpen()
 	{
-		// Try multiple detection methods since widget IDs can vary
-		
-		// Method 1: Check common offer setup widget children
-		int[] possibleOfferWidgets = {24, 25, 7, 21, 22, 23, 26, 27};
-		for (int childId : possibleOfferWidgets)
+		// Check for the offer panel widget which contains quantity/price setup
+		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_PANEL_CHILD);
+		if (offerPanel == null || offerPanel.isHidden())
 		{
-			Widget widget = client.getWidget(GE_INTERFACE_GROUP, childId);
-			if (widget != null && !widget.isHidden() && widget.getWidth() > 0)
+			return false;
+		}
+		
+		Widget[] children = offerPanel.getDynamicChildren();
+		if (children == null || children.length < 30)
+		{
+			return false;
+		}
+		
+		// Must find BOTH indicators to confirm we're in offer setup
+		boolean hasQuantityLabel = false;
+		boolean hasPriceCoins = false;
+		
+		for (Widget child : children)
+		{
+			if (child != null && !child.isHidden())
 			{
-				// Check if this widget has offer-related content
-				String text = widget.getText();
-				if (text != null && (text.contains(COINS_TEXT) || text.contains("Quantity") || 
-					text.contains("Price") || text.contains(",") && text.length() < 20))
+				String text = child.getText();
+				if (text != null)
 				{
-					return true;
-				}
-				
-				// Check children for offer content
-				Widget[] children = widget.getDynamicChildren();
-				if (children != null && children.length > 0)
-				{
-					for (Widget child : children)
+					if (text.contains("Quantity:"))
 					{
-						if (child != null && !child.isHidden())
-						{
-							String childText = child.getText();
-							if (childText != null && !childText.isEmpty())
-							{
-								// If we find numeric text or "coins", we're in offer setup
-								if (childText.matches(".*\\d+.*") || childText.contains(COINS_TEXT))
-								{
-									return true;
-								}
-							}
-						}
+						hasQuantityLabel = true;
+					}
+					// Price shown as "X coins" only appears in offer setup
+					if (text.contains(COINS_TEXT) && text.matches(".*\\d+.*"))
+					{
+						hasPriceCoins = true;
 					}
 				}
 			}
 		}
 		
-		// Method 2: Check if the chatbox/offer group 162 has offer-related content
-		Widget chatboxWidget = client.getWidget(GE_OFFER_GROUP, 0);
-		if (chatboxWidget != null && !chatboxWidget.isHidden())
-		{
-			// If chatbox is visible, we might be in an input dialog (still offer setup)
-			return true;
-		}
-		
-		// Method 3: Check for the Confirm button or other offer-specific widgets
-		// Widget 465:29 is often the confirm button area
-		Widget confirmArea = client.getWidget(GE_INTERFACE_GROUP, 29);
-		return confirmArea != null && !confirmArea.isHidden() && confirmArea.getWidth() > 0;
+		// Only return true if we find both indicators
+		return hasQuantityLabel && hasPriceCoins;
 	}
 	
 	/**
