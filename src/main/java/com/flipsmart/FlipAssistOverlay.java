@@ -201,6 +201,11 @@ public class FlipAssistOverlay extends Overlay
 		return focusedFlip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
 	}
 	
+	/**
+	 * Check if a GE value matches the target within ±1 tolerance.
+	 * Tolerance is needed because GE can have slight rounding differences
+	 * when displaying prices/quantities (e.g., 1gp variance in price).
+	 */
 	private boolean isValueWithinTolerance(int current, int target)
 	{
 		return current > 0 && target > 0 && Math.abs(current - target) <= 1;

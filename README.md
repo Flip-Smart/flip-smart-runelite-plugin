@@ -75,7 +75,7 @@ A floating step-by-step guide that walks you through the entire flip process:
 
 - **Visual progress tracker**: Horizontal step indicators showing your position in the flip journey
 - **Dynamic instructions**: Context-aware prompts that update based on your current GE state
-- **Hotkey hints**: See exactly when to press your EasyFlip hotkey for quantity and price
+- **Hotkey hints**: See exactly when to press your Flip Assist hotkey for quantity and price
 - **Profit preview**: Live profit calculations before you even complete the flip
 - **Animated feedback**: Pulsing indicators draw attention to your current action
 - **Warm amber theme**: Distinctive UI that's easy to spot but doesn't clash with the game

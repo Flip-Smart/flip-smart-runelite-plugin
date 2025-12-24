@@ -844,7 +844,7 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Set the EasyFlip focus for selling an active flip.
+	 * Set the Flip Assist focus for selling an active flip.
 	 */
 	private void setFocusForSell(ActiveFlip flip)
 	{
@@ -1090,7 +1090,7 @@ public class FlipSmartPlugin extends Plugin
 			// New offer with no items sold yet, track it
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
-			// Clear EasyFlip focus if this order matches the focused flip
+			// Clear Flip Assist focus if this order matches the focused flip
 			clearFlipAssistFocusIfMatches(itemId, isBuy);
 			
 			// Refresh the flip finder panel when any new order is submitted
@@ -1107,7 +1107,7 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Clear the EasyFlip focus if the submitted order matches the focused item
+	 * Clear the Flip Assist focus if the submitted order matches the focused item
 	 */
 	private void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
