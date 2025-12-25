@@ -696,9 +696,8 @@ public class FlipFinderPanel extends PluginPanel
 		
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
-		recommendedListContainer.removeAll();
-		recommendedListContainer.revalidate();
-		recommendedListContainer.repaint();
+		// Don't clear container yet - keep showing old recommendations until new data arrives
+		// This prevents the UI flash when recommendations disappear and reappear
 
 		// Fetch recommendations asynchronously
 		Integer cashStack = getCashStack();
@@ -765,10 +764,8 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
-		
-		activeFlipsListContainer.removeAll();
-		activeFlipsListContainer.revalidate();
-		activeFlipsListContainer.repaint();
+		// Don't clear container yet - keep showing old flips until new data arrives
+		// This prevents the UI flash when flips disappear and reappear
 
 		// Pass current RSN to filter data for the logged-in account
 		String rsn = plugin.getCurrentRsnSafe().orElse(null);
@@ -881,10 +878,8 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(completedFlipsScrollPane);
-		
-		completedFlipsListContainer.removeAll();
-		completedFlipsListContainer.revalidate();
-		completedFlipsListContainer.repaint();
+		// Don't clear container yet - keep showing old flips until new data arrives
+		// This prevents the UI flash when flips disappear and reappear
 
 		// Fetch last 50 completed flips for current RSN
 		String rsn = plugin.getCurrentRsnSafe().orElse(null);
