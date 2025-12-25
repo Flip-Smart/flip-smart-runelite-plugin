@@ -1426,13 +1426,16 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private String formatGP(int amount)
 	{
-		if (amount >= 1_000_000)
+		int absAmount = Math.abs(amount);
+		String sign = amount < 0 ? "-" : "";
+		
+		if (absAmount >= 1_000_000)
 		{
-			return String.format("%.1fM", amount / 1_000_000.0);
+			return String.format("%s%.1fM", sign, absAmount / 1_000_000.0);
 		}
-		else if (amount >= 1_000)
+		else if (absAmount >= 1_000)
 		{
-			return String.format("%.1fK", amount / 1_000.0);
+			return String.format("%s%.1fK", sign, absAmount / 1_000.0);
 		}
 		return String.valueOf(amount);
 	}
@@ -1783,7 +1786,7 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 		// Ensure panel fills width in BoxLayout
 		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 160)); // Taller for more rows
 
 		// Top section: Item icon and name
 		JPanel topPanel = new JPanel(new BorderLayout());
@@ -1819,88 +1822,103 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		// Details section with market data - use fixed column widths for tighter layout
-		JPanel detailsPanel = new JPanel(new GridBagLayout());
+		// Details section using BoxLayout for vertical rows
+		JPanel detailsPanel = new JPanel();
+		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
 		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailsPanel.setBorder(new EmptyBorder(3, 0, 0, 0));
-		
-		GridBagConstraints gbc = new GridBagConstraints();
-		gbc.anchor = GridBagConstraints.WEST;
-		gbc.insets = new Insets(1, 0, 1, 15); // 15px gap between columns
+		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
 
-		// Row 1: Quantity (sold/total) and Buy Price (exact price for easy GE input)
-		String qtyText;
-		if (flip.getOriginalQuantity() > 0)
-		{
-			// Show sold/total format (e.g., "0/200" means 0 sold out of 200)
-			int soldQuantity = flip.getOriginalQuantity() - flip.getTotalQuantity();
-			qtyText = String.format("Qty: %d/%d", soldQuantity, flip.getOriginalQuantity());
-		}
-		else
-		{
-			// Fallback if original not available
-			qtyText = String.format(FORMAT_QTY, flip.getTotalQuantity());
-		}
+		// Row 1: Buy: X | Sell: Y (placeholders until data loads)
+		JLabel pricesLabel = new JLabel(String.format("Buy: %s | Sell: ...", formatGPExact(flip.getAverageBuyPrice())));
+		pricesLabel.setForeground(Color.WHITE);
+		pricesLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		pricesLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		// Row 2: Qty: X (Limit: Y) | Tax = Z
+		JPanel qtyTaxRow = new JPanel(new BorderLayout());
+		qtyTaxRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		qtyTaxRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		qtyTaxRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 16));
+
+		String qtyText = String.format("Qty: %d (Limit: ...)", flip.getTotalQuantity());
 		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", formatGPExact(flip.getAverageBuyPrice())));
-		buyPriceLabel.setForeground(new Color(255, 120, 120)); // Light red for buy
-		buyPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		JLabel taxLabel = new JLabel("Tax = ...");
+		taxLabel.setForeground(Color.CYAN);
+		taxLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		// Row 2: Total Invested and Target Sell Price (exact price for GE input)
-		JLabel investedLabel = new JLabel(String.format("Invested: %s", formatGP(flip.getTotalInvested())));
-		investedLabel.setForeground(new Color(255, 200, 100)); // Gold
-		investedLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 10));
+		qtyTaxRow.add(qtyLabel, BorderLayout.WEST);
+		qtyTaxRow.add(taxLabel, BorderLayout.EAST);
 
-		// Fetch current market price for this item
-		JLabel sellPriceLabel = new JLabel("Sell: ...");
-		sellPriceLabel.setForeground(new Color(120, 255, 120)); // Light green for sell
-		sellPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		// Row 3: Margin: X (Y% ROI) | warning indicator (conditional)
+		JLabel marginLabel = new JLabel("Margin: ...");
+		marginLabel.setForeground(new Color(255, 255, 100)); // Yellow
+		marginLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		marginLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		// Row 3: Potential Profit and ROI
-		JLabel profitLabel = new JLabel("Profit: ...");
-		profitLabel.setForeground(Color.LIGHT_GRAY);
-		profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		// Row 4: Profit: X | Cost: Y
+		JLabel profitCostLabel = new JLabel(String.format("Profit: ... | Cost: %s", formatGP(flip.getTotalInvested())));
+		profitCostLabel.setForeground(new Color(100, 255, 100)); // Green
+		profitCostLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		profitCostLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		JLabel roiLabel = new JLabel("ROI: ...");
-		roiLabel.setForeground(Color.LIGHT_GRAY);
-		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		// Row 5: Liquidity: X (Rating) | Y/hr
+		JLabel liquidityLabel = new JLabel("Liquidity: ...");
+		liquidityLabel.setForeground(Color.CYAN);
+		liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		liquidityLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		// Add labels with GridBagLayout - columns stay compact
-		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
-		gbc.gridx = 1; gbc.gridy = 0; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(buyPriceLabel, gbc);
-		gbc.gridx = 0; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(investedLabel, gbc);
-		gbc.gridx = 1; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(sellPriceLabel, gbc);
-		gbc.gridx = 0; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(profitLabel, gbc);
-		gbc.gridx = 1; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(roiLabel, gbc);
-		
-		// Add horizontal glue to prevent stretching
-		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
-		detailsPanel.add(Box.createHorizontalGlue(), gbc);
+		// Row 6: Risk: X (Rating)
+		JLabel riskLabel = new JLabel("Risk: ...");
+		riskLabel.setForeground(new Color(255, 255, 100)); // Yellow
+		riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		riskLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		// Add all rows with small spacing
+		detailsPanel.add(pricesLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(qtyTaxRow);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(marginLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(profitCostLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(liquidityLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(riskLabel);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
-		// Always fetch current market data to make smart sell price decisions
-		// The logic considers: recommended price, time elapsed, volume, and current market
+		// Fetch current market data to populate all fields
 		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
 		{
 			SwingUtilities.invokeLater(() ->
 			{
 				Integer currentMarketPrice = null;
 				Integer dailyVolume = null;
+				Integer buyLimit = null;
+				FlipAnalysis.Liquidity liquidity = null;
+				FlipAnalysis.Risk risk = null;
 				
-				if (analysis != null && analysis.getCurrentPrices() != null)
+				if (analysis != null)
 				{
-					FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
-					currentMarketPrice = prices.getHigh();
+					buyLimit = analysis.getBuyLimit();
+					liquidity = analysis.getLiquidity();
+					risk = analysis.getRisk();
 					
-					// Try to get daily volume from liquidity info
-					if (analysis.getLiquidity() != null && analysis.getLiquidity().getTotalVolumePerHour() != null)
+					if (analysis.getCurrentPrices() != null)
 					{
-						dailyVolume = (int)(analysis.getLiquidity().getTotalVolumePerHour() * 24);
+						FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
+						currentMarketPrice = prices.getHigh();
+					}
+					
+					// Get daily volume from liquidity info
+					if (liquidity != null && liquidity.getTotalVolumePerHour() != null)
+					{
+						dailyVolume = (int)(liquidity.getTotalVolumePerHour() * 24);
 					}
 				}
 				
@@ -1910,32 +1928,49 @@ public class FlipFinderPanel extends PluginPanel
 				
 				if (smartSellPrice != null && smartSellPrice > 0)
 				{
-					// Mark with * if we switched to loss-minimizing mode
+					// Row 1: Update Buy | Sell prices
 					String priceSuffix = pastThreshold ? "*" : "";
-					sellPriceLabel.setText(String.format("Sell: %s%s", formatGPExact(smartSellPrice), priceSuffix));
+					pricesLabel.setText(String.format("Buy: %s | Sell: %s%s", 
+						formatGPExact(flip.getAverageBuyPrice()),
+						formatGPExact(smartSellPrice),
+						priceSuffix));
 
 					// Calculate GE tax (2% capped at 5M)
 					int geTax = Math.min((int)(smartSellPrice * 0.02), 5_000_000);
 					
-					// Calculate potential profit (per item)
-					int profitPerItem = smartSellPrice - flip.getAverageBuyPrice() - geTax;
-					int totalProfit = profitPerItem * flip.getTotalQuantity();
-
-					// Calculate ROI
-					double roi = (profitPerItem * 100.0) / flip.getAverageBuyPrice();
-
-					// Update profit label with color
-					String profitText = Math.abs(totalProfit) >= 100_000 
+					// Calculate margin and profit
+					int marginPerItem = smartSellPrice - flip.getAverageBuyPrice() - geTax;
+					int totalProfit = marginPerItem * flip.getTotalQuantity();
+					double roi = (marginPerItem * 100.0) / flip.getAverageBuyPrice();
+					
+					// Row 2: Update Qty (Limit) | Tax
+					String limitText = buyLimit != null ? String.valueOf(buyLimit) : "?";
+					qtyLabel.setText(String.format("Qty: %d (Limit: %s)", flip.getTotalQuantity(), limitText));
+					taxLabel.setText(String.format("Tax = %s", formatGP(geTax * flip.getTotalQuantity())));
+					
+					// Row 3: Update Margin with ROI (show warning color if not profitable)
+					String marginText = Math.abs(marginPerItem) >= 1000 
+						? formatGP(marginPerItem) 
+						: formatGPExact(marginPerItem);
+					
+					if (totalProfit <= 0)
+					{
+						// Red margin text for unprofitable flips
+						marginLabel.setText(String.format("Margin: %s (%.1f%% ROI) - Loss", marginText, roi));
+						marginLabel.setForeground(new Color(255, 100, 100)); // Red for loss
+					}
+					else
+					{
+						marginLabel.setText(String.format("Margin: %s (%.1f%% ROI)", marginText, roi));
+						marginLabel.setForeground(new Color(255, 255, 100)); // Yellow
+					}
+					
+					// Row 4: Update Profit | Cost
+					String profitText = Math.abs(totalProfit) >= 1000 
 						? formatGP(totalProfit) 
 						: formatGPExact(totalProfit);
-					profitLabel.setText(String.format("Profit: %s%s", profitText, priceSuffix));
-					profitLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-					profitLabel.setFont(new Font(FONT_ARIAL, pastThreshold ? Font.PLAIN : Font.BOLD, 11));
-
-					// Update ROI label with color
-					roiLabel.setText(String.format("ROI: %.1f%%%s", roi, priceSuffix));
-					roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-					roiLabel.setFont(new Font(FONT_ARIAL, pastThreshold ? Font.PLAIN : Font.BOLD, 11));
+					profitCostLabel.setText(String.format("Profit: %s | Cost: %s", profitText, formatGP(flip.getTotalInvested())));
+					profitCostLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
 					
 					// Show warning tooltip if past threshold and losing money
 					if (pastThreshold && totalProfit < 0)
@@ -1945,9 +1980,35 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				else
 				{
-					sellPriceLabel.setText("Sell: N/A");
-					profitLabel.setText("Profit: N/A");
-					roiLabel.setText("ROI: N/A");
+					pricesLabel.setText(String.format("Buy: %s | Sell: N/A", formatGPExact(flip.getAverageBuyPrice())));
+					marginLabel.setText("Margin: N/A");
+					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", formatGP(flip.getTotalInvested())));
+				}
+				
+				// Row 5: Update Liquidity
+				if (liquidity != null && liquidity.getScore() != null)
+				{
+					String rating = liquidity.getRating() != null ? liquidity.getRating() : "Unknown";
+					Double volPerHour = liquidity.getTotalVolumePerHour();
+					String volText = volPerHour != null ? String.format("%.0f/hr", volPerHour) : "";
+					liquidityLabel.setText(String.format("Liquidity: %.0f (%s) | %s", 
+						liquidity.getScore(), rating, volText));
+				}
+				else
+				{
+					liquidityLabel.setText("Liquidity: N/A");
+				}
+				
+				// Row 6: Update Risk
+				if (risk != null && risk.getScore() != null)
+				{
+					String rating = risk.getRating() != null ? risk.getRating() : "Unknown";
+					riskLabel.setText(String.format("Risk: %.0f (%s)", risk.getScore(), rating));
+					riskLabel.setForeground(getRiskColor(risk.getScore()));
+				}
+				else
+				{
+					riskLabel.setText("Risk: N/A");
 				}
 			});
 		});
@@ -1971,10 +2032,12 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
 					|| !currentFocus.isSelling())
 				{
-					panel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
-					topPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
-					namePanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
-					detailsPanel.setBackground(ColorScheme.DARKER_GRAY_HOVER_COLOR);
+					Color hoverColor = ColorScheme.DARKER_GRAY_HOVER_COLOR;
+					panel.setBackground(hoverColor);
+					topPanel.setBackground(hoverColor);
+					namePanel.setBackground(hoverColor);
+					detailsPanel.setBackground(hoverColor);
+					qtyTaxRow.setBackground(hoverColor);
 				}
 			}
 
@@ -1984,10 +2047,12 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
 					|| !currentFocus.isSelling())
 				{
-					panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+					Color normalColor = ColorScheme.DARKER_GRAY_COLOR;
+					panel.setBackground(normalColor);
+					topPanel.setBackground(normalColor);
+					namePanel.setBackground(normalColor);
+					detailsPanel.setBackground(normalColor);
+					qtyTaxRow.setBackground(normalColor);
 				}
 			}
 
@@ -2030,24 +2095,27 @@ public class FlipFinderPanel extends PluginPanel
 
 	/**
 	 * Create a panel for a pending order (not yet filled)
+	 * Uses same detailed layout as active flips with Liquidity/Risk data
 	 */
 	private JPanel createPendingOrderPanel(FlipSmartPlugin.PendingOrder pending)
 	{
+		Color bgColor = new Color(55, 55, 65); // Slightly different color for pending
+		
 		JPanel panel = new JPanel();
 		panel.setLayout(new BorderLayout());
-		panel.setBackground(new Color(55, 55, 65)); // Slightly different color for pending
+		panel.setBackground(bgColor);
 		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
 		// Ensure panel fills width in BoxLayout
 		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 160)); // Taller for more rows
 
 		// Top section: Item icon and name
 		JPanel topPanel = new JPanel(new BorderLayout());
-		topPanel.setBackground(new Color(55, 55, 65));
+		topPanel.setBackground(bgColor);
 
 		// Use BorderLayout for namePanel to prevent overflow
 		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
-		namePanel.setBackground(new Color(55, 55, 65));
+		namePanel.setBackground(bgColor);
 
 		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(pending.itemId);
@@ -2075,117 +2143,185 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		// Details section - use GridBagLayout for tighter column spacing
-		JPanel detailsPanel = new JPanel(new GridBagLayout());
-		detailsPanel.setBackground(new Color(55, 55, 65));
-		detailsPanel.setBorder(new EmptyBorder(3, 0, 0, 0));
-		
-		GridBagConstraints gbc = new GridBagConstraints();
-		gbc.anchor = GridBagConstraints.WEST;
-		gbc.insets = new Insets(1, 0, 1, 15); // 15px gap between columns
+		// Details section using BoxLayout for vertical rows
+		JPanel detailsPanel = new JPanel();
+		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
+		detailsPanel.setBackground(bgColor);
+		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
 
-		// Row 1: Quantity (filled/total) and Offer Price
-		String qtyText;
-		if (pending.quantityFilled > 0)
-		{
-			// Show progress: filled/total
-			qtyText = String.format("Qty: %d/%d", pending.quantityFilled, pending.quantity);
-		}
-		else
-		{
-			// Show just total if nothing filled yet
-			qtyText = String.format("Qty: 0/%d", pending.quantity);
-		}
+		// Row 1: Buy: X | Sell: Y (with placeholders until data loads)
+		String sellText = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
+			? formatGPExact(pending.recommendedSellPrice) : "...";
+		JLabel pricesLabel = new JLabel(String.format("Buy: %s | Sell: %s", 
+			formatGPExact(pending.pricePerItem), sellText));
+		pricesLabel.setForeground(Color.WHITE);
+		pricesLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		pricesLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		// Row 2: Qty: X/Y (Limit: Z) | Tax = W
+		JPanel qtyTaxRow = new JPanel(new BorderLayout());
+		qtyTaxRow.setBackground(bgColor);
+		qtyTaxRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+		qtyTaxRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 16));
+
+		String qtyText = String.format("Qty: %d/%d (Limit: ...)", pending.quantityFilled, pending.quantity);
 		JLabel qtyLabel = new JLabel(qtyText);
 		qtyLabel.setForeground(new Color(200, 200, 200));
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		JLabel offerLabel = new JLabel(String.format("Offer: %s", formatGPExact(pending.pricePerItem)));
-		offerLabel.setForeground(new Color(255, 120, 120)); // Light red like buy prices
-		offerLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		JLabel taxLabel = new JLabel("Tax = ...");
+		taxLabel.setForeground(Color.CYAN);
+		taxLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
 
-		// Row 2: Invested (actual filled amount) and Target Sell
-		int actualInvestment = pending.quantityFilled * pending.pricePerItem;
+		qtyTaxRow.add(qtyLabel, BorderLayout.WEST);
+		qtyTaxRow.add(taxLabel, BorderLayout.EAST);
+
+		// Row 3: Margin: X (Y% ROI)
+		JLabel marginLabel = new JLabel("Margin: ...");
+		marginLabel.setForeground(new Color(255, 255, 100)); // Yellow
+		marginLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		marginLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+		// Row 4: Profit: X | Cost: Y
 		int potentialInvestment = pending.quantity * pending.pricePerItem;
-		String investedText;
-		if (pending.quantityFilled > 0)
-		{
-			investedText = String.format("Invested: %s", formatGP(actualInvestment));
-		}
-		else
-		{
-			investedText = String.format("If filled: %s", formatGP(potentialInvestment));
-		}
-		JLabel investedLabel = new JLabel(investedText);
-		investedLabel.setForeground(pending.quantityFilled > 0 ? new Color(255, 200, 100) : new Color(200, 200, 200));
-		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		JLabel profitCostLabel = new JLabel(String.format("Profit: ... | Cost: %s", formatGP(potentialInvestment)));
+		profitCostLabel.setForeground(new Color(100, 255, 100)); // Green
+		profitCostLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		profitCostLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		JLabel sellLabel = new JLabel();
-		if (pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0)
-		{
-			sellLabel.setText(String.format(FORMAT_SELL, formatGPExact(pending.recommendedSellPrice)));
-			sellLabel.setForeground(new Color(120, 255, 120)); // Light green for sell
-		}
-		else
-		{
-			sellLabel.setText("Sell: --");
-			sellLabel.setForeground(Color.LIGHT_GRAY);
-		}
-		sellLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		// Row 5: Liquidity: X (Rating) | Y/hr
+		JLabel liquidityLabel = new JLabel("Liquidity: ...");
+		liquidityLabel.setForeground(Color.CYAN);
+		liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		liquidityLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		// Row 3: Status and Expected ROI
-		String statusText;
-		Color statusColor;
-		if (pending.quantityFilled > 0)
-		{
-			// Partially filled - show progress
-			int percent = (pending.quantityFilled * 100) / pending.quantity;
-			statusText = String.format("Slot %d: %d%%", pending.slot + 1, percent);
-			statusColor = new Color(120, 200, 255); // Light blue for in-progress
-		}
-		else
-		{
-			// Waiting for first fill
-			statusText = String.format("Slot %d: Waiting", pending.slot + 1);
-			statusColor = new Color(180, 180, 180);
-		}
-		JLabel slotStatusLabel = new JLabel(statusText);
-		slotStatusLabel.setForeground(statusColor);
-		slotStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
+		// Row 6: Risk: X (Rating)
+		JLabel riskLabel = new JLabel("Risk: ...");
+		riskLabel.setForeground(new Color(255, 255, 100)); // Yellow
+		riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		riskLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-		JLabel roiLabel = new JLabel();
-		if (pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0)
-		{
-			int geTax = Math.min((int)(pending.recommendedSellPrice * 0.02), 5_000_000);
-			int profitPerItem = pending.recommendedSellPrice - pending.pricePerItem - geTax;
-			double roi = (profitPerItem * 100.0) / pending.pricePerItem;
-			roiLabel.setText(String.format(FORMAT_ROI, roi));
-			roiLabel.setForeground(roi > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
-		}
-		else
-		{
-			roiLabel.setText("ROI: --");
-			roiLabel.setForeground(Color.LIGHT_GRAY);
-		}
-		roiLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 10));
-
-		// Add labels with GridBagLayout - columns stay compact
-		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
-		gbc.gridx = 1; gbc.gridy = 0; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(offerLabel, gbc);
-		gbc.gridx = 0; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(investedLabel, gbc);
-		gbc.gridx = 1; gbc.gridy = 1; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(sellLabel, gbc);
-		gbc.gridx = 0; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 15); detailsPanel.add(slotStatusLabel, gbc);
-		gbc.gridx = 1; gbc.gridy = 2; gbc.insets = new Insets(1, 0, 1, 0); detailsPanel.add(roiLabel, gbc);
-		
-		// Add horizontal glue to prevent stretching
-		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
-		detailsPanel.add(Box.createHorizontalGlue(), gbc);
+		// Add all rows with small spacing
+		detailsPanel.add(pricesLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(qtyTaxRow);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(marginLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(profitCostLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(liquidityLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+		detailsPanel.add(riskLabel);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
-		
+
+		// Fetch market data to populate all fields
+		apiClient.getItemAnalysisAsync(pending.itemId).thenAccept(analysis ->
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				Integer buyLimit = null;
+				FlipAnalysis.Liquidity liquidity = null;
+				FlipAnalysis.Risk risk = null;
+				Integer currentSellPrice = null;
+				
+				if (analysis != null)
+				{
+					buyLimit = analysis.getBuyLimit();
+					liquidity = analysis.getLiquidity();
+					risk = analysis.getRisk();
+					
+					if (analysis.getCurrentPrices() != null)
+					{
+						currentSellPrice = analysis.getCurrentPrices().getHigh();
+					}
+				}
+				
+				// Use recommended sell price or current market price
+				Integer sellPrice = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
+					? pending.recommendedSellPrice : currentSellPrice;
+				
+				if (sellPrice != null && sellPrice > 0)
+				{
+					// Row 1: Update prices
+					pricesLabel.setText(String.format("Buy: %s | Sell: %s", 
+						formatGPExact(pending.pricePerItem), formatGPExact(sellPrice)));
+
+					// Calculate GE tax (2% capped at 5M)
+					int geTax = Math.min((int)(sellPrice * 0.02), 5_000_000);
+					
+					// Calculate margin and profit
+					int marginPerItem = sellPrice - pending.pricePerItem - geTax;
+					int totalProfit = marginPerItem * pending.quantity;
+					double roi = (marginPerItem * 100.0) / pending.pricePerItem;
+					
+					// Row 2: Update Qty (Limit) | Tax
+					String limitText = buyLimit != null ? String.valueOf(buyLimit) : "?";
+					qtyLabel.setText(String.format("Qty: %d/%d (Limit: %s)", 
+						pending.quantityFilled, pending.quantity, limitText));
+					taxLabel.setText(String.format("Tax = %s", formatGP(geTax * pending.quantity)));
+					
+					// Row 3: Update Margin
+					String marginText = Math.abs(marginPerItem) >= 1000 
+						? formatGP(marginPerItem) 
+						: formatGPExact(marginPerItem);
+					
+					if (totalProfit <= 0)
+					{
+						marginLabel.setText(String.format("Margin: %s (%.1f%% ROI) - Loss", marginText, roi));
+						marginLabel.setForeground(new Color(255, 100, 100)); // Red for loss
+					}
+					else
+					{
+						marginLabel.setText(String.format("Margin: %s (%.1f%% ROI)", marginText, roi));
+						marginLabel.setForeground(new Color(255, 255, 100)); // Yellow
+					}
+					
+					// Row 4: Update Profit | Cost
+					String profitText = Math.abs(totalProfit) >= 1000 
+						? formatGP(totalProfit) 
+						: formatGPExact(totalProfit);
+					profitCostLabel.setText(String.format("Profit: %s | Cost: %s", profitText, formatGP(potentialInvestment)));
+					profitCostLabel.setForeground(totalProfit > 0 ? new Color(100, 255, 100) : new Color(255, 100, 100));
+				}
+				else
+				{
+					pricesLabel.setText(String.format("Buy: %s | Sell: N/A", formatGPExact(pending.pricePerItem)));
+					marginLabel.setText("Margin: N/A");
+					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", formatGP(potentialInvestment)));
+				}
+				
+				// Row 5: Update Liquidity
+				if (liquidity != null && liquidity.getScore() != null)
+				{
+					String rating = liquidity.getRating() != null ? liquidity.getRating() : "Unknown";
+					Double volPerHour = liquidity.getTotalVolumePerHour();
+					String volText = volPerHour != null ? String.format("%.0f/hr", volPerHour) : "";
+					liquidityLabel.setText(String.format("Liquidity: %.0f (%s) | %s", 
+						liquidity.getScore(), rating, volText));
+				}
+				else
+				{
+					liquidityLabel.setText("Liquidity: N/A");
+				}
+				
+				// Row 6: Update Risk
+				if (risk != null && risk.getScore() != null)
+				{
+					String rating = risk.getRating() != null ? risk.getRating() : "Unknown";
+					riskLabel.setText(String.format("Risk: %.0f (%s)", risk.getScore(), rating));
+					riskLabel.setForeground(getRiskColor(risk.getScore()));
+				}
+				else
+				{
+					riskLabel.setText("Risk: N/A");
+				}
+			});
+		});
+
 		// Add click listener for focus selection
-		Color bgColor = new Color(55, 55, 65);
 		panel.addMouseListener(new MouseAdapter()
 		{
 			@Override
@@ -2208,6 +2344,7 @@ public class FlipFinderPanel extends PluginPanel
 					topPanel.setBackground(hoverColor);
 					namePanel.setBackground(hoverColor);
 					detailsPanel.setBackground(hoverColor);
+					qtyTaxRow.setBackground(hoverColor);
 				}
 			}
 			
@@ -2220,6 +2357,7 @@ public class FlipFinderPanel extends PluginPanel
 					topPanel.setBackground(bgColor);
 					namePanel.setBackground(bgColor);
 					detailsPanel.setBackground(bgColor);
+					qtyTaxRow.setBackground(bgColor);
 				}
 			}
 		});
