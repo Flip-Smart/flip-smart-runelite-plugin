@@ -52,6 +52,12 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_BUY_RED = new Color(255, 120, 120);
 	private static final Color COLOR_SELL_GREEN = new Color(120, 255, 120);
 	
+	// Common fonts
+	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
+	private static final Font FONT_BOLD_12 = new Font(FONT_ARIAL, Font.BOLD, 12);
+	private static final Font FONT_BOLD_13 = new Font(FONT_ARIAL, Font.BOLD, 13);
+	private static final Font FONT_BOLD_16 = new Font(FONT_ARIAL, Font.BOLD, 16);
+	
 	// Time-based sell price thresholds (in minutes)
 	// High volume items (>500k daily trades): switch to loss-minimizing after 10 min
 	private static final int HIGH_VOLUME_THRESHOLD = 500_000;
@@ -165,7 +171,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Email field
 		JLabel emailLabel = new JLabel("Email");
 		emailLabel.setForeground(Color.LIGHT_GRAY);
-		emailLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		emailLabel.setFont(FONT_PLAIN_12);
 		emailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		emailField = new JTextField(20);
@@ -181,7 +187,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Password field
 		JLabel passwordLabel = new JLabel("Password");
 		passwordLabel.setForeground(Color.LIGHT_GRAY);
-		passwordLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		passwordLabel.setFont(FONT_PLAIN_12);
 		passwordLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		passwordField = new JPasswordField(20);
@@ -196,7 +202,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Status label for messages
 		loginStatusLabel = new JLabel(" ");
-		loginStatusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		loginStatusLabel.setFont(FONT_PLAIN_12);
 		loginStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 
@@ -265,7 +271,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel titleLabel = new JLabel("Flip Finder");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 16));
+		titleLabel.setFont(FONT_BOLD_16);
 
 		// Right side buttons panel (logout + refresh)
 		JPanel rightButtonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
@@ -297,7 +303,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel flipStyleLabel = new JLabel("Style: ");
 		flipStyleLabel.setForeground(Color.LIGHT_GRAY);
-		flipStyleLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		flipStyleLabel.setFont(FONT_PLAIN_12);
 
 		// Custom renderer for better appearance
 		flipStyleDropdown.setRenderer(new DefaultListCellRenderer() {
@@ -331,7 +337,7 @@ public class FlipFinderPanel extends PluginPanel
 		statusPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		statusPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
 		statusLabel.setForeground(Color.LIGHT_GRAY);
-		statusLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		statusLabel.setFont(FONT_PLAIN_12);
 		statusPanel.add(statusLabel, BorderLayout.CENTER);
 
 		// Combine controls and status into top panel
@@ -965,13 +971,13 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel titleLabel = new JLabel("No completed flips");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 16));
+		titleLabel.setFont(FONT_BOLD_16);
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		JLabel instructionLabel = new JLabel("<html><center>Complete your first flip to see<br>it here! Buy and sell items to<br>track your profits</center></html>");
 		instructionLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		instructionLabel.setFont(FONT_PLAIN_12);
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -1173,14 +1179,14 @@ public class FlipFinderPanel extends PluginPanel
 		// Main message
 		JLabel titleLabel = new JLabel("No active flips");
 		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 16));
+		titleLabel.setFont(FONT_BOLD_16);
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		// Instructions - use smaller text to fit better
 		JLabel instructionLabel = new JLabel("<html><center>Buy items from the Recommended<br>tab to start tracking your flips</center></html>");
 		instructionLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-		instructionLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		instructionLabel.setFont(FONT_PLAIN_12);
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -1255,35 +1261,35 @@ public class FlipFinderPanel extends PluginPanel
 		// Recommended Buy/Sell prices
 		JLabel priceLabel = new JLabel(formatBuySellText(rec.getRecommendedBuyPrice(), rec.getRecommendedSellPrice()));
 		priceLabel.setForeground(Color.LIGHT_GRAY);
-		priceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		priceLabel.setFont(FONT_PLAIN_12);
 
 		// Quantity
 		JLabel quantityLabel = new JLabel(String.format("Qty: %d (Limit: %d)",
 			rec.getRecommendedQuantity(), rec.getBuyLimit()));
 		quantityLabel.setForeground(new Color(200, 200, 255));
-		quantityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		quantityLabel.setFont(FONT_PLAIN_12);
 
 		// Margin and ROI
 		JLabel marginLabel = new JLabel(String.format("Margin: %s (%s ROI)",
 			formatGP(rec.getMargin()), rec.getFormattedROI()));
 		marginLabel.setForeground(COLOR_PROFIT_GREEN);
-		marginLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		marginLabel.setFont(FONT_PLAIN_12);
 
 		// Potential profit and total cost
 		JLabel profitLabel = new JLabel(formatProfitCostText(rec.getPotentialProfit(), rec.getTotalCost()));
 		profitLabel.setForeground(new Color(255, 215, 0));
-		profitLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		profitLabel.setFont(FONT_PLAIN_12);
 
 		// Liquidity info
 		JLabel liquidityLabel = new JLabel(formatLiquidityText(
 			rec.getLiquidityScore(), rec.getLiquidityRating(), rec.getVolumePerHour()));
 		liquidityLabel.setForeground(Color.CYAN);
-		liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		liquidityLabel.setFont(FONT_PLAIN_12);
 
 		// Risk info
 		JLabel riskLabel = new JLabel(formatRiskText(rec.getRiskScore(), rec.getRiskRating()));
 		riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
-		riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		riskLabel.setFont(FONT_PLAIN_12);
 
 		detailsPanel.add(priceLabel);
 		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
@@ -1491,7 +1497,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(itemName);
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
+		nameLabel.setFont(FONT_BOLD_13);
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
@@ -1563,6 +1569,18 @@ public class FlipFinderPanel extends PluginPanel
 			? formatGPExact(sellPrice) 
 			: "N/A";
 		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
+	}
+
+	/**
+	 * Create a styled JLabel with common settings for detail rows
+	 */
+	private JLabel createStyledLabel(String text, Color foreground)
+	{
+		JLabel label = new JLabel(text);
+		label.setForeground(foreground);
+		label.setFont(FONT_PLAIN_12);
+		label.setAlignmentX(Component.LEFT_ALIGNMENT);
+		return label;
 	}
 
 	/**
@@ -1933,7 +1951,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(flip.getItemName());
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
+		nameLabel.setFont(FONT_BOLD_13);
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
@@ -1946,47 +1964,28 @@ public class FlipFinderPanel extends PluginPanel
 		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
 
 		// Row 1: Buy: X | Sell: Y (placeholders until data loads)
-		JLabel pricesLabel = new JLabel(String.format("Buy: %s | Sell: ...", formatGPExact(flip.getAverageBuyPrice())));
-		pricesLabel.setForeground(Color.WHITE);
-		pricesLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		pricesLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel pricesLabel = createStyledLabel(
+			String.format("Buy: %s | Sell: ...", formatGPExact(flip.getAverageBuyPrice())), Color.WHITE);
 
 		// Row 2: Qty: X (Limit: Y)
-		String qtyText = String.format("Qty: %d (Limit: ...)", flip.getTotalQuantity());
-		JLabel qtyLabel = new JLabel(qtyText);
-		qtyLabel.setForeground(COLOR_TEXT_GRAY);
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		qtyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel qtyLabel = createStyledLabel(
+			String.format("Qty: %d (Limit: ...)", flip.getTotalQuantity()), COLOR_TEXT_GRAY);
 
 		// Row 3: Tax = Z
-		JLabel taxLabel = new JLabel("Tax = ...");
-		taxLabel.setForeground(Color.CYAN);
-		taxLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		taxLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel taxLabel = createStyledLabel("Tax = ...", Color.CYAN);
 
-		// Row 3: Margin: X (Y% ROI) | warning indicator (conditional)
-		JLabel marginLabel = new JLabel("Margin: ...");
-		marginLabel.setForeground(COLOR_YELLOW); // Yellow
-		marginLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		marginLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 4: Margin: X (Y% ROI)
+		JLabel marginLabel = createStyledLabel("Margin: ...", COLOR_YELLOW);
 
-		// Row 4: Profit: X | Cost: Y
-		JLabel profitCostLabel = new JLabel(String.format("Profit: ... | Cost: %s", formatGP(flip.getTotalInvested())));
-		profitCostLabel.setForeground(COLOR_PROFIT_GREEN); // Green
-		profitCostLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		profitCostLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 5: Profit: X | Cost: Y
+		JLabel profitCostLabel = createStyledLabel(
+			String.format("Profit: ... | Cost: %s", formatGP(flip.getTotalInvested())), COLOR_PROFIT_GREEN);
 
-		// Row 5: Liquidity: X (Rating) | Y/hr
-		JLabel liquidityLabel = new JLabel("Liquidity: ...");
-		liquidityLabel.setForeground(Color.CYAN);
-		liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		liquidityLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 6: Liquidity: X (Rating) | Y/hr
+		JLabel liquidityLabel = createStyledLabel("Liquidity: ...", Color.CYAN);
 
-		// Row 6: Risk: X (Rating)
-		JLabel riskLabel = new JLabel("Risk: ...");
-		riskLabel.setForeground(COLOR_YELLOW); // Yellow
-		riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		riskLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 7: Risk: X (Rating)
+		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
 		detailsPanel.add(pricesLabel);
@@ -2223,7 +2222,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(pending.itemName);
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
+		nameLabel.setFont(FONT_BOLD_13);
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
@@ -2238,49 +2237,29 @@ public class FlipFinderPanel extends PluginPanel
 		// Row 1: Buy: X | Sell: Y (with placeholders until data loads)
 		String sellText = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
 			? formatGPExact(pending.recommendedSellPrice) : "...";
-		JLabel pricesLabel = new JLabel(String.format(FORMAT_BUY_SELL, 
-			formatGPExact(pending.pricePerItem), sellText));
-		pricesLabel.setForeground(Color.WHITE);
-		pricesLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		pricesLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel pricesLabel = createStyledLabel(
+			String.format(FORMAT_BUY_SELL, formatGPExact(pending.pricePerItem), sellText), Color.WHITE);
 
 		// Row 2: Qty: X/Y (Limit: Z)
-		String qtyText = String.format("Qty: %d/%d (Limit: ...)", pending.quantityFilled, pending.quantity);
-		JLabel qtyLabel = new JLabel(qtyText);
-		qtyLabel.setForeground(COLOR_TEXT_GRAY);
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		qtyLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel qtyLabel = createStyledLabel(
+			String.format("Qty: %d/%d (Limit: ...)", pending.quantityFilled, pending.quantity), COLOR_TEXT_GRAY);
 
 		// Row 3: Tax = W
-		JLabel taxLabel = new JLabel("Tax = ...");
-		taxLabel.setForeground(Color.CYAN);
-		taxLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		taxLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel taxLabel = createStyledLabel("Tax = ...", Color.CYAN);
 
-		// Row 3: Margin: X (Y% ROI)
-		JLabel marginLabel = new JLabel("Margin: ...");
-		marginLabel.setForeground(COLOR_YELLOW); // Yellow
-		marginLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		marginLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 4: Margin: X (Y% ROI)
+		JLabel marginLabel = createStyledLabel("Margin: ...", COLOR_YELLOW);
 
-		// Row 4: Profit: X | Cost: Y
+		// Row 5: Profit: X | Cost: Y
 		int potentialInvestment = pending.quantity * pending.pricePerItem;
-		JLabel profitCostLabel = new JLabel(String.format("Profit: ... | Cost: %s", formatGP(potentialInvestment)));
-		profitCostLabel.setForeground(COLOR_PROFIT_GREEN); // Green
-		profitCostLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		profitCostLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		JLabel profitCostLabel = createStyledLabel(
+			String.format("Profit: ... | Cost: %s", formatGP(potentialInvestment)), COLOR_PROFIT_GREEN);
 
-		// Row 5: Liquidity: X (Rating) | Y/hr
-		JLabel liquidityLabel = new JLabel("Liquidity: ...");
-		liquidityLabel.setForeground(Color.CYAN);
-		liquidityLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		liquidityLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 6: Liquidity: X (Rating) | Y/hr
+		JLabel liquidityLabel = createStyledLabel("Liquidity: ...", Color.CYAN);
 
-		// Row 6: Risk: X (Rating)
-		JLabel riskLabel = new JLabel("Risk: ...");
-		riskLabel.setForeground(COLOR_YELLOW); // Yellow
-		riskLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
-		riskLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		// Row 7: Risk: X (Rating)
+		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
 		detailsPanel.add(pricesLabel);
@@ -2471,7 +2450,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel nameLabel = new JLabel(flip.getItemName());
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 13));
+		nameLabel.setFont(FONT_BOLD_13);
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
@@ -2489,20 +2468,20 @@ public class FlipFinderPanel extends PluginPanel
 		// Row 1: Quantity and Buy Price
 		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, flip.getQuantity()));
 		qtyLabel.setForeground(COLOR_TEXT_GRAY);
-		qtyLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		qtyLabel.setFont(FONT_PLAIN_12);
 
 		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", formatGPExact(flip.getBuyPricePerItem())));
 		buyPriceLabel.setForeground(COLOR_BUY_RED);
-		buyPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		buyPriceLabel.setFont(FONT_PLAIN_12);
 
 		// Row 2: Invested and Sell Price
 		JLabel investedLabel = new JLabel(String.format("Cost: %s", formatGP(flip.getBuyTotal())));
 		investedLabel.setForeground(COLOR_TEXT_GRAY);
-		investedLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		investedLabel.setFont(FONT_PLAIN_12);
 
 		JLabel sellPriceLabel = new JLabel(String.format(FORMAT_SELL, formatGPExact(flip.getSellPricePerItem())));
 		sellPriceLabel.setForeground(COLOR_SELL_GREEN);
-		sellPriceLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		sellPriceLabel.setFont(FONT_PLAIN_12);
 
 		// Row 3: Net Profit and ROI
 		JLabel profitLabel = new JLabel(String.format("Profit: %s", formatGP(flip.getNetProfit())));
@@ -2510,11 +2489,11 @@ public class FlipFinderPanel extends PluginPanel
 			COLOR_PROFIT_GREEN : // Bright green
 			COLOR_LOSS_RED;  // Bright red
 		profitLabel.setForeground(profitColor);
-		profitLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 12));
+		profitLabel.setFont(FONT_BOLD_12);
 
 		JLabel roiLabel = new JLabel(String.format(FORMAT_ROI, flip.getRoiPercent()));
 		roiLabel.setForeground(profitColor);
-		roiLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 12));
+		roiLabel.setFont(FONT_BOLD_12);
 
 		// Add labels with GridBagLayout - columns stay compact
 		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
@@ -2557,12 +2536,12 @@ public class FlipFinderPanel extends PluginPanel
 
 					JLabel durationLabel = new JLabel(String.format("Duration: %s", duration));
 					durationLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-					durationLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+					durationLabel.setFont(FONT_PLAIN_12);
 
 					// GE Tax
 					JLabel taxLabel = new JLabel(String.format("GE Tax: %s", formatGP(flip.getGeTax())));
 					taxLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-					taxLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+					taxLabel.setFont(FONT_PLAIN_12);
 
 					extraDetails.add(durationLabel);
 					extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));
