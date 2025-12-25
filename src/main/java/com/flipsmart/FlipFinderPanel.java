@@ -1253,10 +1253,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createRecommendationDetailsPanel(FlipRecommendation rec)
 	{
-		JPanel detailsPanel = new JPanel();
-		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
-		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
+		JPanel detailsPanel = createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
 
 		// Recommended Buy/Sell prices
 		JLabel priceLabel = new JLabel(formatBuySellText(rec.getRecommendedBuyPrice(), rec.getRecommendedSellPrice()));
@@ -1291,17 +1288,8 @@ public class FlipFinderPanel extends PluginPanel
 		riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
 		riskLabel.setFont(FONT_PLAIN_12);
 
-		detailsPanel.add(priceLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(quantityLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(marginLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(profitLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(liquidityLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(riskLabel);
+		addLabelsWithSpacing(detailsPanel, priceLabel, quantityLabel, marginLabel, 
+			profitLabel, liquidityLabel, riskLabel);
 
 		return detailsPanel;
 	}
@@ -1480,20 +1468,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(itemId);
 		JLabel iconLabel = new JLabel();
-		if (itemImage != null)
-		{
-			iconLabel.setIcon(new ImageIcon(itemImage));
-			itemImage.onLoaded(() ->
-			{
-				iconLabel.setIcon(new ImageIcon(itemImage));
-				iconLabel.revalidate();
-				iconLabel.repaint();
-			});
-		}
-		else
-		{
-			iconLabel.setPreferredSize(new Dimension(32, 32));
-		}
+		setupIconLabel(iconLabel, itemImage);
 
 		JLabel nameLabel = new JLabel(itemName);
 		nameLabel.setForeground(Color.WHITE);
@@ -1581,6 +1556,65 @@ public class FlipFinderPanel extends PluginPanel
 		label.setFont(FONT_PLAIN_12);
 		label.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return label;
+	}
+
+	/**
+	 * Create a details panel with BoxLayout for vertical rows
+	 */
+	private JPanel createDetailsPanel(Color bgColor)
+	{
+		JPanel detailsPanel = new JPanel();
+		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
+		detailsPanel.setBackground(bgColor);
+		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
+		return detailsPanel;
+	}
+
+	/**
+	 * Add labels to a details panel with standard 2px vertical spacing
+	 */
+	private void addLabelsWithSpacing(JPanel panel, JLabel... labels)
+	{
+		for (int i = 0; i < labels.length; i++)
+		{
+			panel.add(labels[i]);
+			if (i < labels.length - 1)
+			{
+				panel.add(Box.createRigidArea(new Dimension(0, 2)));
+			}
+		}
+	}
+
+	/**
+	 * Update background color for multiple panels (used in mouse listeners)
+	 */
+	private void setPanelBackgrounds(Color color, JPanel... panels)
+	{
+		for (JPanel panel : panels)
+		{
+			panel.setBackground(color);
+		}
+	}
+
+	/**
+	 * Setup icon label with async image loading
+	 */
+	private void setupIconLabel(JLabel iconLabel, AsyncBufferedImage itemImage)
+	{
+		if (itemImage != null)
+		{
+			iconLabel.setIcon(new ImageIcon(itemImage));
+			itemImage.onLoaded(() ->
+			{
+				iconLabel.setIcon(new ImageIcon(itemImage));
+				iconLabel.revalidate();
+				iconLabel.repaint();
+			});
+		}
+		else
+		{
+			iconLabel.setPreferredSize(new Dimension(32, 32));
+		}
 	}
 
 	/**
@@ -1934,20 +1968,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(flip.getItemId());
 		JLabel iconLabel = new JLabel();
-		if (itemImage != null)
-		{
-			iconLabel.setIcon(new ImageIcon(itemImage));
-			itemImage.onLoaded(() ->
-			{
-				iconLabel.setIcon(new ImageIcon(itemImage));
-				iconLabel.revalidate();
-				iconLabel.repaint();
-			});
-		}
-		else
-		{
-			iconLabel.setPreferredSize(new Dimension(32, 32));
-		}
+		setupIconLabel(iconLabel, itemImage);
 
 		JLabel nameLabel = new JLabel(flip.getItemName());
 		nameLabel.setForeground(Color.WHITE);
@@ -1958,10 +1979,7 @@ public class FlipFinderPanel extends PluginPanel
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
 		// Details section using BoxLayout for vertical rows
-		JPanel detailsPanel = new JPanel();
-		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
-		detailsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
+		JPanel detailsPanel = createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
 
 		// Row 1: Buy: X | Sell: Y (placeholders until data loads)
 		JLabel pricesLabel = createStyledLabel(
@@ -1988,19 +2006,8 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
-		detailsPanel.add(pricesLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(qtyLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(taxLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(marginLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(profitCostLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(liquidityLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(riskLabel);
+		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
+			profitCostLabel, liquidityLabel, riskLabel);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
@@ -2119,11 +2126,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
 					|| !currentFocus.isSelling())
 				{
-					Color hoverColor = ColorScheme.DARKER_GRAY_HOVER_COLOR;
-					panel.setBackground(hoverColor);
-					topPanel.setBackground(hoverColor);
-					namePanel.setBackground(hoverColor);
-					detailsPanel.setBackground(hoverColor);
+					setPanelBackgrounds(ColorScheme.DARKER_GRAY_HOVER_COLOR, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 
@@ -2133,11 +2136,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
 					|| !currentFocus.isSelling())
 				{
-					Color normalColor = ColorScheme.DARKER_GRAY_COLOR;
-					panel.setBackground(normalColor);
-					topPanel.setBackground(normalColor);
-					namePanel.setBackground(normalColor);
-					detailsPanel.setBackground(normalColor);
+					setPanelBackgrounds(ColorScheme.DARKER_GRAY_COLOR, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 
@@ -2205,20 +2204,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(pending.itemId);
 		JLabel iconLabel = new JLabel();
-		if (itemImage != null)
-		{
-			iconLabel.setIcon(new ImageIcon(itemImage));
-			itemImage.onLoaded(() ->
-			{
-				iconLabel.setIcon(new ImageIcon(itemImage));
-				iconLabel.revalidate();
-				iconLabel.repaint();
-			});
-		}
-		else
-		{
-			iconLabel.setPreferredSize(new Dimension(32, 32));
-		}
+		setupIconLabel(iconLabel, itemImage);
 
 		JLabel nameLabel = new JLabel(pending.itemName);
 		nameLabel.setForeground(Color.WHITE);
@@ -2229,10 +2215,7 @@ public class FlipFinderPanel extends PluginPanel
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
 		// Details section using BoxLayout for vertical rows
-		JPanel detailsPanel = new JPanel();
-		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
-		detailsPanel.setBackground(bgColor);
-		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
+		JPanel detailsPanel = createDetailsPanel(bgColor);
 
 		// Row 1: Buy: X | Sell: Y (with placeholders until data loads)
 		String sellText = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
@@ -2262,19 +2245,8 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
-		detailsPanel.add(pricesLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(qtyLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(taxLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(marginLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(profitCostLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(liquidityLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-		detailsPanel.add(riskLabel);
+		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
+			profitCostLabel, liquidityLabel, riskLabel);
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
@@ -2375,11 +2347,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (currentFocus == null || currentFocus.getItemId() != pending.itemId)
 				{
-					Color hoverColor = new Color(65, 65, 75);
-					panel.setBackground(hoverColor);
-					topPanel.setBackground(hoverColor);
-					namePanel.setBackground(hoverColor);
-					detailsPanel.setBackground(hoverColor);
+					setPanelBackgrounds(new Color(65, 65, 75), panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 			
@@ -2388,10 +2356,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (currentFocus == null || currentFocus.getItemId() != pending.itemId)
 				{
-					panel.setBackground(bgColor);
-					topPanel.setBackground(bgColor);
-					namePanel.setBackground(bgColor);
-					detailsPanel.setBackground(bgColor);
+					setPanelBackgrounds(bgColor, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 		});
@@ -2433,20 +2398,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(flip.getItemId());
 		JLabel iconLabel = new JLabel();
-		if (itemImage != null)
-		{
-			iconLabel.setIcon(new ImageIcon(itemImage));
-			itemImage.onLoaded(() ->
-			{
-				iconLabel.setIcon(new ImageIcon(itemImage));
-				iconLabel.revalidate();
-				iconLabel.repaint();
-			});
-		}
-		else
-		{
-			iconLabel.setPreferredSize(new Dimension(32, 32));
-		}
+		setupIconLabel(iconLabel, itemImage);
 
 		JLabel nameLabel = new JLabel(flip.getItemName());
 		nameLabel.setForeground(Color.WHITE);
