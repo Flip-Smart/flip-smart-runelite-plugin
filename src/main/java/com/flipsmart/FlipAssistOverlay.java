@@ -53,10 +53,16 @@ public class FlipAssistOverlay extends Overlay
 	// Layout constants
 	private static final int PANEL_WIDTH = 220;
 	private static final int PANEL_HEIGHT = 170;
+	private static final int HINT_PANEL_WIDTH = 200;
+	private static final int HINT_PANEL_HEIGHT = 50;
 	private static final int PADDING = 6;
 	private static final int SECTION_PADDING = 10;
 	private static final int ICON_SIZE = 28;
 	private static final int STEP_INDICATOR_SIZE = 10;
+	
+	// Hint message
+	private static final String HINT_TITLE = "Flip Assist";
+	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -214,8 +220,18 @@ public class FlipAssistOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		if (!config.enableFlipAssistant() || focusedFlip == null)
+		if (!config.enableFlipAssistant())
 		{
+			return null;
+		}
+		
+		// If no flip is focused, show hint box when GE is open
+		if (focusedFlip == null)
+		{
+			if (isGrandExchangeOpen())
+			{
+				return renderHintBox(graphics);
+			}
 			return null;
 		}
 		
@@ -273,6 +289,62 @@ public class FlipAssistOverlay extends Overlay
 		renderFlipSummary(graphics, y);
 		
 		return new Dimension(PANEL_WIDTH, panelHeight);
+	}
+	
+	/**
+	 * Render a small hint box prompting user to click on a flip suggestion.
+	 */
+	private Dimension renderHintBox(Graphics2D graphics)
+	{
+		// Enable anti-aliasing
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		
+		// Calculate pulse animation
+		long elapsed = System.currentTimeMillis() - animationStartTime;
+		double pulsePhase = (elapsed % PULSE_DURATION) / (double) PULSE_DURATION;
+		float pulseAlpha = (float) (0.5 + 0.5 * Math.sin(pulsePhase * 2 * Math.PI));
+		
+		// Draw subtle outer glow (animated)
+		Color glowColor = new Color(
+			COLOR_ACCENT_GLOW.getRed(),
+			COLOR_ACCENT_GLOW.getGreen(),
+			COLOR_ACCENT_GLOW.getBlue(),
+			(int)(COLOR_ACCENT_GLOW.getAlpha() * pulseAlpha * 0.5)
+		);
+		graphics.setColor(glowColor);
+		graphics.fillRoundRect(-3, -3, HINT_PANEL_WIDTH + 6, HINT_PANEL_HEIGHT + 6, 10, 10);
+		
+		// Draw background
+		graphics.setColor(COLOR_BG_DARK);
+		graphics.fillRoundRect(0, 0, HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT, 8, 8);
+		
+		// Draw accent border (animated)
+		Color borderColor = new Color(
+			COLOR_ACCENT.getRed(),
+			COLOR_ACCENT.getGreen(),
+			COLOR_ACCENT.getBlue(),
+			(int)(150 + 100 * pulseAlpha)
+		);
+		graphics.setColor(borderColor);
+		graphics.setStroke(new BasicStroke(1.5f));
+		graphics.drawRoundRect(0, 0, HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT, 8, 8);
+		
+		// Draw title
+		graphics.setFont(FontManager.getRunescapeBoldFont());
+		graphics.setColor(COLOR_ACCENT);
+		FontMetrics boldMetrics = graphics.getFontMetrics();
+		int titleWidth = boldMetrics.stringWidth(HINT_TITLE);
+		graphics.drawString(HINT_TITLE, (HINT_PANEL_WIDTH - titleWidth) / 2, 20);
+		
+		// Draw hint message
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		graphics.setColor(COLOR_TEXT);
+		FontMetrics smallMetrics = graphics.getFontMetrics();
+		int msgWidth = smallMetrics.stringWidth(HINT_MESSAGE);
+		graphics.drawString(HINT_MESSAGE, (HINT_PANEL_WIDTH - msgWidth) / 2, 38);
+		
+		return new Dimension(HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT);
 	}
 	
 	private int renderHeader(Graphics2D graphics, int y)
