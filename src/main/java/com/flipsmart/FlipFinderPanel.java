@@ -1225,13 +1225,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createRecommendationPanel(FlipRecommendation rec)
 	{
-		JPanel panel = new JPanel();
-		panel.setLayout(new BorderLayout());
-		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
+		JPanel panel = createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, Integer.MAX_VALUE, true);
 
 		// Item header with icon and name
 		HeaderPanels header = createItemHeaderPanels(rec.getItemId(), rec.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
@@ -1613,6 +1607,50 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
+	 * Create a base panel with common settings for flip/recommendation items
+	 */
+	private JPanel createBaseItemPanel(Color bgColor, int maxHeight, boolean handCursor)
+	{
+		JPanel panel = new JPanel();
+		panel.setLayout(new BorderLayout());
+		panel.setBackground(bgColor);
+		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
+		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, maxHeight));
+		if (handCursor)
+		{
+			panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		}
+		return panel;
+	}
+
+	/**
+	 * Update liquidity label with data from analysis
+	 */
+	private void updateLiquidityLabel(JLabel label, FlipAnalysis.Liquidity liquidity)
+	{
+		label.setText(liquidity != null 
+			? formatLiquidityText(liquidity.getScore(), liquidity.getRating(), liquidity.getTotalVolumePerHour())
+			: LIQUIDITY_NA);
+	}
+
+	/**
+	 * Update risk label with data from analysis
+	 */
+	private void updateRiskLabel(JLabel label, FlipAnalysis.Risk risk)
+	{
+		if (risk != null && risk.getScore() != null)
+		{
+			label.setText(formatRiskText(risk.getScore(), risk.getRating()));
+			label.setForeground(getRiskColor(risk.getScore()));
+		}
+		else
+		{
+			label.setText(RISK_NA);
+		}
+	}
+
+	/**
 	 * Setup icon label with async image loading
 	 */
 	private void setupIconLabel(JLabel iconLabel, AsyncBufferedImage itemImage)
@@ -1964,14 +2002,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createActiveFlipPanel(ActiveFlip flip)
 	{
-		JPanel panel = new JPanel();
-		panel.setLayout(new BorderLayout());
-		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		// Ensure panel fills width in BoxLayout
-		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180)); // Taller for more rows
+		JPanel panel = createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 180, true);
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
@@ -2090,20 +2121,10 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				
 				// Row 5: Update Liquidity
-				liquidityLabel.setText(liquidity != null 
-					? formatLiquidityText(liquidity.getScore(), liquidity.getRating(), liquidity.getTotalVolumePerHour())
-					: LIQUIDITY_NA);
+				updateLiquidityLabel(liquidityLabel, liquidity);
 				
 				// Row 6: Update Risk
-				if (risk != null && risk.getScore() != null)
-				{
-					riskLabel.setText(formatRiskText(risk.getScore(), risk.getRating()));
-					riskLabel.setForeground(getRiskColor(risk.getScore()));
-				}
-				else
-				{
-					riskLabel.setText(RISK_NA);
-				}
+				updateRiskLabel(riskLabel, risk);
 			});
 		});
 
@@ -2184,14 +2205,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JPanel createPendingOrderPanel(FlipSmartPlugin.PendingOrder pending)
 	{
 		Color bgColor = new Color(55, 55, 65); // Slightly different color for pending
-		
-		JPanel panel = new JPanel();
-		panel.setLayout(new BorderLayout());
-		panel.setBackground(bgColor);
-		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		// Ensure panel fills width in BoxLayout
-		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180)); // Taller for more rows
+		JPanel panel = createBaseItemPanel(bgColor, 180, false);
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor);
@@ -2296,20 +2310,10 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				
 				// Row 5: Update Liquidity
-				liquidityLabel.setText(liquidity != null 
-					? formatLiquidityText(liquidity.getScore(), liquidity.getRating(), liquidity.getTotalVolumePerHour())
-					: LIQUIDITY_NA);
+				updateLiquidityLabel(liquidityLabel, liquidity);
 				
 				// Row 6: Update Risk
-				if (risk != null && risk.getScore() != null)
-				{
-					riskLabel.setText(formatRiskText(risk.getScore(), risk.getRating()));
-					riskLabel.setForeground(getRiskColor(risk.getScore()));
-				}
-				else
-				{
-					riskLabel.setText(RISK_NA);
-				}
+				updateRiskLabel(riskLabel, risk);
 			});
 		});
 
@@ -2359,17 +2363,11 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createCompletedFlipPanel(CompletedFlip flip)
 	{
-		JPanel panel = new JPanel();
-		panel.setLayout(new BorderLayout());
 		// Color based on profit/loss
 		Color backgroundColor = flip.isSuccessful() ? 
 			new Color(40, 60, 40) : // Dark green for profit
 			new Color(60, 40, 40);  // Dark red for loss
-		panel.setBackground(backgroundColor);
-		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		// Ensure panel fills width in BoxLayout
-		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
+		JPanel panel = createBaseItemPanel(backgroundColor, 110, false);
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
