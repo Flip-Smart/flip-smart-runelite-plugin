@@ -1234,7 +1234,8 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
 		// Item header with icon and name
-		JPanel topPanel = createItemHeaderPanel(rec.getItemId(), rec.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
+		HeaderPanels header = createItemHeaderPanels(rec.getItemId(), rec.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
+		JPanel topPanel = header.topPanel;
 
 		// Details panel with all recommendation info
 		JPanel detailsPanel = createRecommendationDetailsPanel(rec);
@@ -1455,9 +1456,24 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
+	 * Holder for header panels (needed for hover effects)
+	 */
+	private static class HeaderPanels
+	{
+		final JPanel topPanel;
+		final JPanel namePanel;
+
+		HeaderPanels(JPanel topPanel, JPanel namePanel)
+		{
+			this.topPanel = topPanel;
+			this.namePanel = namePanel;
+		}
+	}
+
+	/**
 	 * Create the item header panel with icon and name
 	 */
-	private JPanel createItemHeaderPanel(int itemId, String itemName, Color bgColor)
+	private HeaderPanels createItemHeaderPanels(int itemId, String itemName, Color bgColor)
 	{
 		JPanel topPanel = new JPanel(new BorderLayout());
 		topPanel.setBackground(bgColor);
@@ -1478,7 +1494,7 @@ public class FlipFinderPanel extends PluginPanel
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 		topPanel.add(namePanel, BorderLayout.CENTER);
 
-		return topPanel;
+		return new HeaderPanels(topPanel, namePanel);
 	}
 
 	/**
@@ -1958,25 +1974,9 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180)); // Taller for more rows
 
 		// Top section: Item icon and name
-		JPanel topPanel = new JPanel(new BorderLayout());
-		topPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-
-		// Use BorderLayout for namePanel to prevent overflow
-		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
-		namePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-
-		// Get item image
-		AsyncBufferedImage itemImage = itemManager.getImage(flip.getItemId());
-		JLabel iconLabel = new JLabel();
-		setupIconLabel(iconLabel, itemImage);
-
-		JLabel nameLabel = new JLabel(flip.getItemName());
-		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(FONT_BOLD_13);
-
-		namePanel.add(iconLabel, BorderLayout.WEST);
-		namePanel.add(nameLabel, BorderLayout.CENTER);
-		topPanel.add(namePanel, BorderLayout.CENTER);
+		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
+		JPanel topPanel = header.topPanel;
+		JPanel namePanel = header.namePanel;
 
 		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
@@ -2194,25 +2194,9 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 180)); // Taller for more rows
 
 		// Top section: Item icon and name
-		JPanel topPanel = new JPanel(new BorderLayout());
-		topPanel.setBackground(bgColor);
-
-		// Use BorderLayout for namePanel to prevent overflow
-		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
-		namePanel.setBackground(bgColor);
-
-		// Get item image
-		AsyncBufferedImage itemImage = itemManager.getImage(pending.itemId);
-		JLabel iconLabel = new JLabel();
-		setupIconLabel(iconLabel, itemImage);
-
-		JLabel nameLabel = new JLabel(pending.itemName);
-		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(FONT_BOLD_13);
-
-		namePanel.add(iconLabel, BorderLayout.WEST);
-		namePanel.add(nameLabel, BorderLayout.CENTER);
-		topPanel.add(namePanel, BorderLayout.CENTER);
+		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor);
+		JPanel topPanel = header.topPanel;
+		JPanel namePanel = header.namePanel;
 
 		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = createDetailsPanel(bgColor);
@@ -2388,25 +2372,8 @@ public class FlipFinderPanel extends PluginPanel
 		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
 
 		// Top section: Item icon and name
-		JPanel topPanel = new JPanel(new BorderLayout());
-		topPanel.setBackground(backgroundColor);
-
-		// Use BorderLayout for namePanel to prevent overflow
-		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
-		namePanel.setBackground(backgroundColor);
-
-		// Get item image
-		AsyncBufferedImage itemImage = itemManager.getImage(flip.getItemId());
-		JLabel iconLabel = new JLabel();
-		setupIconLabel(iconLabel, itemImage);
-
-		JLabel nameLabel = new JLabel(flip.getItemName());
-		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(FONT_BOLD_13);
-
-		namePanel.add(iconLabel, BorderLayout.WEST);
-		namePanel.add(nameLabel, BorderLayout.CENTER);
-		topPanel.add(namePanel, BorderLayout.CENTER);
+		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
+		JPanel topPanel = header.topPanel;
 
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
 		JPanel detailsPanel = new JPanel(new GridBagLayout());
