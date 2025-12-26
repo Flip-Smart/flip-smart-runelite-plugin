@@ -845,12 +845,22 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Set the Flip Assist focus for selling an active flip.
+	 * Uses recommended price if available, otherwise calculates minimum profitable price.
 	 */
 	private void setFocusForSell(ActiveFlip flip)
 	{
-		int sellPrice = flip.getRecommendedSellPrice() != null 
-			? flip.getRecommendedSellPrice() 
-			: (int)(flip.getAverageBuyPrice() * 1.05); // Default 5% markup
+		int sellPrice;
+		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
+		{
+			sellPrice = flip.getRecommendedSellPrice();
+		}
+		else
+		{
+			// Calculate minimum profitable sell price (breakeven + 1gp after tax)
+			// GE tax is 2%, so: sellPrice * 0.98 >= buyPrice + 1
+			// sellPrice >= (buyPrice + 1) / 0.98
+			sellPrice = (int) Math.ceil((flip.getAverageBuyPrice() + 1) / 0.98);
+		}
 		
 		FocusedFlip focus = FocusedFlip.forSell(
 			flip.getItemId(),
