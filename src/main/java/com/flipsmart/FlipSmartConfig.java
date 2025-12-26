@@ -96,11 +96,23 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "flipStyle",
+		name = "Flip Style",
+		description = "Your preferred flipping style: Conservative (safer, faster fills), Balanced (mix of both), Aggressive (higher profit, slower fills)",
+		section = flipFinderSection,
+		position = 2
+	)
+	default FlipStyle flipStyle()
+	{
+		return FlipStyle.BALANCED;
+	}
+
+	@ConfigItem(
 		keyName = "flipFinderRefreshMinutes",
 		name = "Refresh Interval (minutes)",
 		description = "How often to refresh flip recommendations (1-60 minutes)",
 		section = flipFinderSection,
-		position = 3
+		position = 4
 	)
 	default int flipFinderRefreshMinutes()
 	{

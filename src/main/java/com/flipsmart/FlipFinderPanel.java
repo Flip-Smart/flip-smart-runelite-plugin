@@ -119,7 +119,15 @@ public class FlipFinderPanel extends PluginPanel
 		flipStyleDropdown.setFocusable(false);
 		flipStyleDropdown.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		flipStyleDropdown.setForeground(Color.WHITE);
+		// Load saved flip style from config
+		flipStyleDropdown.setSelectedItem(config.flipStyle());
 		flipStyleDropdown.addActionListener(e -> {
+			// Save selection to config
+			FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+			if (selectedStyle != null)
+			{
+				configManager.setConfiguration("flipsmart", "flipStyle", selectedStyle);
+			}
 			// Refresh recommendations when flip style changes
 			if (isAuthenticated)
 			{
