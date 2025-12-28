@@ -652,6 +652,63 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Clean up stale active flips that are no longer being tracked.
+	 * Sends the list of item IDs that the plugin considers "truly active"
+	 * (items in GE slots or inventory). The API will mark all other active
+	 * flips as manually closed.
+	 * 
+	 * @param activeItemIds Set of item IDs that are truly active
+	 * @param rsn Optional RSN to filter by (for multi-account support)
+	 * @return CompletableFuture with cleanup result
+	 */
+	public CompletableFuture<Boolean> cleanupStaleFlipsAsync(java.util.Set<Integer> activeItemIds, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/transactions/active-flips/cleanup?rsn=%s", apiUrl, rsn);
+		}
+		else
+		{
+			url = String.format("%s/transactions/active-flips/cleanup", apiUrl);
+		}
+		
+		// Build the request body
+		JsonObject requestBody = new JsonObject();
+		com.google.gson.JsonArray itemIdsArray = new com.google.gson.JsonArray();
+		for (Integer itemId : activeItemIds)
+		{
+			itemIdsArray.add(itemId);
+		}
+		requestBody.add("active_item_ids", itemIdsArray);
+		
+		RequestBody body = RequestBody.create(JSON, requestBody.toString());
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(body);
+		
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
+			int itemsCleaned = responseObj.has("items_cleaned") ? responseObj.get("items_cleaned").getAsInt() : 0;
+			if (itemsCleaned > 0)
+			{
+				log.info("Cleaned up {} stale active flips", itemsCleaned);
+			}
+			else
+			{
+				log.debug("No stale flips to clean up");
+			}
+			return true;
+		}).exceptionally(e ->
+		{
+			log.warn("Failed to cleanup stale flips: {}", e.getMessage());
+			return false;
+		});
+	}
+
+	/**
 	 * Fetch completed flips from the API asynchronously
 	 * @param limit Maximum number of flips to return
 	 * @param rsn Optional RSN to filter by (for multi-account support)
