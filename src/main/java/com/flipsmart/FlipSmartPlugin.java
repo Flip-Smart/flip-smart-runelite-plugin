@@ -239,6 +239,31 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
+	 * Get all active flip item IDs including items in inventory.
+	 * This is used for filtering active flips display to show items the player
+	 * actually has (in GE slots or inventory).
+	 */
+	public java.util.Set<Integer> getActiveFlipItemIdsWithInventory()
+	{
+		java.util.Set<Integer> itemIds = getActiveFlipItemIds();
+		
+		// Also include items currently in inventory
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
+		if (inventory != null)
+		{
+			for (Item item : inventory.getItems())
+			{
+				if (item.getId() > 0)
+				{
+					itemIds.add(item.getId());
+				}
+			}
+		}
+		
+		return itemIds;
+	}
+	
+	/**
 	 * Mark an item as sold - removes it from the collected tracking.
 	 * Called when a sell transaction is recorded.
 	 * Also checks if inventory is empty AND no active GE sell slot for this item,
@@ -251,42 +276,63 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Removed item {} from collected tracking (sold)", itemId);
 		}
 		
-		// Check if this item is still in a GE sell slot (not yet fully sold)
-		boolean hasActiveSellSlot = false;
+		boolean hasActiveSellSlot = hasActiveSellSlotForItem(itemId);
+		
+		if (hasActiveSellSlot)
+		{
+			log.debug("Item {} still has active sell slot, keeping flip open", itemId);
+			return;
+		}
+		
+		// Only auto-close if inventory is empty AND there's no active sell slot
+		tryAutoCloseFlip(itemId);
+	}
+	
+	/**
+	 * Check if an item has an active sell slot in the GE.
+	 */
+	private boolean hasActiveSellSlotForItem(int itemId)
+	{
 		for (TrackedOffer offer : trackedOffers.values())
 		{
 			if (offer.itemId == itemId && !offer.isBuy)
 			{
-				hasActiveSellSlot = true;
-				break;
+				return true;
 			}
+		}
+		return false;
+	}
+	
+	/**
+	 * Attempt to auto-close a flip if inventory is empty.
+	 */
+	private void tryAutoCloseFlip(int itemId)
+	{
+		int inventoryCount = getInventoryCountForItem(itemId);
+		if (inventoryCount > 0)
+		{
+			return;
 		}
 		
-		// Only auto-close if inventory is empty AND there's no active sell slot
-		// This prevents closing flips that are still selling in the GE
-		if (!hasActiveSellSlot)
+		log.info("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
+		apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe().orElse(null)).thenAccept(success ->
 		{
-			int inventoryCount = getInventoryCountForItem(itemId);
-			if (inventoryCount == 0)
+			if (Boolean.TRUE.equals(success))
 			{
-				log.info("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
-				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe().orElse(null)).thenAccept(success ->
-				{
-					if (Boolean.TRUE.equals(success))
-					{
-						log.info("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
-						// Refresh the panel to reflect the change
-						if (flipFinderPanel != null)
-						{
-							javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refresh());
-						}
-					}
-				});
+				log.info("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
+				refreshPanelOnSwingThread();
 			}
-		}
-		else
+		});
+	}
+	
+	/**
+	 * Refresh the flip finder panel on the Swing EDT.
+	 */
+	private void refreshPanelOnSwingThread()
+	{
+		if (flipFinderPanel != null)
 		{
-			log.debug("Item {} still has active sell slot, keeping flip open", itemId);
+			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refresh());
 		}
 	}
 	
@@ -576,89 +622,196 @@ public class FlipSmartPlugin extends Plugin
 		log.info("Checking {} persisted offers against {} current offers for offline fills",
 			persistedOffers.size(), trackedOffers.size());
 		
+		// Sync fills for current offers against persisted state
+		syncCurrentOffersWithPersisted(persistedOffers);
+		
+		// Handle slots that became empty while offline
+		handleEmptyPersistedSlots(persistedOffers);
+		
+		// Clear persisted state after sync (RSN-specific key)
+		configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
+		log.info("Offline sync completed for {}", currentRsn);
+		
+		// Schedule panel refresh and cleanup
+		schedulePostSyncTasks();
+	}
+	
+	/**
+	 * Sync current GE offers against persisted state to detect offline fills.
+	 */
+	private void syncCurrentOffersWithPersisted(Map<Integer, TrackedOffer> persistedOffers)
+	{
 		for (Map.Entry<Integer, TrackedOffer> entry : trackedOffers.entrySet())
 		{
 			int slot = entry.getKey();
 			TrackedOffer currentOffer = entry.getValue();
 			TrackedOffer persistedOffer = persistedOffers.get(slot);
 			
-			if (persistedOffer == null)
+			if (persistedOffer == null || persistedOffer.itemId != currentOffer.itemId)
 			{
-				// New offer placed while offline (unlikely but possible)
 				continue;
 			}
 			
-			// Check if the same item in the same slot
-			if (persistedOffer.itemId != currentOffer.itemId)
-			{
-				log.debug("Slot {} has different item (was {}, now {}), skipping offline sync for this slot",
-					slot, persistedOffer.itemId, currentOffer.itemId);
-				continue;
-			}
-			
-			// Check if more items were sold while offline
-			int offlineFills = currentOffer.previousQuantitySold - persistedOffer.previousQuantitySold;
-			if (offlineFills > 0)
-			{
-				log.info("Detected {} offline fills for {} (slot {}): {} -> {}",
-					offlineFills,
-					currentOffer.itemName,
-					slot,
-					persistedOffer.previousQuantitySold,
-					currentOffer.previousQuantitySold);
-				
-				// Record the offline transaction
-				Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
-				
-				apiClient.recordTransactionAsync(
-					currentOffer.itemId,
-					currentOffer.itemName,
-					currentOffer.isBuy,
-					offlineFills,
-					currentOffer.price,
-					slot,
-					recommendedSellPrice,
-					getCurrentRsnSafe().orElse(null)
-				);
-			}
+			recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
+		}
+	}
+	
+	/**
+	 * Record offline fills if the current offer has more fills than persisted.
+	 */
+	private void recordOfflineFillsIfAny(int slot, TrackedOffer currentOffer, TrackedOffer persistedOffer)
+	{
+		int offlineFills = currentOffer.previousQuantitySold - persistedOffer.previousQuantitySold;
+		if (offlineFills <= 0)
+		{
+			return;
 		}
 		
-		// Check for offers that completed (became empty) while offline
+		log.info("Detected {} offline fills for {} (slot {}): {} -> {}",
+			offlineFills, currentOffer.itemName, slot,
+			persistedOffer.previousQuantitySold, currentOffer.previousQuantitySold);
+		
+		Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
+		
+		apiClient.recordTransactionAsync(
+			currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
+			offlineFills, currentOffer.price, slot,
+			recommendedSellPrice, getCurrentRsnSafe().orElse(null)
+		);
+	}
+	
+	/**
+	 * Handle persisted slots that are now empty (offer completed or cancelled offline).
+	 */
+	private void handleEmptyPersistedSlots(Map<Integer, TrackedOffer> persistedOffers)
+	{
 		for (Map.Entry<Integer, TrackedOffer> entry : persistedOffers.entrySet())
 		{
 			int slot = entry.getKey();
 			TrackedOffer persistedOffer = entry.getValue();
 			
-			if (!trackedOffers.containsKey(slot))
+			if (trackedOffers.containsKey(slot))
 			{
-				// This slot is now empty - the offer either completed, was cancelled, or was collected while offline
-				// We CANNOT safely assume it completed with all remaining items - it may have been cancelled
-				// with only partial fills. The safest approach is to NOT auto-record anything here.
-				// The actual fill amount should have been recorded when the items were collected in-game.
-				log.info("Slot {} is now empty (was tracking {} x{}). Cannot determine if completed or cancelled offline - skipping auto-record.",
-					slot, persistedOffer.itemName, persistedOffer.totalQuantity);
-				
-				// If this was a buy with some items already filled, add to collected tracking
-				// so the user can still sell those items and complete the flip
-				if (persistedOffer.isBuy && persistedOffer.previousQuantitySold > 0)
-				{
-					log.info("Adding {} to collected tracking (had {} items filled before going offline)",
-						persistedOffer.itemName, persistedOffer.previousQuantitySold);
-					collectedItemIds.add(persistedOffer.itemId);
-				}
+				continue;
+			}
+			
+			log.info("Slot {} is now empty (was tracking {} x{}). Cannot determine if completed or cancelled offline.",
+				slot, persistedOffer.itemName, persistedOffer.totalQuantity);
+			
+			// Track partially filled buys so user can sell them
+			if (persistedOffer.isBuy && persistedOffer.previousQuantitySold > 0)
+			{
+				log.info("Adding {} to collected tracking (had {} items filled before going offline)",
+					persistedOffer.itemName, persistedOffer.previousQuantitySold);
+				collectedItemIds.add(persistedOffer.itemId);
 			}
 		}
-		
-		// Clear persisted state after sync (RSN-specific key)
-		configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
-		log.info("Offline sync completed for {}", currentRsn);
-		
-		// Refresh the flip finder panel to show updated data after offline sync
+	}
+	
+	/**
+	 * Schedule panel refresh and stale flip cleanup after offline sync.
+	 */
+	private void schedulePostSyncTasks()
+	{
+		// Refresh the panel after a short delay
 		if (flipFinderPanel != null)
 		{
 			javax.swing.Timer refreshTimer = new javax.swing.Timer(1000, e -> flipFinderPanel.refresh());
 			refreshTimer.setRepeats(false);
 			refreshTimer.start();
+		}
+		
+		// Schedule stale flip cleanup after GE state is stable
+		javax.swing.Timer cleanupTimer = new javax.swing.Timer(15000, e -> {
+			if (!trackedOffers.isEmpty() || collectedItemIds.isEmpty())
+			{
+				cleanupStaleActiveFlips();
+			}
+			else
+			{
+				log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
+			}
+		});
+		cleanupTimer.setRepeats(false);
+		cleanupTimer.start();
+	}
+	
+	/**
+	 * Clean up stale active flips on the backend.
+	 * Sends the list of item IDs that are "truly active" (in GE slots or inventory)
+	 * to the API, which will mark all other active flips as closed.
+	 */
+	private void cleanupStaleActiveFlips()
+	{
+		// Must run on client thread to access game state
+		clientThread.invokeLater(this::executeStaleFlipCleanup);
+	}
+	
+	/**
+	 * Execute the stale flip cleanup (must be called on client thread).
+	 */
+	private void executeStaleFlipCleanup()
+	{
+		java.util.Set<Integer> activeItemIds = collectAllActiveItemIds();
+		
+		log.info("Cleaning up stale flips - {} item IDs are truly active", activeItemIds.size());
+		
+		apiClient.cleanupStaleFlipsAsync(activeItemIds, getCurrentRsnSafe().orElse(null))
+			.thenAccept(this::handleCleanupResult);
+	}
+	
+	/**
+	 * Collect all item IDs that are currently active (in GE slots or inventory).
+	 * Must be called on client thread.
+	 */
+	private java.util.Set<Integer> collectAllActiveItemIds()
+	{
+		java.util.Set<Integer> activeItemIds = getActiveFlipItemIds();
+		addInventoryItemIds(activeItemIds);
+		return activeItemIds;
+	}
+	
+	/**
+	 * Add all item IDs from inventory to the given set.
+	 * Must be called on client thread.
+	 */
+	private void addInventoryItemIds(java.util.Set<Integer> itemIds)
+	{
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
+		if (inventory == null)
+		{
+			return;
+		}
+		
+		for (Item item : inventory.getItems())
+		{
+			if (item.getId() > 0)
+			{
+				itemIds.add(item.getId());
+			}
+		}
+	}
+	
+	/**
+	 * Handle the result of stale flip cleanup.
+	 */
+	private void handleCleanupResult(Boolean success)
+	{
+		if (Boolean.TRUE.equals(success))
+		{
+			log.info("Stale flip cleanup completed successfully");
+			refreshActiveFlipsOnSwingThread();
+		}
+	}
+	
+	/**
+	 * Refresh the active flips panel on the Swing EDT.
+	 */
+	private void refreshActiveFlipsOnSwingThread()
+	{
+		if (flipFinderPanel != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
 		}
 	}
 

@@ -23,6 +23,12 @@ import java.util.concurrent.ThreadLocalRandom;
 @Slf4j
 public class FlipFinderPanel extends PluginPanel
 {
+	// Configuration constants
+	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
+	private static final String CONFIG_KEY_EMAIL = "email";
+	private static final String CONFIG_KEY_PASSWORD = "password";
+	
 	// Constants for duplicated literals
 	private static final String FONT_ARIAL = "Arial";
 	private static final String ERROR_PREFIX = "Error: ";
@@ -104,6 +110,10 @@ public class FlipFinderPanel extends PluginPanel
 	private transient JPanel currentFocusedPanel = null;
 	private transient int currentFocusedItemId = -1;
 	private transient java.util.function.Consumer<FocusedFlip> onFocusChanged;
+	
+	// Cache displayed sell prices to ensure focus uses same price as shown in UI
+	// Key: itemId, Value: calculated sell price shown in the active flip panel
+	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -126,7 +136,7 @@ public class FlipFinderPanel extends PluginPanel
 			FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 			if (selectedStyle != null)
 			{
-				configManager.setConfiguration("flipsmart", "flipStyle", selectedStyle);
+				configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_STYLE, selectedStyle);
 			}
 			// Refresh recommendations when flip style changes
 			if (isAuthenticated)
@@ -601,8 +611,8 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void saveCredentials(String email, String password)
 	{
-		configManager.setConfiguration("flipsmart", "email", email);
-		configManager.setConfiguration("flipsmart", "password", password);
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD, password);
 	}
 
 	/**
@@ -687,7 +697,21 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	public void refresh(boolean shuffleSuggestions)
 	{
-		refreshRecommendations(shuffleSuggestions);
+		// Skip recommendations refresh during auto-refresh if user is focused on a flip
+		// This prevents the focused item from disappearing while user is mid-transaction
+		// Manual refresh (shuffleSuggestions=true) always refreshes
+		boolean skipRecommendationsRefresh = !shuffleSuggestions && currentFocus != null;
+		
+		if (skipRecommendationsRefresh)
+		{
+			log.debug("Skipping recommendations refresh - user is focused on {} ({})", 
+				currentFocus.getItemName(), currentFocus.isBuying() ? "BUY" : "SELL");
+		}
+		else
+		{
+			refreshRecommendations(shuffleSuggestions);
+		}
+		
 		refreshActiveFlips();
 		refreshCompletedFlips();
 	}
@@ -774,6 +798,9 @@ public class FlipFinderPanel extends PluginPanel
 		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
 		// Don't clear container yet - keep showing old flips until new data arrives
 		// This prevents the UI flash when flips disappear and reappear
+		
+		// Clear cached sell prices - they'll be recalculated when panels are created
+		displayedSellPrices.clear();
 
 		// Pass current RSN to filter data for the logged-in account
 		String rsn = plugin.getCurrentRsnSafe().orElse(null);
@@ -791,27 +818,54 @@ public class FlipFinderPanel extends PluginPanel
 				currentActiveFlips.clear();
 				if (response.getActiveFlips() != null)
 				{
-					// Filter active flips to only show items that are currently being tracked:
-					// 1. Items currently in GE buy slots (pending or filled)
-					// 2. Items currently in GE sell slots (waiting to fully sell)
-					// 3. Items collected from GE in this session (waiting to be sold)
-					// This prevents showing old stale data while keeping active items visible
+					// Smart filtering: show flips that are either:
+					// 1. Currently in GE slots or collected items (thread-safe check)
+					// 2. Created in the last hour (handles race condition for new flips)
+					// This filters stale data while ensuring new flips always appear
+					// Note: Using getActiveFlipItemIds() instead of WithInventory() to avoid thread issues
 					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-					log.debug("Active flip filter: {} tracked item IDs, {} flips from backend",
-						activeItemIds.size(), response.getActiveFlips().size());
+					java.time.Instant oneHourAgo = java.time.Instant.now().minus(java.time.Duration.ofHours(1));
+					
 					for (ActiveFlip flip : response.getActiveFlips())
 					{
-						if (activeItemIds.contains(flip.getItemId()))
+						boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
+						boolean isVeryRecent = false;
+						
+						// Check if flip was created in the last hour
+						String buyTimeStr = flip.getFirstBuyTime();
+						if (buyTimeStr != null && !buyTimeStr.isEmpty())
 						{
-							currentActiveFlips.add(flip);
-							log.debug("Including active flip: {} (ID {})", flip.getItemName(), flip.getItemId());
+							try
+							{
+								java.time.Instant buyTime = java.time.Instant.parse(buyTimeStr);
+								isVeryRecent = buyTime.isAfter(oneHourAgo);
+							}
+							catch (Exception e)
+							{
+								// Can't parse, assume very recent to be safe
+								isVeryRecent = true;
+							}
 						}
 						else
 						{
-							log.debug("Filtering out active flip: {} (ID {}) - not in tracked items",
-								flip.getItemName(), flip.getItemId());
+							// No timestamp, assume very recent
+							isVeryRecent = true;
+						}
+						
+						if (inGeOrCollected || isVeryRecent)
+						{
+							currentActiveFlips.add(flip);
+							log.debug("Including flip: {} (inGE={}, recent={})", 
+								flip.getItemName(), inGeOrCollected, isVeryRecent);
+						}
+						else
+						{
+							log.debug("Filtering stale flip: {} (not in GE and older than 1 hour)", flip.getItemName());
 						}
 					}
+					log.debug("Loaded {} active flips ({} from backend, {} filtered)", 
+						currentActiveFlips.size(), response.getActiveFlips().size(),
+						response.getActiveFlips().size() - currentActiveFlips.size());
 				}
 
 				// Get pending orders from plugin
@@ -1770,41 +1824,62 @@ public class FlipFinderPanel extends PluginPanel
 	
 	/**
 	 * Set an active flip as the current focus for Flip Assist.
-	 * Fetches current market data to determine the smart sell price.
+	 * Uses the cached sell price from the panel display to ensure consistency.
 	 */
 	private void setFocus(ActiveFlip flip, JPanel panel)
 	{
-		// Fetch current market data to calculate smart sell price
-		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
+		// Use the cached sell price that's already displayed in the panel
+		// This ensures the Flip Assist shows the same price as the Active Flips tab
+		Integer cachedSellPrice = displayedSellPrices.get(flip.getItemId());
+		
+		if (cachedSellPrice != null && cachedSellPrice > 0)
 		{
-			Integer currentMarketPrice = null;
-			Integer dailyVolume = null;
-			
-			if (analysis != null && analysis.getCurrentPrices() != null)
-			{
-				FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
-				currentMarketPrice = prices.getHigh();
-				
-				if (analysis.getLiquidity() != null && analysis.getLiquidity().getTotalVolumePerHour() != null)
-				{
-					dailyVolume = (int)(analysis.getLiquidity().getTotalVolumePerHour() * 24);
-				}
-			}
-			
-			// Calculate smart sell price
-			Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice, dailyVolume);
-			int sellPrice = smartSellPrice != null ? smartSellPrice : calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
-			
-			// Create focused flip for selling
+			// Use the price that's already shown in the UI
 			FocusedFlip newFocus = FocusedFlip.forSell(
 				flip.getItemId(),
 				flip.getItemName(),
-				sellPrice,
+				cachedSellPrice,
 				flip.getTotalQuantity()
 			);
-			
-			SwingUtilities.invokeLater(() -> updateFocus(newFocus, panel));
-		});
+			updateFocus(newFocus, panel);
+		}
+		else
+		{
+			// Fallback: fetch market data if no cached price (shouldn't normally happen)
+			apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
+			{
+				Integer currentMarketPrice = null;
+				Integer dailyVolume = null;
+				
+				if (analysis != null && analysis.getCurrentPrices() != null)
+				{
+					FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
+					currentMarketPrice = prices.getHigh();
+					
+					if (analysis.getLiquidity() != null && analysis.getLiquidity().getTotalVolumePerHour() != null)
+					{
+						dailyVolume = (int)(analysis.getLiquidity().getTotalVolumePerHour() * 24);
+					}
+				}
+				
+				// Calculate smart sell price
+				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice, dailyVolume);
+				int sellPrice = smartSellPrice != null ? smartSellPrice : calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
+				
+				// Cache this price for future use
+				displayedSellPrices.put(flip.getItemId(), sellPrice);
+				
+				// Create focused flip for selling
+				FocusedFlip newFocus = FocusedFlip.forSell(
+					flip.getItemId(),
+					flip.getItemName(),
+					sellPrice,
+					flip.getTotalQuantity()
+				);
+				
+				SwingUtilities.invokeLater(() -> updateFocus(newFocus, panel));
+			});
+		}
 	}
 	
 	/**
@@ -2082,6 +2157,9 @@ public class FlipFinderPanel extends PluginPanel
 				
 				if (smartSellPrice != null && smartSellPrice > 0)
 				{
+					// Cache the displayed sell price so Flip Assist uses the same value
+					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
+					
 					// Row 1: Update Buy | Sell prices
 					String priceSuffix = pastThreshold ? "*" : "";
 					pricesLabel.setText(String.format("Buy: %s | Sell: %s%s", 
@@ -2558,6 +2636,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Use invokeLater to restore after layout is complete
 		SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(position));
 	}
+	
 	
 	/**
 	 * Calculate the sell price threshold time for an active flip.
