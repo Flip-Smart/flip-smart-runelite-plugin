@@ -534,49 +534,66 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Data class for transaction request parameters
+	 */
+	public static class TransactionRequest
+	{
+		public final int itemId;
+		public final String itemName;
+		public final boolean isBuy;
+		public final int quantity;
+		public final int pricePerItem;
+		public final Integer geSlot;
+		public final Integer recommendedSellPrice;
+		public final String rsn;
+		public final Integer totalQuantity;
+
+		public TransactionRequest(int itemId, String itemName, boolean isBuy, int quantity,
+								  int pricePerItem, Integer geSlot, Integer recommendedSellPrice,
+								  String rsn, Integer totalQuantity)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.quantity = quantity;
+			this.pricePerItem = pricePerItem;
+			this.geSlot = geSlot;
+			this.recommendedSellPrice = recommendedSellPrice;
+			this.rsn = rsn;
+			this.totalQuantity = totalQuantity;
+		}
+	}
+
+	/**
 	 * Record a Grand Exchange transaction asynchronously
 	 */
-	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, boolean isBuy, 
-														  int quantity, int pricePerItem, Integer geSlot, 
-														  Integer recommendedSellPrice, String rsn)
-	{
-		return recordTransactionAsync(itemId, itemName, isBuy, quantity, pricePerItem, geSlot, 
-									  recommendedSellPrice, rsn, null);
-	}
-	
-	/**
-	 * Record a Grand Exchange transaction asynchronously with total order quantity
-	 */
-	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, boolean isBuy, 
-														  int quantity, int pricePerItem, Integer geSlot, 
-														  Integer recommendedSellPrice, String rsn,
-														  Integer totalQuantity)
+	public CompletableFuture<Void> recordTransactionAsync(TransactionRequest request)
 	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/transactions", apiUrl);
 		
 		// Create JSON body
 		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty("item_id", itemId);
-		jsonBody.addProperty("item_name", itemName);
-		jsonBody.addProperty("is_buy", isBuy);
-		jsonBody.addProperty("quantity", quantity);
-		jsonBody.addProperty("price_per_item", pricePerItem);
-		if (geSlot != null)
+		jsonBody.addProperty("item_id", request.itemId);
+		jsonBody.addProperty("item_name", request.itemName);
+		jsonBody.addProperty("is_buy", request.isBuy);
+		jsonBody.addProperty("quantity", request.quantity);
+		jsonBody.addProperty("price_per_item", request.pricePerItem);
+		if (request.geSlot != null)
 		{
-			jsonBody.addProperty("ge_slot", geSlot);
+			jsonBody.addProperty("ge_slot", request.geSlot);
 		}
-		if (recommendedSellPrice != null)
+		if (request.recommendedSellPrice != null)
 		{
-			jsonBody.addProperty("recommended_sell_price", recommendedSellPrice);
+			jsonBody.addProperty("recommended_sell_price", request.recommendedSellPrice);
 		}
-		if (rsn != null && !rsn.isEmpty())
+		if (request.rsn != null && !request.rsn.isEmpty())
 		{
-			jsonBody.addProperty("rsn", rsn);
+			jsonBody.addProperty("rsn", request.rsn);
 		}
-		if (totalQuantity != null && totalQuantity > 0)
+		if (request.totalQuantity != null && request.totalQuantity > 0)
 		{
-			jsonBody.addProperty("total_quantity", totalQuantity);
+			jsonBody.addProperty("total_quantity", request.totalQuantity);
 		}
 		
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
@@ -588,7 +605,7 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
-			log.info("Transaction recorded for {}: {}", rsn, responseObj.get("message").getAsString());
+			log.info("Transaction recorded for {}: {}", request.rsn, responseObj.get("message").getAsString());
 			return null;
 		}).thenApply(v -> null);
 	}
