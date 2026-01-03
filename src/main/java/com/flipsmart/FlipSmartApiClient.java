@@ -540,6 +540,18 @@ public class FlipSmartApiClient
 														  int quantity, int pricePerItem, Integer geSlot, 
 														  Integer recommendedSellPrice, String rsn)
 	{
+		return recordTransactionAsync(itemId, itemName, isBuy, quantity, pricePerItem, geSlot, 
+									  recommendedSellPrice, rsn, null);
+	}
+	
+	/**
+	 * Record a Grand Exchange transaction asynchronously with total order quantity
+	 */
+	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, boolean isBuy, 
+														  int quantity, int pricePerItem, Integer geSlot, 
+														  Integer recommendedSellPrice, String rsn,
+														  Integer totalQuantity)
+	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/transactions", apiUrl);
 		
@@ -561,6 +573,10 @@ public class FlipSmartApiClient
 		if (rsn != null && !rsn.isEmpty())
 		{
 			jsonBody.addProperty("rsn", rsn);
+		}
+		if (totalQuantity != null && totalQuantity > 0)
+		{
+			jsonBody.addProperty("total_quantity", totalQuantity);
 		}
 		
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
