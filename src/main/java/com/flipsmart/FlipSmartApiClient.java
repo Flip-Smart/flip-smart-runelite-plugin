@@ -534,7 +534,7 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Data class for transaction request parameters
+	 * Data class for transaction request parameters (use Builder to construct)
 	 */
 	public static class TransactionRequest
 	{
@@ -548,19 +548,51 @@ public class FlipSmartApiClient
 		public final String rsn;
 		public final Integer totalQuantity;
 
-		public TransactionRequest(int itemId, String itemName, boolean isBuy, int quantity,
-								  int pricePerItem, Integer geSlot, Integer recommendedSellPrice,
-								  String rsn, Integer totalQuantity)
+		private TransactionRequest(Builder builder)
 		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.isBuy = isBuy;
-			this.quantity = quantity;
-			this.pricePerItem = pricePerItem;
-			this.geSlot = geSlot;
-			this.recommendedSellPrice = recommendedSellPrice;
-			this.rsn = rsn;
-			this.totalQuantity = totalQuantity;
+			this.itemId = builder.itemId;
+			this.itemName = builder.itemName;
+			this.isBuy = builder.isBuy;
+			this.quantity = builder.quantity;
+			this.pricePerItem = builder.pricePerItem;
+			this.geSlot = builder.geSlot;
+			this.recommendedSellPrice = builder.recommendedSellPrice;
+			this.rsn = builder.rsn;
+			this.totalQuantity = builder.totalQuantity;
+		}
+
+		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+		{
+			return new Builder(itemId, itemName, isBuy, quantity, pricePerItem);
+		}
+
+		public static class Builder
+		{
+			private final int itemId;
+			private final String itemName;
+			private final boolean isBuy;
+			private final int quantity;
+			private final int pricePerItem;
+			private Integer geSlot;
+			private Integer recommendedSellPrice;
+			private String rsn;
+			private Integer totalQuantity;
+
+			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+			{
+				this.itemId = itemId;
+				this.itemName = itemName;
+				this.isBuy = isBuy;
+				this.quantity = quantity;
+				this.pricePerItem = pricePerItem;
+			}
+
+			public Builder geSlot(Integer geSlot) { this.geSlot = geSlot; return this; }
+			public Builder recommendedSellPrice(Integer price) { this.recommendedSellPrice = price; return this; }
+			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
+			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
+
+			public TransactionRequest build() { return new TransactionRequest(this); }
 		}
 	}
 

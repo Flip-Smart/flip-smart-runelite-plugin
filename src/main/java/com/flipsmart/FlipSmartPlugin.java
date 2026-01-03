@@ -660,12 +660,14 @@ public class FlipSmartPlugin extends Plugin
 				
 				Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
 				
-				apiClient.recordTransactionAsync(new FlipSmartApiClient.TransactionRequest(
-					currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
-					currentOffer.previousQuantitySold, currentOffer.price, slot,
-					recommendedSellPrice, getCurrentRsnSafe().orElse(null),
-					currentOffer.totalQuantity
-				));
+				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+					.builder(currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
+						currentOffer.previousQuantitySold, currentOffer.price)
+					.geSlot(slot)
+					.recommendedSellPrice(recommendedSellPrice)
+					.rsn(getCurrentRsnSafe().orElse(null))
+					.totalQuantity(currentOffer.totalQuantity)
+					.build());
 				
 				// For buy orders with fills, add to collected tracking so it shows in active flips
 				if (currentOffer.isBuy && currentOffer.previousQuantitySold > 0)
@@ -694,12 +696,14 @@ public class FlipSmartPlugin extends Plugin
 		
 		Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
 		
-		apiClient.recordTransactionAsync(new FlipSmartApiClient.TransactionRequest(
-			currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
-			offlineFills, currentOffer.price, slot,
-			recommendedSellPrice, getCurrentRsnSafe().orElse(null),
-			currentOffer.totalQuantity
-		));
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
+				offlineFills, currentOffer.price)
+			.geSlot(slot)
+			.recommendedSellPrice(recommendedSellPrice)
+			.rsn(getCurrentRsnSafe().orElse(null))
+			.totalQuantity(currentOffer.totalQuantity)
+			.build());
 	}
 	
 	/**
@@ -1126,17 +1130,13 @@ public class FlipSmartPlugin extends Plugin
 					// Get recommended sell price if available
 					Integer recommendedSellPrice = isBuy ? recommendedPrices.get(itemId) : null;
 					
-					apiClient.recordTransactionAsync(new FlipSmartApiClient.TransactionRequest(
-						itemId,
-						previousOffer.itemName,
-						isBuy,
-						newQuantity,
-						pricePerItem,
-						slot,
-						recommendedSellPrice,
-						getCurrentRsnSafe().orElse(null),
-						previousOffer.totalQuantity
-					));
+					apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+						.builder(itemId, previousOffer.itemName, isBuy, newQuantity, pricePerItem)
+						.geSlot(slot)
+						.recommendedSellPrice(recommendedSellPrice)
+						.rsn(getCurrentRsnSafe().orElse(null))
+						.totalQuantity(previousOffer.totalQuantity)
+						.build());
 				}
 				
 				log.info("Order cancelled: {} {} - {} items filled out of {}",
@@ -1233,17 +1233,13 @@ public class FlipSmartPlugin extends Plugin
 				Integer recommendedSellPrice = isBuy ? recommendedPrices.get(itemId) : null;
 				
 				// Record the transaction asynchronously with total order quantity
-				apiClient.recordTransactionAsync(new FlipSmartApiClient.TransactionRequest(
-					itemId,
-					itemName,
-					isBuy,
-					newQuantity,
-					pricePerItem,
-					slot,
-					recommendedSellPrice,
-					getCurrentRsnSafe().orElse(null),
-					totalQuantity
-				));
+				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+					.builder(itemId, itemName, isBuy, newQuantity, pricePerItem)
+					.geSlot(slot)
+					.recommendedSellPrice(recommendedSellPrice)
+					.rsn(getCurrentRsnSafe().orElse(null))
+					.totalQuantity(totalQuantity)
+					.build());
 				
 				// Clear recommended price after recording (only for buys)
 				if (isBuy && recommendedSellPrice != null)
@@ -1289,17 +1285,13 @@ public class FlipSmartPlugin extends Plugin
 				
 				Integer recommendedSellPrice = recommendedPrices.get(itemId);
 				
-				apiClient.recordTransactionAsync(new FlipSmartApiClient.TransactionRequest(
-					itemId,
-					itemName,
-					true, // isBuy
-					0, // quantity (0 fills)
-					price,
-					slot,
-					recommendedSellPrice,
-					getCurrentRsnSafe().orElse(null),
-					totalQuantity
-				));
+				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+					.builder(itemId, itemName, true, 0, price)
+					.geSlot(slot)
+					.recommendedSellPrice(recommendedSellPrice)
+					.rsn(getCurrentRsnSafe().orElse(null))
+					.totalQuantity(totalQuantity)
+					.build());
 			}
 			
 			// Refresh the flip finder panel when any new order is submitted
