@@ -534,33 +534,98 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Data class for transaction request parameters (use Builder to construct)
+	 */
+	public static class TransactionRequest
+	{
+		public final int itemId;
+		public final String itemName;
+		public final boolean isBuy;
+		public final int quantity;
+		public final int pricePerItem;
+		public final Integer geSlot;
+		public final Integer recommendedSellPrice;
+		public final String rsn;
+		public final Integer totalQuantity;
+
+		private TransactionRequest(Builder builder)
+		{
+			this.itemId = builder.itemId;
+			this.itemName = builder.itemName;
+			this.isBuy = builder.isBuy;
+			this.quantity = builder.quantity;
+			this.pricePerItem = builder.pricePerItem;
+			this.geSlot = builder.geSlot;
+			this.recommendedSellPrice = builder.recommendedSellPrice;
+			this.rsn = builder.rsn;
+			this.totalQuantity = builder.totalQuantity;
+		}
+
+		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+		{
+			return new Builder(itemId, itemName, isBuy, quantity, pricePerItem);
+		}
+
+		public static class Builder
+		{
+			private final int itemId;
+			private final String itemName;
+			private final boolean isBuy;
+			private final int quantity;
+			private final int pricePerItem;
+			private Integer geSlot;
+			private Integer recommendedSellPrice;
+			private String rsn;
+			private Integer totalQuantity;
+
+			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+			{
+				this.itemId = itemId;
+				this.itemName = itemName;
+				this.isBuy = isBuy;
+				this.quantity = quantity;
+				this.pricePerItem = pricePerItem;
+			}
+
+			public Builder geSlot(Integer geSlot) { this.geSlot = geSlot; return this; }
+			public Builder recommendedSellPrice(Integer price) { this.recommendedSellPrice = price; return this; }
+			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
+			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
+
+			public TransactionRequest build() { return new TransactionRequest(this); }
+		}
+	}
+
+	/**
 	 * Record a Grand Exchange transaction asynchronously
 	 */
-	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, boolean isBuy, 
-														  int quantity, int pricePerItem, Integer geSlot, 
-														  Integer recommendedSellPrice, String rsn)
+	public CompletableFuture<Void> recordTransactionAsync(TransactionRequest request)
 	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/transactions", apiUrl);
 		
 		// Create JSON body
 		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty("item_id", itemId);
-		jsonBody.addProperty("item_name", itemName);
-		jsonBody.addProperty("is_buy", isBuy);
-		jsonBody.addProperty("quantity", quantity);
-		jsonBody.addProperty("price_per_item", pricePerItem);
-		if (geSlot != null)
+		jsonBody.addProperty("item_id", request.itemId);
+		jsonBody.addProperty("item_name", request.itemName);
+		jsonBody.addProperty("is_buy", request.isBuy);
+		jsonBody.addProperty("quantity", request.quantity);
+		jsonBody.addProperty("price_per_item", request.pricePerItem);
+		if (request.geSlot != null)
 		{
-			jsonBody.addProperty("ge_slot", geSlot);
+			jsonBody.addProperty("ge_slot", request.geSlot);
 		}
-		if (recommendedSellPrice != null)
+		if (request.recommendedSellPrice != null)
 		{
-			jsonBody.addProperty("recommended_sell_price", recommendedSellPrice);
+			jsonBody.addProperty("recommended_sell_price", request.recommendedSellPrice);
 		}
-		if (rsn != null && !rsn.isEmpty())
+		if (request.rsn != null && !request.rsn.isEmpty())
 		{
-			jsonBody.addProperty("rsn", rsn);
+			jsonBody.addProperty("rsn", request.rsn);
+		}
+		if (request.totalQuantity != null && request.totalQuantity > 0)
+		{
+			jsonBody.addProperty("total_quantity", request.totalQuantity);
 		}
 		
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
@@ -572,7 +637,7 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
-			log.info("Transaction recorded for {}: {}", rsn, responseObj.get("message").getAsString());
+			log.info("Transaction recorded for {}: {}", request.rsn, responseObj.get("message").getAsString());
 			return null;
 		}).thenApply(v -> null);
 	}
