@@ -261,6 +261,18 @@ public interface FlipSmartConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "priceOffset",
+		name = "Price Offset (GP)",
+		description = "Adjust buy/sell prices to fill faster. Positive = buy higher and sell lower by this amount. Set to 0 for no offset.",
+		section = flipAssistantSection,
+		position = 4
+	)
+	default int priceOffset()
+	{
+		return 0;
+	}
+
 	// ============================================
 	// General Section
 	// ============================================

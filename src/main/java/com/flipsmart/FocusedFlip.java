@@ -35,13 +35,27 @@ public class FocusedFlip
 	 */
 	public static FocusedFlip forBuy(int itemId, String itemName, int buyPrice, int buyQuantity, int sellPrice)
 	{
+		return forBuy(itemId, itemName, buyPrice, buyQuantity, sellPrice, 0);
+	}
+	
+	/**
+	 * Create a FocusedFlip for the BUY step with price offset applied
+	 * @param priceOffset Positive offset = buy higher to fill faster
+	 */
+	public static FocusedFlip forBuy(int itemId, String itemName, int buyPrice, int buyQuantity, int sellPrice, int priceOffset)
+	{
+		// Apply offset: add to buy price (pay more to fill faster)
+		int adjustedBuyPrice = Math.max(1, buyPrice + priceOffset);
+		// Also adjust sell price by subtracting offset (sell lower to fill faster)
+		int adjustedSellPrice = Math.max(1, sellPrice - priceOffset);
+		
 		return new FocusedFlip(
 			itemId,
 			itemName,
 			FlipStep.BUY,
-			buyPrice,
+			adjustedBuyPrice,
 			buyQuantity,
-			sellPrice,
+			adjustedSellPrice,
 			0  // No sell quantity yet
 		);
 	}
@@ -51,13 +65,25 @@ public class FocusedFlip
 	 */
 	public static FocusedFlip forSell(int itemId, String itemName, int sellPrice, int sellQuantity)
 	{
+		return forSell(itemId, itemName, sellPrice, sellQuantity, 0);
+	}
+	
+	/**
+	 * Create a FocusedFlip for the SELL step with price offset applied
+	 * @param priceOffset Positive offset = sell lower to fill faster
+	 */
+	public static FocusedFlip forSell(int itemId, String itemName, int sellPrice, int sellQuantity, int priceOffset)
+	{
+		// Apply offset: subtract from sell price (sell lower to fill faster)
+		int adjustedSellPrice = Math.max(1, sellPrice - priceOffset);
+		
 		return new FocusedFlip(
 			itemId,
 			itemName,
 			FlipStep.SELL,
 			0,  // Not relevant for selling
 			0,
-			sellPrice,
+			adjustedSellPrice,
 			sellQuantity
 		);
 	}
