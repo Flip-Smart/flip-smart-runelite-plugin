@@ -1126,6 +1126,10 @@ public class FlipFinderPanel extends PluginPanel
 
 	/**
 	 * Determine if an active flip should be shown (not duplicated by pending orders)
+	 * 
+	 * Logic: If an item has ANY pending buy order in the GE, skip the active flip.
+	 * The pending order is the source of truth for items currently in buy slots.
+	 * Active flips should only show for COLLECTED items (no longer in GE, waiting to sell).
 	 */
 	private boolean shouldShowActiveFlip(ActiveFlip flip, 
 			java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId)
@@ -1134,28 +1138,15 @@ public class FlipFinderPanel extends PluginPanel
 		
 		if (matchingPending == null || matchingPending.isEmpty())
 		{
+			// No pending buy orders for this item - show the active flip
 			return true;
 		}
 		
-		// Sum up ALL filled quantities from pending orders for this item
-		int totalPendingFilled = 0;
-		for (FlipSmartPlugin.PendingOrder pending : matchingPending)
-		{
-			totalPendingFilled += pending.quantityFilled;
-		}
-		
-		// If pending orders account for ALL or MORE of the active flip quantity,
-		// skip the active flip to avoid showing duplicates
-		if (totalPendingFilled >= flip.getTotalQuantity())
-		{
-			log.debug("Skipping active flip {} - pending orders account for {} items (flip has {})",
-				flip.getItemName(), totalPendingFilled, flip.getTotalQuantity());
-			return false;
-		}
-		
-		log.debug("Showing active flip {} - {} collected items not in pending ({} pending filled)",
-			flip.getItemName(), flip.getTotalQuantity() - totalPendingFilled, totalPendingFilled);
-		return true;
+		// There's a pending buy order for this item in the GE.
+		// Skip the active flip to avoid duplicates - the pending order panel shows the current state.
+		log.debug("Skipping active flip {} - has {} pending buy order(s) in GE",
+			flip.getItemName(), matchingPending.size());
+		return false;
 	}
 
 	/**
