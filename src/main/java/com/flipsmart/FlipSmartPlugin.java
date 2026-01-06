@@ -691,6 +691,7 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Handle persisted slots that are now empty (offer completed or cancelled offline).
+	 * Checks inventory to detect orders that completed while offline.
 	 */
 	private void handleEmptyPersistedSlots(Map<Integer, TrackedOffer> persistedOffers)
 	{
@@ -704,15 +705,62 @@ public class FlipSmartPlugin extends Plugin
 				continue;
 			}
 			
-			log.info("Slot {} is now empty (was tracking {} x{}). Cannot determine if completed or cancelled offline.",
+			log.info("Slot {} is now empty (was tracking {} x{}). Checking inventory for offline completions.",
 				slot, persistedOffer.itemName, persistedOffer.totalQuantity);
 			
-			// Track partially filled buys so user can sell them
-			if (persistedOffer.isBuy && persistedOffer.previousQuantitySold > 0)
+			// For buy orders, check if we have items in inventory
+			if (persistedOffer.isBuy)
 			{
-				log.info("Adding {} to collected tracking (had {} items filled before going offline)",
-					persistedOffer.itemName, persistedOffer.previousQuantitySold);
-				collectedItemIds.add(persistedOffer.itemId);
+				int inventoryCount = getInventoryCountForItem(persistedOffer.itemId);
+				int trackedFills = persistedOffer.previousQuantitySold;
+				
+				if (inventoryCount > 0)
+				{
+					// We have items in inventory - this order completed (at least partially)
+					collectedItemIds.add(persistedOffer.itemId);
+					
+					// If inventory count differs from tracked fills, sync with backend
+					// Note: inventoryCount might include items from multiple orders or other sources
+					// Use the larger of (inventory count, tracked fills, or order size if fully filled)
+					int actualFills = Math.max(inventoryCount, trackedFills);
+					
+					// If the slot is empty and we have items = order_size, it completed fully
+					if (inventoryCount >= persistedOffer.totalQuantity)
+					{
+						actualFills = persistedOffer.totalQuantity;
+					}
+					
+					if (actualFills > trackedFills)
+					{
+						log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. " +
+							"Syncing {} items with backend.",
+							persistedOffer.itemName, trackedFills, inventoryCount, actualFills);
+						
+						String rsn = getCurrentRsnSafe().orElse(null);
+						if (rsn != null)
+						{
+							apiClient.syncActiveFlipAsync(
+								persistedOffer.itemId,
+								persistedOffer.itemName,
+								actualFills,
+								persistedOffer.totalQuantity,
+								persistedOffer.price,
+								rsn
+							);
+						}
+					}
+					else
+					{
+						log.info("Adding {} to collected tracking (had {} items filled before going offline)",
+							persistedOffer.itemName, trackedFills);
+					}
+				}
+				else if (trackedFills > 0)
+				{
+					// No items in inventory but we had fills - items might have been sold/used
+					log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
+						persistedOffer.itemName, trackedFills);
+				}
 			}
 		}
 	}
@@ -1166,6 +1214,33 @@ public class FlipSmartPlugin extends Plugin
 				log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
 					collectedOffer.itemName, collectedOffer.previousQuantitySold);
 				collectedItemIds.add(collectedOffer.itemId);
+				
+				// Check if the order completed fully and we might have missed fills
+				// This handles the case where fills happened rapidly or while we weren't tracking
+				int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+				int trackedFills = collectedOffer.previousQuantitySold;
+				
+				// If inventory shows more items than we tracked, sync with backend
+				if (inventoryCount > trackedFills)
+				{
+					log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
+						collectedOffer.itemName, trackedFills, inventoryCount);
+					
+					String rsn = getCurrentRsnSafe().orElse(null);
+					if (rsn != null)
+					{
+						// Use the inventory count as the actual fill count
+						int actualFills = Math.min(inventoryCount, collectedOffer.totalQuantity);
+						apiClient.syncActiveFlipAsync(
+							collectedOffer.itemId,
+							collectedOffer.itemName,
+							actualFills,
+							collectedOffer.totalQuantity,
+							collectedOffer.price,
+							rsn
+						);
+					}
+				}
 				
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)

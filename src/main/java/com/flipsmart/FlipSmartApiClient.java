@@ -774,6 +774,55 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Sync the filled quantity for an active flip when the plugin detects a mismatch.
+	 * This is used when orders complete while offline and the plugin couldn't track
+	 * incremental fills.
+	 * 
+	 * @param itemId Item ID to sync
+	 * @param itemName Item name
+	 * @param filledQuantity Actual filled quantity from GE/inventory
+	 * @param orderQuantity Total order size
+	 * @param pricePerItem Price per item
+	 * @param rsn RuneScape Name
+	 * @return CompletableFuture with success status
+	 */
+	public CompletableFuture<Boolean> syncActiveFlipAsync(int itemId, String itemName, int filledQuantity, 
+			int orderQuantity, int pricePerItem, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/transactions/active-flips/sync", apiUrl);
+		
+		JsonObject requestBody = new JsonObject();
+		requestBody.addProperty("item_id", itemId);
+		requestBody.addProperty("filled_quantity", filledQuantity);
+		requestBody.addProperty("order_quantity", orderQuantity);
+		requestBody.addProperty("price_per_item", pricePerItem);
+		requestBody.addProperty("rsn", rsn);
+		
+		RequestBody body = RequestBody.create(JSON, requestBody.toString());
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(body);
+		
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
+			int previousQty = responseObj.has("previous_quantity") ? responseObj.get("previous_quantity").getAsInt() : 0;
+			int newQty = responseObj.has("new_quantity") ? responseObj.get("new_quantity").getAsInt() : 0;
+			if (previousQty != newQty)
+			{
+				log.info("Synced active flip for {} ({}): {} -> {} items", 
+					itemName, itemId, previousQty, newQty);
+			}
+			return true;
+		}).exceptionally(e ->
+		{
+			log.warn("Failed to sync active flip for {}: {}", itemId, e.getMessage());
+			return false;
+		});
+	}
+
+	/**
 	 * Fetch completed flips from the API asynchronously
 	 * @param limit Maximum number of flips to return
 	 * @param rsn Optional RSN to filter by (for multi-account support)
