@@ -708,61 +708,92 @@ public class FlipSmartPlugin extends Plugin
 			log.info("Slot {} is now empty (was tracking {} x{}). Checking inventory for offline completions.",
 				slot, persistedOffer.itemName, persistedOffer.totalQuantity);
 			
-			// For buy orders, check if we have items in inventory
 			if (persistedOffer.isBuy)
 			{
-				int inventoryCount = getInventoryCountForItem(persistedOffer.itemId);
-				int trackedFills = persistedOffer.previousQuantitySold;
-				
-				if (inventoryCount > 0)
-				{
-					// We have items in inventory - this order completed (at least partially)
-					collectedItemIds.add(persistedOffer.itemId);
-					
-					// If inventory count differs from tracked fills, sync with backend
-					// Note: inventoryCount might include items from multiple orders or other sources
-					// Use the larger of (inventory count, tracked fills, or order size if fully filled)
-					int actualFills = Math.max(inventoryCount, trackedFills);
-					
-					// If the slot is empty and we have items = order_size, it completed fully
-					if (inventoryCount >= persistedOffer.totalQuantity)
-					{
-						actualFills = persistedOffer.totalQuantity;
-					}
-					
-					if (actualFills > trackedFills)
-					{
-						log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. " +
-							"Syncing {} items with backend.",
-							persistedOffer.itemName, trackedFills, inventoryCount, actualFills);
-						
-						String rsn = getCurrentRsnSafe().orElse(null);
-						if (rsn != null)
-						{
-							apiClient.syncActiveFlipAsync(
-								persistedOffer.itemId,
-								persistedOffer.itemName,
-								actualFills,
-								persistedOffer.totalQuantity,
-								persistedOffer.price,
-								rsn
-							);
-						}
-					}
-					else
-					{
-						log.info("Adding {} to collected tracking (had {} items filled before going offline)",
-							persistedOffer.itemName, trackedFills);
-					}
-				}
-				else if (trackedFills > 0)
-				{
-					// No items in inventory but we had fills - items might have been sold/used
-					log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
-						persistedOffer.itemName, trackedFills);
-				}
+				handleEmptyBuySlot(persistedOffer);
 			}
 		}
+	}
+	
+	/**
+	 * Handle an empty slot that was previously a buy order.
+	 * Checks inventory and syncs with backend if needed.
+	 */
+	private void handleEmptyBuySlot(TrackedOffer persistedOffer)
+	{
+		int inventoryCount = getInventoryCountForItem(persistedOffer.itemId);
+		int trackedFills = persistedOffer.previousQuantitySold;
+		
+		if (inventoryCount > 0)
+		{
+			handleBuyOrderWithInventory(persistedOffer, inventoryCount, trackedFills);
+		}
+		else if (trackedFills > 0)
+		{
+			log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
+				persistedOffer.itemName, trackedFills);
+		}
+	}
+	
+	/**
+	 * Handle a completed buy order that has items in inventory.
+	 * Syncs with backend if inventory count exceeds tracked fills.
+	 */
+	private void handleBuyOrderWithInventory(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
+	{
+		collectedItemIds.add(persistedOffer.itemId);
+		
+		int actualFills = calculateActualFills(persistedOffer, inventoryCount, trackedFills);
+		
+		if (actualFills > trackedFills)
+		{
+			syncOfflineCompletedOrder(persistedOffer, inventoryCount, trackedFills, actualFills);
+		}
+		else
+		{
+			log.info("Adding {} to collected tracking (had {} items filled before going offline)",
+				persistedOffer.itemName, trackedFills);
+		}
+	}
+	
+	/**
+	 * Calculate actual fills based on inventory count, tracked fills, and order size.
+	 */
+	private int calculateActualFills(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
+	{
+		int actualFills = Math.max(inventoryCount, trackedFills);
+		
+		// If we have at least order_size items, the order completed fully
+		if (inventoryCount >= persistedOffer.totalQuantity)
+		{
+			actualFills = persistedOffer.totalQuantity;
+		}
+		
+		return actualFills;
+	}
+	
+	/**
+	 * Sync an offline-completed order with the backend.
+	 */
+	private void syncOfflineCompletedOrder(TrackedOffer persistedOffer, int inventoryCount, int trackedFills, int actualFills)
+	{
+		log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
+			persistedOffer.itemName, trackedFills, inventoryCount, actualFills);
+		
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			return;
+		}
+		
+		apiClient.syncActiveFlipAsync(
+			persistedOffer.itemId,
+			persistedOffer.itemName,
+			actualFills,
+			persistedOffer.totalQuantity,
+			persistedOffer.price,
+			rsn
+		);
 	}
 	
 	/**
