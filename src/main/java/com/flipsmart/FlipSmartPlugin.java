@@ -1318,14 +1318,26 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Set the Flip Assist focus for selling an active flip.
-	 * Uses recommended price if available, otherwise calculates minimum profitable price.
+	 * Prioritizes the panel's displayed sell price (which considers time thresholds
+	 * and market conditions), then falls back to recommended price or minimum profitable.
 	 */
 	private void setFocusForSell(ActiveFlip flip)
 	{
 		int sellPrice;
-		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
+		
+		// First, check if the panel has a cached "smart" sell price for this item
+		// This price considers time thresholds and current market conditions
+		Integer panelPrice = flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(flip.getItemId()) : null;
+		
+		if (panelPrice != null && panelPrice > 0)
+		{
+			sellPrice = panelPrice;
+			log.debug("Using panel's displayed sell price for {}: {} gp", flip.getItemName(), sellPrice);
+		}
+		else if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
 		{
 			sellPrice = flip.getRecommendedSellPrice();
+			log.debug("Using backend recommended sell price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
 		else
 		{
@@ -1333,6 +1345,7 @@ public class FlipSmartPlugin extends Plugin
 			// GE tax is 2%, so: sellPrice * 0.98 >= buyPrice + 1
 			// sellPrice >= (buyPrice + 1) / 0.98
 			sellPrice = (int) Math.ceil((flip.getAverageBuyPrice() + 1) / 0.98);
+			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
 		
 		FocusedFlip focus = FocusedFlip.forSell(
