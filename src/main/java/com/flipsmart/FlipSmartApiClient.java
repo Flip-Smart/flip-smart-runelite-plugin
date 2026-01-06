@@ -643,6 +643,29 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Record a Grand Exchange transaction asynchronously (simplified overload)
+	 * Used for recording offline transactions detected on login.
+	 * 
+	 * @param itemId Item ID
+	 * @param itemName Item name
+	 * @param transactionType "BUY" or "SELL"
+	 * @param quantity Quantity traded
+	 * @param pricePerItem Price per item
+	 * @param rsn RuneScape Name
+	 */
+	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, String transactionType,
+			int quantity, int pricePerItem, String rsn)
+	{
+		boolean isBuy = "BUY".equalsIgnoreCase(transactionType);
+		TransactionRequest request = TransactionRequest
+			.builder(itemId, itemName, isBuy, quantity, pricePerItem)
+			.rsn(rsn)
+			.build();
+		
+		return recordTransactionAsync(request);
+	}
+
+	/**
 	 * Fetch active flips from the API asynchronously
 	 * @param rsn Optional RSN to filter by (for multi-account support)
 	 */

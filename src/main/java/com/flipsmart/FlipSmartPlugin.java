@@ -705,14 +705,63 @@ public class FlipSmartPlugin extends Plugin
 				continue;
 			}
 			
-			log.info("Slot {} is now empty (was tracking {} x{}). Checking inventory for offline completions.",
+			log.info("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
 				slot, persistedOffer.itemName, persistedOffer.totalQuantity);
 			
 			if (persistedOffer.isBuy)
 			{
 				handleEmptyBuySlot(persistedOffer);
 			}
+			else
+			{
+				handleEmptySellSlot(persistedOffer);
+			}
 		}
+	}
+	
+	/**
+	 * Handle an empty slot that was previously a sell order.
+	 * If items sold offline, record them as SELL transactions.
+	 */
+	private void handleEmptySellSlot(TrackedOffer persistedOffer)
+	{
+		int soldQuantity = persistedOffer.previousQuantitySold;
+		
+		if (soldQuantity > 0)
+		{
+			log.info("Detected {} {} sold offline. Recording SELL transaction.",
+				soldQuantity, persistedOffer.itemName);
+			
+			// Record the offline sell transaction
+			recordOfflineSellTransaction(persistedOffer, soldQuantity);
+		}
+		else
+		{
+			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.itemName);
+		}
+	}
+	
+	/**
+	 * Record a SELL transaction for items that sold while offline.
+	 */
+	private void recordOfflineSellTransaction(TrackedOffer persistedOffer, int soldQuantity)
+	{
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			log.warn("Cannot record offline sell - no RSN available");
+			return;
+		}
+		
+		// Create a SELL transaction for the items that sold offline
+		apiClient.recordTransactionAsync(
+			persistedOffer.itemId,
+			persistedOffer.itemName,
+			"SELL",
+			soldQuantity,
+			persistedOffer.price,
+			rsn
+		);
 	}
 	
 	/**
