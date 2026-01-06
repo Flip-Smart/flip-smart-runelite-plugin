@@ -38,5 +38,8 @@ public class ActiveFlip
 
 	@SerializedName("recommended_sell_price")
 	private Integer recommendedSellPrice;
+
+	@SerializedName("order_quantity")
+	private int orderQuantity;
 }
 

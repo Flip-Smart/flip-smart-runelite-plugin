@@ -856,6 +856,8 @@ public class FlipSmartPlugin extends Plugin
 			if (!trackedOffers.isEmpty() || collectedItemIds.isEmpty())
 			{
 				cleanupStaleActiveFlips();
+				// After cleanup, validate inventory quantities against active flips
+				scheduleInventoryQuantityValidation();
 			}
 			else
 			{
@@ -864,6 +866,127 @@ public class FlipSmartPlugin extends Plugin
 		});
 		cleanupTimer.setRepeats(false);
 		cleanupTimer.start();
+	}
+	
+	/**
+	 * Schedule validation of inventory quantities against active flips.
+	 * If inventory has fewer items than an active flip shows, sync down.
+	 */
+	private void scheduleInventoryQuantityValidation()
+	{
+		// Delay slightly to ensure cleanup has completed
+		javax.swing.Timer validationTimer = new javax.swing.Timer(2000, e -> {
+			clientThread.invokeLater(this::validateInventoryQuantities);
+		});
+		validationTimer.setRepeats(false);
+		validationTimer.start();
+	}
+	
+	/**
+	 * Validate inventory quantities against active flips and sync down if needed.
+	 * Must be called on client thread.
+	 */
+	private void validateInventoryQuantities()
+	{
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			return;
+		}
+		
+		// Get inventory item counts
+		Map<Integer, Integer> inventoryCounts = getInventoryItemCounts();
+		if (inventoryCounts.isEmpty())
+		{
+			return;
+		}
+		
+		// Fetch current active flips from backend
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response -> {
+			if (response == null || response.getActiveFlips() == null)
+			{
+				return;
+			}
+			
+			for (ActiveFlip flip : response.getActiveFlips())
+			{
+				validateAndSyncFlipQuantity(flip, inventoryCounts, rsn);
+			}
+		}).exceptionally(e -> {
+			log.debug("Failed to validate inventory quantities: {}", e.getMessage());
+			return null;
+		});
+	}
+	
+	/**
+	 * Validate a single flip's quantity against inventory and sync if needed.
+	 */
+	private void validateAndSyncFlipQuantity(ActiveFlip flip, Map<Integer, Integer> inventoryCounts, String rsn)
+	{
+		int itemId = flip.getItemId();
+		int activeFlipQty = flip.getTotalQuantity();
+		int inventoryQty = inventoryCounts.getOrDefault(itemId, 0);
+		
+		// Check if item is in a GE slot (still buying/selling)
+		boolean isInGeSlot = isItemInActiveGeSlot(itemId);
+		
+		// Only sync down if:
+		// 1. Item is NOT in a GE slot (collected items only)
+		// 2. Inventory has fewer than active flip shows
+		// 3. Inventory count is > 0 (we have the item, just fewer)
+		if (!isInGeSlot && inventoryQty > 0 && inventoryQty < activeFlipQty)
+		{
+			log.info("Inventory quantity mismatch for {} - active flip shows {} but only have {}. Syncing down.",
+				flip.getItemName(), activeFlipQty, inventoryQty);
+			
+			int orderQty = flip.getOrderQuantity() > 0 ? flip.getOrderQuantity() : activeFlipQty;
+			apiClient.syncActiveFlipAsync(
+				itemId,
+				flip.getItemName(),
+				inventoryQty,
+				orderQty,
+				flip.getAverageBuyPrice(),
+				rsn
+			);
+		}
+	}
+	
+	/**
+	 * Check if an item is currently in an active GE slot (buying or selling).
+	 */
+	private boolean isItemInActiveGeSlot(int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.itemId == itemId)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/**
+	 * Get counts of all items in inventory.
+	 * Must be called on client thread.
+	 */
+	private Map<Integer, Integer> getInventoryItemCounts()
+	{
+		Map<Integer, Integer> counts = new HashMap<>();
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
+		if (inventory == null)
+		{
+			return counts;
+		}
+		
+		for (Item item : inventory.getItems())
+		{
+			if (item.getId() > 0)
+			{
+				counts.merge(item.getId(), item.getQuantity(), Integer::sum);
+			}
+		}
+		return counts;
 	}
 	
 	/**
