@@ -1162,24 +1162,26 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Update the status label with response info
+	 * Update the status label with response info (for Recommended tab)
 	 */
 	private void updateStatusLabel(FlipFinderResponse response)
 	{
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 		String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
 		int count = response.getRecommendations().size();
+		String itemWord = count == 1 ? "suggestion" : "suggestions";
 		
 		if (response.getCashStack() != null)
 		{
-			statusLabel.setText(String.format("%s | %d flips | Cash: %s",
+			statusLabel.setText(String.format("%s | %d %s | Cash: %s",
 				flipStyleText,
 				count,
+				itemWord,
 				formatGP(response.getCashStack())));
 		}
 		else
 		{
-			statusLabel.setText(String.format("%s | %d flips", flipStyleText, count));
+			statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
 		}
 	}
 
