@@ -41,5 +41,8 @@ public class ActiveFlip
 
 	@SerializedName("order_quantity")
 	private int orderQuantity;
+
+	@SerializedName("phase")
+	private String phase;  // "buy" or "sell"
 }
 
