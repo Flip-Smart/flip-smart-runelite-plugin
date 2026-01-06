@@ -583,17 +583,10 @@ public class FlipSmartPlugin extends Plugin
 		}
 		offlineSyncCompleted = true;
 		
-		// Clear persisted state so all fills are treated as new
-		configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
-		
-		// NOTE: We do NOT clear active flips here anymore!
-		// The old code sent an empty set to cleanup which incorrectly closed ALL active flips.
-		// Instead, cleanup happens in schedulePostSyncTasks() AFTER GE state is loaded,
-		// using the actual active item IDs from trackedOffers + inventory.
-		
-		// Start fresh - no persisted offers, record all current fills
-		Map<Integer, TrackedOffer> persistedOffers = new HashMap<>();
-		log.debug("Full sync: recording {} current GE offers to backend", trackedOffers.size());
+		// Load persisted offers from last session to compare against current state
+		Map<Integer, TrackedOffer> persistedOffers = loadPersistedOffers();
+		log.debug("Loaded {} persisted offers, comparing with {} current offers", 
+			persistedOffers.size(), trackedOffers.size());
 		
 		// Always sync current offers - handles both:
 		// 1. Offers with persisted state (compare for offline fills)
@@ -1047,6 +1040,35 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.error("Failed to load persisted collected items for {}: {}", currentRsn, e.getMessage());
 			return new java.util.HashSet<>();
+		}
+	}
+	
+	/**
+	 * Load previously persisted tracked offers from config.
+	 * These represent the GE offer state when the player last logged out.
+	 */
+	private Map<Integer, TrackedOffer> loadPersistedOffers()
+	{
+		String key = getPersistedOffersKey();
+		
+		try
+		{
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				log.debug("No persisted offers found for {}", currentRsn);
+				return new HashMap<>();
+			}
+			
+			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
+			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
+			log.info("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, currentRsn);
+			return offers != null ? offers : new HashMap<>();
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load persisted offers for {}: {}", currentRsn, e.getMessage());
+			return new HashMap<>();
 		}
 	}
 
