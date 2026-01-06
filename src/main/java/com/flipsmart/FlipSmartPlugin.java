@@ -885,6 +885,9 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Validate inventory quantities against active flips and sync down if needed.
 	 * Must be called on client thread.
+	 * 
+	 * This is a safeguard for when items were sold/used without plugin tracking.
+	 * It counts items in BOTH inventory AND GE sell slots to get the true count.
 	 */
 	private void validateInventoryQuantities()
 	{
@@ -894,12 +897,8 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		
-		// Get inventory item counts
-		Map<Integer, Integer> inventoryCounts = getInventoryItemCounts();
-		if (inventoryCounts.isEmpty())
-		{
-			return;
-		}
+		// Get total item counts (inventory + items in sell slots)
+		Map<Integer, Integer> totalItemCounts = getTotalItemCounts();
 		
 		// Fetch current active flips from backend
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response -> {
@@ -910,7 +909,7 @@ public class FlipSmartPlugin extends Plugin
 			
 			for (ActiveFlip flip : response.getActiveFlips())
 			{
-				validateAndSyncFlipQuantity(flip, inventoryCounts, rsn);
+				validateAndSyncFlipQuantity(flip, totalItemCounts, rsn);
 			}
 		}).exceptionally(e -> {
 			log.debug("Failed to validate inventory quantities: {}", e.getMessage());
@@ -919,46 +918,70 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Validate a single flip's quantity against inventory and sync if needed.
+	 * Validate a single flip's quantity against actual item count and sync if needed.
+	 * GE + Inventory is the source of truth - syncs both UP and DOWN to match reality.
 	 */
-	private void validateAndSyncFlipQuantity(ActiveFlip flip, Map<Integer, Integer> inventoryCounts, String rsn)
+	private void validateAndSyncFlipQuantity(ActiveFlip flip, Map<Integer, Integer> totalItemCounts, String rsn)
 	{
 		int itemId = flip.getItemId();
 		int activeFlipQty = flip.getTotalQuantity();
-		int inventoryQty = inventoryCounts.getOrDefault(itemId, 0);
+		int actualQty = totalItemCounts.getOrDefault(itemId, 0);
 		
-		// Check if item is in a GE slot (still buying/selling)
-		boolean isInGeSlot = isItemInActiveGeSlot(itemId);
-		
-		// Only sync down if:
-		// 1. Item is NOT in a GE slot (collected items only)
-		// 2. Inventory has fewer than active flip shows
-		// 3. Inventory count is > 0 (we have the item, just fewer)
-		if (!isInGeSlot && inventoryQty > 0 && inventoryQty < activeFlipQty)
+		// Skip if item is in an active BUY slot (still being purchased)
+		if (isItemInActiveBuySlot(itemId))
 		{
-			log.info("Inventory quantity mismatch for {} - active flip shows {} but only have {}. Syncing down.",
-				flip.getItemName(), activeFlipQty, inventoryQty);
-			
-			int orderQty = flip.getOrderQuantity() > 0 ? flip.getOrderQuantity() : activeFlipQty;
-			apiClient.syncActiveFlipAsync(
-				itemId,
-				flip.getItemName(),
-				inventoryQty,
-				orderQty,
-				flip.getAverageBuyPrice(),
-				rsn
-			);
+			log.debug("Skipping validation for {} - still in buy slot", flip.getItemName());
+			return;
 		}
+		
+		// Skip if quantities match
+		if (actualQty == activeFlipQty)
+		{
+			return;
+		}
+		
+		// Skip if we have 0 items - might be a stale flip or items elsewhere
+		if (actualQty == 0)
+		{
+			log.debug("Skipping validation for {} - no items in inventory/sell slots", flip.getItemName());
+			return;
+		}
+		
+		// Check for significant difference (at least 10 items or 10% difference)
+		int difference = Math.abs(activeFlipQty - actualQty);
+		boolean significantDifference = difference >= 10 || (activeFlipQty > 0 && difference > activeFlipQty * 0.1);
+		
+		if (!significantDifference)
+		{
+			log.debug("Skipping validation for {} - difference of {} is not significant", flip.getItemName(), difference);
+			return;
+		}
+		
+		// Sync to actual quantity (both up and down)
+		String direction = actualQty > activeFlipQty ? "up" : "down";
+		log.info("Inventory quantity mismatch for {} - active flip shows {} but have {} (inv + sell slots). Syncing {}.",
+			flip.getItemName(), activeFlipQty, actualQty, direction);
+		
+		int orderQty = flip.getOrderQuantity() > 0 ? flip.getOrderQuantity() : Math.max(activeFlipQty, actualQty);
+		apiClient.syncActiveFlipAsync(
+			itemId,
+			flip.getItemName(),
+			actualQty,
+			orderQty,
+			flip.getAverageBuyPrice(),
+			rsn
+		);
 	}
 	
 	/**
-	 * Check if an item is currently in an active GE slot (buying or selling).
+	 * Check if an item is currently in an active BUY slot (still purchasing).
+	 * Sell slots are okay - items there are "ours" and counted separately.
 	 */
-	private boolean isItemInActiveGeSlot(int itemId)
+	private boolean isItemInActiveBuySlot(int itemId)
 	{
 		for (TrackedOffer offer : trackedOffers.values())
 		{
-			if (offer.itemId == itemId)
+			if (offer.itemId == itemId && offer.isBuy)
 			{
 				return true;
 			}
@@ -967,25 +990,40 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Get counts of all items in inventory.
+	 * Get counts of all items we own: inventory + items in GE sell slots.
 	 * Must be called on client thread.
 	 */
-	private Map<Integer, Integer> getInventoryItemCounts()
+	private Map<Integer, Integer> getTotalItemCounts()
 	{
 		Map<Integer, Integer> counts = new HashMap<>();
-		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
-		if (inventory == null)
-		{
-			return counts;
-		}
 		
-		for (Item item : inventory.getItems())
+		// Count items in inventory
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
+		if (inventory != null)
 		{
-			if (item.getId() > 0)
+			for (Item item : inventory.getItems())
 			{
-				counts.merge(item.getId(), item.getQuantity(), Integer::sum);
+				if (item.getId() > 0)
+				{
+					counts.merge(item.getId(), item.getQuantity(), Integer::sum);
+				}
 			}
 		}
+		
+		// Count items in active SELL slots (these are still "ours")
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (!offer.isBuy && offer.itemId > 0)
+			{
+				// For sell offers: total - sold = remaining in slot
+				int remainingInSlot = offer.totalQuantity - offer.previousQuantitySold;
+				if (remainingInSlot > 0)
+				{
+					counts.merge(offer.itemId, remainingInSlot, Integer::sum);
+				}
+			}
+		}
+		
 		return counts;
 	}
 	
@@ -1395,21 +1433,35 @@ public class FlipSmartPlugin extends Plugin
 						.build());
 				}
 				
-				log.info("Order cancelled: {} {} - {} items filled out of {}",
-					isBuy ? "BUY" : "SELL",
-					previousOffer != null ? previousOffer.itemName : itemName,
-					quantitySold,
-					totalQuantity);
-			}
-			else
-			{
-				TrackedOffer previousOffer = trackedOffers.get(slot);
-				log.info("Order cancelled with no fills: {} {}",
-					isBuy ? "BUY" : "SELL",
-					previousOffer != null ? previousOffer.itemName : itemName);
-			}
+			log.info("Order cancelled: {} {} - {} items filled out of {}",
+				isBuy ? "BUY" : "SELL",
+				previousOffer != null ? previousOffer.itemName : itemName,
+				quantitySold,
+				totalQuantity);
+		}
+		else
+		{
+			TrackedOffer previousOffer = trackedOffers.get(slot);
+			log.info("Order cancelled with no fills: {} {}",
+				isBuy ? "BUY" : "SELL",
+				previousOffer != null ? previousOffer.itemName : itemName);
 			
-			// For cancelled BUY orders with partial fills, track the items as collected
+			// For cancelled BUY orders with 0 fills, dismiss the active flip
+			// There's nothing to track - the order never filled
+			if (isBuy)
+			{
+				log.info("Dismissing active flip for {} - buy order cancelled with 0 fills", itemName);
+				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe().orElse(null));
+				
+				// Refresh panel to remove the stale flip
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
+				}
+			}
+		}
+		
+		// For cancelled BUY orders with partial fills, track the items as collected
 			// so they still show as active flips until the user sells them
 			if (isBuy && quantitySold > 0)
 			{
