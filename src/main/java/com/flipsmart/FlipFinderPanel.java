@@ -2040,6 +2040,17 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
+	 * Get the displayed sell price for an item from the Active Flips panel.
+	 * This is the "smart" price that considers time thresholds and market conditions.
+	 * @param itemId The item ID
+	 * @return The displayed sell price, or null if not cached
+	 */
+	public Integer getDisplayedSellPrice(int itemId)
+	{
+		return displayedSellPrices.get(itemId);
+	}
+	
+	/**
 	 * Clear the current focus
 	 */
 	public void clearFocus()
@@ -2174,6 +2185,24 @@ public class FlipFinderPanel extends PluginPanel
 				{
 					// Cache the displayed sell price so Flip Assist uses the same value
 					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
+					
+					// Update Flip Assist if this item is currently focused
+					if (currentFocus != null && currentFocus.getItemId() == flip.getItemId() && currentFocus.isSelling())
+					{
+						int priceOffset = config.priceOffset();
+						FocusedFlip updatedFocus = FocusedFlip.forSell(
+							flip.getItemId(),
+							flip.getItemName(),
+							smartSellPrice,
+							flip.getTotalQuantity(),
+							priceOffset
+						);
+						currentFocus = updatedFocus;
+						if (onFocusChanged != null)
+						{
+							onFocusChanged.accept(updatedFocus);
+						}
+					}
 					
 					// Row 1: Update Buy | Sell prices
 					String priceSuffix = pastThreshold ? "*" : "";

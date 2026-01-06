@@ -583,17 +583,10 @@ public class FlipSmartPlugin extends Plugin
 		}
 		offlineSyncCompleted = true;
 		
-		// Clear persisted state so all fills are treated as new
-		configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
-		
-		// NOTE: We do NOT clear active flips here anymore!
-		// The old code sent an empty set to cleanup which incorrectly closed ALL active flips.
-		// Instead, cleanup happens in schedulePostSyncTasks() AFTER GE state is loaded,
-		// using the actual active item IDs from trackedOffers + inventory.
-		
-		// Start fresh - no persisted offers, record all current fills
-		Map<Integer, TrackedOffer> persistedOffers = new HashMap<>();
-		log.debug("Full sync: recording {} current GE offers to backend", trackedOffers.size());
+		// Load persisted offers from last session to compare against current state
+		Map<Integer, TrackedOffer> persistedOffers = loadPersistedOffers();
+		log.debug("Loaded {} persisted offers, comparing with {} current offers", 
+			persistedOffers.size(), trackedOffers.size());
 		
 		// Always sync current offers - handles both:
 		// 1. Offers with persisted state (compare for offline fills)
@@ -691,6 +684,7 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Handle persisted slots that are now empty (offer completed or cancelled offline).
+	 * Checks inventory to detect orders that completed while offline.
 	 */
 	private void handleEmptyPersistedSlots(Map<Integer, TrackedOffer> persistedOffers)
 	{
@@ -704,17 +698,144 @@ public class FlipSmartPlugin extends Plugin
 				continue;
 			}
 			
-			log.info("Slot {} is now empty (was tracking {} x{}). Cannot determine if completed or cancelled offline.",
+			log.info("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
 				slot, persistedOffer.itemName, persistedOffer.totalQuantity);
 			
-			// Track partially filled buys so user can sell them
-			if (persistedOffer.isBuy && persistedOffer.previousQuantitySold > 0)
+			if (persistedOffer.isBuy)
 			{
-				log.info("Adding {} to collected tracking (had {} items filled before going offline)",
-					persistedOffer.itemName, persistedOffer.previousQuantitySold);
-				collectedItemIds.add(persistedOffer.itemId);
+				handleEmptyBuySlot(persistedOffer);
+			}
+			else
+			{
+				handleEmptySellSlot(persistedOffer);
 			}
 		}
+	}
+	
+	/**
+	 * Handle an empty slot that was previously a sell order.
+	 * If items sold offline, record them as SELL transactions.
+	 */
+	private void handleEmptySellSlot(TrackedOffer persistedOffer)
+	{
+		int soldQuantity = persistedOffer.previousQuantitySold;
+		
+		if (soldQuantity > 0)
+		{
+			log.info("Detected {} {} sold offline. Recording SELL transaction.",
+				soldQuantity, persistedOffer.itemName);
+			
+			// Record the offline sell transaction
+			recordOfflineSellTransaction(persistedOffer, soldQuantity);
+		}
+		else
+		{
+			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.itemName);
+		}
+	}
+	
+	/**
+	 * Record a SELL transaction for items that sold while offline.
+	 */
+	private void recordOfflineSellTransaction(TrackedOffer persistedOffer, int soldQuantity)
+	{
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			log.warn("Cannot record offline sell - no RSN available");
+			return;
+		}
+		
+		// Create a SELL transaction for the items that sold offline
+		apiClient.recordTransactionAsync(
+			persistedOffer.itemId,
+			persistedOffer.itemName,
+			"SELL",
+			soldQuantity,
+			persistedOffer.price,
+			rsn
+		);
+	}
+	
+	/**
+	 * Handle an empty slot that was previously a buy order.
+	 * Checks inventory and syncs with backend if needed.
+	 */
+	private void handleEmptyBuySlot(TrackedOffer persistedOffer)
+	{
+		int inventoryCount = getInventoryCountForItem(persistedOffer.itemId);
+		int trackedFills = persistedOffer.previousQuantitySold;
+		
+		if (inventoryCount > 0)
+		{
+			handleBuyOrderWithInventory(persistedOffer, inventoryCount, trackedFills);
+		}
+		else if (trackedFills > 0)
+		{
+			log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
+				persistedOffer.itemName, trackedFills);
+		}
+	}
+	
+	/**
+	 * Handle a completed buy order that has items in inventory.
+	 * Syncs with backend if inventory count exceeds tracked fills.
+	 */
+	private void handleBuyOrderWithInventory(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
+	{
+		collectedItemIds.add(persistedOffer.itemId);
+		
+		int actualFills = calculateActualFills(persistedOffer, inventoryCount, trackedFills);
+		
+		if (actualFills > trackedFills)
+		{
+			syncOfflineCompletedOrder(persistedOffer, inventoryCount, trackedFills, actualFills);
+		}
+		else
+		{
+			log.info("Adding {} to collected tracking (had {} items filled before going offline)",
+				persistedOffer.itemName, trackedFills);
+		}
+	}
+	
+	/**
+	 * Calculate actual fills based on inventory count, tracked fills, and order size.
+	 */
+	private int calculateActualFills(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
+	{
+		int actualFills = Math.max(inventoryCount, trackedFills);
+		
+		// If we have at least order_size items, the order completed fully
+		if (inventoryCount >= persistedOffer.totalQuantity)
+		{
+			actualFills = persistedOffer.totalQuantity;
+		}
+		
+		return actualFills;
+	}
+	
+	/**
+	 * Sync an offline-completed order with the backend.
+	 */
+	private void syncOfflineCompletedOrder(TrackedOffer persistedOffer, int inventoryCount, int trackedFills, int actualFills)
+	{
+		log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
+			persistedOffer.itemName, trackedFills, inventoryCount, actualFills);
+		
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			return;
+		}
+		
+		apiClient.syncActiveFlipAsync(
+			persistedOffer.itemId,
+			persistedOffer.itemName,
+			actualFills,
+			persistedOffer.totalQuantity,
+			persistedOffer.price,
+			rsn
+		);
 	}
 	
 	/**
@@ -735,6 +856,8 @@ public class FlipSmartPlugin extends Plugin
 			if (!trackedOffers.isEmpty() || collectedItemIds.isEmpty())
 			{
 				cleanupStaleActiveFlips();
+				// After cleanup, validate inventory quantities against active flips
+				scheduleInventoryQuantityValidation();
 			}
 			else
 			{
@@ -743,6 +866,165 @@ public class FlipSmartPlugin extends Plugin
 		});
 		cleanupTimer.setRepeats(false);
 		cleanupTimer.start();
+	}
+	
+	/**
+	 * Schedule validation of inventory quantities against active flips.
+	 * If inventory has fewer items than an active flip shows, sync down.
+	 */
+	private void scheduleInventoryQuantityValidation()
+	{
+		// Delay slightly to ensure cleanup has completed
+		javax.swing.Timer validationTimer = new javax.swing.Timer(2000, e -> {
+			clientThread.invokeLater(this::validateInventoryQuantities);
+		});
+		validationTimer.setRepeats(false);
+		validationTimer.start();
+	}
+	
+	/**
+	 * Validate inventory quantities against active flips and sync down if needed.
+	 * Must be called on client thread.
+	 * 
+	 * This is a safeguard for when items were sold/used without plugin tracking.
+	 * It counts items in BOTH inventory AND GE sell slots to get the true count.
+	 */
+	private void validateInventoryQuantities()
+	{
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			return;
+		}
+		
+		// Get total item counts (inventory + items in sell slots)
+		Map<Integer, Integer> totalItemCounts = getTotalItemCounts();
+		
+		// Fetch current active flips from backend
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response -> {
+			if (response == null || response.getActiveFlips() == null)
+			{
+				return;
+			}
+			
+			for (ActiveFlip flip : response.getActiveFlips())
+			{
+				validateAndSyncFlipQuantity(flip, totalItemCounts, rsn);
+			}
+		}).exceptionally(e -> {
+			log.debug("Failed to validate inventory quantities: {}", e.getMessage());
+			return null;
+		});
+	}
+	
+	/**
+	 * Validate a single flip's quantity against actual item count and sync if needed.
+	 * GE + Inventory is the source of truth - syncs both UP and DOWN to match reality.
+	 */
+	private void validateAndSyncFlipQuantity(ActiveFlip flip, Map<Integer, Integer> totalItemCounts, String rsn)
+	{
+		int itemId = flip.getItemId();
+		int activeFlipQty = flip.getTotalQuantity();
+		int actualQty = totalItemCounts.getOrDefault(itemId, 0);
+		
+		// Skip if item is in an active BUY slot (still being purchased)
+		if (isItemInActiveBuySlot(itemId))
+		{
+			log.debug("Skipping validation for {} - still in buy slot", flip.getItemName());
+			return;
+		}
+		
+		// Skip if quantities match
+		if (actualQty == activeFlipQty)
+		{
+			return;
+		}
+		
+		// Skip if we have 0 items - might be a stale flip or items elsewhere
+		if (actualQty == 0)
+		{
+			log.debug("Skipping validation for {} - no items in inventory/sell slots", flip.getItemName());
+			return;
+		}
+		
+		// Check for significant difference (at least 10 items or 10% difference)
+		int difference = Math.abs(activeFlipQty - actualQty);
+		boolean significantDifference = difference >= 10 || (activeFlipQty > 0 && difference > activeFlipQty * 0.1);
+		
+		if (!significantDifference)
+		{
+			log.debug("Skipping validation for {} - difference of {} is not significant", flip.getItemName(), difference);
+			return;
+		}
+		
+		// Sync to actual quantity (both up and down)
+		String direction = actualQty > activeFlipQty ? "up" : "down";
+		log.info("Inventory quantity mismatch for {} - active flip shows {} but have {} (inv + sell slots). Syncing {}.",
+			flip.getItemName(), activeFlipQty, actualQty, direction);
+		
+		int orderQty = flip.getOrderQuantity() > 0 ? flip.getOrderQuantity() : Math.max(activeFlipQty, actualQty);
+		apiClient.syncActiveFlipAsync(
+			itemId,
+			flip.getItemName(),
+			actualQty,
+			orderQty,
+			flip.getAverageBuyPrice(),
+			rsn
+		);
+	}
+	
+	/**
+	 * Check if an item is currently in an active BUY slot (still purchasing).
+	 * Sell slots are okay - items there are "ours" and counted separately.
+	 */
+	private boolean isItemInActiveBuySlot(int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.itemId == itemId && offer.isBuy)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	
+	/**
+	 * Get counts of all items we own: inventory + items in GE sell slots.
+	 * Must be called on client thread.
+	 */
+	private Map<Integer, Integer> getTotalItemCounts()
+	{
+		Map<Integer, Integer> counts = new HashMap<>();
+		
+		// Count items in inventory
+		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
+		if (inventory != null)
+		{
+			for (Item item : inventory.getItems())
+			{
+				if (item.getId() > 0)
+				{
+					counts.merge(item.getId(), item.getQuantity(), Integer::sum);
+				}
+			}
+		}
+		
+		// Count items in active SELL slots (these are still "ours")
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (!offer.isBuy && offer.itemId > 0)
+			{
+				// For sell offers: total - sold = remaining in slot
+				int remainingInSlot = offer.totalQuantity - offer.previousQuantitySold;
+				if (remainingInSlot > 0)
+				{
+					counts.merge(offer.itemId, remainingInSlot, Integer::sum);
+				}
+			}
+		}
+		
+		return counts;
 	}
 	
 	/**
@@ -921,6 +1203,35 @@ public class FlipSmartPlugin extends Plugin
 			return new java.util.HashSet<>();
 		}
 	}
+	
+	/**
+	 * Load previously persisted tracked offers from config.
+	 * These represent the GE offer state when the player last logged out.
+	 */
+	private Map<Integer, TrackedOffer> loadPersistedOffers()
+	{
+		String key = getPersistedOffersKey();
+		
+		try
+		{
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				log.debug("No persisted offers found for {}", currentRsn);
+				return new HashMap<>();
+			}
+			
+			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
+			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
+			log.info("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, currentRsn);
+			return offers != null ? offers : new HashMap<>();
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load persisted offers for {}: {}", currentRsn, e.getMessage());
+			return new HashMap<>();
+		}
+	}
 
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
@@ -1007,14 +1318,26 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Set the Flip Assist focus for selling an active flip.
-	 * Uses recommended price if available, otherwise calculates minimum profitable price.
+	 * Prioritizes the panel's displayed sell price (which considers time thresholds
+	 * and market conditions), then falls back to recommended price or minimum profitable.
 	 */
 	private void setFocusForSell(ActiveFlip flip)
 	{
 		int sellPrice;
-		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
+		
+		// First, check if the panel has a cached "smart" sell price for this item
+		// This price considers time thresholds and current market conditions
+		Integer panelPrice = flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(flip.getItemId()) : null;
+		
+		if (panelPrice != null && panelPrice > 0)
+		{
+			sellPrice = panelPrice;
+			log.debug("Using panel's displayed sell price for {}: {} gp", flip.getItemName(), sellPrice);
+		}
+		else if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
 		{
 			sellPrice = flip.getRecommendedSellPrice();
+			log.debug("Using backend recommended sell price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
 		else
 		{
@@ -1022,6 +1345,7 @@ public class FlipSmartPlugin extends Plugin
 			// GE tax is 2%, so: sellPrice * 0.98 >= buyPrice + 1
 			// sellPrice >= (buyPrice + 1) / 0.98
 			sellPrice = (int) Math.ceil((flip.getAverageBuyPrice() + 1) / 0.98);
+			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
 		
 		FocusedFlip focus = FocusedFlip.forSell(
@@ -1122,21 +1446,35 @@ public class FlipSmartPlugin extends Plugin
 						.build());
 				}
 				
-				log.info("Order cancelled: {} {} - {} items filled out of {}",
-					isBuy ? "BUY" : "SELL",
-					previousOffer != null ? previousOffer.itemName : itemName,
-					quantitySold,
-					totalQuantity);
-			}
-			else
-			{
-				TrackedOffer previousOffer = trackedOffers.get(slot);
-				log.info("Order cancelled with no fills: {} {}",
-					isBuy ? "BUY" : "SELL",
-					previousOffer != null ? previousOffer.itemName : itemName);
-			}
+			log.info("Order cancelled: {} {} - {} items filled out of {}",
+				isBuy ? "BUY" : "SELL",
+				previousOffer != null ? previousOffer.itemName : itemName,
+				quantitySold,
+				totalQuantity);
+		}
+		else
+		{
+			TrackedOffer previousOffer = trackedOffers.get(slot);
+			log.info("Order cancelled with no fills: {} {}",
+				isBuy ? "BUY" : "SELL",
+				previousOffer != null ? previousOffer.itemName : itemName);
 			
-			// For cancelled BUY orders with partial fills, track the items as collected
+			// For cancelled BUY orders with 0 fills, dismiss the active flip
+			// There's nothing to track - the order never filled
+			if (isBuy)
+			{
+				log.info("Dismissing active flip for {} - buy order cancelled with 0 fills", itemName);
+				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe().orElse(null));
+				
+				// Refresh panel to remove the stale flip
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
+				}
+			}
+		}
+		
+		// For cancelled BUY orders with partial fills, track the items as collected
 			// so they still show as active flips until the user sells them
 			if (isBuy && quantitySold > 0)
 			{
@@ -1166,6 +1504,33 @@ public class FlipSmartPlugin extends Plugin
 				log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
 					collectedOffer.itemName, collectedOffer.previousQuantitySold);
 				collectedItemIds.add(collectedOffer.itemId);
+				
+				// Check if the order completed fully and we might have missed fills
+				// This handles the case where fills happened rapidly or while we weren't tracking
+				int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+				int trackedFills = collectedOffer.previousQuantitySold;
+				
+				// If inventory shows more items than we tracked, sync with backend
+				if (inventoryCount > trackedFills)
+				{
+					log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
+						collectedOffer.itemName, trackedFills, inventoryCount);
+					
+					String rsn = getCurrentRsnSafe().orElse(null);
+					if (rsn != null)
+					{
+						// Use the inventory count as the actual fill count
+						int actualFills = Math.min(inventoryCount, collectedOffer.totalQuantity);
+						apiClient.syncActiveFlipAsync(
+							collectedOffer.itemId,
+							collectedOffer.itemName,
+							actualFills,
+							collectedOffer.totalQuantity,
+							collectedOffer.price,
+							rsn
+						);
+					}
+				}
 				
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)
@@ -1275,6 +1640,18 @@ public class FlipSmartPlugin extends Plugin
 					.rsn(getCurrentRsnSafe().orElse(null))
 					.totalQuantity(totalQuantity)
 					.build());
+			}
+			
+			// When a SELL order is placed, mark the active flip as "selling" phase
+			// This updates the backend so the webapp shows the correct phase
+			if (!isBuy && totalQuantity > 0 && previousOffer == null)
+			{
+				log.info("Sell order placed for {} x{} - marking active flip as selling", itemName, totalQuantity);
+				String rsn = getCurrentRsnSafe().orElse(null);
+				if (rsn != null)
+				{
+					apiClient.markActiveFlipSellingAsync(itemId, rsn);
+				}
 			}
 			
 			// Refresh the flip finder panel when any new order is submitted

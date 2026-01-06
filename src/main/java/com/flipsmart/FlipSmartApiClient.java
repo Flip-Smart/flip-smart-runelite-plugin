@@ -643,6 +643,29 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Record a Grand Exchange transaction asynchronously (simplified overload)
+	 * Used for recording offline transactions detected on login.
+	 * 
+	 * @param itemId Item ID
+	 * @param itemName Item name
+	 * @param transactionType "BUY" or "SELL"
+	 * @param quantity Quantity traded
+	 * @param pricePerItem Price per item
+	 * @param rsn RuneScape Name
+	 */
+	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, String transactionType,
+			int quantity, int pricePerItem, String rsn)
+	{
+		boolean isBuy = "BUY".equalsIgnoreCase(transactionType);
+		TransactionRequest request = TransactionRequest
+			.builder(itemId, itemName, isBuy, quantity, pricePerItem)
+			.rsn(rsn)
+			.build();
+		
+		return recordTransactionAsync(request);
+	}
+
+	/**
 	 * Fetch active flips from the API asynchronously
 	 * @param rsn Optional RSN to filter by (for multi-account support)
 	 */
@@ -769,6 +792,83 @@ public class FlipSmartApiClient
 		}).exceptionally(e ->
 		{
 			log.warn("Failed to cleanup stale flips: {}", e.getMessage());
+			return false;
+		});
+	}
+
+	/**
+	 * Sync the filled quantity for an active flip when the plugin detects a mismatch.
+	 * This is used when orders complete while offline and the plugin couldn't track
+	 * incremental fills.
+	 * 
+	 * @param itemId Item ID to sync
+	 * @param itemName Item name
+	 * @param filledQuantity Actual filled quantity from GE/inventory
+	 * @param orderQuantity Total order size
+	 * @param pricePerItem Price per item
+	 * @param rsn RuneScape Name
+	 * @return CompletableFuture with success status
+	 */
+	public CompletableFuture<Boolean> syncActiveFlipAsync(int itemId, String itemName, int filledQuantity, 
+			int orderQuantity, int pricePerItem, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/transactions/active-flips/sync", apiUrl);
+		
+		JsonObject requestBody = new JsonObject();
+		requestBody.addProperty("item_id", itemId);
+		requestBody.addProperty("filled_quantity", filledQuantity);
+		requestBody.addProperty("order_quantity", orderQuantity);
+		requestBody.addProperty("price_per_item", pricePerItem);
+		requestBody.addProperty("rsn", rsn);
+		
+		RequestBody body = RequestBody.create(JSON, requestBody.toString());
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(body);
+		
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
+			int previousQty = responseObj.has("previous_quantity") ? responseObj.get("previous_quantity").getAsInt() : 0;
+			int newQty = responseObj.has("new_quantity") ? responseObj.get("new_quantity").getAsInt() : 0;
+			if (previousQty != newQty)
+			{
+				log.info("Synced active flip for {} ({}): {} -> {} items", 
+					itemName, itemId, previousQty, newQty);
+			}
+			return true;
+		}).exceptionally(e ->
+		{
+			log.warn("Failed to sync active flip for {}: {}", itemId, e.getMessage());
+			return false;
+		});
+	}
+
+	/**
+	 * Mark an active flip as in the 'sell' phase.
+	 * Called when a sell order is placed for an item.
+	 *
+	 * @param itemId Item ID
+	 * @param rsn RuneScape Name
+	 * @return CompletableFuture with success status
+	 */
+	public CompletableFuture<Boolean> markActiveFlipSellingAsync(int itemId, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/transactions/active-flips/%d/mark-selling?rsn=%s", apiUrl, itemId, rsn);
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(RequestBody.create(JSON, ""));
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			log.info("Marked active flip for item {} as selling", itemId);
+			return true;
+		}).exceptionally(e ->
+		{
+			log.debug("Failed to mark active flip as selling: {}", e.getMessage());
 			return false;
 		});
 	}
