@@ -572,7 +572,8 @@ public class FlipSmartPlugin extends Plugin
 	
 	/**
 	 * Sync fills that occurred while offline.
-	 * Always does a full sync: clears backend active flips and re-records current GE state.
+	 * Records current GE state to the backend. Cleanup of stale flips happens
+	 * later via schedulePostSyncTasks() after GE state is fully loaded.
 	 */
 	private void syncOfflineFills()
 	{
@@ -585,28 +586,10 @@ public class FlipSmartPlugin extends Plugin
 		// Clear persisted state so all fills are treated as new
 		configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
 		
-		// Clear ALL active flips on the backend by sending empty set
-		String rsn = getCurrentRsnSafe().orElse(null);
-		try
-		{
-			apiClient.cleanupStaleFlipsAsync(new java.util.HashSet<>(), rsn)
-				.thenAccept(success -> {
-					if (!Boolean.TRUE.equals(success))
-					{
-						log.warn("Failed to clear active flips - sync may have duplicates");
-					}
-				})
-				.get(5, java.util.concurrent.TimeUnit.SECONDS);
-		}
-		catch (InterruptedException e)
-		{
-			log.warn("Interrupted while clearing active flips: {}", e.getMessage());
-			Thread.currentThread().interrupt();
-		}
-		catch (Exception e)
-		{
-			log.warn("Error clearing active flips: {}", e.getMessage());
-		}
+		// NOTE: We do NOT clear active flips here anymore!
+		// The old code sent an empty set to cleanup which incorrectly closed ALL active flips.
+		// Instead, cleanup happens in schedulePostSyncTasks() AFTER GE state is loaded,
+		// using the actual active item IDs from trackedOffers + inventory.
 		
 		// Start fresh - no persisted offers, record all current fills
 		Map<Integer, TrackedOffer> persistedOffers = new HashMap<>();

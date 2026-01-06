@@ -66,7 +66,6 @@ public class FlipAssistOverlay extends Overlay
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
-	private static final int GE_OFFER_GROUP = 162;
 	private static final int GE_OFFER_PANEL_CHILD = 26;
 	private static final int GE_QTY_CHILD_START = 31;
 	private static final int GE_QTY_CHILD_END = 36;
@@ -588,10 +587,18 @@ public class FlipAssistOverlay extends Overlay
 	
 	private boolean isGrandExchangeOpen()
 	{
+		// Check the main GE interface (465) - this is the primary indicator
 		Widget geWidget = client.getWidget(GE_INTERFACE_GROUP, 0);
-		Widget offerWidget = client.getWidget(GE_OFFER_GROUP, 0);
-		return (geWidget != null && !geWidget.isHidden()) ||
-			   (offerWidget != null && !offerWidget.isHidden());
+		if (geWidget != null && !geWidget.isHidden())
+		{
+			return true;
+		}
+		
+		// Also check if we're in the GE offer setup dialog specifically
+		// Widget 162 is the chatbox which is used for many dialogs, so we need
+		// to verify it's actually a GE-related dialog by checking for GE-specific content
+		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_PANEL_CHILD);
+		return offerPanel != null && !offerPanel.isHidden();
 	}
 	
 	private boolean isOfferSetupOpen()

@@ -84,6 +84,12 @@ public class FlipAssistInputListener implements KeyListener
 	@Override
 	public void keyPressed(KeyEvent e)
 	{
+		// Don't process hotkeys if Flip Assist is disabled
+		if (!config.enableFlipAssistant())
+		{
+			return;
+		}
+		
 		// Check if the hotkey matches
 		Keybind hotkey = config.flipAssistHotkey();
 		if (!hotkey.matches(e))

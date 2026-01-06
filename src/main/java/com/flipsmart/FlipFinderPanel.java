@@ -818,49 +818,58 @@ public class FlipFinderPanel extends PluginPanel
 				currentActiveFlips.clear();
 				if (response.getActiveFlips() != null)
 				{
-					// Smart filtering: show flips that are either:
+					// Show flips that are either:
 					// 1. Currently in GE slots or collected items (thread-safe check)
-					// 2. Created in the last hour (handles race condition for new flips)
-					// This filters stale data while ensuring new flips always appear
+					// 2. Had activity in the last 7 days (covers client restart scenarios)
+					// We use a generous 7-day threshold because:
+					// - On client restart, GE tracking takes time to populate
+					// - collectedItemIds is session-only and resets on restart
+					// - The backend handles proper stale flip cleanup via /flips/cleanup
 					// Note: Using getActiveFlipItemIds() instead of WithInventory() to avoid thread issues
 					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-					java.time.Instant oneHourAgo = java.time.Instant.now().minus(java.time.Duration.ofHours(1));
+					java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
 					
 					for (ActiveFlip flip : response.getActiveFlips())
 					{
 						boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
-						boolean isVeryRecent = false;
+						boolean isRecent = false;
 						
-						// Check if flip was created in the last hour
-						String buyTimeStr = flip.getFirstBuyTime();
-						if (buyTimeStr != null && !buyTimeStr.isEmpty())
+						// Check if flip had activity in the last 7 days
+						// Use lastBuyTime if available (more accurate), fall back to firstBuyTime
+						String timeStr = flip.getLastBuyTime();
+						if (timeStr == null || timeStr.isEmpty())
+						{
+							timeStr = flip.getFirstBuyTime();
+						}
+						
+						if (timeStr != null && !timeStr.isEmpty())
 						{
 							try
 							{
-								java.time.Instant buyTime = java.time.Instant.parse(buyTimeStr);
-								isVeryRecent = buyTime.isAfter(oneHourAgo);
+								java.time.Instant buyTime = java.time.Instant.parse(timeStr);
+								isRecent = buyTime.isAfter(sevenDaysAgo);
 							}
 							catch (Exception e)
 							{
-								// Can't parse, assume very recent to be safe
-								isVeryRecent = true;
+								// Can't parse, assume recent to be safe
+								isRecent = true;
 							}
 						}
 						else
 						{
-							// No timestamp, assume very recent
-							isVeryRecent = true;
+							// No timestamp, assume recent
+							isRecent = true;
 						}
 						
-						if (inGeOrCollected || isVeryRecent)
+						if (inGeOrCollected || isRecent)
 						{
 							currentActiveFlips.add(flip);
 							log.debug("Including flip: {} (inGE={}, recent={})", 
-								flip.getItemName(), inGeOrCollected, isVeryRecent);
+								flip.getItemName(), inGeOrCollected, isRecent);
 						}
 						else
 						{
-							log.debug("Filtering stale flip: {} (not in GE and older than 1 hour)", flip.getItemName());
+							log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
 						}
 					}
 					log.debug("Loaded {} active flips ({} from backend, {} filtered)", 
@@ -1117,6 +1126,10 @@ public class FlipFinderPanel extends PluginPanel
 
 	/**
 	 * Determine if an active flip should be shown (not duplicated by pending orders)
+	 * 
+	 * Logic: If an item has ANY pending buy order in the GE, skip the active flip.
+	 * The pending order is the source of truth for items currently in buy slots.
+	 * Active flips should only show for COLLECTED items (no longer in GE, waiting to sell).
 	 */
 	private boolean shouldShowActiveFlip(ActiveFlip flip, 
 			java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId)
@@ -1125,28 +1138,15 @@ public class FlipFinderPanel extends PluginPanel
 		
 		if (matchingPending == null || matchingPending.isEmpty())
 		{
+			// No pending buy orders for this item - show the active flip
 			return true;
 		}
 		
-		// Sum up ALL filled quantities from pending orders for this item
-		int totalPendingFilled = 0;
-		for (FlipSmartPlugin.PendingOrder pending : matchingPending)
-		{
-			totalPendingFilled += pending.quantityFilled;
-		}
-		
-		// If pending orders account for ALL or MORE of the active flip quantity,
-		// skip the active flip to avoid showing duplicates
-		if (totalPendingFilled >= flip.getTotalQuantity())
-		{
-			log.debug("Skipping active flip {} - pending orders account for {} items (flip has {})",
-				flip.getItemName(), totalPendingFilled, flip.getTotalQuantity());
-			return false;
-		}
-		
-		log.debug("Showing active flip {} - {} collected items not in pending ({} pending filled)",
-			flip.getItemName(), flip.getTotalQuantity() - totalPendingFilled, totalPendingFilled);
-		return true;
+		// There's a pending buy order for this item in the GE.
+		// Skip the active flip to avoid duplicates - the pending order panel shows the current state.
+		log.debug("Skipping active flip {} - has {} pending buy order(s) in GE",
+			flip.getItemName(), matchingPending.size());
+		return false;
 	}
 
 	/**
@@ -1162,24 +1162,26 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Update the status label with response info
+	 * Update the status label with response info (for Recommended tab)
 	 */
 	private void updateStatusLabel(FlipFinderResponse response)
 	{
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 		String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
 		int count = response.getRecommendations().size();
+		String itemWord = count == 1 ? "suggestion" : "suggestions";
 		
 		if (response.getCashStack() != null)
 		{
-			statusLabel.setText(String.format("%s | %d flips | Cash: %s",
+			statusLabel.setText(String.format("%s | %d %s | Cash: %s",
 				flipStyleText,
 				count,
+				itemWord,
 				formatGP(response.getCashStack())));
 		}
 		else
 		{
-			statusLabel.setText(String.format("%s | %d flips", flipStyleText, count));
+			statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
 		}
 	}
 
@@ -1584,6 +1586,12 @@ public class FlipFinderPanel extends PluginPanel
 			? formatGP(marginPerItem) 
 			: formatGPExact(marginPerItem);
 		
+		// Handle Infinity/NaN ROI (happens when cost is 0, e.g. pending orders with no fills)
+		if (Double.isInfinite(roi) || Double.isNaN(roi))
+		{
+			return String.format("Margin: %s (pending)", marginText);
+		}
+		
 		if (isLoss)
 		{
 			return String.format(FORMAT_MARGIN_ROI_LOSS, marginText, roi);
@@ -1810,13 +1818,15 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void setFocus(FlipRecommendation rec, JPanel panel)
 	{
-		// Create focused flip for buying
+		// Create focused flip for buying with price offset applied
+		int priceOffset = config.priceOffset();
 		FocusedFlip newFocus = FocusedFlip.forBuy(
 			rec.getItemId(),
 			rec.getItemName(),
 			rec.getRecommendedBuyPrice(),
 			rec.getRecommendedQuantity(),
-			rec.getRecommendedSellPrice()
+			rec.getRecommendedSellPrice(),
+			priceOffset
 		);
 		
 		updateFocus(newFocus, panel);
@@ -1831,15 +1841,17 @@ public class FlipFinderPanel extends PluginPanel
 		// Use the cached sell price that's already displayed in the panel
 		// This ensures the Flip Assist shows the same price as the Active Flips tab
 		Integer cachedSellPrice = displayedSellPrices.get(flip.getItemId());
+		int priceOffset = config.priceOffset();
 		
 		if (cachedSellPrice != null && cachedSellPrice > 0)
 		{
-			// Use the price that's already shown in the UI
+			// Use the price that's already shown in the UI with offset applied
 			FocusedFlip newFocus = FocusedFlip.forSell(
 				flip.getItemId(),
 				flip.getItemName(),
 				cachedSellPrice,
-				flip.getTotalQuantity()
+				flip.getTotalQuantity(),
+				priceOffset
 			);
 			updateFocus(newFocus, panel);
 		}
@@ -1869,12 +1881,13 @@ public class FlipFinderPanel extends PluginPanel
 				// Cache this price for future use
 				displayedSellPrices.put(flip.getItemId(), sellPrice);
 				
-				// Create focused flip for selling
+				// Create focused flip for selling with offset applied
 				FocusedFlip newFocus = FocusedFlip.forSell(
 					flip.getItemId(),
 					flip.getItemName(),
 					sellPrice,
-					flip.getTotalQuantity()
+					flip.getTotalQuantity(),
+					priceOffset
 				);
 				
 				SwingUtilities.invokeLater(() -> updateFocus(newFocus, panel));
@@ -1892,12 +1905,14 @@ public class FlipFinderPanel extends PluginPanel
 			? pending.recommendedSellPrice 
 			: (int)(pending.pricePerItem * 1.05); // Default 5% markup
 		
-		// Create focused flip for selling the filled items
+		// Create focused flip for selling the filled items with price offset applied
+		int priceOffset = config.priceOffset();
 		FocusedFlip newFocus = FocusedFlip.forSell(
 			pending.itemId,
 			pending.itemName,
 			sellPrice,
-			pending.quantityFilled > 0 ? pending.quantityFilled : pending.quantity
+			pending.quantityFilled > 0 ? pending.quantityFilled : pending.quantity,
+			priceOffset
 		);
 		
 		updateFocus(newFocus, panel);
@@ -2581,8 +2596,9 @@ public class FlipFinderPanel extends PluginPanel
 
 		if (result == JOptionPane.YES_OPTION)
 		{
-			// Dismiss asynchronously
-			apiClient.dismissActiveFlipAsync(flip.getItemId()).thenAccept(success ->
+			// Dismiss asynchronously with RSN filter for multi-account support
+			String rsn = plugin.getCurrentRsnSafe().orElse(null);
+			apiClient.dismissActiveFlipAsync(flip.getItemId(), rsn).thenAccept(success ->
 			{
 				SwingUtilities.invokeLater(() ->
 				{
