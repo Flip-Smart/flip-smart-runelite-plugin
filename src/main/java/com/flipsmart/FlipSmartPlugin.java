@@ -1629,6 +1629,18 @@ public class FlipSmartPlugin extends Plugin
 					.build());
 			}
 			
+			// When a SELL order is placed, mark the active flip as "selling" phase
+			// This updates the backend so the webapp shows the correct phase
+			if (!isBuy && totalQuantity > 0 && previousOffer == null)
+			{
+				log.info("Sell order placed for {} x{} - marking active flip as selling", itemName, totalQuantity);
+				String rsn = getCurrentRsnSafe().orElse(null);
+				if (rsn != null)
+				{
+					apiClient.markActiveFlipSellingAsync(itemId, rsn);
+				}
+			}
+			
 			// Refresh the flip finder panel when any new order is submitted
 			// This ensures sell orders show up immediately in active flips
 			if (previousOffer == null && flipFinderPanel != null)

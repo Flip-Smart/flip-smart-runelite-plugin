@@ -846,6 +846,34 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Mark an active flip as in the 'sell' phase.
+	 * Called when a sell order is placed for an item.
+	 *
+	 * @param itemId Item ID
+	 * @param rsn RuneScape Name
+	 * @return CompletableFuture with success status
+	 */
+	public CompletableFuture<Boolean> markActiveFlipSellingAsync(int itemId, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/transactions/active-flips/%d/mark-selling?rsn=%s", apiUrl, itemId, rsn);
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(RequestBody.create(JSON, ""));
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			log.info("Marked active flip for item {} as selling", itemId);
+			return true;
+		}).exceptionally(e ->
+		{
+			log.debug("Failed to mark active flip as selling: {}", e.getMessage());
+			return false;
+		});
+	}
+
+	/**
 	 * Fetch completed flips from the API asynchronously
 	 * @param limit Maximum number of flips to return
 	 * @param rsn Optional RSN to filter by (for multi-account support)
