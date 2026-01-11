@@ -274,6 +274,77 @@ public interface FlipSmartConfig extends Config
 	}
 
 	// ============================================
+	// Market Dumps Section
+	// ============================================
+	@ConfigSection(
+		name = "Market Dumps",
+		description = "Real-time alerts for sudden price drops in the Grand Exchange",
+		position = 4,
+		closedByDefault = false
+	)
+	String marketDumpsSection = "marketDumps";
+
+	@ConfigItem(
+		keyName = "enableDumpAlerts",
+		name = "Enable Dump Alerts",
+		description = "Show chat alerts when market dumps are detected (≥5% price drops with high volume)",
+		section = marketDumpsSection,
+		position = 0
+	)
+	default boolean enableDumpAlerts()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "dumpAlertMinProfit",
+		name = "Minimum Profit",
+		description = "Only alert for dumps with estimated profit above this amount (in GP)",
+		section = marketDumpsSection,
+		position = 1
+	)
+	default int dumpAlertMinProfit()
+	{
+		return 0;
+	}
+
+	@ConfigItem(
+		keyName = "dumpAlertInterval",
+		name = "Check Interval (seconds)",
+		description = "How often to check for new market dumps (30-300 seconds)",
+		section = marketDumpsSection,
+		position = 2
+	)
+	default int dumpAlertInterval()
+	{
+		return 60;
+	}
+
+	@ConfigItem(
+		keyName = "dumpAlertMaxCount",
+		name = "Max Alerts Per Check",
+		description = "Only show the top X most profitable dumps per check (1-50)",
+		section = marketDumpsSection,
+		position = 3
+	)
+	default int dumpAlertMaxCount()
+	{
+		return 5;
+	}
+
+	@ConfigItem(
+		keyName = "dumpAlertCooldownMinutes",
+		name = "Item Cooldown (minutes)",
+		description = "Don't re-alert for the same item within this many minutes (0-1440)",
+		section = marketDumpsSection,
+		position = 4
+	)
+	default int dumpAlertCooldownMinutes()
+	{
+		return 60;
+	}
+
+	// ============================================
 	// General Section
 	// ============================================
 	@ConfigSection(
