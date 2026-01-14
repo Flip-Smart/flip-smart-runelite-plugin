@@ -46,6 +46,12 @@ public class DumpEvent
 	private double priceDropPercent;
 
 	/**
+	 * Type of price change: "dump" (decrease) or "pump" (increase)
+	 */
+	@SerializedName("price_change_type")
+	private String priceChangeType;
+
+	/**
 	 * Current instant-sell price (buy price for players)
 	 */
 	@SerializedName("buy_price")
@@ -107,9 +113,15 @@ public class DumpEvent
 			? String.format("~%s", formatGP(estimatedProfit))
 			: "Unknown";
 
+		String eventType = "pump".equalsIgnoreCase(priceChangeType) ? "PUMP" : "DUMP";
+		String changeSymbol = "pump".equalsIgnoreCase(priceChangeType) ? "+" : "-";
+
 		return String.format(
-			"DUMP: %s - Buy: %s | Sell: %s | Limit: %s | Profit: %s",
+			"%s: %s (%s%.1f%%) - Buy: %s | Sell: %s | Limit: %s | Profit: %s",
+			eventType,
 			itemName,
+			changeSymbol,
+			priceDropPercent,
 			formatGP(buyPrice),
 			formatGP(sellPrice),
 			buyLimit != null ? String.format("%,d", buyLimit) : "Unknown",

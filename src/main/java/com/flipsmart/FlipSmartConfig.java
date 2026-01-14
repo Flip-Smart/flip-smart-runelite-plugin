@@ -286,8 +286,8 @@ public interface FlipSmartConfig extends Config
 
 	@ConfigItem(
 		keyName = "enableDumpAlerts",
-		name = "Enable Dump Alerts",
-		description = "Show chat alerts when market dumps are detected (≥5% price drops with high volume)",
+		name = "Enable Price Alerts",
+		description = "Show chat alerts when significant price changes are detected (≥5% price changes with high volume)",
 		section = marketDumpsSection,
 		position = 0
 	)
@@ -297,11 +297,23 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "dumpAlertMinProfit",
-		name = "Minimum Profit",
-		description = "Only alert for dumps with estimated profit above this amount (in GP)",
+		keyName = "priceAlertType",
+		name = "Alert Type",
+		description = "Type of price changes to alert: Dumps (decreases), Pumps (increases), or Both",
 		section = marketDumpsSection,
 		position = 1
+	)
+	default PriceAlertType priceAlertType()
+	{
+		return PriceAlertType.DUMPS_ONLY;
+	}
+
+	@ConfigItem(
+		keyName = "dumpAlertMinProfit",
+		name = "Minimum Profit",
+		description = "Only alert for price changes with estimated profit above this amount (in GP)",
+		section = marketDumpsSection,
+		position = 2
 	)
 	default int dumpAlertMinProfit()
 	{
@@ -311,9 +323,9 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "dumpAlertInterval",
 		name = "Check Interval (seconds)",
-		description = "How often to check for new market dumps (30-300 seconds)",
+		description = "How often to check for new price changes (30-300 seconds)",
 		section = marketDumpsSection,
-		position = 2
+		position = 3
 	)
 	default int dumpAlertInterval()
 	{
@@ -323,9 +335,9 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "dumpAlertMaxCount",
 		name = "Max Alerts Per Check",
-		description = "Only show the top X most profitable dumps per check (1-50)",
+		description = "Only show the top X most profitable price changes per check (1-50)",
 		section = marketDumpsSection,
-		position = 3
+		position = 4
 	)
 	default int dumpAlertMaxCount()
 	{
@@ -337,11 +349,23 @@ public interface FlipSmartConfig extends Config
 		name = "Item Cooldown (minutes)",
 		description = "Don't re-alert for the same item within this many minutes (0-1440)",
 		section = marketDumpsSection,
-		position = 4
+		position = 5
 	)
 	default int dumpAlertCooldownMinutes()
 	{
 		return 60;
+	}
+
+	@ConfigItem(
+		keyName = "dumpAlertSortByProfit",
+		name = "Sort by Profit",
+		description = "Sort alerts by estimated profit instead of recency (most recent first)",
+		section = marketDumpsSection,
+		position = 6
+	)
+	default boolean dumpAlertSortByProfit()
+	{
+		return false;
 	}
 
 	// ============================================
@@ -406,6 +430,29 @@ public interface FlipSmartConfig extends Config
 		private final String displayName;
 
 		ExchangeViewerSize(String displayName)
+		{
+			this.displayName = displayName;
+		}
+
+		@Override
+		public String toString()
+		{
+			return displayName;
+		}
+	}
+
+	// ============================================
+	// Price Alert Type Enum
+	// ============================================
+	enum PriceAlertType
+	{
+		DUMPS_ONLY("Dumps Only"),
+		PUMPS_ONLY("Pumps Only"),
+		BOTH("Both");
+
+		private final String displayName;
+
+		PriceAlertType(String displayName)
 		{
 			this.displayName = displayName;
 		}

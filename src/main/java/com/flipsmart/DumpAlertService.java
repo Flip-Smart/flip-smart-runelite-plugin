@@ -129,9 +129,11 @@ public class DumpAlertService
 		itemAlertCooldowns.entrySet().removeIf(entry ->
 			currentTime - entry.getValue() > cooldownMs);
 
-		// Request by profit sort to get the most profitable dumps first
+		// Sort by profit or recency based on config
+		String sortBy = config.dumpAlertSortByProfit() ? "profit" : "recency";
+
 		apiClient.getDumpsAsync(
-			"profit", // Sort by most profitable
+			sortBy,
 			minProfit,
 			50, // Fetch up to 50 recent dumps
 			dumps ->
@@ -144,6 +146,8 @@ public class DumpAlertService
 
 				log.debug("Received {} dumps from API", dumps.length);
 
+				FlipSmartConfig.PriceAlertType alertType = config.priceAlertType();
+
 				int alertCount = 0;
 				for (DumpEvent dump : dumps)
 				{
@@ -151,6 +155,23 @@ public class DumpAlertService
 					if (alertCount >= maxCount)
 					{
 						break;
+					}
+
+					// Filter by price change type based on config
+					String changeType = dump.getPriceChangeType();
+					boolean isDump = "dump".equalsIgnoreCase(changeType);
+					boolean isPump = "pump".equalsIgnoreCase(changeType);
+
+					// Skip if it doesn't match the configured alert type
+					if (alertType == FlipSmartConfig.PriceAlertType.DUMPS_ONLY && !isDump)
+					{
+						log.debug("Skipping {} - is a pump but alerts set to dumps only", dump.getItemName());
+						continue;
+					}
+					if (alertType == FlipSmartConfig.PriceAlertType.PUMPS_ONLY && !isPump)
+					{
+						log.debug("Skipping {} - is a dump but alerts set to pumps only", dump.getItemName());
+						continue;
 					}
 
 					int itemId = dump.getItemId();
