@@ -441,6 +441,12 @@ public class FlipSmartPlugin extends Plugin
 			clientToolbar.removeNavigation(flipFinderNavButton);
 		}
 		
+		// Shutdown flip finder panel (cleanup device auth polling, etc.)
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.shutdown();
+		}
+		
 		// Stop auto-refresh timer
 		stopFlipFinderRefreshTimer();
 		
@@ -1726,6 +1732,20 @@ public class FlipSmartPlugin extends Plugin
 			{
 				log.info("Flip Assist focus cleared");
 				flipAssistOverlay.clearFocus();
+			}
+		});
+		
+		// Connect auth success callback to sync RSN after Discord login
+		flipFinderPanel.setOnAuthSuccess(() -> {
+			// Sync RSN to API if we have one (player is logged in)
+			if (currentRsn != null && !currentRsn.isEmpty())
+			{
+				log.info("Auth success callback - syncing RSN: {}", currentRsn);
+				apiClient.updateRSN(currentRsn);
+			}
+			else
+			{
+				log.debug("Auth success callback - no RSN to sync yet");
 			}
 		});
 
