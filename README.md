@@ -6,7 +6,7 @@ A RuneLite plugin that helps you find profitable items to flip in the Grand Exch
 
 This plugin requires a **Flip Smart account** to use. You'll need to:
 
-1. Create an account on [Flip Smart](https://flipsm.art)
+1. Create an account on [Flip Smart](https://flipsmart.net)
 2. Log in through the plugin's **Flip Finder panel** in the RuneLite sidebar
 3. Your credentials are securely stored after login
 
@@ -205,7 +205,7 @@ Access settings via the RuneLite configuration panel (wrench icon) → "Flip Sma
 
 ## 🌐 Web Dashboard
 
-For advanced features beyond the plugin, visit [flipsm.art](https://flipsm.art):
+For advanced features beyond the plugin, visit [flipsmart.net](https://flipsmart.net):
 
 - **Detailed price graphs** with historical trends
 - **Portfolio analytics** across all your accounts
