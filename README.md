@@ -7,18 +7,14 @@ A RuneLite plugin that helps you find profitable items to flip in the Grand Exch
 This plugin requires a **Flip Smart account** to use. You'll need to:
 
 1. Create an account on [Flip Smart](https://flipsm.art)
-2. Configure your credentials in the plugin settings:
-   - Open RuneLite configuration (wrench icon)
-   - Find "Flip Smart" and configure
-   - Enter your **Email** and **Password**
+2. Log in through the plugin's **Flip Finder panel** in the RuneLite sidebar
+3. Your credentials are securely stored after login
 
 Without authentication, the plugin will not function.
 
 ## ✨ Features
 
 ### 📊 Flip Finder Panel
-
-![Flip Finder Panel](./images/flip-finder.png)
 
 A dedicated sidebar panel with three tabs to help you flip smarter:
 
@@ -47,15 +43,13 @@ A dedicated sidebar panel with three tabs to help you flip smarter:
 
 ### 📊 Exchange Viewer Overlay
 
-![Exchange Viewer Overlay](./images/offer-overlay.png)
-
 A real-time on-screen display that shows all your active GE offers at a glance:
 
 - **Live offer tracking**: See all 8 GE slots with their current status
 - **Progress bars**: Visual progress showing how much of each offer has filled
 - **Item details**: Item names, icons, quantities, and prices
 - **Buy/Sell indicators**: Color-coded to easily identify buy (green) vs sell (red) offers
-- **Multiple display sizes**: Choose between Full or Compact (mini) layouts
+- **Multiple display sizes**: Choose between Full or Compact layouts
 - **Auto-hide empty slots**: Only shows active offers for a clean interface
 - **Smart visibility**: Automatically hides when at the Grand Exchange, shows everywhere else
 
@@ -75,10 +69,10 @@ A floating step-by-step guide that walks you through the entire flip process:
 
 - **Visual progress tracker**: Horizontal step indicators showing your position in the flip journey
 - **Dynamic instructions**: Context-aware prompts that update based on your current GE state
-- **Hotkey hints**: See exactly when to press your Flip Assist hotkey for quantity and price
+- **Hotkey support**: Press your Auto-Fill hotkey to instantly set quantity and price
+- **GE widget highlighting**: Optional highlighting of buy/sell buttons and input fields
 - **Profit preview**: Live profit calculations before you even complete the flip
 - **Animated feedback**: Pulsing indicators draw attention to your current action
-- **Warm amber theme**: Distinctive UI that's easy to spot but doesn't clash with the game
 
 The assistant automatically detects:
 - When you're searching for an item (prompts to press Enter/hotkey)
@@ -113,30 +107,28 @@ All prices and calculations are based on live market data:
 
 ## ⚙️ Configuration
 
-Access settings by right-clicking "Flip Smart" in the plugin list:
-
-### Authentication
-- **Email**: Your Flip Smart account email (required)
-- **Password**: Your account password (required)
-- **API URL Override**: Optional - only set this to override the default production server (https://api.flipsm.art)
+Access settings via the RuneLite configuration panel (wrench icon) → "Flip Smart":
 
 ### Flip Finder
 - **Enable Flip Finder**: Toggle the sidebar panel on/off
-- **Flip Style**: Choose Conservative, Balanced, or Aggressive
 - **Number of Recommendations**: How many flips to show (1-50)
+- **Flip Style**: Choose Conservative, Balanced, or Aggressive
 - **Refresh Interval**: How often to update recommendations (1-60 minutes)
 - **Minimum Profit**: Only show items above this profit threshold
 
 ### Display
-- **Show Exchange Viewer**: Toggle the Grand Exchange offer overlay on/off (disabled by default, hides when at the GE area)
-- **Display Size**: Choose between Full or Compact (mini) layouts
+- **Show Exchange Viewer**: Toggle the GE offer overlay on/off (disabled by default, hides when at the GE area)
+- **Display Size**: Choose between Full or Compact layouts
 - **Show Item Names**: Display item names in the Exchange Viewer (Full mode only)
 - **Show Item Icons**: Display item icons in the Exchange Viewer
 - **Show Detailed Info**: Show quantity, price per item, and total value (Full mode only)
 
 ### Flip Assistant
 - **Enable Flip Assistant**: Toggle the guided workflow overlay on/off
+- **Auto-Fill Hotkey**: Hotkey to auto-fill price/quantity in GE (default: E)
+- **Highlight GE Buttons**: Highlight buy/sell buttons and input fields in the GE
 - **Show When GE Closed**: Keep the assistant visible even outside the Grand Exchange
+- **Price Offset (GP)**: Adjust buy/sell prices to fill faster (positive = buy higher, sell lower)
 
 ### General
 - **Track History**: Save flip history across sessions
@@ -144,8 +136,8 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 ## 🚀 Getting Started
 
 1. **Install the plugin** in RuneLite
-2. **Configure your credentials** in plugin settings (see Authentication section above)
-3. **Open the Flip Finder panel** from the RuneLite sidebar
+2. **Open the Flip Finder panel** from the RuneLite sidebar
+3. **Log in** with your Flip Smart account
 4. **Browse recommended flips** and choose items that fit your cash stack
 5. **Buy items in the GE** - they'll automatically appear in the "Active Flips" tab
 6. **Sell when ready** - completed flips move to the "Completed" tab
@@ -160,6 +152,7 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 - **Watch your cash**: The plugin considers your cash stack when recommending flips
 - **Refresh recommendations**: Click the refresh button to get updated market data
 - **Dismiss items**: Right-click active flips to remove items you no longer want to track
+- **Use Price Offset**: If offers aren't filling fast enough, set a small price offset (e.g., 1-5 GP) to improve fill rates
 
 ## 🎮 In-Game Usage
 
@@ -168,7 +161,7 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 3. **Click an item** to set it as your focus - the **Flip Assistant** will appear
 4. Go to the **Grand Exchange** - the assistant guides you through each step:
    - It auto-selects your item in the search
-   - Press your hotkey (default: E) when prompted to set quantity
+   - Press your Auto-Fill hotkey (default: E) when prompted to set quantity
    - Press hotkey again when prompted to set price
    - Click confirm to place your offer
 5. Close the GE interface and the **Exchange Viewer** will show your offers in real-time on screen
@@ -180,9 +173,9 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 ## 🛠️ Troubleshooting
 
 **Plugin shows "Failed to fetch recommendations"**
-- Check that your email and password are correct in settings
-- Verify the API URL is accessible and correct
-- Ensure you're logged into RuneLite
+- Check that you're logged in to Flip Smart
+- Ensure you're logged into RuneLite and OSRS
+- Try clicking the Refresh button
 
 **No recommendations showing up**
 - Make sure you have enough cash in your inventory
@@ -202,27 +195,13 @@ Access settings by right-clicking "Flip Smart" in the plugin list:
 - The overlay only shows when you have active GE offers (empty slots are hidden)
 - Try repositioning the overlay - it may be off-screen
 
-## 🛠️ Development
+**Orders not filling quickly**
+- Try increasing the "Price Offset" setting in Flip Assistant configuration
+- This will automatically adjust your buy/sell prices to fill faster
 
-To run the plugin locally for development/testing:
+## 📸 Screenshots
 
-```bash
-JAVA_HOME=~/Library/Java/JavaVirtualMachines/ms-21.0.9/Contents/Home ./gradlew runClient
-```
-
-This launches RuneLite with the Flip Smart plugin loaded for testing.
-
-## 📝 License
-
-BSD 2-Clause License
-
-## 🙏 Credits
-
-Built with the [RuneLite Plugin Template](https://github.com/runelite/example-plugin)
-
-Inspired by excellent RuneLite flipping plugins:
-- [Flipping Utilities](https://github.com/Belieal/flipping-utilities) - Comprehensive GE flipping tracker
-- [Flipping Co-pilot](https://github.com/cbrewitt/flipping-copilot) - AI-powered flip recommendations
+*Screenshots coming soon*
 
 ---
 
