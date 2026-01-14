@@ -28,6 +28,9 @@ A dedicated sidebar panel with three tabs to help you flip smarter:
   - Liquidity and risk ratings
 - Click any item to see more details
 
+<img width="247" height="806" alt="Screenshot 2026-01-13 at 11 47 30 PM" src="https://github.com/user-attachments/assets/b157f443-936f-4b7e-843f-6a8ec63e1c2a" />
+
+
 #### **Active Flips**
 - Automatically tracks items you've bought and are holding
 - Shows current profit potential with live market prices
@@ -35,13 +38,20 @@ A dedicated sidebar panel with three tabs to help you flip smarter:
 - See pending GE buy orders that haven't filled yet
 - Right-click to dismiss flips you no longer want to track
 
+<img width="249" height="701" alt="Screenshot 2026-01-13 at 11 46 35 PM" src="https://github.com/user-attachments/assets/2f5778da-1cbe-406a-a8e1-4f42e7817e50" />
+
+
 #### **Completed Flips**
 - View your completed flip history
 - See profit/loss for each completed flip
 - Track your flipping performance over time
 - Click to expand and see flip duration and GE tax paid
+  
+<img width="234" height="656" alt="Screenshot 2026-01-13 at 11 47 54 PM" src="https://github.com/user-attachments/assets/2abdf570-1d18-4acc-a82c-7d32d959c1f4" />
+
 
 ### 📊 Exchange Viewer Overlay
+
 
 A real-time on-screen display that shows all your active GE offers at a glance:
 
@@ -81,6 +91,8 @@ The assistant automatically detects:
 - When you need to confirm the offer
 
 Perfect for learning the flip workflow or staying focused during multi-item flips!
+
+<img width="245" height="195" alt="Screenshot 2026-01-13 at 11 49 32 PM" src="https://github.com/user-attachments/assets/8aafc3a2-85b4-46bb-ad7f-267e43551379" />
 
 ### 💰 Smart Recommendations
 
@@ -198,10 +210,6 @@ Access settings via the RuneLite configuration panel (wrench icon) → "Flip Sma
 **Orders not filling quickly**
 - Try increasing the "Price Offset" setting in Flip Assistant configuration
 - This will automatically adjust your buy/sell prices to fill faster
-
-## 📸 Screenshots
-
-*Screenshots coming soon*
 
 ## 🌐 Web Dashboard
 
