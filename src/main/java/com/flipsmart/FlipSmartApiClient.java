@@ -20,6 +20,7 @@ public class FlipSmartApiClient
 {
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
+	private static final String ACCESS_TOKEN_KEY = "access_token";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -266,7 +267,7 @@ public class FlipSmartApiClient
 					
 					synchronized (authLock)
 					{
-						jwtToken = tokenResponse.get("access_token").getAsString();
+						jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
 						// JWT tokens from this API expire in 7 days, but we'll check earlier
 						// Set expiry to 6 days to refresh before actual expiry
 						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
@@ -377,7 +378,7 @@ public class FlipSmartApiClient
 					
 					synchronized (authLock)
 					{
-						jwtToken = tokenResponse.get("access_token").getAsString();
+						jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
 						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
 					}
 					
@@ -430,6 +431,216 @@ public class FlipSmartApiClient
 			jwtToken = null;
 			tokenExpiry = 0;
 		}
+	}
+	
+	// ============================================================================
+	// Device Authorization Flow (Discord Login for Desktop Plugin)
+	// ============================================================================
+	
+	/**
+	 * Response from starting device authorization
+	 */
+	public static class DeviceAuthResponse
+	{
+		private String deviceCode;
+		private String userCode;
+		private String verificationUrl;
+		private int expiresIn;
+		private int pollInterval;
+		
+		/** Default constructor required for Gson deserialization */
+		public DeviceAuthResponse() { }
+		
+		public String getDeviceCode() { return deviceCode; }
+		public void setDeviceCode(String deviceCode) { this.deviceCode = deviceCode; }
+		
+		public String getUserCode() { return userCode; }
+		public void setUserCode(String userCode) { this.userCode = userCode; }
+		
+		public String getVerificationUrl() { return verificationUrl; }
+		public void setVerificationUrl(String verificationUrl) { this.verificationUrl = verificationUrl; }
+		
+		public int getExpiresIn() { return expiresIn; }
+		public void setExpiresIn(int expiresIn) { this.expiresIn = expiresIn; }
+		
+		public int getPollInterval() { return pollInterval; }
+		public void setPollInterval(int pollInterval) { this.pollInterval = pollInterval; }
+	}
+	
+	/**
+	 * Response from polling device authorization status
+	 */
+	public static class DeviceStatusResponse
+	{
+		private String status;  // pending, authorized, expired
+		private String accessToken;
+		private String tokenType;
+		
+		/** Default constructor required for Gson deserialization */
+		public DeviceStatusResponse() { }
+		
+		public String getStatus() { return status; }
+		public void setStatus(String status) { this.status = status; }
+		
+		public String getAccessToken() { return accessToken; }
+		public void setAccessToken(String accessToken) { this.accessToken = accessToken; }
+		
+		public String getTokenType() { return tokenType; }
+		public void setTokenType(String tokenType) { this.tokenType = tokenType; }
+	}
+	
+	/**
+	 * Start the device authorization flow for Discord login.
+	 * Returns a device code and verification URL that the user should open in their browser.
+	 * 
+	 * @return CompletableFuture with DeviceAuthResponse containing device_code and verification_url
+	 */
+	public CompletableFuture<DeviceAuthResponse> startDeviceAuthAsync()
+	{
+		CompletableFuture<DeviceAuthResponse> future = new CompletableFuture<>();
+		
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/auth/device/start", apiUrl);
+		
+		Request request = new Request.Builder()
+			.url(url)
+			.post(RequestBody.create(JSON, ""))
+			.build();
+		
+		httpClient.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.error("Failed to start device auth: {}", e.getMessage());
+				future.complete(null);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException
+			{
+				try (response)
+				{
+					if (!response.isSuccessful())
+					{
+						log.error("Device auth start failed: {}", response.code());
+						future.complete(null);
+						return;
+					}
+					
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
+					JsonObject json = gson.fromJson(jsonData, JsonObject.class);
+					
+					DeviceAuthResponse authResponse = new DeviceAuthResponse();
+					authResponse.deviceCode = json.get("device_code").getAsString();
+					authResponse.userCode = json.get("user_code").getAsString();
+					authResponse.verificationUrl = json.get("verification_url").getAsString();
+					authResponse.expiresIn = json.get("expires_in").getAsInt();
+					authResponse.pollInterval = json.get("poll_interval").getAsInt();
+					
+					log.info("Device auth started, verification URL: {}", authResponse.verificationUrl);
+					future.complete(authResponse);
+				}
+				catch (Exception e)
+				{
+					log.error("Error parsing device auth response: {}", e.getMessage());
+					future.complete(null);
+				}
+			}
+		});
+		
+		return future;
+	}
+	
+	/**
+	 * Poll the device authorization status to check if the user has completed Discord OAuth.
+	 * 
+	 * @param deviceCode The device code from startDeviceAuthAsync
+	 * @return CompletableFuture with DeviceStatusResponse
+	 */
+	public CompletableFuture<DeviceStatusResponse> pollDeviceStatusAsync(String deviceCode)
+	{
+		CompletableFuture<DeviceStatusResponse> future = new CompletableFuture<>();
+		
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/auth/device/status?code=%s", apiUrl, deviceCode);
+		
+		Request request = new Request.Builder()
+			.url(url)
+			.get()
+			.build();
+		
+		httpClient.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.debug("Device status poll failed: {}", e.getMessage());
+				future.complete(null);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException
+			{
+				try (response)
+				{
+					if (response.code() == 404)
+					{
+						// Device code not found - treat as expired
+						DeviceStatusResponse statusResponse = new DeviceStatusResponse();
+						statusResponse.status = "expired";
+						future.complete(statusResponse);
+						return;
+					}
+					
+					if (!response.isSuccessful())
+					{
+						log.debug("Device status poll error: {}", response.code());
+						future.complete(null);
+						return;
+					}
+					
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
+					JsonObject json = gson.fromJson(jsonData, JsonObject.class);
+					
+					DeviceStatusResponse statusResponse = new DeviceStatusResponse();
+					statusResponse.setStatus(json.get("status").getAsString());
+					
+					if ("authorized".equals(statusResponse.getStatus()) && json.has(ACCESS_TOKEN_KEY))
+					{
+						statusResponse.setAccessToken(json.get(ACCESS_TOKEN_KEY).getAsString());
+						statusResponse.setTokenType(json.has("token_type") 
+							? json.get("token_type").getAsString() : "bearer");
+					}
+					
+					future.complete(statusResponse);
+				}
+				catch (Exception e)
+				{
+					log.error("Error parsing device status response: {}", e.getMessage());
+					future.complete(null);
+				}
+			}
+		});
+		
+		return future;
+	}
+	
+	/**
+	 * Set the JWT token directly (used when receiving token from device auth flow)
+	 * @param token The JWT access token
+	 */
+	public void setAuthToken(String token)
+	{
+		synchronized (authLock)
+		{
+			this.jwtToken = token;
+			// JWT tokens from this API expire in 7 days, but we'll check earlier
+			this.tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
+		}
+		log.info("Successfully authenticated via Discord");
 	}
 	
 	/**
