@@ -203,6 +203,29 @@ Access settings via the RuneLite configuration panel (wrench icon) → "Flip Sma
 
 *Screenshots coming soon*
 
+## 🌐 Web Dashboard
+
+For advanced features beyond the plugin, visit [flipsm.art](https://flipsm.art):
+
+- **Detailed price graphs** with historical trends
+- **Portfolio analytics** across all your accounts
+- **Market insights** and sector performance
+- **Extended flip history** with advanced filtering
+
+Your plugin data syncs automatically with the web dashboard.
+
+## 📝 License
+
+BSD 2-Clause License
+
+## 🙏 Credits
+
+Built with the [RuneLite Plugin Template](https://github.com/runelite/example-plugin)
+
+Inspired by excellent RuneLite flipping plugins:
+- [Flipping Utilities](https://github.com/Belieal/flipping-utilities) - Comprehensive GE flipping tracker
+- [Flipping Co-pilot](https://github.com/cbrewitt/flipping-copilot) - AI-powered flip recommendations
+
 ---
 
 **Happy flipping!** 🎉
