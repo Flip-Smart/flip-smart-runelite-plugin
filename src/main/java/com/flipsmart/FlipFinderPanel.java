@@ -13,12 +13,17 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class FlipFinderPanel extends PluginPanel
@@ -103,7 +108,16 @@ public class FlipFinderPanel extends PluginPanel
 	private JLabel loginStatusLabel;
 	private JButton loginButton;
 	private JButton signupButton;
+	private JButton discordButton;
 	private boolean isAuthenticated = false;
+	
+	// Discord device auth polling
+	private ScheduledExecutorService deviceAuthScheduler;
+	private ScheduledFuture<?> deviceAuthPollTask;
+	private volatile String currentDeviceCode;
+	
+	// Callback for when authentication completes (to sync RSN)
+	private transient Runnable onAuthSuccess;
 	
 	// Flip Assist focus tracking
 	private transient FocusedFlip currentFocus = null;
@@ -224,7 +238,7 @@ public class FlipFinderPanel extends PluginPanel
 		loginStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 
-		// Buttons panel
+		// Buttons panel for Login/Sign Up
 		JPanel buttonsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
 		buttonsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		buttonsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
@@ -252,6 +266,27 @@ public class FlipFinderPanel extends PluginPanel
 
 		buttonsPanel.add(signupButton);
 		buttonsPanel.add(loginButton);
+		
+		// Divider
+		JPanel dividerPanel = new JPanel(new BorderLayout());
+		dividerPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		dividerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+		
+		JLabel orLabel = new JLabel("OR", SwingConstants.CENTER);
+		orLabel.setForeground(Color.GRAY);
+		orLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		dividerPanel.add(orLabel, BorderLayout.CENTER);
+		
+		// Discord login button (with Discord purple color)
+		discordButton = new JButton("Login with Discord");
+		discordButton.setBackground(new Color(88, 101, 242)); // Discord blurple
+		discordButton.setForeground(Color.WHITE);
+		discordButton.setFocusPainted(false);
+		discordButton.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
+		discordButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		discordButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+		discordButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+		discordButton.addActionListener(e -> handleDiscordLogin());
 
 		// Add components with spacing
 		contentPanel.add(titleLabel);
@@ -267,6 +302,10 @@ public class FlipFinderPanel extends PluginPanel
 		contentPanel.add(passwordField);
 		contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
 		contentPanel.add(buttonsPanel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+		contentPanel.add(dividerPanel);
+		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
+		contentPanel.add(discordButton);
 		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
 		contentPanel.add(loginStatusLabel);
 
@@ -509,7 +548,7 @@ public class FlipFinderPanel extends PluginPanel
 				SwingUtilities.invokeLater(() -> {
 					if (result.success)
 					{
-						showMainPanel();
+						onAuthenticationSuccess(null, false);
 					}
 					else
 					{
@@ -549,12 +588,7 @@ public class FlipFinderPanel extends PluginPanel
 				{
 					// Save credentials for next session
 					saveCredentials(email, password);
-					
-					showLoginStatus(result.message, true);
-					// Small delay to show success message
-					Timer timer = new Timer(500, e -> showMainPanel());
-					timer.setRepeats(false);
-					timer.start();
+					onAuthenticationSuccess(result.message, true);
 				}
 				else
 				{
@@ -591,12 +625,7 @@ public class FlipFinderPanel extends PluginPanel
 				{
 					// Save credentials for next session
 					saveCredentials(email, password);
-					
-					showLoginStatus(result.message, true);
-					// Small delay to show success message
-					Timer timer = new Timer(500, e -> showMainPanel());
-					timer.setRepeats(false);
-					timer.start();
+					onAuthenticationSuccess(result.message, true);
 				}
 				else
 				{
@@ -631,8 +660,156 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		loginButton.setEnabled(enabled);
 		signupButton.setEnabled(enabled);
+		discordButton.setEnabled(enabled);
 		emailField.setEnabled(enabled);
 		passwordField.setEnabled(enabled);
+	}
+	
+	/**
+	 * Handle Discord login button click
+	 */
+	private void handleDiscordLogin()
+	{
+		setLoginButtonsEnabled(false);
+		showLoginStatus("Starting Discord login...", true);
+		
+		// Start device auth flow
+		apiClient.startDeviceAuthAsync().thenAccept(response ->
+		{
+			if (response == null)
+			{
+				SwingUtilities.invokeLater(() ->
+				{
+					setLoginButtonsEnabled(true);
+					showLoginStatus("Failed to start Discord login", false);
+				});
+				return;
+			}
+			
+			// Store device code for polling
+			currentDeviceCode = response.getDeviceCode();
+			
+			// Open browser with verification URL
+			try
+			{
+				Desktop.getDesktop().browse(new URI(response.getVerificationUrl()));
+				
+				SwingUtilities.invokeLater(() ->
+					showLoginStatus("Complete login in your browser...", true));
+				
+				// Start polling for completion
+				startDeviceAuthPolling(response.getDeviceCode(), response.getPollInterval(), response.getExpiresIn());
+			}
+			catch (Exception e)
+			{
+				log.error("Failed to open browser: {}", e.getMessage());
+				SwingUtilities.invokeLater(() ->
+				{
+					setLoginButtonsEnabled(true);
+					showLoginStatus("Failed to open browser", false);
+				});
+			}
+		});
+	}
+	
+	/**
+	 * Start polling for device authorization completion
+	 */
+	private void startDeviceAuthPolling(String deviceCode, int pollIntervalSeconds, int expiresInSeconds)
+	{
+		// Cancel any existing poll task
+		stopDeviceAuthPolling();
+		
+		// Create scheduler if needed
+		if (deviceAuthScheduler == null || deviceAuthScheduler.isShutdown())
+		{
+			deviceAuthScheduler = Executors.newSingleThreadScheduledExecutor();
+		}
+		
+		// Calculate max poll attempts based on expiry time
+		int maxAttempts = expiresInSeconds / pollIntervalSeconds;
+		final int[] attempts = {0};
+		
+		deviceAuthPollTask = deviceAuthScheduler.scheduleAtFixedRate(() ->
+		{
+			attempts[0]++;
+			
+			// Check if we've exceeded max attempts
+			if (attempts[0] > maxAttempts)
+			{
+				stopDeviceAuthPolling();
+				SwingUtilities.invokeLater(() ->
+				{
+					setLoginButtonsEnabled(true);
+					showLoginStatus("Discord login timed out", false);
+				});
+				return;
+			}
+			
+			// Poll status
+			apiClient.pollDeviceStatusAsync(deviceCode).thenAccept(status ->
+			{
+				if (status == null)
+				{
+					return; // Network error, will retry
+				}
+				
+				switch (status.getStatus())
+				{
+					case "authorized":
+						// Success! Set the token and switch to main panel
+						stopDeviceAuthPolling();
+						apiClient.setAuthToken(status.getAccessToken());
+						SwingUtilities.invokeLater(() ->
+							onAuthenticationSuccess("Login successful!", true));
+						break;
+						
+					case "expired":
+						// Device code expired
+						stopDeviceAuthPolling();
+						SwingUtilities.invokeLater(() ->
+						{
+							setLoginButtonsEnabled(true);
+							showLoginStatus("Discord login expired. Try again.", false);
+						});
+						break;
+						
+					case "pending":
+						// Still waiting - continue polling
+						break;
+						
+					default:
+						log.warn("Unknown device status: {}", status.getStatus());
+						break;
+				}
+			});
+		}, pollIntervalSeconds, pollIntervalSeconds, TimeUnit.SECONDS);
+	}
+	
+	/**
+	 * Stop device auth polling
+	 */
+	private void stopDeviceAuthPolling()
+	{
+		if (deviceAuthPollTask != null)
+		{
+			deviceAuthPollTask.cancel(false);
+			deviceAuthPollTask = null;
+		}
+		currentDeviceCode = null;
+	}
+	
+	/**
+	 * Clean up resources when panel is destroyed
+	 */
+	public void shutdown()
+	{
+		stopDeviceAuthPolling();
+		if (deviceAuthScheduler != null)
+		{
+			deviceAuthScheduler.shutdownNow();
+			deviceAuthScheduler = null;
+		}
 	}
 
 	/**
@@ -656,10 +833,38 @@ public class FlipFinderPanel extends PluginPanel
 	public void showLoginPanel()
 	{
 		isAuthenticated = false;
+		// Stop any pending device auth polling
+		stopDeviceAuthPolling();
+		// Re-enable all login buttons
+		setLoginButtonsEnabled(true);
 		removeAll();
 		add(loginPanel, BorderLayout.CENTER);
 		revalidate();
 		repaint();
+	}
+
+	/**
+	 * Handle successful authentication - notify plugin and transition to main panel.
+	 * @param successMessage message to display, or null to skip showing message
+	 * @param showDelay if true, show message briefly before transitioning
+	 */
+	private void onAuthenticationSuccess(String successMessage, boolean showDelay)
+	{
+		if (onAuthSuccess != null)
+		{
+			onAuthSuccess.run();
+		}
+		if (showDelay && successMessage != null)
+		{
+			showLoginStatus(successMessage, true);
+			Timer timer = new Timer(500, e -> showMainPanel());
+			timer.setRepeats(false);
+			timer.start();
+		}
+		else
+		{
+			showMainPanel();
+		}
 	}
 
 	/**
@@ -1811,6 +2016,15 @@ public class FlipFinderPanel extends PluginPanel
 	public void setOnFocusChanged(java.util.function.Consumer<FocusedFlip> callback)
 	{
 		this.onFocusChanged = callback;
+	}
+	
+	/**
+	 * Set the callback for when authentication succeeds.
+	 * This allows the plugin to sync RSN after Discord login.
+	 */
+	public void setOnAuthSuccess(Runnable callback)
+	{
+		this.onAuthSuccess = callback;
 	}
 	
 	/**
