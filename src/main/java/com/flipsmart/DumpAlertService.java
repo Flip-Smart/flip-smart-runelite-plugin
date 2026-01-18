@@ -3,6 +3,7 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.client.chat.ChatColorType;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
@@ -12,8 +13,10 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Service for polling market dumps and posting chat alerts
@@ -30,7 +33,8 @@ public class DumpAlertService
 	// Track when we last alerted for each item (itemId -> timestamp)
 	private final Map<Integer, Long> itemAlertCooldowns = new HashMap<>();
 
-	private Timer pollingTimer;
+	private ScheduledExecutorService executor;
+	private ScheduledFuture<?> pollingTask;
 
 	@Inject
 	public DumpAlertService(
@@ -61,27 +65,25 @@ public class DumpAlertService
 		stop();
 
 		int intervalSeconds = Math.max(30, Math.min(300, config.dumpAlertInterval()));
-		long intervalMs = intervalSeconds * 1000L;
 
 		log.info("Starting dump alert service with {}s interval", intervalSeconds);
 
-		pollingTimer = new Timer("DumpAlertTimer", true);
-
-		pollingTimer.scheduleAtFixedRate(new TimerTask()
+		if (executor == null || executor.isShutdown())
 		{
-			@Override
-			public void run()
+			executor = Executors.newSingleThreadScheduledExecutor();
+		}
+
+		pollingTask = executor.scheduleAtFixedRate(() ->
+		{
+			try
 			{
-				try
-				{
-					checkForDumps();
-				}
-				catch (Exception e)
-				{
-					log.error("Error checking for dumps", e);
-				}
+				checkForDumps();
 			}
-		}, 5000, intervalMs); // 5 second initial delay
+			catch (Exception e)
+			{
+				log.error("Error checking for dumps", e);
+			}
+		}, 5, intervalSeconds, TimeUnit.SECONDS);
 	}
 
 	/**
@@ -89,11 +91,16 @@ public class DumpAlertService
 	 */
 	public void stop()
 	{
-		if (pollingTimer != null)
+		if (pollingTask != null)
 		{
 			log.info("Stopping dump alert service");
-			pollingTimer.cancel();
-			pollingTimer = null;
+			pollingTask.cancel(false);
+			pollingTask = null;
+		}
+		if (executor != null)
+		{
+			executor.shutdownNow();
+			executor = null;
 		}
 	}
 
@@ -111,7 +118,7 @@ public class DumpAlertService
 	 */
 	private void checkForDumps()
 	{
-		if (!config.enableDumpAlerts() || client.getGameState() == null)
+		if (!config.enableDumpAlerts() || client.getGameState() != GameState.LOGGED_IN)
 		{
 			return;
 		}
