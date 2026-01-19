@@ -1119,6 +1119,85 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Response wrapper for dumps API
+	 */
+	public static class DumpsResponse
+	{
+		public DumpEvent[] dumps;
+		public int count;
+		public String sort_by;
+	}
+
+	/**
+	 * Fetch market dumps from the API asynchronously
+	 *
+	 * @param sortBy Sort order: "recency" or "profit"
+	 * @param minProfit Minimum profit threshold (0 for all)
+	 * @param limit Maximum number of dumps to return
+	 * @param onSuccess Callback with dumps array
+	 * @param onError Callback for error messages
+	 */
+	public void getDumpsAsync(String sortBy, int minProfit, int limit,
+	                          Consumer<DumpEvent[]> onSuccess,
+	                          Consumer<String> onError)
+	{
+		ensureAuthenticatedAsync().thenAccept(authSuccess ->
+		{
+			if (!authSuccess)
+			{
+				if (onError != null)
+				{
+					onError.accept("Authentication required");
+				}
+				return;
+			}
+
+			// Build query parameters
+			HttpUrl.Builder urlBuilder = HttpUrl.parse(getApiUrl() + "/dumps").newBuilder();
+			if (sortBy != null && !sortBy.isEmpty())
+			{
+				urlBuilder.addQueryParameter("sort_by", sortBy);
+			}
+			if (minProfit > 0)
+			{
+				urlBuilder.addQueryParameter("min_profit", String.valueOf(minProfit));
+			}
+			if (limit > 0)
+			{
+				urlBuilder.addQueryParameter("limit", String.valueOf(limit));
+			}
+
+			Request request = new Request.Builder()
+				.url(urlBuilder.build())
+				.header("Authorization", "Bearer " + jwtToken)
+				.get()
+				.build();
+
+			executeAsync(request,
+				body ->
+				{
+					DumpsResponse response = gson.fromJson(body, DumpsResponse.class);
+					if (onSuccess != null)
+					{
+						onSuccess.accept(response != null ? response.dumps : new DumpEvent[0]);
+					}
+					return null;
+				},
+				onError,
+				true // Retry on 401
+			);
+		});
+	}
+
+	/**
+	 * Fetch market dumps with default parameters (recency sort, no min profit, limit 50)
+	 */
+	public void getDumpsAsync(Consumer<DumpEvent[]> onSuccess, Consumer<String> onError)
+	{
+		getDumpsAsync("recency", 0, 50, onSuccess, onError);
+	}
+
+	/**
 	 * Clear the analysis cache
 	 */
 	public void clearCache()
