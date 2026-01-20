@@ -7,13 +7,13 @@ import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.ui.components.PluginErrorPanel;
 import net.runelite.client.util.AsyncBufferedImage;
+import net.runelite.client.util.LinkBrowser;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.net.URI;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -689,26 +689,15 @@ public class FlipFinderPanel extends PluginPanel
 			// Store device code for polling
 			currentDeviceCode = response.getDeviceCode();
 			
-			// Open browser with verification URL
-			try
-			{
-				Desktop.getDesktop().browse(new URI(response.getVerificationUrl()));
-				
-				SwingUtilities.invokeLater(() ->
-					showLoginStatus("Complete login in your browser...", true));
-				
-				// Start polling for completion
-				startDeviceAuthPolling(response.getDeviceCode(), response.getPollInterval(), response.getExpiresIn());
-			}
-			catch (Exception e)
-			{
-				log.error("Failed to open browser: {}", e.getMessage());
-				SwingUtilities.invokeLater(() ->
-				{
-					setLoginButtonsEnabled(true);
-					showLoginStatus("Failed to open browser", false);
-				});
-			}
+			// Open browser with verification URL using RuneLite's LinkBrowser
+            // which properly handles sandboxed environments (Flatpak, etc.)
+            LinkBrowser.browse(response.getVerificationUrl());
+
+        	SwingUtilities.invokeLater(() ->
+            	showLoginStatus("Complete login in your browser...", true));
+
+		   // Start polling for completion
+		   startDeviceAuthPolling(response.getDeviceCode(), response.getPollInterval(), response.getExpiresIn());
 		});
 	}
 	
