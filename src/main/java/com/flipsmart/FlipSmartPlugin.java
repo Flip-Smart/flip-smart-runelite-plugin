@@ -86,6 +86,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private Gson gson;
 
+	@Inject
+	private DumpAlertService dumpAlertService;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -406,7 +409,10 @@ public class FlipSmartPlugin extends Plugin
 
 		// Start auto-refresh timer for flip finder
 		startFlipFinderRefreshTimer();
-		
+
+		// Start dump alert service
+		dumpAlertService.start();
+
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
 	}
@@ -449,7 +455,10 @@ public class FlipSmartPlugin extends Plugin
 		
 		// Stop auto-refresh timer
 		stopFlipFinderRefreshTimer();
-		
+
+		// Stop dump alert service
+		dumpAlertService.stop();
+
 		// Clear API client cache
 		apiClient.clearCache();
 	}
