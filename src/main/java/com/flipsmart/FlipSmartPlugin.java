@@ -123,6 +123,10 @@ public class FlipSmartPlugin extends Plugin
 	@Getter
 	private String currentRsn = null;
 	
+	// Track if player is logged into RuneScape (not our API, but the game itself)
+	@Getter
+	private boolean loggedIntoRunescape = false;
+	
 	// Track items collected from GE in current session (waiting to be sold)
 	// These should show as active flips even though they're no longer in GE slots
 	private final java.util.Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
@@ -477,15 +481,23 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Login state change detected, setting lastLoginTick to {}", lastLoginTick);
 		}
 		
-		// Persist offer state when logging out
+		// Persist offer state when logging out and show "log in to game" message
 		if (gameState == GameState.LOGIN_SCREEN)
 		{
+			loggedIntoRunescape = false;
 			persistOfferState();
+			
+			// Update panel to show logged out state (saves API requests while at login screen)
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
+			}
 		}
 		
 		if (gameState == GameState.LOGGED_IN)
 		{
 			log.info("Player logged in");
+			loggedIntoRunescape = true;
 			syncRSN();
 			updateCashStack();
 			
@@ -1869,6 +1881,14 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			public void run()
 			{
+				// Skip API calls if player is not logged into RuneScape
+				// This saves API requests and battery when at the login screen
+				if (!loggedIntoRunescape)
+				{
+					log.debug("Skipping auto-refresh - player not logged into RuneScape");
+					return;
+				}
+				
 				if (flipFinderPanel != null && config.showFlipFinder())
 				{
 					javax.swing.SwingUtilities.invokeLater(() ->
