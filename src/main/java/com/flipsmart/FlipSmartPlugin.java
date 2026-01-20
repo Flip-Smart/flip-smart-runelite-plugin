@@ -1261,14 +1261,14 @@ public class FlipSmartPlugin extends Plugin
 		// Handle bank container changes (bank opened/updated)
 		if (containerId == InventoryID.BANK.getId())
 		{
-			onBankContainerChanged(event);
+			onBankContainerChanged();
 		}
 	}
 	
 	/**
 	 * Handle bank container changes - attempt to capture snapshot when bank is opened.
 	 */
-	private void onBankContainerChanged(ItemContainerChanged event)
+	private void onBankContainerChanged()
 	{
 		// Don't attempt if snapshot is already in progress
 		if (bankSnapshotInProgress)
@@ -1334,63 +1334,10 @@ public class FlipSmartPlugin extends Plugin
 	{
 		try
 		{
-			ItemContainer bank = client.getItemContainer(InventoryID.BANK);
-			if (bank == null)
-			{
-				log.debug("Bank container is null - bank may have been closed");
-				bankSnapshotInProgress = false;
-				return;
-			}
+			java.util.List<FlipSmartApiClient.BankItem> items = collectTradeableBankItems();
 			
-			Item[] bankItems = bank.getItems();
-			if (bankItems == null || bankItems.length == 0)
+			if (items == null || items.isEmpty())
 			{
-				log.debug("Bank is empty");
-				bankSnapshotInProgress = false;
-				return;
-			}
-			
-			java.util.List<FlipSmartApiClient.BankItem> items = new java.util.ArrayList<>();
-			
-			for (Item item : bankItems)
-			{
-				int itemId = item.getId();
-				int quantity = item.getQuantity();
-				
-				// Skip empty slots and placeholder items
-				if (itemId <= 0 || quantity <= 0)
-				{
-					continue;
-				}
-				
-				// Get item composition to check if tradeable
-				ItemComposition comp = itemManager.getItemComposition(itemId);
-				if (comp == null)
-				{
-					continue;
-				}
-				
-				// Skip untradeable items (they have no GE value)
-				// Note: isTradeable() returns false for items that can't be traded on GE
-				if (!comp.isTradeable())
-				{
-					continue;
-				}
-				
-				// Get GE price - itemManager uses cached wiki prices
-				int gePrice = itemManager.getItemPrice(itemId);
-				if (gePrice <= 0)
-				{
-					// Some items may not have a price, skip them
-					continue;
-				}
-				
-				items.add(new FlipSmartApiClient.BankItem(itemId, quantity, gePrice));
-			}
-			
-			if (items.isEmpty())
-			{
-				log.debug("No tradeable items with prices found in bank");
 				bankSnapshotInProgress = false;
 				return;
 			}
@@ -1422,6 +1369,77 @@ public class FlipSmartPlugin extends Plugin
 			log.error("Error capturing bank snapshot: {}", e.getMessage());
 			bankSnapshotInProgress = false;
 		}
+	}
+	
+	/**
+	 * Collect all tradeable items from the bank with their GE prices.
+	 * @return List of bank items, or null if bank is unavailable/empty
+	 */
+	private java.util.List<FlipSmartApiClient.BankItem> collectTradeableBankItems()
+	{
+		ItemContainer bank = client.getItemContainer(InventoryID.BANK);
+		if (bank == null)
+		{
+			log.debug("Bank container is null - bank may have been closed");
+			return null;
+		}
+		
+		Item[] bankItems = bank.getItems();
+		if (bankItems == null || bankItems.length == 0)
+		{
+			log.debug("Bank is empty");
+			return null;
+		}
+		
+		java.util.List<FlipSmartApiClient.BankItem> items = new java.util.ArrayList<>();
+		
+		for (Item item : bankItems)
+		{
+			FlipSmartApiClient.BankItem bankItem = toTradeableBankItem(item);
+			if (bankItem != null)
+			{
+				items.add(bankItem);
+			}
+		}
+		
+		if (items.isEmpty())
+		{
+			log.debug("No tradeable items with prices found in bank");
+		}
+		
+		return items;
+	}
+	
+	/**
+	 * Convert a bank item to a BankItem if it's tradeable and has a price.
+	 * @return BankItem or null if item should be skipped
+	 */
+	private FlipSmartApiClient.BankItem toTradeableBankItem(Item item)
+	{
+		int itemId = item.getId();
+		int quantity = item.getQuantity();
+		
+		// Skip empty slots and placeholder items
+		if (itemId <= 0 || quantity <= 0)
+		{
+			return null;
+		}
+		
+		// Get item composition to check if tradeable
+		ItemComposition comp = itemManager.getItemComposition(itemId);
+		if (comp == null || !comp.isTradeable())
+		{
+			return null;
+		}
+		
+		// Get GE price - itemManager uses cached wiki prices
+		int gePrice = itemManager.getItemPrice(itemId);
+		if (gePrice <= 0)
+		{
+			return null;
+		}
+		
+		return new FlipSmartApiClient.BankItem(itemId, quantity, gePrice);
 	}
 
 	@Subscribe
