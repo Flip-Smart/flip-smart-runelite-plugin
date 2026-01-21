@@ -49,6 +49,8 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String RISK_NA = "Risk: N/A";
+	private static final String MSG_LOGIN_TO_RUNESCAPE = "Log in to RuneScape";
+	private static final String MSG_LOGIN_INSTRUCTION = "<html><center>Log in to the game to get<br>flip suggestions and track your flips</center></html>";
 	
 	// Colors for focused/selected items
 	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
@@ -891,6 +893,15 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	public void refresh(boolean shuffleSuggestions)
 	{
+		// Skip API calls if player is not logged into RuneScape
+		// This saves API requests and battery when at the login screen
+		if (!plugin.isLoggedIntoRunescape())
+		{
+			log.debug("Skipping refresh - player not logged into RuneScape");
+			showLoggedOutOfGameState();
+			return;
+		}
+		
 		// Skip recommendations refresh during auto-refresh if user is focused on a flip
 		// This prevents the focused item from disappearing while user is mid-transaction
 		// Manual refresh (shuffleSuggestions=true) always refreshes
@@ -1220,35 +1231,12 @@ public class FlipFinderPanel extends PluginPanel
 	private void showNoCompletedFlips()
 	{
 		completedFlipsListContainer.removeAll();
-
-		JPanel emptyPanel = new JPanel();
-		emptyPanel.setLayout(new BoxLayout(emptyPanel, BoxLayout.Y_AXIS));
-		emptyPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		emptyPanel.setBorder(new EmptyBorder(60, 15, 60, 15));
-		// Ensure panel fills width in BoxLayout
-		emptyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		emptyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-
-		JLabel titleLabel = new JLabel("No completed flips");
-		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(FONT_BOLD_16);
-		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
-		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-		JLabel instructionLabel = new JLabel("<html><center>Complete your first flip to see<br>it here! Buy and sell items to<br>track your profits</center></html>");
-		instructionLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-		instructionLabel.setFont(FONT_PLAIN_12);
-		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
-		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-		emptyPanel.add(titleLabel);
-		emptyPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		emptyPanel.add(instructionLabel);
-
-		completedFlipsListContainer.add(emptyPanel);
-
+		completedFlipsListContainer.add(createEmptyStatePanel(
+			"No completed flips",
+			"<html><center>Complete your first flip to see<br>it here! Buy and sell items to<br>track your profits</center></html>",
+			60
+		));
 		statusLabel.setText("0 completed flips");
-
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
 	}
@@ -1415,29 +1403,30 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Show message when there are no active flips
+	 * Create an empty state panel with a title and instruction message.
+	 * This is a helper to reduce code duplication across empty state displays.
+	 * 
+	 * @param title The main title text
+	 * @param instruction The instruction/explanation HTML text
+	 * @param topPadding Top padding for the panel
+	 * @return A configured empty state panel
 	 */
-	private void showNoActiveFlips()
+	private JPanel createEmptyStatePanel(String title, String instruction, int topPadding)
 	{
-		activeFlipsListContainer.removeAll();
-
 		JPanel emptyPanel = new JPanel();
 		emptyPanel.setLayout(new BoxLayout(emptyPanel, BoxLayout.Y_AXIS));
 		emptyPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		emptyPanel.setBorder(new EmptyBorder(60, 15, 60, 15));
-		// Ensure panel fills width in BoxLayout
+		emptyPanel.setBorder(new EmptyBorder(topPadding, 15, topPadding, 15));
 		emptyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		emptyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-		// Main message
-		JLabel titleLabel = new JLabel("No active flips");
+		JLabel titleLabel = new JLabel(title);
 		titleLabel.setForeground(Color.WHITE);
 		titleLabel.setFont(FONT_BOLD_16);
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		// Instructions - use smaller text to fit better
-		JLabel instructionLabel = new JLabel("<html><center>Buy items from the Recommended<br>tab to start tracking your flips</center></html>");
+		JLabel instructionLabel = new JLabel(instruction);
 		instructionLabel.setForeground(COLOR_TEXT_DIM_GRAY);
 		instructionLabel.setFont(FONT_PLAIN_12);
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
@@ -1447,11 +1436,46 @@ public class FlipFinderPanel extends PluginPanel
 		emptyPanel.add(Box.createRigidArea(new Dimension(0, 15)));
 		emptyPanel.add(instructionLabel);
 
-		activeFlipsListContainer.add(emptyPanel);
+		return emptyPanel;
+	}
 
-		// Update status label
+	/**
+	 * Show message when player is logged out of RuneScape (at login screen).
+	 * This saves API requests and battery by not polling while the player can't use the GE anyway.
+	 */
+	public void showLoggedOutOfGameState()
+	{
+		statusLabel.setText(MSG_LOGIN_TO_RUNESCAPE);
+		
+		// Update all tabs with logged out message
+		recommendedListContainer.removeAll();
+		recommendedListContainer.add(createEmptyStatePanel(MSG_LOGIN_TO_RUNESCAPE, MSG_LOGIN_INSTRUCTION, 80));
+		recommendedListContainer.revalidate();
+		recommendedListContainer.repaint();
+		
+		activeFlipsListContainer.removeAll();
+		activeFlipsListContainer.add(createEmptyStatePanel(MSG_LOGIN_TO_RUNESCAPE, MSG_LOGIN_INSTRUCTION, 80));
+		activeFlipsListContainer.revalidate();
+		activeFlipsListContainer.repaint();
+		
+		completedFlipsListContainer.removeAll();
+		completedFlipsListContainer.add(createEmptyStatePanel(MSG_LOGIN_TO_RUNESCAPE, MSG_LOGIN_INSTRUCTION, 80));
+		completedFlipsListContainer.revalidate();
+		completedFlipsListContainer.repaint();
+	}
+
+	/**
+	 * Show message when there are no active flips
+	 */
+	private void showNoActiveFlips()
+	{
+		activeFlipsListContainer.removeAll();
+		activeFlipsListContainer.add(createEmptyStatePanel(
+			"No active flips",
+			"<html><center>Buy items from the Recommended<br>tab to start tracking your flips</center></html>",
+			60
+		));
 		statusLabel.setText("0 active flips");
-
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
 	}
