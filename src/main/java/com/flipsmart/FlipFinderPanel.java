@@ -323,8 +323,8 @@ public class FlipFinderPanel extends PluginPanel
 		mainPanel = new JPanel(new BorderLayout());
 		mainPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		// Header panel
-		JPanel headerPanel = new JPanel(new BorderLayout());
+		// Header panel with even spacing between title and buttons
+		JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
 		headerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		headerPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
@@ -332,28 +332,20 @@ public class FlipFinderPanel extends PluginPanel
 		titleLabel.setForeground(Color.WHITE);
 		titleLabel.setFont(FONT_BOLD_16);
 
-		// Right side buttons panel (logout + refresh)
-		JPanel rightButtonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-		rightButtonsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-
-		// Logout button
+		// Logout button with compact styling
 		JButton logoutButton = new JButton("Logout");
 		logoutButton.setFocusable(false);
-		logoutButton.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
-		logoutButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		logoutButton.setForeground(Color.LIGHT_GRAY);
-		logoutButton.setBorder(BorderFactory.createEmptyBorder(3, 8, 3, 8));
-		logoutButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		logoutButton.setMargin(new Insets(2, 4, 2, 4));
 		logoutButton.addActionListener(e -> handleLogout());
 
+		// Refresh button with compact styling
 		refreshButton.setFocusable(false);
+		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> refresh(true));
 
-		rightButtonsPanel.add(logoutButton);
-		rightButtonsPanel.add(refreshButton);
-
-		headerPanel.add(titleLabel, BorderLayout.WEST);
-		headerPanel.add(rightButtonsPanel, BorderLayout.EAST);
+		headerPanel.add(titleLabel);
+		headerPanel.add(logoutButton);
+		headerPanel.add(refreshButton);
 
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
@@ -525,8 +517,30 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
+		// Footer panel with website link
+		JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 5));
+		footerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		footerPanel.setBorder(new EmptyBorder(0, 0, 5, 0));
+
+		JLabel websiteLink = new JLabel("Flip Smart Website");
+		websiteLink.setForeground(new Color(100, 180, 255));
+		websiteLink.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
+		websiteLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		websiteLink.setToolTipText("Visit our website to view your flips and track your performance");
+		websiteLink.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				LinkBrowser.browse("https://flipsmart.net");
+			}
+		});
+
+		footerPanel.add(websiteLink);
+
 		mainPanel.add(topPanel, BorderLayout.NORTH);
 		mainPanel.add(tabbedPane, BorderLayout.CENTER);
+		mainPanel.add(footerPanel, BorderLayout.SOUTH);
 	}
 
 	/**
