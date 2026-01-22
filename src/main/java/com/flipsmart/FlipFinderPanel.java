@@ -1795,7 +1795,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Create chart icon with fixed size wrapper to guarantee it's always visible
 		JLabel chartIconLabel = createChartIconLabel(itemId);
 		JPanel chartIconWrapper = new JPanel(new BorderLayout());
-		chartIconWrapper.setBackground(bgColor);
+		chartIconWrapper.setOpaque(false);
 		chartIconWrapper.add(chartIconLabel, BorderLayout.CENTER);
 		chartIconWrapper.setPreferredSize(new Dimension(20, 16));
 		
@@ -1832,7 +1832,12 @@ public class FlipFinderPanel extends PluginPanel
 		java.awt.image.BufferedImage chartIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
 		java.awt.Graphics2D g2d = chartIcon.createGraphics();
 		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-		
+
+		// Clear background to transparent
+		g2d.setComposite(java.awt.AlphaComposite.Clear);
+		g2d.fillRect(0, 0, 14, 14);
+		g2d.setComposite(java.awt.AlphaComposite.SrcOver);
+
 		// Draw bar chart bars in a light blue/cyan color
 		Color barColor = new Color(100, 180, 255);
 		g2d.setColor(barColor);
@@ -1872,7 +1877,12 @@ public class FlipFinderPanel extends PluginPanel
 				java.awt.image.BufferedImage hoverIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
 				java.awt.Graphics2D g = hoverIcon.createGraphics();
 				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-				
+
+				// Clear background to transparent
+				g.setComposite(java.awt.AlphaComposite.Clear);
+				g.fillRect(0, 0, 14, 14);
+				g.setComposite(java.awt.AlphaComposite.SrcOver);
+
 				Color hoverColor = new Color(150, 220, 255);
 				g.setColor(hoverColor);
 				g.fillRect(1, 9, 3, 4);
