@@ -1741,10 +1741,31 @@ public class FlipSmartPlugin extends Plugin
 			// so they still show as active flips until the user sells them
 			if (isBuy && quantitySold > 0)
 			{
-				log.info("Cancelled buy order had {} items filled - tracking until sold", quantitySold);
+				TrackedOffer cancelledOffer = trackedOffers.get(slot);
+				log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold", 
+					quantitySold, cancelledOffer != null ? cancelledOffer.totalQuantity : "?");
 				collectedItemIds.add(itemId);
 				
-				// Refresh panel to show the flip is still active
+				// CRITICAL: Sync the actual filled quantity with the backend
+				// When order is cancelled early, the backend still has the original order quantity
+				// We need to update it to reflect the actual items received
+				String rsn = getCurrentRsnSafe().orElse(null);
+				if (rsn != null && cancelledOffer != null)
+				{
+					int pricePerItem = spent / quantitySold;
+					log.info("Syncing cancelled order quantity to backend: {} x{} (was {})", 
+						cancelledOffer.itemName, quantitySold, cancelledOffer.totalQuantity);
+					apiClient.syncActiveFlipAsync(
+						itemId,
+						cancelledOffer.itemName,
+						quantitySold,  // Actual filled quantity
+						quantitySold,  // New order quantity = actual filled (order is complete now)
+						pricePerItem,
+						rsn
+					);
+				}
+				
+				// Refresh panel to show the flip with correct quantity
 				if (flipFinderPanel != null)
 				{
 					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
@@ -1756,42 +1777,78 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		
-		// Handle empty state (offer collected/cleared)
+		// Handle empty state (offer collected/cleared/modified)
+		// This includes when user clicks "Modify Order" - items/gold return to inventory
 		if (state == GrandExchangeOfferState.EMPTY)
 		{
 			TrackedOffer collectedOffer = trackedOffers.remove(slot);
 			
-			// Track collected buy offers so they still show as active flips until sold
-			if (collectedOffer != null && collectedOffer.isBuy && collectedOffer.previousQuantitySold > 0)
+			if (collectedOffer != null)
 			{
-				log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
-					collectedOffer.itemName, collectedOffer.previousQuantitySold);
-				collectedItemIds.add(collectedOffer.itemId);
-				
-				// Check if the order completed fully and we might have missed fills
-				// This handles the case where fills happened rapidly or while we weren't tracking
-				int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
-				int trackedFills = collectedOffer.previousQuantitySold;
-				
-				// If inventory shows more items than we tracked, sync with backend
-				if (inventoryCount > trackedFills)
+				// Track collected buy offers so they still show as active flips until sold
+				if (collectedOffer.isBuy && collectedOffer.previousQuantitySold > 0)
 				{
-					log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
-						collectedOffer.itemName, trackedFills, inventoryCount);
+					log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
+						collectedOffer.itemName, collectedOffer.previousQuantitySold);
+					collectedItemIds.add(collectedOffer.itemId);
 					
-					String rsn = getCurrentRsnSafe().orElse(null);
-					if (rsn != null)
+					// Check if the order completed fully and we might have missed fills
+					// This handles the case where fills happened rapidly or while we weren't tracking
+					int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+					int trackedFills = collectedOffer.previousQuantitySold;
+					
+					// If inventory shows more items than we tracked, sync with backend
+					if (inventoryCount > trackedFills)
 					{
-						// Use the inventory count as the actual fill count
-						int actualFills = Math.min(inventoryCount, collectedOffer.totalQuantity);
-						apiClient.syncActiveFlipAsync(
-							collectedOffer.itemId,
-							collectedOffer.itemName,
-							actualFills,
-							collectedOffer.totalQuantity,
-							collectedOffer.price,
-							rsn
-						);
+						log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
+							collectedOffer.itemName, trackedFills, inventoryCount);
+						
+						String rsn = getCurrentRsnSafe().orElse(null);
+						if (rsn != null)
+						{
+							// Use the inventory count as the actual fill count
+							int actualFills = Math.min(inventoryCount, collectedOffer.totalQuantity);
+							apiClient.syncActiveFlipAsync(
+								collectedOffer.itemId,
+								collectedOffer.itemName,
+								actualFills,
+								collectedOffer.totalQuantity,
+								collectedOffer.price,
+								rsn
+							);
+						}
+					}
+				}
+				// Handle SELL orders that go empty (modified/cancelled with items returned to inventory)
+				// This is critical for "Modify Order" on sell orders - items go back to inventory
+				// and should still be tracked as an active flip until actually sold
+				else if (!collectedOffer.isBuy)
+				{
+					// Items returned to inventory from a sell order (modify/cancel)
+					// Check if we have items of this type in inventory to track
+					int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+					if (inventoryCount > 0)
+					{
+						log.info("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking", 
+							collectedOffer.itemName, inventoryCount);
+						collectedItemIds.add(collectedOffer.itemId);
+					}
+					else
+					{
+						log.info("Sell offer for {} went empty with no items in inventory - order may have fully sold", 
+							collectedOffer.itemName);
+					}
+				}
+				// Handle BUY orders with 0 fills that might have filled while we weren't tracking
+				// This covers edge cases where fills happened between login and tracking
+				else if (collectedOffer.isBuy && collectedOffer.previousQuantitySold == 0)
+				{
+					int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+					if (inventoryCount > 0)
+					{
+						log.info("Buy order for {} went empty but found {} items in inventory - may have filled offline", 
+							collectedOffer.itemName, inventoryCount);
+						collectedItemIds.add(collectedOffer.itemId);
 					}
 				}
 				

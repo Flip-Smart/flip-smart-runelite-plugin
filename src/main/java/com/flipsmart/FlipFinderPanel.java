@@ -65,6 +65,14 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_BUY_RED = new Color(255, 120, 120);
 	private static final Color COLOR_SELL_GREEN = new Color(120, 255, 120);
 	
+	// Pastel background colors for active flips (price comparison indicator)
+	// Very light/transparent so they don't conflict with text colors
+	private static final Color COLOR_PRICE_HIGHER_BG = new Color(60, 90, 60);  // Subtle green - selling higher than estimate
+	private static final Color COLOR_PRICE_LOWER_BG = new Color(90, 55, 55);   // Subtle red - selling lower than estimate
+	
+	// Website base URL for item pages
+	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
+	
 	// Common fonts
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
 	private static final Font FONT_BOLD_12 = new Font(FONT_ARIAL, Font.BOLD, 12);
@@ -1760,7 +1768,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private HeaderPanels createItemHeaderPanels(int itemId, String itemName, Color bgColor)
 	{
-		JPanel topPanel = new JPanel(new BorderLayout());
+		JPanel topPanel = new JPanel(new BorderLayout(4, 0));
 		topPanel.setBackground(bgColor);
 
 		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
@@ -1771,15 +1779,121 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel iconLabel = new JLabel();
 		setupIconLabel(iconLabel, itemImage);
 
-		JLabel nameLabel = new JLabel(itemName);
+		// Use HTML to allow text wrapping for long item names
+		String escapedName = escapeHtml(itemName);
+		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(FONT_BOLD_13);
+		// Limit the name label width to ensure chart icon always fits
+		// Panel is ~220px wide, minus item icon (36px), chart icon (20px), padding (14px) = ~150px for name
+		nameLabel.setPreferredSize(new Dimension(150, nameLabel.getPreferredSize().height));
+		nameLabel.setMaximumSize(new Dimension(150, Integer.MAX_VALUE));
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
+		
+		// Create chart icon with fixed size wrapper to guarantee it's always visible
+		JLabel chartIconLabel = createChartIconLabel(itemId);
+		JPanel chartIconWrapper = new JPanel(new BorderLayout());
+		chartIconWrapper.setBackground(bgColor);
+		chartIconWrapper.add(chartIconLabel, BorderLayout.CENTER);
+		chartIconWrapper.setPreferredSize(new Dimension(20, 16));
+		
 		topPanel.add(namePanel, BorderLayout.CENTER);
+		topPanel.add(chartIconWrapper, BorderLayout.EAST);
 
 		return new HeaderPanels(topPanel, namePanel);
+	}
+	
+	/**
+	 * Escape HTML special characters in a string.
+	 * Used when embedding text in HTML labels.
+	 */
+	private String escapeHtml(String text)
+	{
+		if (text == null)
+		{
+			return "";
+		}
+		return text
+			.replace("&", "&amp;")
+			.replace("<", "&lt;")
+			.replace(">", "&gt;")
+			.replace("\"", "&quot;");
+	}
+	
+	/**
+	 * Create a clickable chart icon label that opens the item's page on the website.
+	 * Uses a simple bar chart icon drawn with Java 2D graphics.
+	 */
+	private JLabel createChartIconLabel(int itemId)
+	{
+		// Create a simple bar chart icon (14x14 pixels)
+		java.awt.image.BufferedImage chartIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g2d = chartIcon.createGraphics();
+		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+		
+		// Draw bar chart bars in a light blue/cyan color
+		Color barColor = new Color(100, 180, 255);
+		g2d.setColor(barColor);
+		
+		// Three bars of different heights (like a trending chart)
+		g2d.fillRect(1, 9, 3, 4);   // Short bar
+		g2d.fillRect(5, 5, 3, 8);   // Medium bar
+		g2d.fillRect(9, 2, 3, 11);  // Tall bar
+		
+		// Draw baseline
+		g2d.setColor(new Color(150, 150, 150));
+		g2d.drawLine(0, 13, 13, 13);
+		
+		g2d.dispose();
+		
+		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
+		chartLabel.setToolTipText("View price history on Flip Smart website");
+		chartLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 0));
+		chartLabel.setOpaque(false);
+		
+		// Add click listener to open website
+		chartLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				// Prevent the click from propagating to the parent panel
+				e.consume();
+				LinkBrowser.browse(WEBSITE_ITEM_URL + itemId);
+			}
+			
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				// Highlight on hover - redraw with brighter color
+				java.awt.image.BufferedImage hoverIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+				java.awt.Graphics2D g = hoverIcon.createGraphics();
+				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+				
+				Color hoverColor = new Color(150, 220, 255);
+				g.setColor(hoverColor);
+				g.fillRect(1, 9, 3, 4);
+				g.fillRect(5, 5, 3, 8);
+				g.fillRect(9, 2, 3, 11);
+				g.setColor(new Color(200, 200, 200));
+				g.drawLine(0, 13, 13, 13);
+				g.dispose();
+				
+				chartLabel.setIcon(new ImageIcon(hoverIcon));
+			}
+			
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				// Restore normal icon
+				chartLabel.setIcon(new ImageIcon(chartIcon));
+			}
+		});
+		
+		return chartLabel;
 	}
 
 	/**
@@ -1966,6 +2080,48 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			iconLabel.setPreferredSize(new Dimension(32, 32));
 		}
+	}
+	
+	/**
+	 * Apply a price indicator background color to the active flip panel and its children.
+	 * Used to visually indicate whether the sell price is higher or lower than the original recommendation.
+	 */
+	private void applyPriceIndicatorBackground(JPanel panel, JPanel topPanel, JPanel namePanel, JPanel detailsPanel, Color bgColor)
+	{
+		panel.setBackground(bgColor);
+		topPanel.setBackground(bgColor);
+		namePanel.setBackground(bgColor);
+		detailsPanel.setBackground(bgColor);
+		// Store the base color as a client property so hover handlers can access it
+		panel.putClientProperty("baseBackgroundColor", bgColor);
+		panel.repaint();
+	}
+	
+	/**
+	 * Brighten a color for hover effects.
+	 * Increases RGB values by a fixed amount while keeping them within valid range.
+	 */
+	private Color brightenColor(Color color, int amount)
+	{
+		return new Color(
+			Math.min(255, color.getRed() + amount),
+			Math.min(255, color.getGreen() + amount),
+			Math.min(255, color.getBlue() + amount)
+		);
+	}
+	
+	/**
+	 * Get the base background color for a panel (either price indicator color or default).
+	 * Checks for stored client property first, falls back to default color.
+	 */
+	private Color getBaseBackgroundColor(JPanel panel, Color defaultColor)
+	{
+		Object stored = panel.getClientProperty("baseBackgroundColor");
+		if (stored instanceof Color)
+		{
+			return (Color) stored;
+		}
+		return defaultColor;
 	}
 
 	/**
@@ -2427,6 +2583,22 @@ public class FlipFinderPanel extends PluginPanel
 					// Cache the displayed sell price so Flip Assist uses the same value
 					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
 					
+					// Apply background color based on price comparison with original recommendation
+					// Green if selling higher than recommended, red if selling lower
+					Integer recommendedPrice = flip.getRecommendedSellPrice();
+					if (recommendedPrice != null && recommendedPrice > 0 && !smartSellPrice.equals(recommendedPrice))
+					{
+						Color priceIndicatorBg = smartSellPrice > recommendedPrice 
+							? COLOR_PRICE_HIGHER_BG  // Green - selling higher than estimate
+							: COLOR_PRICE_LOWER_BG;  // Red - selling lower than estimate
+						
+						// Apply to panel and all child panels (not focused panel - that has its own style)
+						if (currentFocus == null || currentFocus.getItemId() != flip.getItemId())
+						{
+							applyPriceIndicatorBackground(panel, topPanel, namePanel, detailsPanel, priceIndicatorBg);
+						}
+					}
+					
 					// Update Flip Assist if this item is currently focused
 					if (currentFocus != null && currentFocus.getItemId() == flip.getItemId() && currentFocus.isSelling())
 					{
@@ -2469,9 +2641,20 @@ public class FlipFinderPanel extends PluginPanel
 					marginLabel.setText(formatMarginText(marginPerItem, roi, totalProfit <= 0));
 					marginLabel.setForeground(totalProfit <= 0 ? COLOR_LOSS_RED : COLOR_YELLOW);
 					
-					// Row 4: Update Profit | Cost
+					// Row 4: Update Profit | Cost - use cyan for higher sell, orange for lower
 					profitCostLabel.setText(formatProfitCostText(totalProfit, flip.getTotalInvested()));
-					profitCostLabel.setForeground(totalProfit > 0 ? COLOR_PROFIT_GREEN : COLOR_LOSS_RED);
+					if (totalProfit <= 0)
+					{
+						profitCostLabel.setForeground(COLOR_LOSS_RED);
+					}
+					else if (recommendedPrice != null && recommendedPrice > 0 && smartSellPrice > recommendedPrice)
+					{
+						profitCostLabel.setForeground(Color.CYAN);  // Cyan for higher-than-expected profit
+					}
+					else
+					{
+						profitCostLabel.setForeground(COLOR_PROFIT_GREEN);
+					}
 					
 					// Show warning tooltip if past threshold and losing money
 					if (pastThreshold && totalProfit < 0)
@@ -2494,6 +2677,9 @@ public class FlipFinderPanel extends PluginPanel
 			});
 		});
 
+		// Store default background color as client property (will be overwritten if price indicator is applied)
+		panel.putClientProperty("baseBackgroundColor", ColorScheme.DARKER_GRAY_COLOR);
+		
 		// Add hover effect, click to focus, and context menu
 		panel.addMouseListener(new MouseAdapter()
 		{
@@ -2513,7 +2699,10 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
 					|| !currentFocus.isSelling())
 				{
-					setPanelBackgrounds(ColorScheme.DARKER_GRAY_HOVER_COLOR, panel, topPanel, namePanel, detailsPanel);
+					// Get the base color (may be price indicator color) and brighten it for hover
+					Color baseColor = getBaseBackgroundColor(panel, ColorScheme.DARKER_GRAY_COLOR);
+					Color hoverColor = brightenColor(baseColor, 15);
+					setPanelBackgrounds(hoverColor, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 
@@ -2523,7 +2712,9 @@ public class FlipFinderPanel extends PluginPanel
 				if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() 
 					|| !currentFocus.isSelling())
 				{
-					setPanelBackgrounds(ColorScheme.DARKER_GRAY_COLOR, panel, topPanel, namePanel, detailsPanel);
+					// Restore the base color (may be price indicator color)
+					Color baseColor = getBaseBackgroundColor(panel, ColorScheme.DARKER_GRAY_COLOR);
+					setPanelBackgrounds(baseColor, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 
