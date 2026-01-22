@@ -26,11 +26,6 @@ The build typically completes in a few seconds.
   - `FlipSmartConfig.java` - Plugin configuration interface
   - Various overlay and response classes
 
-## UI Components
-
-### Chart Icons
-Bar chart icons are created programmatically using Java 2D graphics with transparent backgrounds to blend with the UI. See `createChartIconLabel()` in `FlipFinderPanel.java`.
-
 ## Dependencies
 - RuneLite API
 - Gradle for build management
