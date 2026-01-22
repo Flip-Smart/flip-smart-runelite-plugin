@@ -5,6 +5,7 @@ import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GrandExchangeOffer;
@@ -21,6 +22,10 @@ import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
@@ -90,6 +95,9 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private DumpAlertService dumpAlertService;
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
 
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
@@ -1326,13 +1334,18 @@ public class FlipSmartPlugin extends Plugin
 			if (status == null)
 			{
 				log.debug("Failed to check bank snapshot status");
+				postBankSnapshotMessage("Failed to check snapshot status - will retry", true);
 				bankSnapshotInProgress = false;
+				// Reset cooldown on failure to allow retry
+				lastBankSnapshotAttempt = 0;
 				return;
 			}
 			
 			if (!status.isCanSnapshot())
 			{
 				log.debug("Bank snapshot not available: {}", status.getMessage());
+				// Don't spam the user - only show message if they might be expecting a snapshot
+				// The rate limit message from server contains the next available time
 				bankSnapshotInProgress = false;
 				return;
 			}
@@ -1342,7 +1355,10 @@ public class FlipSmartPlugin extends Plugin
 		}).exceptionally(e ->
 		{
 			log.debug("Error checking bank snapshot status: {}", e.getMessage());
+			postBankSnapshotMessage("Connection error - will retry", true);
 			bankSnapshotInProgress = false;
+			// Reset cooldown on network failure to allow retry
+			lastBankSnapshotAttempt = 0;
 			return null;
 		});
 	}
@@ -1370,26 +1386,55 @@ public class FlipSmartPlugin extends Plugin
 			{
 				if (response != null)
 				{
+					String valueStr = String.format("%,d", response.getTotalValue());
 					log.info("Bank snapshot captured: {} items worth {} GP", 
-						response.getItemCount(), String.format("%,d", response.getTotalValue()));
+						response.getItemCount(), valueStr);
+					postBankSnapshotMessage(
+						String.format("Bank snapshot saved: %,d items worth %s GP", 
+							response.getItemCount(), valueStr), 
+						false);
 				}
 				else
 				{
 					log.debug("Failed to create bank snapshot");
+					postBankSnapshotMessage("Failed to save bank snapshot", true);
 				}
 				bankSnapshotInProgress = false;
 			}).exceptionally(e ->
 			{
 				log.debug("Error creating bank snapshot: {}", e.getMessage());
+				postBankSnapshotMessage("Connection error - will retry", true);
 				bankSnapshotInProgress = false;
+				// Reset cooldown on network failure to allow retry
+				lastBankSnapshotAttempt = 0;
 				return null;
 			});
 		}
 		catch (Exception e)
 		{
 			log.error("Error capturing bank snapshot: {}", e.getMessage());
+			postBankSnapshotMessage("Error capturing bank data", true);
 			bankSnapshotInProgress = false;
 		}
+	}
+	
+	/**
+	 * Post a bank snapshot message to game chat.
+	 * @param message The message to display (without prefix)
+	 * @param isError Whether this is an error message (changes color)
+	 */
+	private void postBankSnapshotMessage(String message, boolean isError)
+	{
+		ChatMessageBuilder builder = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[Flip Smart] ")
+			.append(isError ? ChatColorType.HIGHLIGHT : ChatColorType.NORMAL)
+			.append(message);
+		
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(builder.build())
+			.build());
 	}
 	
 	/**
