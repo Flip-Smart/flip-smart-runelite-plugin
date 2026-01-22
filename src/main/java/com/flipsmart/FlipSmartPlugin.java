@@ -5,12 +5,15 @@ import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.ItemComposition;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
@@ -19,6 +22,10 @@ import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
@@ -89,6 +96,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private DumpAlertService dumpAlertService;
 
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -133,6 +143,11 @@ public class FlipSmartPlugin extends Plugin
 	
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
+	
+	// Bank snapshot tracking
+	private volatile boolean bankSnapshotInProgress = false;
+	private long lastBankSnapshotAttempt = 0;
+	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000; // 1 minute cooldown between attempts
 
 	/**
 	 * Helper class to track GE offers (serializable for persistence)
@@ -1263,13 +1278,234 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
-		// Only process inventory changes
-		if (event.getContainerId() != 93) // 93 is the inventory container ID
+		int containerId = event.getContainerId();
+		
+		// Handle inventory changes
+		if (containerId == INVENTORY_CONTAINER_ID)
+		{
+			updateCashStack();
+			return;
+		}
+		
+		// Handle bank container changes (bank opened/updated)
+		if (containerId == InventoryID.BANK.getId())
+		{
+			onBankContainerChanged();
+		}
+	}
+	
+	/**
+	 * Handle bank container changes - attempt to capture snapshot when bank is opened.
+	 */
+	private void onBankContainerChanged()
+	{
+		// Don't attempt if snapshot is already in progress
+		if (bankSnapshotInProgress)
 		{
 			return;
 		}
-
-		updateCashStack();
+		
+		// Enforce local cooldown to prevent spam
+		long now = System.currentTimeMillis();
+		if (now - lastBankSnapshotAttempt < BANK_SNAPSHOT_COOLDOWN_MS)
+		{
+			return;
+		}
+		
+		// Must be logged in and have RSN
+		String rsn = getCurrentRsnSafe().orElse(null);
+		if (rsn == null)
+		{
+			return;
+		}
+		
+		// Must be authenticated
+		if (!apiClient.isAuthenticated())
+		{
+			return;
+		}
+		
+		lastBankSnapshotAttempt = now;
+		bankSnapshotInProgress = true;
+		
+		// Check rate limit first
+		apiClient.checkBankSnapshotStatusAsync(rsn).thenAccept(status ->
+		{
+			if (status == null)
+			{
+				log.debug("Failed to check bank snapshot status");
+				postBankSnapshotMessage("Failed to check snapshot status - will retry", true);
+				bankSnapshotInProgress = false;
+				// Reset cooldown on failure to allow retry
+				lastBankSnapshotAttempt = 0;
+				return;
+			}
+			
+			if (!status.isCanSnapshot())
+			{
+				log.debug("Bank snapshot not available: {}", status.getMessage());
+				// Don't spam the user - only show message if they might be expecting a snapshot
+				// The rate limit message from server contains the next available time
+				bankSnapshotInProgress = false;
+				return;
+			}
+			
+			// Rate limit passed - capture the snapshot on client thread
+			clientThread.invokeLater(() -> captureBankSnapshot(rsn));
+		}).exceptionally(e ->
+		{
+			log.debug("Error checking bank snapshot status: {}", e.getMessage());
+			postBankSnapshotMessage("Connection error - will retry", true);
+			bankSnapshotInProgress = false;
+			// Reset cooldown on network failure to allow retry
+			lastBankSnapshotAttempt = 0;
+			return null;
+		});
+	}
+	
+	/**
+	 * Capture the current bank contents and send to API.
+	 * Must be called on client thread.
+	 */
+	private void captureBankSnapshot(String rsn)
+	{
+		try
+		{
+			java.util.List<FlipSmartApiClient.BankItem> items = collectTradeableBankItems();
+			
+			if (items == null || items.isEmpty())
+			{
+				bankSnapshotInProgress = false;
+				return;
+			}
+			
+			log.info("Capturing bank snapshot: {} tradeable items for RSN {}", items.size(), rsn);
+			
+			// Send snapshot to API
+			apiClient.createBankSnapshotAsync(rsn, items).thenAccept(response ->
+			{
+				if (response != null)
+				{
+					String valueStr = String.format("%,d", response.getTotalValue());
+					log.info("Bank snapshot captured: {} items worth {} GP", 
+						response.getItemCount(), valueStr);
+					postBankSnapshotMessage(
+						String.format("Bank snapshot saved: %,d items worth %s GP", 
+							response.getItemCount(), valueStr), 
+						false);
+				}
+				else
+				{
+					log.debug("Failed to create bank snapshot");
+					postBankSnapshotMessage("Failed to save bank snapshot", true);
+				}
+				bankSnapshotInProgress = false;
+			}).exceptionally(e ->
+			{
+				log.debug("Error creating bank snapshot: {}", e.getMessage());
+				postBankSnapshotMessage("Connection error - will retry", true);
+				bankSnapshotInProgress = false;
+				// Reset cooldown on network failure to allow retry
+				lastBankSnapshotAttempt = 0;
+				return null;
+			});
+		}
+		catch (Exception e)
+		{
+			log.error("Error capturing bank snapshot: {}", e.getMessage());
+			postBankSnapshotMessage("Error capturing bank data", true);
+			bankSnapshotInProgress = false;
+		}
+	}
+	
+	/**
+	 * Post a bank snapshot message to game chat.
+	 * @param message The message to display (without prefix)
+	 * @param isError Whether this is an error message (changes color)
+	 */
+	private void postBankSnapshotMessage(String message, boolean isError)
+	{
+		ChatMessageBuilder builder = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[Flip Smart] ")
+			.append(isError ? ChatColorType.HIGHLIGHT : ChatColorType.NORMAL)
+			.append(message);
+		
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(builder.build())
+			.build());
+	}
+	
+	/**
+	 * Collect all tradeable items from the bank with their GE prices.
+	 * @return List of bank items, or null if bank is unavailable/empty
+	 */
+	private java.util.List<FlipSmartApiClient.BankItem> collectTradeableBankItems()
+	{
+		ItemContainer bank = client.getItemContainer(InventoryID.BANK);
+		if (bank == null)
+		{
+			log.debug("Bank container is null - bank may have been closed");
+			return null;
+		}
+		
+		Item[] bankItems = bank.getItems();
+		if (bankItems == null || bankItems.length == 0)
+		{
+			log.debug("Bank is empty");
+			return null;
+		}
+		
+		java.util.List<FlipSmartApiClient.BankItem> items = new java.util.ArrayList<>();
+		
+		for (Item item : bankItems)
+		{
+			FlipSmartApiClient.BankItem bankItem = toTradeableBankItem(item);
+			if (bankItem != null)
+			{
+				items.add(bankItem);
+			}
+		}
+		
+		if (items.isEmpty())
+		{
+			log.debug("No tradeable items with prices found in bank");
+		}
+		
+		return items;
+	}
+	
+	/**
+	 * Convert a bank item to a BankItem if it's tradeable and has a price.
+	 * @return BankItem or null if item should be skipped
+	 */
+	private FlipSmartApiClient.BankItem toTradeableBankItem(Item item)
+	{
+		int itemId = item.getId();
+		int quantity = item.getQuantity();
+		
+		// Skip empty slots and placeholder items
+		if (itemId <= 0 || quantity <= 0)
+		{
+			return null;
+		}
+		
+		// Get item composition to check if tradeable
+		ItemComposition comp = itemManager.getItemComposition(itemId);
+		if (comp == null || !comp.isTradeable())
+		{
+			return null;
+		}
+		
+		// Get GE price - itemManager uses cached wiki prices
+		int gePrice = itemManager.getItemPrice(itemId);
+		if (gePrice <= 0)
+		{
+			return null;
+		}
+		
+		return new FlipSmartApiClient.BankItem(itemId, quantity, gePrice);
 	}
 
 	@Subscribe

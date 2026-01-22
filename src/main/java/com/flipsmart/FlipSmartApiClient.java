@@ -21,6 +21,7 @@ public class FlipSmartApiClient
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	private static final String ACCESS_TOKEN_KEY = "access_token";
+	private static final String JSON_KEY_ITEM_ID = "item_id";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -817,7 +818,7 @@ public class FlipSmartApiClient
 		
 		// Create JSON body
 		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty("item_id", request.itemId);
+		jsonBody.addProperty(JSON_KEY_ITEM_ID, request.itemId);
 		jsonBody.addProperty("item_name", request.itemName);
 		jsonBody.addProperty("is_buy", request.isBuy);
 		jsonBody.addProperty("quantity", request.quantity);
@@ -1027,7 +1028,7 @@ public class FlipSmartApiClient
 		String url = String.format("%s/transactions/active-flips/sync", apiUrl);
 		
 		JsonObject requestBody = new JsonObject();
-		requestBody.addProperty("item_id", itemId);
+		requestBody.addProperty(JSON_KEY_ITEM_ID, itemId);
 		requestBody.addProperty("filled_quantity", filledQuantity);
 		requestBody.addProperty("order_quantity", orderQuantity);
 		requestBody.addProperty("price_per_item", pricePerItem);
@@ -1244,5 +1245,81 @@ public class FlipSmartApiClient
 		{
 			return System.currentTimeMillis() - timestamp > CACHE_DURATION_MS;
 		}
+	}
+
+	// ============================================================================
+	// Bank Snapshot API Methods
+	// ============================================================================
+
+	/**
+	 * Data class for bank snapshot item
+	 */
+	public static class BankItem
+	{
+		public final int itemId;
+		public final int quantity;
+		public final int valuePerItem;
+
+		public BankItem(int itemId, int quantity, int valuePerItem)
+		{
+			this.itemId = itemId;
+			this.quantity = quantity;
+			this.valuePerItem = valuePerItem;
+		}
+	}
+
+	/**
+	 * Check if a bank snapshot can be taken (rate limit check)
+	 *
+	 * @param rsn RuneScape Name to check
+	 * @return CompletableFuture with BankSnapshotStatusResponse
+	 */
+	public CompletableFuture<BankSnapshotStatusResponse> checkBankSnapshotStatusAsync(String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/bank/snapshot/status?rsn=%s", apiUrl, rsn);
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, BankSnapshotStatusResponse.class));
+	}
+
+	/**
+	 * Create a bank snapshot with all items
+	 *
+	 * @param rsn RuneScape Name
+	 * @param items List of bank items with quantities and values
+	 * @return CompletableFuture with BankSnapshotResponse
+	 */
+	public CompletableFuture<BankSnapshotResponse> createBankSnapshotAsync(String rsn, java.util.List<BankItem> items)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/bank/snapshot", apiUrl);
+
+		// Build the request body
+		JsonObject requestBody = new JsonObject();
+		requestBody.addProperty("rsn", rsn);
+
+		com.google.gson.JsonArray itemsArray = new com.google.gson.JsonArray();
+		for (BankItem item : items)
+		{
+			JsonObject itemObj = new JsonObject();
+			itemObj.addProperty(JSON_KEY_ITEM_ID, item.itemId);
+			itemObj.addProperty("quantity", item.quantity);
+			itemObj.addProperty("value_per_item", item.valuePerItem);
+			itemsArray.add(itemObj);
+		}
+		requestBody.add("items", itemsArray);
+
+		RequestBody body = RequestBody.create(JSON, requestBody.toString());
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(body);
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, BankSnapshotResponse.class));
 	}
 }
