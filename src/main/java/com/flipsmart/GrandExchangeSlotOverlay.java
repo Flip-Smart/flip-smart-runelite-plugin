@@ -65,126 +65,196 @@ public class GrandExchangeSlotOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		// Check if GE interface is open
-		Widget geMainWidget = client.getWidget(GE_INTERFACE_GROUP, 0);
-		if (geMainWidget == null || geMainWidget.isHidden())
+		if (!isGEInterfaceOpen())
 		{
 			return null;
 		}
 
-		// Enable anti-aliasing
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		setupGraphics(graphics);
+		renderFlipAssistHighlights(graphics);
 
-		// Draw flip assist button highlights (if enabled and active)
-		if (config.highlightGEWidgets() && plugin.isFlipAssistActive())
-		{
-			drawFlipAssistButtonHighlights(graphics);
-		}
-
-		// Check if any of the GE slot features are enabled
-		if (!config.showOfferTimers() && !config.showCompetitivenessIndicators() && !config.highlightSlotBorders())
+		if (!hasAnySlotFeaturesEnabled())
 		{
 			return null;
 		}
 
-		// Get GE offers
 		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		if (offers == null)
 		{
 			return null;
 		}
 
-		// Enable anti-aliasing for smoother text
-		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-
-		// Store tooltip data to draw after all slots (so it renders on top)
-		GrandExchangeOffer tooltipOffer = null;
-		FlipSmartApiClient.WikiPrice tooltipWikiPrice = null;
-		int tooltipOfferPrice = 0;
-		int tooltipX = 0;
-		int tooltipY = 0;
-
-		// Render indicators for each slot
-		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
+		TooltipData tooltip = renderAllSlots(graphics, offers);
+		if (tooltip != null)
 		{
-			GrandExchangeOffer offer = offers[slot];
-
-			if (offer.getState() == GrandExchangeOfferState.EMPTY)
-			{
-				continue;
-			}
-
-			// Get the slot widget to determine position
-			Widget slotWidget = getSlotWidget(slot);
-			if (slotWidget == null || slotWidget.isHidden())
-			{
-				continue;
-			}
-
-			// Get tracked offer data
-			FlipSmartPlugin.TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
-			FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
-
-			// Get slot bounds
-			Rectangle bounds = slotWidget.getBounds();
-			if (bounds == null || bounds.width == 0)
-			{
-				continue;
-			}
-
-			// Draw slot border highlight (if enabled)
-			if (config.highlightSlotBorders())
-			{
-				drawSlotBorder(graphics, bounds, competitiveness);
-			}
-
-			// Position timer and indicator at the top of the slot
-			int topY = bounds.y + 18;
-
-			// Draw timer (top-left, offset for long time formats like 10:35:45)
-			if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
-			{
-				drawTimer(graphics, bounds.x + 8, topY, trackedOffer.createdAtMillis);
-			}
-
-			// Check if order is complete (needs collection)
-			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
-								 offer.getState() == GrandExchangeOfferState.SOLD;
-
-			// Draw completion checkbox indicator (top-right corner, before X button) only when complete
-			if (config.showCompetitivenessIndicators() && isComplete)
-			{
-				int indicatorX = bounds.x + bounds.width - 12;
-				int indicatorY = topY - 4;
-				drawCompletionCheckbox(graphics, indicatorX, indicatorY);
-			}
-
-			// Check if mouse is hovering over slot - store for later drawing
-			net.runelite.api.Point mousePos = client.getMouseCanvasPosition();
-			if (mousePos != null && bounds.contains(mousePos.getX(), mousePos.getY()))
-			{
-				tooltipOffer = offer;
-				tooltipWikiPrice = plugin.getWikiPrice(offer.getItemId());
-				tooltipOfferPrice = offer.getPrice();
-				tooltipX = mousePos.getX() + 15;
-				tooltipY = mousePos.getY() - 30;
-
-				// Trigger price refresh if needed
-				if (tooltipWikiPrice == null)
-				{
-					plugin.refreshWikiPrices();
-				}
-			}
-		}
-
-		// Draw tooltip last so it appears on top of all other elements
-		if (tooltipOffer != null)
-		{
-			drawPriceTooltip(graphics, tooltipX, tooltipY, tooltipOffer, tooltipWikiPrice, tooltipOfferPrice);
+			drawPriceTooltip(graphics, tooltip.x, tooltip.y, tooltip.offer, tooltip.wikiPrice, tooltip.offerPrice);
 		}
 
 		return null;
+	}
+
+	/**
+	 * Check if the GE interface is currently open
+	 */
+	private boolean isGEInterfaceOpen()
+	{
+		Widget geMainWidget = client.getWidget(GE_INTERFACE_GROUP, 0);
+		return geMainWidget != null && !geMainWidget.isHidden();
+	}
+
+	/**
+	 * Setup graphics rendering hints
+	 */
+	private void setupGraphics(Graphics2D graphics)
+	{
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+	}
+
+	/**
+	 * Render flip assist button highlights if enabled
+	 */
+	private void renderFlipAssistHighlights(Graphics2D graphics)
+	{
+		if (config.highlightGEWidgets() && plugin.isFlipAssistActive())
+		{
+			drawFlipAssistButtonHighlights(graphics);
+		}
+	}
+
+	/**
+	 * Check if any GE slot features are enabled
+	 */
+	private boolean hasAnySlotFeaturesEnabled()
+	{
+		return config.showOfferTimers() || config.showCompetitivenessIndicators() || config.highlightSlotBorders();
+	}
+
+	/**
+	 * Data class for tooltip information
+	 */
+	private static class TooltipData
+	{
+		GrandExchangeOffer offer;
+		FlipSmartApiClient.WikiPrice wikiPrice;
+		int offerPrice;
+		int x;
+		int y;
+	}
+
+	/**
+	 * Render all GE slots and return tooltip data if mouse is hovering
+	 */
+	private TooltipData renderAllSlots(Graphics2D graphics, GrandExchangeOffer[] offers)
+	{
+		TooltipData tooltip = null;
+
+		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
+		{
+			TooltipData slotTooltip = renderSlot(graphics, slot, offers[slot]);
+			if (slotTooltip != null)
+			{
+				tooltip = slotTooltip;
+			}
+		}
+
+		return tooltip;
+	}
+
+	/**
+	 * Render a single GE slot's overlays
+	 */
+	private TooltipData renderSlot(Graphics2D graphics, int slot, GrandExchangeOffer offer)
+	{
+		if (offer.getState() == GrandExchangeOfferState.EMPTY)
+		{
+			return null;
+		}
+
+		Widget slotWidget = getSlotWidget(slot);
+		if (slotWidget == null || slotWidget.isHidden())
+		{
+			return null;
+		}
+
+		Rectangle bounds = slotWidget.getBounds();
+		if (bounds == null || bounds.width == 0)
+		{
+			return null;
+		}
+
+		FlipSmartPlugin.TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
+		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
+
+		renderSlotBorder(graphics, bounds, competitiveness);
+		renderSlotTimer(graphics, bounds, trackedOffer);
+		renderCompletionCheckbox(graphics, bounds, offer);
+
+		return checkForTooltip(bounds, offer);
+	}
+
+	/**
+	 * Render slot border if enabled
+	 */
+	private void renderSlotBorder(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.OfferCompetitiveness competitiveness)
+	{
+		if (config.highlightSlotBorders())
+		{
+			drawSlotBorder(graphics, bounds, competitiveness);
+		}
+	}
+
+	/**
+	 * Render slot timer if enabled
+	 */
+	private void renderSlotTimer(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.TrackedOffer trackedOffer)
+	{
+		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
+		{
+			int topY = bounds.y + 18;
+			drawTimer(graphics, bounds.x + 8, topY, trackedOffer.createdAtMillis);
+		}
+	}
+
+	/**
+	 * Render completion checkbox if order is complete
+	 */
+	private void renderCompletionCheckbox(Graphics2D graphics, Rectangle bounds, GrandExchangeOffer offer)
+	{
+		boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
+							 offer.getState() == GrandExchangeOfferState.SOLD;
+
+		if (config.showCompetitivenessIndicators() && isComplete)
+		{
+			int topY = bounds.y + 18;
+			drawCompletionCheckbox(graphics, bounds.x + bounds.width - 12, topY - 4);
+		}
+	}
+
+	/**
+	 * Check if mouse is hovering over slot and return tooltip data
+	 */
+	private TooltipData checkForTooltip(Rectangle bounds, GrandExchangeOffer offer)
+	{
+		net.runelite.api.Point mousePos = client.getMouseCanvasPosition();
+		if (mousePos == null || !bounds.contains(mousePos.getX(), mousePos.getY()))
+		{
+			return null;
+		}
+
+		TooltipData tooltip = new TooltipData();
+		tooltip.offer = offer;
+		tooltip.wikiPrice = plugin.getWikiPrice(offer.getItemId());
+		tooltip.offerPrice = offer.getPrice();
+		tooltip.x = mousePos.getX() + 15;
+		tooltip.y = mousePos.getY() - 30;
+
+		if (tooltip.wikiPrice == null)
+		{
+			plugin.refreshWikiPrices();
+		}
+
+		return tooltip;
 	}
 
 	/**
@@ -312,96 +382,129 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer,
 								  FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice)
 	{
-		boolean isBuy = offer.getState() == GrandExchangeOfferState.BUYING ||
-						offer.getState() == GrandExchangeOfferState.BOUGHT ||
-						offer.getState() == GrandExchangeOfferState.CANCELLED_BUY;
+		boolean isBuy = isOfferBuyType(offer);
 
 		Font originalFont = graphics.getFont();
-		Font tooltipFont = new Font("Arial", Font.PLAIN, 11);
-		graphics.setFont(tooltipFont);
+		graphics.setFont(new Font("Arial", Font.PLAIN, 11));
 		FontMetrics fm = graphics.getFontMetrics();
 
-		java.util.List<String> linesList = new java.util.ArrayList<>();
-		Color yourPriceColor = Color.WHITE;
+		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice);
+		Color yourPriceColor = determineYourPriceColor(wikiPrice, offerPrice, isBuy);
+
+		drawTooltipBackground(graphics, x, y, lines, fm);
+		drawTooltipText(graphics, x, y, lines, yourPriceColor, fm);
+
+		graphics.setFont(originalFont);
+	}
+
+	/**
+	 * Check if offer is a buy type (BUYING, BOUGHT, or CANCELLED_BUY)
+	 */
+	private boolean isOfferBuyType(GrandExchangeOffer offer)
+	{
+		GrandExchangeOfferState state = offer.getState();
+		return state == GrandExchangeOfferState.BUYING ||
+			   state == GrandExchangeOfferState.BOUGHT ||
+			   state == GrandExchangeOfferState.CANCELLED_BUY;
+	}
+
+	/**
+	 * Build tooltip text lines based on wiki price data
+	 */
+	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice)
+	{
+		java.util.List<String> lines = new java.util.ArrayList<>();
 
 		if (wikiPrice != null && (wikiPrice.instaBuy > 0 || wikiPrice.instaSell > 0))
 		{
-			// Show insta-buy and insta-sell prices
 			if (wikiPrice.instaBuy > 0)
 			{
-				linesList.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
+				lines.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
 			}
 			if (wikiPrice.instaSell > 0)
 			{
-				linesList.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
-			}
-
-			// Determine if user's price is competitive
-			if (isBuy)
-			{
-				// For buy orders, competitive if price >= insta-sell
-				yourPriceColor = offerPrice >= wikiPrice.instaSell ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
-			}
-			else
-			{
-				// For sell orders, competitive if price <= insta-buy
-				yourPriceColor = offerPrice <= wikiPrice.instaBuy ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
+				lines.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
 			}
 		}
 		else
 		{
-			linesList.add("Price data loading...");
+			lines.add("Price data loading...");
 		}
 
-		// Add user's price line
-		linesList.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
+		lines.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
+		return lines;
+	}
 
-		String[] lines = linesList.toArray(new String[0]);
+	/**
+	 * Determine color for user's price based on competitiveness
+	 */
+	private Color determineYourPriceColor(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice, boolean isBuy)
+	{
+		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
+		{
+			return Color.WHITE;
+		}
 
-		// Calculate tooltip dimensions
+		boolean isCompetitive = isBuy
+			? offerPrice >= wikiPrice.instaSell
+			: offerPrice <= wikiPrice.instaBuy;
+
+		return isCompetitive ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
+	}
+
+	/**
+	 * Draw tooltip background and border
+	 */
+	private void drawTooltipBackground(Graphics2D graphics, int x, int y, java.util.List<String> lines, FontMetrics fm)
+	{
 		int lineHeight = fm.getHeight();
 		int padding = 5;
-		int maxWidth = 0;
-		for (String line : lines)
-		{
-			maxWidth = Math.max(maxWidth, fm.stringWidth(line));
-		}
+		int maxWidth = lines.stream().mapToInt(fm::stringWidth).max().orElse(0);
 		int tooltipWidth = maxWidth + padding * 2;
-		int tooltipHeight = lineHeight * lines.length + padding * 2;
+		int tooltipHeight = lineHeight * lines.size() + padding * 2;
 
-		// Draw background
 		graphics.setColor(new Color(30, 30, 30, 220));
 		graphics.fillRoundRect(x, y, tooltipWidth, tooltipHeight, 4, 4);
 
-		// Draw border
 		graphics.setColor(new Color(80, 80, 80));
 		graphics.drawRoundRect(x, y, tooltipWidth, tooltipHeight, 4, 4);
+	}
 
-		// Draw text
+	/**
+	 * Draw tooltip text lines
+	 */
+	private void drawTooltipText(Graphics2D graphics, int x, int y, java.util.List<String> lines,
+								 Color yourPriceColor, FontMetrics fm)
+	{
+		int padding = 5;
 		int textY = y + padding + fm.getAscent();
-		for (int i = 0; i < lines.length; i++)
+
+		for (String line : lines)
 		{
-			String line = lines[i];
-			if (line.startsWith("Your Price:"))
-			{
-				// Draw "Your Price: " in white, value in competitive color
-				String prefix = "Your Price: ";
-				graphics.setColor(Color.WHITE);
-				graphics.drawString(prefix, x + padding, textY);
-
-				graphics.setColor(yourPriceColor);
-				String priceValue = line.substring(prefix.length());
-				graphics.drawString(priceValue, x + padding + fm.stringWidth(prefix), textY);
-			}
-			else
-			{
-				graphics.setColor(Color.WHITE);
-				graphics.drawString(line, x + padding, textY);
-			}
-			textY += lineHeight;
+			drawTooltipLine(graphics, line, x + padding, textY, yourPriceColor, fm);
+			textY += fm.getHeight();
 		}
+	}
 
-		graphics.setFont(originalFont);
+	/**
+	 * Draw a single tooltip line with appropriate coloring
+	 */
+	private void drawTooltipLine(Graphics2D graphics, String line, int x, int y, Color yourPriceColor, FontMetrics fm)
+	{
+		if (line.startsWith("Your Price:"))
+		{
+			String prefix = "Your Price: ";
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(prefix, x, y);
+
+			graphics.setColor(yourPriceColor);
+			graphics.drawString(line.substring(prefix.length()), x + fm.stringWidth(prefix), y);
+		}
+		else
+		{
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(line, x, y);
+		}
 	}
 
 	/**

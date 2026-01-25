@@ -259,36 +259,28 @@ public class FlipSmartPlugin extends Plugin
 
 		if (wikiPrice != null)
 		{
-			if (offer.isBuy)
-			{
-				// Buy offer is competitive if price >= insta-sell (low) price
-				// This means you're offering at least what instant sellers receive
-				return offer.price >= wikiPrice.instaSell ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
-			}
-			else
-			{
-				// Sell offer is competitive if price <= insta-buy (high) price
-				// This means you're accepting at least what instant buyers pay
-				return offer.price <= wikiPrice.instaBuy ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
-			}
+			int targetPrice = offer.isBuy ? wikiPrice.instaSell : wikiPrice.instaBuy;
+			return compareOfferPrice(offer.price, targetPrice, offer.isBuy);
 		}
 
 		// Fallback to GE guide price if real-time prices unavailable
 		int guidePrice = itemManager.getItemPrice(offer.itemId);
-
 		if (guidePrice <= 0)
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
 
-		if (offer.isBuy)
-		{
-			return offer.price >= guidePrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
-		}
-		else
-		{
-			return offer.price <= guidePrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
-		}
+		return compareOfferPrice(offer.price, guidePrice, offer.isBuy);
+	}
+
+	/**
+	 * Compare offer price against target price to determine competitiveness.
+	 * Buy offers are competitive if price >= target, sell offers if price <= target.
+	 */
+	private OfferCompetitiveness compareOfferPrice(int offerPrice, int targetPrice, boolean isBuy)
+	{
+		boolean isCompetitive = isBuy ? offerPrice >= targetPrice : offerPrice <= targetPrice;
+		return isCompetitive ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
 	}
 
 	/**

@@ -22,6 +22,7 @@ public class FlipSmartApiClient
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	private static final String ACCESS_TOKEN_KEY = "access_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
+	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -206,34 +207,16 @@ public class FlipSmartApiClient
 	public CompletableFuture<AuthResult> loginAsync(String email, String password)
 	{
 		CompletableFuture<AuthResult> future = new CompletableFuture<>();
-		
-		String apiUrl = getApiUrl();
-		
-		if (email == null || email.isEmpty())
+
+		AuthResult validationError = validateLoginCredentials(email, password);
+		if (validationError != null)
 		{
-			future.complete(new AuthResult(false, "Please enter your email address"));
+			future.complete(validationError);
 			return future;
 		}
-		
-		if (password == null || password.isEmpty())
-		{
-			future.complete(new AuthResult(false, "Please enter your password"));
-			return future;
-		}
-		
-		String url = String.format("%s/auth/login", apiUrl);
-		
-		// Create JSON body with email and password
-		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty("email", email);
-		jsonBody.addProperty("password", password);
-		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
-		
-		Request request = new Request.Builder()
-			.url(url)
-			.post(body)
-			.build();
-		
+
+		Request request = buildLoginRequest(email, password);
+
 		httpClient.newCall(request).enqueue(new Callback()
 		{
 			@Override
@@ -246,55 +229,105 @@ public class FlipSmartApiClient
 			@Override
 			public void onResponse(Call call, Response response) throws IOException
 			{
-				try (response)
-				{
-					if (!response.isSuccessful())
-					{
-						if (response.code() == 401)
-						{
-							future.complete(new AuthResult(false, "Incorrect email or password"));
-						}
-						else if (response.code() == 404)
-						{
-							future.complete(new AuthResult(false, "Account not found. Please sign up first."));
-						}
-						else
-						{
-							future.complete(new AuthResult(false, "Login failed (error " + response.code() + ")"));
-						}
-						return;
-					}
-					
-					okhttp3.ResponseBody responseBody = response.body();
-					String jsonData = responseBody != null ? responseBody.string() : "";
-					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
-					
-					synchronized (authLock)
-					{
-						jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
-						// JWT tokens from this API expire in 7 days, but we'll check earlier
-						// Set expiry to 6 days to refresh before actual expiry
-						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
-
-						// Extract premium status if provided
-						if (tokenResponse.has("is_premium"))
-						{
-							isPremium = tokenResponse.get("is_premium").getAsBoolean();
-						}
-					}
-
-					log.info("Successfully authenticated with API (premium: {})", isPremium);
-					future.complete(new AuthResult(true, "Login successful!"));
-				}
-				catch (Exception e)
-				{
-					log.error("Error processing login response: {}", e.getMessage());
-					future.complete(new AuthResult(false, "Error processing response"));
-				}
+				future.complete(handleLoginResponse(response));
 			}
 		});
-		
+
 		return future;
+	}
+
+	/**
+	 * Validate login credentials and return error if invalid
+	 */
+	private AuthResult validateLoginCredentials(String email, String password)
+	{
+		if (email == null || email.isEmpty())
+		{
+			return new AuthResult(false, "Please enter your email address");
+		}
+		if (password == null || password.isEmpty())
+		{
+			return new AuthResult(false, "Please enter your password");
+		}
+		return null;
+	}
+
+	/**
+	 * Build the login HTTP request
+	 */
+	private Request buildLoginRequest(String email, String password)
+	{
+		String url = String.format("%s/auth/login", getApiUrl());
+
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty("email", email);
+		jsonBody.addProperty("password", password);
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+
+		return new Request.Builder()
+			.url(url)
+			.post(body)
+			.build();
+	}
+
+	/**
+	 * Handle login response and return appropriate AuthResult
+	 */
+	private AuthResult handleLoginResponse(Response response)
+	{
+		try (response)
+		{
+			if (!response.isSuccessful())
+			{
+				return handleLoginError(response.code());
+			}
+
+			processSuccessfulLogin(response);
+			log.info("Successfully authenticated with API (premium: {})", isPremium);
+			return new AuthResult(true, "Login successful!");
+		}
+		catch (Exception e)
+		{
+			log.error("Error processing login response: {}", e.getMessage());
+			return new AuthResult(false, "Error processing response");
+		}
+	}
+
+	/**
+	 * Map login error codes to user-friendly messages
+	 */
+	private AuthResult handleLoginError(int code)
+	{
+		switch (code)
+		{
+			case 401:
+				return new AuthResult(false, "Incorrect email or password");
+			case 404:
+				return new AuthResult(false, "Account not found. Please sign up first.");
+			default:
+				return new AuthResult(false, "Login failed (error " + code + ")");
+		}
+	}
+
+	/**
+	 * Process successful login response and store token
+	 */
+	private void processSuccessfulLogin(Response response) throws IOException
+	{
+		okhttp3.ResponseBody responseBody = response.body();
+		String jsonData = responseBody != null ? responseBody.string() : "";
+		JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
+
+		synchronized (authLock)
+		{
+			jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
+			tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
+
+			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
+			{
+				isPremium = tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
+			}
+		}
 	}
 	
 	/**
@@ -483,9 +516,9 @@ public class FlipSmartApiClient
 			try
 			{
 				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
-				if (json.has("is_premium"))
+				if (json.has(JSON_KEY_IS_PREMIUM))
 				{
-					isPremium = json.get("is_premium").getAsBoolean();
+					isPremium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
 					log.info("Fetched entitlements - premium: {}", isPremium);
 				}
 				return isPremium;
@@ -1476,36 +1509,7 @@ public class FlipSmartApiClient
 					}
 
 					String json = responseBody.string();
-					JsonObject root = gson.fromJson(json, JsonObject.class);
-					JsonObject data = root.getAsJsonObject("data");
-
-					if (data != null)
-					{
-						for (String key : data.keySet())
-						{
-							try
-							{
-								int itemId = Integer.parseInt(key);
-								JsonObject priceData = data.getAsJsonObject(key);
-
-								int high = priceData.has("high") && !priceData.get("high").isJsonNull()
-									? priceData.get("high").getAsInt() : 0;
-								int low = priceData.has("low") && !priceData.get("low").isJsonNull()
-									? priceData.get("low").getAsInt() : 0;
-
-								if (high > 0 || low > 0)
-								{
-									wikiPriceCache.put(itemId, new WikiPrice(high, low));
-								}
-							}
-							catch (NumberFormatException ignored)
-							{
-								// Skip non-numeric keys
-							}
-						}
-						log.debug("Updated wiki price cache with {} items", wikiPriceCache.size());
-					}
-
+					parseWikiPriceResponse(json);
 					lastWikiPriceFetch = System.currentTimeMillis();
 				}
 				finally
@@ -1514,6 +1518,60 @@ public class FlipSmartApiClient
 				}
 			}
 		});
+	}
+
+	/**
+	 * Parse wiki price API response and update cache
+	 */
+	private void parseWikiPriceResponse(String json)
+	{
+		JsonObject root = gson.fromJson(json, JsonObject.class);
+		JsonObject data = root.getAsJsonObject("data");
+
+		if (data == null)
+		{
+			return;
+		}
+
+		for (String key : data.keySet())
+		{
+			parseAndCacheItemPrice(key, data.getAsJsonObject(key));
+		}
+		log.debug("Updated wiki price cache with {} items", wikiPriceCache.size());
+	}
+
+	/**
+	 * Parse and cache a single item's price data
+	 */
+	private void parseAndCacheItemPrice(String itemKey, JsonObject priceData)
+	{
+		try
+		{
+			int itemId = Integer.parseInt(itemKey);
+			int high = getJsonIntOrZero(priceData, "high");
+			int low = getJsonIntOrZero(priceData, "low");
+
+			if (high > 0 || low > 0)
+			{
+				wikiPriceCache.put(itemId, new WikiPrice(high, low));
+			}
+		}
+		catch (NumberFormatException ignored)
+		{
+			// Skip non-numeric keys
+		}
+	}
+
+	/**
+	 * Safely get an int value from JSON, returning 0 if null or missing
+	 */
+	private int getJsonIntOrZero(JsonObject obj, String key)
+	{
+		if (obj.has(key) && !obj.get(key).isJsonNull())
+		{
+			return obj.get(key).getAsInt();
+		}
+		return 0;
 	}
 
 	/**
