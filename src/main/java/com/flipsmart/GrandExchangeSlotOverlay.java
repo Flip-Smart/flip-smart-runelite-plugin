@@ -5,7 +5,6 @@ import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.widgets.Widget;
-import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -39,7 +38,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 	// Colors - designed to blend with GE's brown/tan color scheme
 	private static final Color COLOR_COMPETITIVE = new Color(76, 187, 23);        // OSRS green
 	private static final Color COLOR_UNCOMPETITIVE = new Color(215, 75, 75);      // Soft red
-	private static final Color COLOR_UNKNOWN = new Color(140, 130, 115);          // Muted tan/gray
 	private static final Color COLOR_TIMER_TEXT = new Color(255, 255, 255);       // White
 	private static final Color COLOR_TIMER_SHADOW = new Color(0, 0, 0, 160);      // Subtle shadow
 	private static final Color COLOR_BORDER_COMPETITIVE = new Color(76, 187, 23, 180);
@@ -51,19 +49,16 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
-	private final ItemManager itemManager;
 
 	@Inject
-	private GrandExchangeSlotOverlay(Client client, FlipSmartConfig config, FlipSmartPlugin plugin,
-									 ItemManager itemManager)
+	private GrandExchangeSlotOverlay(Client client, FlipSmartConfig config, FlipSmartPlugin plugin)
 	{
 		this.client = client;
 		this.config = config;
 		this.plugin = plugin;
-		this.itemManager = itemManager;
 
 		setPosition(OverlayPosition.DYNAMIC);
-		setLayer(OverlayLayer.ABOVE_WIDGETS);
+		setLayer(OverlayLayer.ALWAYS_ON_TOP);
 		setPriority(OverlayPriority.HIGH);
 	}
 
@@ -103,6 +98,13 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
+		// Store tooltip data to draw after all slots (so it renders on top)
+		GrandExchangeOffer tooltipOffer = null;
+		FlipSmartApiClient.WikiPrice tooltipWikiPrice = null;
+		int tooltipOfferPrice = 0;
+		int tooltipX = 0;
+		int tooltipY = 0;
+
 		// Render indicators for each slot
 		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
 		{
@@ -138,9 +140,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			}
 
 			// Position timer and indicator at the top of the slot
-			// Timer: top-left, Indicator: top-right corner before X
 			int topY = bounds.y + 18;
-			int indicatorSize = 10;
 
 			// Draw timer (top-left, offset for long time formats like 10:35:45)
 			if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
@@ -148,36 +148,40 @@ public class GrandExchangeSlotOverlay extends Overlay
 				drawTimer(graphics, bounds.x + 8, topY, trackedOffer.createdAtMillis);
 			}
 
-			// Draw competitiveness indicator (top-right corner, before X button)
-			if (config.showCompetitivenessIndicators())
+			// Check if order is complete (needs collection)
+			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
+								 offer.getState() == GrandExchangeOfferState.SOLD;
+
+			// Draw completion checkbox indicator (top-right corner, before X button) only when complete
+			if (config.showCompetitivenessIndicators() && isComplete)
 			{
 				int indicatorX = bounds.x + bounds.width - 12;
 				int indicatorY = topY - 4;
+				drawCompletionCheckbox(graphics, indicatorX, indicatorY);
+			}
 
-				drawCompetitivenessIndicator(graphics, indicatorX, indicatorY, competitiveness);
+			// Check if mouse is hovering over slot - store for later drawing
+			net.runelite.api.Point mousePos = client.getMouseCanvasPosition();
+			if (mousePos != null && bounds.contains(mousePos.getX(), mousePos.getY()))
+			{
+				tooltipOffer = offer;
+				tooltipWikiPrice = plugin.getWikiPrice(offer.getItemId());
+				tooltipOfferPrice = offer.getPrice();
+				tooltipX = mousePos.getX() + 15;
+				tooltipY = mousePos.getY() - 30;
 
-				// Check if mouse is hovering over indicator for tooltip
-				net.runelite.api.Point mousePos = client.getMouseCanvasPosition();
-				if (mousePos != null)
+				// Trigger price refresh if needed
+				if (tooltipWikiPrice == null)
 				{
-					Rectangle indicatorBounds = new Rectangle(
-						indicatorX - indicatorSize / 2,
-						indicatorY - indicatorSize / 2,
-						indicatorSize,
-						indicatorSize
-					);
-
-					if (indicatorBounds.contains(mousePos.getX(), mousePos.getY()))
-					{
-						// Get Wiki price for tooltip
-						int wikiPrice = itemManager.getItemPrice(offer.getItemId());
-						int offerPrice = offer.getPrice();
-
-						// Draw custom tooltip with background
-						drawPriceTooltip(graphics, mousePos.getX() + 15, mousePos.getY(), offer, wikiPrice, offerPrice);
-					}
+					plugin.refreshWikiPrices();
 				}
 			}
+		}
+
+		// Draw tooltip last so it appears on top of all other elements
+		if (tooltipOffer != null)
+		{
+			drawPriceTooltip(graphics, tooltipX, tooltipY, tooltipOffer, tooltipWikiPrice, tooltipOfferPrice);
 		}
 
 		return null;
@@ -252,79 +256,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Draw competitiveness indicator as a clean circular badge
-	 */
-	private void drawCompetitivenessIndicator(Graphics2D graphics, int x, int y, FlipSmartPlugin.OfferCompetitiveness competitiveness)
-	{
-		int size = 10;
-		int centerX = x - size / 2;
-		int centerY = y - size / 2;
-
-		Color bgColor;
-
-		switch (competitiveness)
-		{
-			case COMPETITIVE:
-				bgColor = COLOR_COMPETITIVE;
-				break;
-			case UNCOMPETITIVE:
-				bgColor = COLOR_UNCOMPETITIVE;
-				break;
-			default:
-				bgColor = COLOR_UNKNOWN;
-				break;
-		}
-
-		// Draw outer shadow for depth
-		graphics.setColor(new Color(0, 0, 0, 80));
-		graphics.fillOval(centerX + 1, centerY + 1, size, size);
-
-		// Draw filled circle
-		graphics.setColor(bgColor);
-		graphics.fillOval(centerX, centerY, size, size);
-
-		// Draw inner symbol using simple graphics instead of unicode fonts
-		graphics.setColor(Color.WHITE);
-		graphics.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-
-		int padding = 3;
-		int left = centerX + padding;
-		int right = centerX + size - padding;
-		int top = centerY + padding;
-		int bottom = centerY + size - padding;
-		int midY = centerY + size / 2;
-
-		switch (competitiveness)
-		{
-			case COMPETITIVE:
-				// Draw checkmark
-				int checkMidX = centerX + size / 3;
-				graphics.drawLine(left, midY, checkMidX, bottom - 1);
-				graphics.drawLine(checkMidX, bottom - 1, right, top);
-				break;
-			case UNCOMPETITIVE:
-				// Draw X
-				graphics.drawLine(left, top, right, bottom);
-				graphics.drawLine(right, top, left, bottom);
-				break;
-			default:
-				// Draw question mark using simple lines
-				Font originalFont = graphics.getFont();
-				graphics.setFont(new Font("Arial", Font.BOLD, 8));
-				FontMetrics fm = graphics.getFontMetrics();
-				String qMark = "?";
-				int qX = centerX + (size - fm.stringWidth(qMark)) / 2;
-				int qY = centerY + (size + fm.getAscent() - fm.getDescent()) / 2;
-				graphics.drawString(qMark, qX, qY);
-				graphics.setFont(originalFont);
-				break;
-		}
-
-		// Reset stroke
-		graphics.setStroke(new BasicStroke(1));
-	}
-
-	/**
 	 * Format elapsed time as H:MM:SS or M:SS
 	 */
 	private String formatElapsedTime(long createdAtMillis)
@@ -342,9 +273,44 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Draw a custom tooltip with background showing price info
+	 * Draw completion checkbox indicator (green checkmark for orders ready to collect)
 	 */
-	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer, int wikiPrice, int offerPrice)
+	private void drawCompletionCheckbox(Graphics2D graphics, int x, int y)
+	{
+		int size = 10;
+		int centerX = x - size / 2;
+		int centerY = y - size / 2;
+
+		// Draw outer shadow for depth
+		graphics.setColor(new Color(0, 0, 0, 80));
+		graphics.fillOval(centerX + 1, centerY + 1, size, size);
+
+		// Draw filled green circle
+		graphics.setColor(COLOR_COMPETITIVE);
+		graphics.fillOval(centerX, centerY, size, size);
+
+		// Draw checkmark
+		graphics.setColor(Color.WHITE);
+		graphics.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+		int padding = 3;
+		int left = centerX + padding;
+		int right = centerX + size - padding;
+		int bottom = centerY + size - padding;
+		int midY = centerY + size / 2;
+		int checkMidX = centerX + size / 3;
+
+		graphics.drawLine(left, midY, checkMidX, bottom - 1);
+		graphics.drawLine(checkMidX, bottom - 1, right, centerY + padding);
+
+		graphics.setStroke(new BasicStroke(1));
+	}
+
+	/**
+	 * Draw a custom tooltip with background showing real-time insta prices
+	 */
+	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer,
+								  FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice)
 	{
 		boolean isBuy = offer.getState() == GrandExchangeOfferState.BUYING ||
 						offer.getState() == GrandExchangeOfferState.BOUGHT ||
@@ -355,35 +321,42 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setFont(tooltipFont);
 		FontMetrics fm = graphics.getFontMetrics();
 
-		String[] lines;
-		Color marginColor;
+		java.util.List<String> linesList = new java.util.ArrayList<>();
+		Color yourPriceColor = Color.WHITE;
 
-		if (wikiPrice > 0)
+		if (wikiPrice != null && (wikiPrice.instaBuy > 0 || wikiPrice.instaSell > 0))
 		{
-			int margin;
+			// Show insta-buy and insta-sell prices
+			if (wikiPrice.instaBuy > 0)
+			{
+				linesList.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
+			}
+			if (wikiPrice.instaSell > 0)
+			{
+				linesList.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
+			}
+
+			// Determine if user's price is competitive
 			if (isBuy)
 			{
-				margin = wikiPrice - offerPrice;
+				// For buy orders, competitive if price >= insta-sell
+				yourPriceColor = offerPrice >= wikiPrice.instaSell ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
 			}
 			else
 			{
-				margin = offerPrice - wikiPrice;
+				// For sell orders, competitive if price <= insta-buy
+				yourPriceColor = offerPrice <= wikiPrice.instaBuy ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
 			}
-
-			marginColor = margin >= 0 ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
-			String marginText = (margin >= 0 ? "+" : "") + NUMBER_FORMAT.format(margin) + " gp";
-
-			lines = new String[] {
-				"Wiki Price: " + NUMBER_FORMAT.format(wikiPrice) + " gp",
-				"Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp",
-				"Margin: " + marginText
-			};
 		}
 		else
 		{
-			marginColor = COLOR_UNKNOWN;
-			lines = new String[] { "Price data unavailable" };
+			linesList.add("Price data loading...");
 		}
+
+		// Add user's price line
+		linesList.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
+
+		String[] lines = linesList.toArray(new String[0]);
 
 		// Calculate tooltip dimensions
 		int lineHeight = fm.getHeight();
@@ -408,21 +381,22 @@ public class GrandExchangeSlotOverlay extends Overlay
 		int textY = y + padding + fm.getAscent();
 		for (int i = 0; i < lines.length; i++)
 		{
-			if (i == lines.length - 1 && wikiPrice > 0)
+			String line = lines[i];
+			if (line.startsWith("Your Price:"))
 			{
-				// Draw "Margin: " in white, value in color
-				String prefix = "Margin: ";
+				// Draw "Your Price: " in white, value in competitive color
+				String prefix = "Your Price: ";
 				graphics.setColor(Color.WHITE);
 				graphics.drawString(prefix, x + padding, textY);
 
-				graphics.setColor(marginColor);
-				String marginValue = lines[i].substring(prefix.length());
-				graphics.drawString(marginValue, x + padding + fm.stringWidth(prefix), textY);
+				graphics.setColor(yourPriceColor);
+				String priceValue = line.substring(prefix.length());
+				graphics.drawString(priceValue, x + padding + fm.stringWidth(prefix), textY);
 			}
 			else
 			{
 				graphics.setColor(Color.WHITE);
-				graphics.drawString(lines[i], x + padding, textY);
+				graphics.drawString(line, x + padding, textY);
 			}
 			textY += lineHeight;
 		}
@@ -522,7 +496,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 				alpha
 			);
 			graphics.setColor(glowColor);
-			graphics.setStroke(new BasicStroke(i * 2));
+			graphics.setStroke(new BasicStroke(i * 2.0f));
 			graphics.drawRoundRect(
 				bounds.x - i * 2,
 				bounds.y - i * 2,

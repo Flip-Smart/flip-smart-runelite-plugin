@@ -240,10 +240,12 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Calculate competitiveness of an offer compared to Wiki prices.
+	 * Calculate competitiveness of an offer compared to real-time wiki prices.
 	 *
-	 * For BUY offers: competitive if player price >= Wiki price (willing to pay market rate)
-	 * For SELL offers: competitive if player price <= Wiki price (willing to sell at market rate)
+	 * For BUY offers: competitive if player price >= insta-sell (low) price
+	 * For SELL offers: competitive if player price <= insta-buy (high) price
+	 *
+	 * This shows if your offer is "in the margin" and likely to fill.
 	 */
 	public OfferCompetitiveness calculateCompetitiveness(TrackedOffer offer)
 	{
@@ -252,22 +254,59 @@ public class FlipSmartPlugin extends Plugin
 			return OfferCompetitiveness.UNKNOWN;
 		}
 
-		int wikiPrice = itemManager.getItemPrice(offer.itemId);
+		// Try to get real-time wiki prices first
+		FlipSmartApiClient.WikiPrice wikiPrice = apiClient.getWikiPrice(offer.itemId);
 
-		if (wikiPrice <= 0)
+		if (wikiPrice != null)
+		{
+			if (offer.isBuy)
+			{
+				// Buy offer is competitive if price >= insta-sell (low) price
+				// This means you're offering at least what instant sellers receive
+				return offer.price >= wikiPrice.instaSell ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+			}
+			else
+			{
+				// Sell offer is competitive if price <= insta-buy (high) price
+				// This means you're accepting at least what instant buyers pay
+				return offer.price <= wikiPrice.instaBuy ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+			}
+		}
+
+		// Fallback to GE guide price if real-time prices unavailable
+		int guidePrice = itemManager.getItemPrice(offer.itemId);
+
+		if (guidePrice <= 0)
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
 
 		if (offer.isBuy)
 		{
-			// Buy offer is competitive if price is at or above Wiki price
-			return offer.price >= wikiPrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+			return offer.price >= guidePrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
 		}
 		else
 		{
-			// Sell offer is competitive if price is at or below Wiki price
-			return offer.price <= wikiPrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+			return offer.price <= guidePrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+		}
+	}
+
+	/**
+	 * Get real-time wiki price for an item (for tooltip display)
+	 */
+	public FlipSmartApiClient.WikiPrice getWikiPrice(int itemId)
+	{
+		return apiClient.getWikiPrice(itemId);
+	}
+
+	/**
+	 * Trigger a refresh of wiki prices if needed
+	 */
+	public void refreshWikiPrices()
+	{
+		if (apiClient.needsWikiPriceRefresh())
+		{
+			apiClient.fetchWikiPrices();
 		}
 	}
 
@@ -605,6 +644,9 @@ public class FlipSmartPlugin extends Plugin
 			syncRSN();
 			updateCashStack();
 
+			// Fetch real-time wiki prices for competitiveness indicators
+			apiClient.fetchWikiPrices();
+
 			// Fetch user entitlements (premium status) when logging into game
 			apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
 				log.info("User premium status: {}", isPremium);
@@ -764,6 +806,9 @@ public class FlipSmartPlugin extends Plugin
 			
 			if (persistedOffer != null && persistedOffer.itemId == currentOffer.itemId)
 			{
+				// Restore the original timestamp from persisted offer for timer continuity
+				currentOffer.createdAtMillis = persistedOffer.createdAtMillis;
+
 				// Have persisted state - check for offline fills
 				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
 			}

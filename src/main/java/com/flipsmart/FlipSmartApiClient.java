@@ -1386,4 +1386,141 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 			gson.fromJson(jsonData, BankSnapshotResponse.class));
 	}
+
+	// ============================================================================
+	// Wiki Real-Time Price API Methods
+	// ============================================================================
+
+	private static final String WIKI_PRICES_URL = "https://prices.runescape.wiki/api/v1/osrs/latest";
+	private static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
+
+	// Cache for wiki prices: itemId -> WikiPrice
+	private final Map<Integer, WikiPrice> wikiPriceCache = new ConcurrentHashMap<>();
+	private volatile long lastWikiPriceFetch = 0;
+	private volatile boolean wikiPriceFetchInProgress = false;
+
+	/**
+	 * Real-time price data from the wiki API
+	 */
+	public static class WikiPrice
+	{
+		public final int instaBuy;   // High price - what buyers pay to instant-buy
+		public final int instaSell;  // Low price - what sellers receive when instant-selling
+		public final long fetchedAt;
+
+		public WikiPrice(int instaBuy, int instaSell)
+		{
+			this.instaBuy = instaBuy;
+			this.instaSell = instaSell;
+			this.fetchedAt = System.currentTimeMillis();
+		}
+
+		public boolean isExpired()
+		{
+			return System.currentTimeMillis() - fetchedAt > WIKI_PRICE_CACHE_DURATION_MS;
+		}
+	}
+
+	/**
+	 * Get cached wiki price for an item. Returns null if not cached or expired.
+	 * Call fetchWikiPrices() to populate the cache.
+	 */
+	public WikiPrice getWikiPrice(int itemId)
+	{
+		WikiPrice price = wikiPriceCache.get(itemId);
+		if (price != null && !price.isExpired())
+		{
+			return price;
+		}
+		return null;
+	}
+
+	/**
+	 * Fetch all wiki prices from the API and update the cache.
+	 * This is rate-limited to once per minute.
+	 */
+	public void fetchWikiPrices()
+	{
+		long now = System.currentTimeMillis();
+		if (now - lastWikiPriceFetch < WIKI_PRICE_CACHE_DURATION_MS || wikiPriceFetchInProgress)
+		{
+			return;
+		}
+
+		wikiPriceFetchInProgress = true;
+
+		Request request = new Request.Builder()
+			.url(WIKI_PRICES_URL)
+			.header("User-Agent", "FlipSmart RuneLite Plugin - github.com/flipsmart")
+			.get()
+			.build();
+
+		httpClient.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.warn("Failed to fetch wiki prices: {}", e.getMessage());
+				wikiPriceFetchInProgress = false;
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException
+			{
+				try (ResponseBody responseBody = response.body())
+				{
+					if (!response.isSuccessful() || responseBody == null)
+					{
+						log.warn("Wiki price API returned error: {}", response.code());
+						return;
+					}
+
+					String json = responseBody.string();
+					JsonObject root = gson.fromJson(json, JsonObject.class);
+					JsonObject data = root.getAsJsonObject("data");
+
+					if (data != null)
+					{
+						for (String key : data.keySet())
+						{
+							try
+							{
+								int itemId = Integer.parseInt(key);
+								JsonObject priceData = data.getAsJsonObject(key);
+
+								int high = priceData.has("high") && !priceData.get("high").isJsonNull()
+									? priceData.get("high").getAsInt() : 0;
+								int low = priceData.has("low") && !priceData.get("low").isJsonNull()
+									? priceData.get("low").getAsInt() : 0;
+
+								if (high > 0 || low > 0)
+								{
+									wikiPriceCache.put(itemId, new WikiPrice(high, low));
+								}
+							}
+							catch (NumberFormatException ignored)
+							{
+								// Skip non-numeric keys
+							}
+						}
+						log.debug("Updated wiki price cache with {} items", wikiPriceCache.size());
+					}
+
+					lastWikiPriceFetch = System.currentTimeMillis();
+				}
+				finally
+				{
+					wikiPriceFetchInProgress = false;
+				}
+			}
+		});
+	}
+
+	/**
+	 * Check if wiki prices need to be refreshed
+	 */
+	public boolean needsWikiPriceRefresh()
+	{
+		return System.currentTimeMillis() - lastWikiPriceFetch > WIKI_PRICE_CACHE_DURATION_MS;
+	}
 }
