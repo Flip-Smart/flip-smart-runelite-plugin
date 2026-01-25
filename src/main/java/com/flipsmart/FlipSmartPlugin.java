@@ -65,7 +65,10 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private GrandExchangeOverlay geOverlay;
-	
+
+	@Inject
+	private GrandExchangeSlotOverlay geSlotOverlay;
+
 	@Inject
 	private FlipAssistOverlay flipAssistOverlay;
 
@@ -150,6 +153,16 @@ public class FlipSmartPlugin extends Plugin
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000; // 1 minute cooldown between attempts
 
 	/**
+	 * Enum representing offer competitiveness relative to Wiki prices
+	 */
+	public enum OfferCompetitiveness
+	{
+		COMPETITIVE,      // Green checkmark - price is at or better than Wiki price
+		UNCOMPETITIVE,    // Red X - price is worse than Wiki price
+		UNKNOWN           // Gray ? - Wiki price unavailable
+	}
+
+	/**
 	 * Helper class to track GE offers (serializable for persistence)
 	 */
 	public static class TrackedOffer
@@ -160,6 +173,7 @@ public class FlipSmartPlugin extends Plugin
 		int totalQuantity;
 		int price;
 		int previousQuantitySold;
+		long createdAtMillis;  // Timestamp when offer was created (for timer display)
 
 		// Default constructor for Gson deserialization
 		TrackedOffer() {}
@@ -172,6 +186,19 @@ public class FlipSmartPlugin extends Plugin
 			this.totalQuantity = totalQuantity;
 			this.price = price;
 			this.previousQuantitySold = quantitySold;
+			this.createdAtMillis = System.currentTimeMillis();
+		}
+
+		// Constructor with explicit timestamp (for login restoration)
+		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.totalQuantity = totalQuantity;
+			this.price = price;
+			this.previousQuantitySold = quantitySold;
+			this.createdAtMillis = createdAtMillis;
 		}
 	}
 	
@@ -183,7 +210,67 @@ public class FlipSmartPlugin extends Plugin
 		recommendedPrices.put(itemId, recommendedSellPrice);
 		log.debug("Stored recommended sell price for item {}: {}", itemId, recommendedSellPrice);
 	}
-	
+
+	/**
+	 * Get tracked offer for a specific GE slot (for overlay access)
+	 */
+	public TrackedOffer getTrackedOffer(int slot)
+	{
+		return trackedOffers.get(slot);
+	}
+
+	/**
+	 * Get the current flip assist step for GE button highlighting
+	 */
+	public FlipAssistOverlay.FlipAssistStep getFlipAssistStep()
+	{
+		if (flipAssistOverlay == null || flipAssistOverlay.getFocusedFlip() == null)
+		{
+			return null;
+		}
+		return flipAssistOverlay.getCurrentStep();
+	}
+
+	/**
+	 * Check if flip assist is active with a focused flip
+	 */
+	public boolean isFlipAssistActive()
+	{
+		return flipAssistOverlay != null && flipAssistOverlay.getFocusedFlip() != null;
+	}
+
+	/**
+	 * Calculate competitiveness of an offer compared to Wiki prices.
+	 *
+	 * For BUY offers: competitive if player price >= Wiki price (willing to pay market rate)
+	 * For SELL offers: competitive if player price <= Wiki price (willing to sell at market rate)
+	 */
+	public OfferCompetitiveness calculateCompetitiveness(TrackedOffer offer)
+	{
+		if (offer == null)
+		{
+			return OfferCompetitiveness.UNKNOWN;
+		}
+
+		int wikiPrice = itemManager.getItemPrice(offer.itemId);
+
+		if (wikiPrice <= 0)
+		{
+			return OfferCompetitiveness.UNKNOWN;
+		}
+
+		if (offer.isBuy)
+		{
+			// Buy offer is competitive if price is at or above Wiki price
+			return offer.price >= wikiPrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+		}
+		else
+		{
+			// Sell offer is competitive if price is at or below Wiki price
+			return offer.price <= wikiPrice ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
+		}
+	}
+
 	/**
 	 * Get current buy orders in GE slots (pending or partially filled).
 	 * These are buy orders that haven't been fully collected yet.
@@ -413,6 +500,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		log.info("Flip Smart started!");
 		overlayManager.add(geOverlay);
+		overlayManager.add(geSlotOverlay);
 		overlayManager.add(flipAssistOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
 		
@@ -450,6 +538,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		overlayManager.remove(geOverlay);
+		overlayManager.remove(geSlotOverlay);
 		overlayManager.remove(flipAssistOverlay);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
@@ -515,11 +604,21 @@ public class FlipSmartPlugin extends Plugin
 			loggedIntoRunescape = true;
 			syncRSN();
 			updateCashStack();
-			
+
+			// Fetch user entitlements (premium status) when logging into game
+			apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
+				log.info("User premium status: {}", isPremium);
+				// Update the flip finder panel if it exists
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
+				}
+			});
+
 			// Restore collected items from config (items bought but not yet sold)
 			// Must be after syncRSN() so we have the correct RSN for the config key
 			restoreCollectedItems();
-			
+
 			// Schedule offline sync after a delay to ensure all GE events have been processed
 			// This must run AFTER syncRSN() so we have the correct RSN for the config key
 			if (!offlineSyncCompleted)
@@ -528,7 +627,7 @@ public class FlipSmartPlugin extends Plugin
 				syncTimer.setRepeats(false);
 				syncTimer.start();
 			}
-			
+
 			// Refresh flip finder with current cash stack
 			if (flipFinderPanel != null)
 			{

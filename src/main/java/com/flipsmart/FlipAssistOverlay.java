@@ -36,7 +36,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("#,###");
 	
 	// Color theme
-	private static final Color COLOR_BG_DARK = new Color(25, 22, 18, 245);
+	private static final Color COLOR_BG_DARK = new Color(25, 22, 18, 200);
 	private static final Color COLOR_BORDER = new Color(10, 10, 10);
 	private static final Color COLOR_ACCENT = new Color(255, 185, 50);
 	private static final Color COLOR_ACCENT_GLOW = new Color(255, 185, 50, 60);

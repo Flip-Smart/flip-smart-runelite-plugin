@@ -202,6 +202,42 @@ public interface FlipSmartConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "showOfferTimers",
+		name = "Show Offer Timers",
+		description = "Display elapsed time for each GE offer",
+		section = displaySection,
+		position = 5
+	)
+	default boolean showOfferTimers()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "showCompetitivenessIndicators",
+		name = "Show Competitiveness",
+		description = "Display indicators comparing your price to Wiki prices (green = competitive, red = uncompetitive)",
+		section = displaySection,
+		position = 6
+	)
+	default boolean showCompetitivenessIndicators()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "highlightSlotBorders",
+		name = "Highlight Slot Borders",
+		description = "Draw colored borders around GE slots based on competitiveness",
+		section = displaySection,
+		position = 7
+	)
+	default boolean highlightSlotBorders()
+	{
+		return true;
+	}
+
 	// ============================================
 	// Flip Assistant Section (Guided Workflow + Quick Actions)
 	// ============================================

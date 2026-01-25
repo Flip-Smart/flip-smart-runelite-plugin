@@ -34,7 +34,10 @@ public class FlipSmartApiClient
 	// JWT token management
 	private volatile String jwtToken = null;
 	private volatile long tokenExpiry = 0;
-	
+
+	// Premium status (updated on login)
+	private volatile boolean isPremium = false;
+
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
@@ -272,9 +275,15 @@ public class FlipSmartApiClient
 						// JWT tokens from this API expire in 7 days, but we'll check earlier
 						// Set expiry to 6 days to refresh before actual expiry
 						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
+
+						// Extract premium status if provided
+						if (tokenResponse.has("is_premium"))
+						{
+							isPremium = tokenResponse.get("is_premium").getAsBoolean();
+						}
 					}
-					
-					log.info("Successfully authenticated with API");
+
+					log.info("Successfully authenticated with API (premium: {})", isPremium);
 					future.complete(new AuthResult(true, "Login successful!"));
 				}
 				catch (Exception e)
@@ -421,7 +430,23 @@ public class FlipSmartApiClient
 	{
 		return jwtToken != null && System.currentTimeMillis() < tokenExpiry;
 	}
-	
+
+	/**
+	 * Check if the current user has premium status
+	 */
+	public boolean isPremium()
+	{
+		return isPremium;
+	}
+
+	/**
+	 * Set the premium status (called when flip-finder response is received)
+	 */
+	public void setPremium(boolean premium)
+	{
+		this.isPremium = premium;
+	}
+
 	/**
 	 * Clear the current authentication token
 	 */
@@ -431,9 +456,48 @@ public class FlipSmartApiClient
 		{
 			jwtToken = null;
 			tokenExpiry = 0;
+			isPremium = false;
 		}
 	}
-	
+
+	/**
+	 * Fetch user entitlements from the API to check premium status.
+	 * Call this when the player logs into the game.
+	 */
+	public CompletableFuture<Boolean> fetchEntitlementsAsync()
+	{
+		if (!isAuthenticated())
+		{
+			return CompletableFuture.completedFuture(false);
+		}
+
+		String url = String.format("%s/auth/entitlements", getApiUrl());
+
+		Request request = new Request.Builder()
+			.url(url)
+			.header("Authorization", "Bearer " + jwtToken)
+			.get()
+			.build();
+
+		return executeAsync(request, responseBody -> {
+			try
+			{
+				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+				if (json.has("is_premium"))
+				{
+					isPremium = json.get("is_premium").getAsBoolean();
+					log.info("Fetched entitlements - premium: {}", isPremium);
+				}
+				return isPremium;
+			}
+			catch (Exception e)
+			{
+				log.error("Error parsing entitlements response: {}", e.getMessage());
+				return false;
+			}
+		}, error -> log.warn("Failed to fetch entitlements: {}", error), true);
+	}
+
 	// ============================================================================
 	// Device Authorization Flow (Discord Login for Desktop Plugin)
 	// ============================================================================
