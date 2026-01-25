@@ -70,6 +70,9 @@ public class GrandExchangeSlotOverlay extends Overlay
 			return null;
 		}
 
+		// Ensure wiki prices are loaded for competitiveness indicators
+		plugin.refreshWikiPrices();
+
 		setupGraphics(graphics);
 		renderFlipAssistHighlights(graphics);
 
