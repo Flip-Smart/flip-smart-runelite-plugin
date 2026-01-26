@@ -111,13 +111,20 @@ public class FlipAssistInputListener implements KeyListener
 			{
 				return;
 			}
-			
+
 			int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
-			
+
 			// Handle GE item search - press hotkey to select the first result
 			// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
 			if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
 			{
+				// Only auto-select if the search text matches the focused item
+				// This prevents the hotkey from interfering when user is manually typing
+				if (!isSearchTextMatchingFocusedItem(focusedFlip))
+				{
+					return;
+				}
+
 				if (hasSearchResults())
 				{
 					handledKeyPressedEvent.set(e);
@@ -367,6 +374,35 @@ public class FlipAssistInputListener implements KeyListener
 		);
 	}
 	
+	/**
+	 * Check if the current search text matches the focused item name.
+	 * This prevents the hotkey from triggering while the user is manually typing.
+	 * MUST be called on client thread.
+	 */
+	private boolean isSearchTextMatchingFocusedItem(FocusedFlip focusedFlip)
+	{
+		String searchText = client.getVarcStrValue(VARCLIENT_INPUT_TEXT);
+		if (searchText == null || searchText.isEmpty())
+		{
+			// Empty search box - allow hotkey (item will be auto-populated)
+			return true;
+		}
+
+		String itemName = focusedFlip.getItemName();
+		if (itemName == null)
+		{
+			return false;
+		}
+
+		// Normalize both strings for comparison (case-insensitive)
+		String normalizedSearch = searchText.toLowerCase().trim();
+		String normalizedItem = itemName.toLowerCase().trim();
+
+		// Match if search text equals the item name or is a prefix of it
+		// This allows the hotkey to work when GE_LAST_SEARCHED auto-populates the search
+		return normalizedItem.equals(normalizedSearch) || normalizedItem.startsWith(normalizedSearch);
+	}
+
 	/**
 	 * Check if there are GE search results displayed.
 	 * MUST be called on client thread.

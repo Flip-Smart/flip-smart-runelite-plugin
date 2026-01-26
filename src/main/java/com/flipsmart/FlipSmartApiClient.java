@@ -22,6 +22,7 @@ public class FlipSmartApiClient
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	private static final String ACCESS_TOKEN_KEY = "access_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
+	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -34,7 +35,10 @@ public class FlipSmartApiClient
 	// JWT token management
 	private volatile String jwtToken = null;
 	private volatile long tokenExpiry = 0;
-	
+
+	// Premium status (updated on login)
+	private volatile boolean isPremium = false;
+
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
@@ -203,34 +207,16 @@ public class FlipSmartApiClient
 	public CompletableFuture<AuthResult> loginAsync(String email, String password)
 	{
 		CompletableFuture<AuthResult> future = new CompletableFuture<>();
-		
-		String apiUrl = getApiUrl();
-		
-		if (email == null || email.isEmpty())
+
+		AuthResult validationError = validateLoginCredentials(email, password);
+		if (validationError != null)
 		{
-			future.complete(new AuthResult(false, "Please enter your email address"));
+			future.complete(validationError);
 			return future;
 		}
-		
-		if (password == null || password.isEmpty())
-		{
-			future.complete(new AuthResult(false, "Please enter your password"));
-			return future;
-		}
-		
-		String url = String.format("%s/auth/login", apiUrl);
-		
-		// Create JSON body with email and password
-		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty("email", email);
-		jsonBody.addProperty("password", password);
-		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
-		
-		Request request = new Request.Builder()
-			.url(url)
-			.post(body)
-			.build();
-		
+
+		Request request = buildLoginRequest(email, password);
+
 		httpClient.newCall(request).enqueue(new Callback()
 		{
 			@Override
@@ -243,49 +229,105 @@ public class FlipSmartApiClient
 			@Override
 			public void onResponse(Call call, Response response) throws IOException
 			{
-				try (response)
-				{
-					if (!response.isSuccessful())
-					{
-						if (response.code() == 401)
-						{
-							future.complete(new AuthResult(false, "Incorrect email or password"));
-						}
-						else if (response.code() == 404)
-						{
-							future.complete(new AuthResult(false, "Account not found. Please sign up first."));
-						}
-						else
-						{
-							future.complete(new AuthResult(false, "Login failed (error " + response.code() + ")"));
-						}
-						return;
-					}
-					
-					okhttp3.ResponseBody responseBody = response.body();
-					String jsonData = responseBody != null ? responseBody.string() : "";
-					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
-					
-					synchronized (authLock)
-					{
-						jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
-						// JWT tokens from this API expire in 7 days, but we'll check earlier
-						// Set expiry to 6 days to refresh before actual expiry
-						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
-					}
-					
-					log.info("Successfully authenticated with API");
-					future.complete(new AuthResult(true, "Login successful!"));
-				}
-				catch (Exception e)
-				{
-					log.error("Error processing login response: {}", e.getMessage());
-					future.complete(new AuthResult(false, "Error processing response"));
-				}
+				future.complete(handleLoginResponse(response));
 			}
 		});
-		
+
 		return future;
+	}
+
+	/**
+	 * Validate login credentials and return error if invalid
+	 */
+	private AuthResult validateLoginCredentials(String email, String password)
+	{
+		if (email == null || email.isEmpty())
+		{
+			return new AuthResult(false, "Please enter your email address");
+		}
+		if (password == null || password.isEmpty())
+		{
+			return new AuthResult(false, "Please enter your password");
+		}
+		return null;
+	}
+
+	/**
+	 * Build the login HTTP request
+	 */
+	private Request buildLoginRequest(String email, String password)
+	{
+		String url = String.format("%s/auth/login", getApiUrl());
+
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty("email", email);
+		jsonBody.addProperty("password", password);
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+
+		return new Request.Builder()
+			.url(url)
+			.post(body)
+			.build();
+	}
+
+	/**
+	 * Handle login response and return appropriate AuthResult
+	 */
+	private AuthResult handleLoginResponse(Response response)
+	{
+		try (response)
+		{
+			if (!response.isSuccessful())
+			{
+				return handleLoginError(response.code());
+			}
+
+			processSuccessfulLogin(response);
+			log.info("Successfully authenticated with API (premium: {})", isPremium);
+			return new AuthResult(true, "Login successful!");
+		}
+		catch (Exception e)
+		{
+			log.error("Error processing login response: {}", e.getMessage());
+			return new AuthResult(false, "Error processing response");
+		}
+	}
+
+	/**
+	 * Map login error codes to user-friendly messages
+	 */
+	private AuthResult handleLoginError(int code)
+	{
+		switch (code)
+		{
+			case 401:
+				return new AuthResult(false, "Incorrect email or password");
+			case 404:
+				return new AuthResult(false, "Account not found. Please sign up first.");
+			default:
+				return new AuthResult(false, "Login failed (error " + code + ")");
+		}
+	}
+
+	/**
+	 * Process successful login response and store token
+	 */
+	private void processSuccessfulLogin(Response response) throws IOException
+	{
+		okhttp3.ResponseBody responseBody = response.body();
+		String jsonData = responseBody != null ? responseBody.string() : "";
+		JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
+
+		synchronized (authLock)
+		{
+			jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
+			tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
+
+			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
+			{
+				setPremium(tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean());
+			}
+		}
 	}
 	
 	/**
@@ -421,7 +463,23 @@ public class FlipSmartApiClient
 	{
 		return jwtToken != null && System.currentTimeMillis() < tokenExpiry;
 	}
-	
+
+	/**
+	 * Check if the current user has premium status
+	 */
+	public boolean isPremium()
+	{
+		return isPremium;
+	}
+
+	/**
+	 * Set the premium status (called when flip-finder response is received)
+	 */
+	public void setPremium(boolean premium)
+	{
+		this.isPremium = premium;
+	}
+
 	/**
 	 * Clear the current authentication token
 	 */
@@ -431,9 +489,48 @@ public class FlipSmartApiClient
 		{
 			jwtToken = null;
 			tokenExpiry = 0;
+			isPremium = false;
 		}
 	}
-	
+
+	/**
+	 * Fetch user entitlements from the API to check premium status.
+	 * Call this when the player logs into the game.
+	 */
+	public CompletableFuture<Boolean> fetchEntitlementsAsync()
+	{
+		if (!isAuthenticated())
+		{
+			return CompletableFuture.completedFuture(false);
+		}
+
+		String url = String.format("%s/auth/entitlements", getApiUrl());
+
+		Request request = new Request.Builder()
+			.url(url)
+			.header("Authorization", "Bearer " + jwtToken)
+			.get()
+			.build();
+
+		return executeAsync(request, responseBody -> {
+			try
+			{
+				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+				if (json.has(JSON_KEY_IS_PREMIUM))
+				{
+					isPremium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
+					log.info("Fetched entitlements - premium: {}", isPremium);
+				}
+				return isPremium;
+			}
+			catch (Exception e)
+			{
+				log.error("Error parsing entitlements response: {}", e.getMessage());
+				return false;
+			}
+		}, error -> log.warn("Failed to fetch entitlements: {}", error), true);
+	}
+
 	// ============================================================================
 	// Device Authorization Flow (Discord Login for Desktop Plugin)
 	// ============================================================================
@@ -1321,5 +1418,178 @@ public class FlipSmartApiClient
 
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 			gson.fromJson(jsonData, BankSnapshotResponse.class));
+	}
+
+	// ============================================================================
+	// Wiki Real-Time Price API Methods
+	// ============================================================================
+
+	private static final String WIKI_PRICES_URL = "https://prices.runescape.wiki/api/v1/osrs/latest";
+	private static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
+
+	// Cache for wiki prices: itemId -> WikiPrice
+	private final Map<Integer, WikiPrice> wikiPriceCache = new ConcurrentHashMap<>();
+	private volatile long lastWikiPriceFetch = 0;
+	private volatile boolean wikiPriceFetchInProgress = false;
+
+	/**
+	 * Real-time price data from the wiki API
+	 */
+	public static class WikiPrice
+	{
+		public final int instaBuy;   // High price - what buyers pay to instant-buy
+		public final int instaSell;  // Low price - what sellers receive when instant-selling
+		public final long fetchedAt;
+
+		public WikiPrice(int instaBuy, int instaSell)
+		{
+			this.instaBuy = instaBuy;
+			this.instaSell = instaSell;
+			this.fetchedAt = System.currentTimeMillis();
+		}
+
+		public boolean isExpired()
+		{
+			return System.currentTimeMillis() - fetchedAt > WIKI_PRICE_CACHE_DURATION_MS;
+		}
+	}
+
+	/**
+	 * Get cached wiki price for an item. Returns null if not cached or expired.
+	 * Call fetchWikiPrices() to populate the cache.
+	 */
+	public WikiPrice getWikiPrice(int itemId)
+	{
+		WikiPrice price = wikiPriceCache.get(itemId);
+		if (price != null && !price.isExpired())
+		{
+			return price;
+		}
+		return null;
+	}
+
+	/**
+	 * Fetch all wiki prices from the API and update the cache.
+	 * This is rate-limited to once per minute.
+	 */
+	public void fetchWikiPrices()
+	{
+		long now = System.currentTimeMillis();
+		if (now - lastWikiPriceFetch < WIKI_PRICE_CACHE_DURATION_MS || wikiPriceFetchInProgress)
+		{
+			return;
+		}
+
+		wikiPriceFetchInProgress = true;
+
+		Request request = new Request.Builder()
+			.url(WIKI_PRICES_URL)
+			.header("User-Agent", "FlipSmart RuneLite Plugin - github.com/flipsmart")
+			.get()
+			.build();
+
+		httpClient.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.warn("Failed to fetch wiki prices: {}", e.getMessage());
+				wikiPriceFetchInProgress = false;
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException
+			{
+				try (ResponseBody responseBody = response.body())
+				{
+					if (!response.isSuccessful() || responseBody == null)
+					{
+						log.warn("Wiki price API returned error: {}", response.code());
+						return;
+					}
+
+					String json = responseBody.string();
+					parseWikiPriceResponse(json);
+					lastWikiPriceFetch = System.currentTimeMillis();
+				}
+				finally
+				{
+					wikiPriceFetchInProgress = false;
+				}
+			}
+		});
+	}
+
+	/**
+	 * Parse wiki price API response and update cache
+	 */
+	private void parseWikiPriceResponse(String json)
+	{
+		JsonObject root = gson.fromJson(json, JsonObject.class);
+		JsonObject data = root.getAsJsonObject("data");
+
+		if (data == null)
+		{
+			return;
+		}
+
+		// Clear expired entries before adding new ones to prevent unbounded growth
+		removeExpiredWikiPriceEntries();
+
+		for (String key : data.keySet())
+		{
+			parseAndCacheItemPrice(key, data.getAsJsonObject(key));
+		}
+		log.debug("Updated wiki price cache with {} items", wikiPriceCache.size());
+	}
+
+	/**
+	 * Removes expired entries from the wiki price cache to prevent memory leaks
+	 */
+	private void removeExpiredWikiPriceEntries()
+	{
+		wikiPriceCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
+	}
+
+	/**
+	 * Parse and cache a single item's price data
+	 */
+	private void parseAndCacheItemPrice(String itemKey, JsonObject priceData)
+	{
+		try
+		{
+			int itemId = Integer.parseInt(itemKey);
+			int high = getJsonIntOrZero(priceData, "high");
+			int low = getJsonIntOrZero(priceData, "low");
+
+			if (high > 0 || low > 0)
+			{
+				wikiPriceCache.put(itemId, new WikiPrice(high, low));
+			}
+		}
+		catch (NumberFormatException ignored)
+		{
+			// Skip non-numeric keys
+		}
+	}
+
+	/**
+	 * Safely get an int value from JSON, returning 0 if null or missing
+	 */
+	private int getJsonIntOrZero(JsonObject obj, String key)
+	{
+		if (obj.has(key) && !obj.get(key).isJsonNull())
+		{
+			return obj.get(key).getAsInt();
+		}
+		return 0;
+	}
+
+	/**
+	 * Check if wiki prices need to be refreshed
+	 */
+	public boolean needsWikiPriceRefresh()
+	{
+		return System.currentTimeMillis() - lastWikiPriceFetch > WIKI_PRICE_CACHE_DURATION_MS;
 	}
 }

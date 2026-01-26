@@ -24,5 +24,26 @@ public class FlipFinderResponse
 	private int itemsMatchingCriteria;
 
 	private List<FlipRecommendation> recommendations;
-}
 
+	private Subscription subscription;
+
+	/**
+	 * Check if the user has premium subscription
+	 */
+	public boolean isPremium()
+	{
+		return subscription != null && "premium".equals(subscription.getTier());
+	}
+
+	@Data
+	public static class Subscription
+	{
+		private String tier;
+
+		@SerializedName("recommendation_limit")
+		private Integer recommendationLimit;
+
+		@SerializedName("recommendations_returned")
+		private int recommendationsReturned;
+	}
+}

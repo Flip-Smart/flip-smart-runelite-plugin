@@ -72,6 +72,10 @@ public class FlipFinderPanel extends PluginPanel
 	
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
+
+	// Premium subscription link (update when dashboard URL is available)
+	private static final String SUBSCRIBE_LINK = "https://flipsmart.net/dashboard";
+	private static final String SUBSCRIBE_MESSAGE = "Subscribe to Premium for all suggestions";
 	
 	// Common fonts
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
@@ -119,6 +123,9 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton loginButton;
 	private JButton signupButton;
 	private JButton discordButton;
+
+	// Premium subscribe message (shown for non-premium users)
+	private JLabel subscribeLabel;
 	private boolean isAuthenticated = false;
 	
 	// Discord device auth polling
@@ -525,15 +532,34 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		// Footer panel with website link
-		JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 5));
+		// Footer panel with subscribe message and website link
+		JPanel footerPanel = new JPanel();
+		footerPanel.setLayout(new BoxLayout(footerPanel, BoxLayout.Y_AXIS));
 		footerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		footerPanel.setBorder(new EmptyBorder(0, 0, 5, 0));
+		footerPanel.setBorder(new EmptyBorder(5, 0, 5, 0));
+
+		// Subscribe message for non-premium users (hidden by default until we know premium status)
+		subscribeLabel = new JLabel(SUBSCRIBE_MESSAGE);
+		subscribeLabel.setForeground(new Color(255, 200, 100));
+		subscribeLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 12));
+		subscribeLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		subscribeLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+		subscribeLabel.setToolTipText("Click to subscribe to Premium");
+		subscribeLabel.setVisible(false); // Hidden until we confirm non-premium status
+		subscribeLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				LinkBrowser.browse(SUBSCRIBE_LINK);
+			}
+		});
 
 		JLabel websiteLink = new JLabel("Flip Smart Website");
 		websiteLink.setForeground(new Color(100, 180, 255));
 		websiteLink.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
 		websiteLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		websiteLink.setAlignmentX(Component.CENTER_ALIGNMENT);
 		websiteLink.setToolTipText("Visit our website to view your flips and track your performance");
 		websiteLink.addMouseListener(new MouseAdapter()
 		{
@@ -545,6 +571,8 @@ public class FlipFinderPanel extends PluginPanel
 		});
 
 		footerPanel.add(websiteLink);
+		footerPanel.add(Box.createVerticalStrut(3));
+		footerPanel.add(subscribeLabel);
 
 		mainPanel.add(topPanel, BorderLayout.NORTH);
 		mainPanel.add(tabbedPane, BorderLayout.CENTER);
@@ -909,6 +937,15 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
+	 * Update the premium status display (subscribe label visibility).
+	 * Called when entitlements are fetched on game login.
+	 */
+	public void updatePremiumStatus()
+	{
+		subscribeLabel.setVisible(!apiClient.isPremium());
+	}
+
+	/**
 	 * Refresh flip recommendations, active flips, and completed flips.
 	 *
 	 * @param shuffleSuggestions if true, randomizes suggestions within quality tiers (for manual refresh)
@@ -1000,7 +1037,11 @@ public class FlipFinderPanel extends PluginPanel
 				updateStatusLabel(response);
 				populateRecommendations(response.getRecommendations());
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
-				
+
+				// Update premium status from flip-finder response and show/hide subscribe message
+				apiClient.setPremium(response.isPremium());
+				subscribeLabel.setVisible(!response.isPremium());
+
 				// Validate focus after refresh in case focused item is no longer recommended
 				validateFocus();
 			});
