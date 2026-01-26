@@ -312,7 +312,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private void drawTimer(Graphics2D graphics, int x, int y, long createdAtMillis)
 	{
-		String timerText = formatElapsedTime(createdAtMillis);
+		String timerText = TimeUtils.formatElapsedTime(createdAtMillis);
 
 		Font originalFont = graphics.getFont();
 		graphics.setFont(new Font("Arial", Font.BOLD, 11));
@@ -326,23 +326,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.drawString(timerText, x, y);
 
 		graphics.setFont(originalFont);
-	}
-
-	/**
-	 * Format elapsed time as H:MM:SS or M:SS
-	 */
-	private String formatElapsedTime(long createdAtMillis)
-	{
-		long elapsed = Math.max(0, System.currentTimeMillis() - createdAtMillis);
-		long seconds = (elapsed / 1000) % 60;
-		long minutes = (elapsed / 60000) % 60;
-		long hours = elapsed / 3600000;
-
-		if (hours > 0)
-		{
-			return String.format("%d:%02d:%02d", hours, minutes, seconds);
-		}
-		return String.format("%d:%02d", minutes, seconds);
 	}
 
 	/**

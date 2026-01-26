@@ -345,7 +345,7 @@ public class GrandExchangeOverlay extends Overlay
 			// Draw timer after slot label (if enabled and timestamp exists)
 			if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
 			{
-				String timerText = formatElapsedTime(trackedOffer.createdAtMillis);
+				String timerText = TimeUtils.formatElapsedTime(trackedOffer.createdAtMillis);
 				FontMetrics fm = graphics.getFontMetrics();
 				int slotLabelWidth = fm.stringWidth(slotLabel);
 				int timerX = x + PADDING + slotLabelWidth + 8;
@@ -548,7 +548,7 @@ public class GrandExchangeOverlay extends Overlay
 			// Draw short timer (if enabled and timestamp exists)
 			if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
 			{
-				String timerText = formatElapsedTimeShort(trackedOffer.createdAtMillis);
+				String timerText = TimeUtils.formatElapsedTimeShort(trackedOffer.createdAtMillis);
 				int timerWidth = metrics.stringWidth(timerText);
 				int timerX = rightX - timerWidth;
 				graphics.setColor(Color.BLACK);
@@ -635,39 +635,6 @@ public class GrandExchangeOverlay extends Overlay
 		FontMetrics metrics = g.getFontMetrics();
 		int textX = x + (width - metrics.stringWidth(text)) / 2;
 		g.drawString(text, textX, y);
-	}
-
-	/**
-	 * Format elapsed time since offer creation as HH:MM:SS or MM:SS
-	 */
-	private String formatElapsedTime(long createdAtMillis)
-	{
-		long elapsed = Math.max(0, System.currentTimeMillis() - createdAtMillis);
-		long seconds = (elapsed / 1000) % 60;
-		long minutes = (elapsed / 60000) % 60;
-		long hours = elapsed / 3600000;
-
-		if (hours > 0)
-		{
-			return String.format("%d:%02d:%02d", hours, minutes, seconds);
-		}
-		return String.format("%d:%02d", minutes, seconds);
-	}
-
-	/**
-	 * Format elapsed time in short form for compact mode (e.g., "5m" or "2h")
-	 */
-	private String formatElapsedTimeShort(long createdAtMillis)
-	{
-		long elapsed = Math.max(0, System.currentTimeMillis() - createdAtMillis);
-		long minutes = elapsed / 60000;
-		long hours = elapsed / 3600000;
-
-		if (hours > 0)
-		{
-			return hours + "h";
-		}
-		return minutes + "m";
 	}
 
 	/**

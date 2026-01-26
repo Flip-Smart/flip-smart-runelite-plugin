@@ -325,7 +325,7 @@ public class FlipSmartApiClient
 
 			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
 			{
-				isPremium = tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
+				setPremium(tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean());
 			}
 		}
 	}
@@ -1533,11 +1533,22 @@ public class FlipSmartApiClient
 			return;
 		}
 
+		// Clear expired entries before adding new ones to prevent unbounded growth
+		removeExpiredWikiPriceEntries();
+
 		for (String key : data.keySet())
 		{
 			parseAndCacheItemPrice(key, data.getAsJsonObject(key));
 		}
 		log.debug("Updated wiki price cache with {} items", wikiPriceCache.size());
+	}
+
+	/**
+	 * Removes expired entries from the wiki price cache to prevent memory leaks
+	 */
+	private void removeExpiredWikiPriceEntries()
+	{
+		wikiPriceCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
 	}
 
 	/**
