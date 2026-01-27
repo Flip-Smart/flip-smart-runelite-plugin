@@ -843,6 +843,44 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Fetch timeframe-based flip recommendations from the API asynchronously.
+	 * Uses the /flip-finder/timeframe endpoint with multi-factor scoring.
+	 *
+	 * @param timeframe The target flip timeframe (30m, 2h, 4h, 12h)
+	 * @param cashStack Optional cash stack for budget-aware recommendations
+	 * @param limit Number of recommendations to return
+	 * @param priceOffset Optional price offset for buy/sell recommendations
+	 * @return CompletableFuture with the timeframe-based recommendations
+	 */
+	public CompletableFuture<TimeframeFlipFinderResponse> getTimeframeFlipRecommendationsAsync(
+		String timeframe, Integer cashStack, int limit, Integer priceOffset)
+	{
+		String apiUrl = getApiUrl();
+
+		// Build URL with query parameters
+		StringBuilder urlBuilder = new StringBuilder();
+		urlBuilder.append(String.format("%s/flip-finder/timeframe?timeframe=%s&limit=%d", apiUrl, timeframe, limit));
+
+		if (cashStack != null)
+		{
+			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
+		}
+
+		if (priceOffset != null && priceOffset > 0)
+		{
+			urlBuilder.append(String.format("&price_offset=%d", priceOffset));
+		}
+
+		String url = urlBuilder.toString();
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, TimeframeFlipFinderResponse.class));
+	}
+
+	/**
 	 * Data class for transaction request parameters (use Builder to construct)
 	 */
 	public static class TransactionRequest
