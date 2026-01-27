@@ -31,6 +31,7 @@ public class FlipFinderPanel extends PluginPanel
 	// Configuration constants
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
+	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_EMAIL = "email";
 	private static final String CONFIG_KEY_PASSWORD = "password";
 	
@@ -103,6 +104,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final JLabel statusLabel = new JLabel("Loading...");
 	private final JButton refreshButton = new JButton("Refresh");
 	private final JComboBox<FlipSmartConfig.FlipStyle> flipStyleDropdown;
+	private final JComboBox<FlipSmartConfig.FlipTimeframe> flipTimeframeDropdown;
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
@@ -170,6 +172,27 @@ public class FlipFinderPanel extends PluginPanel
 				configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_STYLE, selectedStyle);
 			}
 			// Refresh recommendations when flip style changes
+			if (isAuthenticated)
+			{
+				refresh();
+			}
+		});
+
+		// Initialize flip timeframe dropdown
+		flipTimeframeDropdown = new JComboBox<>(FlipSmartConfig.FlipTimeframe.values());
+		flipTimeframeDropdown.setFocusable(false);
+		flipTimeframeDropdown.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		flipTimeframeDropdown.setForeground(Color.WHITE);
+		// Load saved flip timeframe from config
+		flipTimeframeDropdown.setSelectedItem(config.flipTimeframe());
+		flipTimeframeDropdown.addActionListener(e -> {
+			// Save selection to config
+			FlipSmartConfig.FlipTimeframe selectedTimeframe = (FlipSmartConfig.FlipTimeframe) flipTimeframeDropdown.getSelectedItem();
+			if (selectedTimeframe != null)
+			{
+				configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_TIMEFRAME, selectedTimeframe);
+			}
+			// Refresh recommendations when timeframe changes
 			if (isAuthenticated)
 			{
 				refresh();
@@ -391,10 +414,36 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
+		// Custom renderer for timeframe dropdown
+		flipTimeframeDropdown.setRenderer(new DefaultListCellRenderer() {
+			@Override
+			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+														  boolean isSelected, boolean cellHasFocus) {
+				Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+				if (c instanceof JLabel && value instanceof FlipSmartConfig.FlipTimeframe) {
+					FlipSmartConfig.FlipTimeframe timeframe = (FlipSmartConfig.FlipTimeframe) value;
+					((JLabel) c).setText(timeframe.toString());
+				}
+				if (isSelected) {
+					c.setBackground(ColorScheme.BRAND_ORANGE);
+				} else {
+					c.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+				}
+				c.setForeground(Color.WHITE);
+				return c;
+			}
+		});
+
+		JLabel flipTimeframeLabel = new JLabel("Timeframe: ");
+		flipTimeframeLabel.setForeground(Color.LIGHT_GRAY);
+		flipTimeframeLabel.setFont(FONT_PLAIN_12);
+
 		JPanel dropdownWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		dropdownWrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		dropdownWrapper.add(flipStyleLabel);
 		dropdownWrapper.add(flipStyleDropdown);
+		dropdownWrapper.add(flipTimeframeLabel);
+		dropdownWrapper.add(flipTimeframeDropdown);
 
 		controlsPanel.add(dropdownWrapper, BorderLayout.WEST);
 
@@ -989,7 +1038,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
-		
+
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		// Don't clear container yet - keep showing old recommendations until new data arrives
@@ -997,63 +1046,104 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Fetch recommendations asynchronously
 		Integer cashStack = getCashStack();
-		// Use the selected flip style from dropdown
-		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
-		String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
 		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
-		// Only generate random seed for manual refresh to get variety in suggestions
-		// Auto-refresh keeps same items so user can focus on setting up flips
-		Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
 
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed).thenAccept(response ->
+		// Get selected timeframe to determine which endpoint to use
+		FlipSmartConfig.FlipTimeframe selectedTimeframe = (FlipSmartConfig.FlipTimeframe) flipTimeframeDropdown.getSelectedItem();
+		if (selectedTimeframe == null)
 		{
-			SwingUtilities.invokeLater(() ->
-			{
-				refreshButton.setEnabled(true);
+			selectedTimeframe = FlipSmartConfig.FlipTimeframe.ACTIVE;
+		}
 
-				if (response == null)
-				{
-					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
-					restoreScrollPosition(recommendedScrollPane, scrollPos);
-					return;
-				}
-
-				if (response.getRecommendations() == null || response.getRecommendations().isEmpty())
-				{
-					showErrorInRecommended("No flip recommendations found matching your criteria.");
-					restoreScrollPosition(recommendedScrollPane, scrollPos);
-					return;
-				}
-
-				currentRecommendations.clear();
-				currentRecommendations.addAll(response.getRecommendations());
-
-				// Store recommended sell prices in the plugin for transaction tracking
-				for (FlipRecommendation rec : response.getRecommendations())
-				{
-					plugin.setRecommendedSellPrice(rec.getItemId(), rec.getRecommendedSellPrice());
-				}
-
-				updateStatusLabel(response);
-				populateRecommendations(response.getRecommendations());
-				restoreScrollPosition(recommendedScrollPane, scrollPos);
-
-				// Update premium status from flip-finder response and show/hide subscribe message
-				apiClient.setPremium(response.isPremium());
-				subscribeLabel.setVisible(!response.isPremium());
-
-				// Validate focus after refresh in case focused item is no longer recommended
-				validateFocus();
-			});
-		}).exceptionally(throwable ->
+		if (selectedTimeframe.isTimeframeBased())
 		{
-			SwingUtilities.invokeLater(() ->
+			// Use the new timeframe-based endpoint
+			String timeframe = selectedTimeframe.getApiValue();
+			Integer priceOffset = config.priceOffset() > 0 ? config.priceOffset() : null;
+
+			apiClient.getTimeframeFlipRecommendationsAsync(timeframe, cashStack, limit, priceOffset).thenAccept(timeframeResponse ->
 			{
-				refreshButton.setEnabled(true);
-				showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
-				restoreScrollPosition(recommendedScrollPane, scrollPos);
+				// Convert to FlipFinderResponse for UI compatibility
+				FlipFinderResponse response = timeframeResponse.toFlipFinderResponse();
+				handleRecommendationsResponse(response, scrollPos);
+			}).exceptionally(throwable ->
+			{
+				SwingUtilities.invokeLater(() ->
+				{
+					refreshButton.setEnabled(true);
+					showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+					restoreScrollPosition(recommendedScrollPane, scrollPos);
+				});
+				return null;
 			});
-			return null;
+		}
+		else
+		{
+			// Use the existing flip-finder endpoint (Active mode)
+			FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+			String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
+			// Only generate random seed for manual refresh to get variety in suggestions
+			// Auto-refresh keeps same items so user can focus on setting up flips
+			Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
+
+			apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed).thenAccept(response ->
+			{
+				handleRecommendationsResponse(response, scrollPos);
+			}).exceptionally(throwable ->
+			{
+				SwingUtilities.invokeLater(() ->
+				{
+					refreshButton.setEnabled(true);
+					showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+					restoreScrollPosition(recommendedScrollPane, scrollPos);
+				});
+				return null;
+			});
+		}
+	}
+
+	/**
+	 * Handle the recommendations response from either endpoint
+	 */
+	private void handleRecommendationsResponse(FlipFinderResponse response, int scrollPos)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			refreshButton.setEnabled(true);
+
+			if (response == null)
+			{
+				showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
+				return;
+			}
+
+			if (response.getRecommendations() == null || response.getRecommendations().isEmpty())
+			{
+				showErrorInRecommended("No flip recommendations found matching your criteria.");
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
+				return;
+			}
+
+			currentRecommendations.clear();
+			currentRecommendations.addAll(response.getRecommendations());
+
+			// Store recommended sell prices in the plugin for transaction tracking
+			for (FlipRecommendation rec : response.getRecommendations())
+			{
+				plugin.setRecommendedSellPrice(rec.getItemId(), rec.getRecommendedSellPrice());
+			}
+
+			updateStatusLabel(response);
+			populateRecommendations(response.getRecommendations());
+			restoreScrollPosition(recommendedScrollPane, scrollPos);
+
+			// Update premium status from flip-finder response and show/hide subscribe message
+			apiClient.setPremium(response.isPremium());
+			subscribeLabel.setVisible(!response.isPremium());
+
+			// Validate focus after refresh in case focused item is no longer recommended
+			validateFocus();
 		});
 	}
 
