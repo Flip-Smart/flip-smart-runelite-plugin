@@ -1385,13 +1385,19 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Create a bank snapshot with all items
+	 * Create a bank snapshot with all items and total wealth components
 	 *
 	 * @param rsn RuneScape Name
 	 * @param items List of bank items with quantities and values
+	 * @param inventoryValue Total value of tradeable inventory items (excluding coins)
+	 * @param geOffersValue Total value locked in GE offers
 	 * @return CompletableFuture with BankSnapshotResponse
 	 */
-	public CompletableFuture<BankSnapshotResponse> createBankSnapshotAsync(String rsn, java.util.List<BankItem> items)
+	public CompletableFuture<BankSnapshotResponse> createBankSnapshotAsync(
+		String rsn,
+		java.util.List<BankItem> items,
+		long inventoryValue,
+		long geOffersValue)
 	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/bank/snapshot", apiUrl);
@@ -1399,6 +1405,8 @@ public class FlipSmartApiClient
 		// Build the request body
 		JsonObject requestBody = new JsonObject();
 		requestBody.addProperty("rsn", rsn);
+		requestBody.addProperty("inventory_value", inventoryValue);
+		requestBody.addProperty("ge_offers_value", geOffersValue);
 
 		com.google.gson.JsonArray itemsArray = new com.google.gson.JsonArray();
 		for (BankItem item : items)

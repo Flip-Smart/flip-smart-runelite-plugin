@@ -16,6 +16,15 @@ public class BankSnapshotResponse
 	@SerializedName("total_value")
 	private long totalValue;
 
+	@SerializedName("inventory_value")
+	private long inventoryValue;
+
+	@SerializedName("ge_offers_value")
+	private long geOffersValue;
+
+	@SerializedName("total_wealth")
+	private long totalWealth;
+
 	@SerializedName("item_count")
 	private int itemCount;
 
