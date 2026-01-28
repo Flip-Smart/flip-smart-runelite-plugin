@@ -1048,58 +1048,36 @@ public class FlipFinderPanel extends PluginPanel
 		Integer cashStack = getCashStack();
 		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
 
-		// Get selected timeframe to determine which endpoint to use
+		// Get selected flip style
+		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+		String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
+
+		// Get selected timeframe (null for Active mode)
 		FlipSmartConfig.FlipTimeframe selectedTimeframe = (FlipSmartConfig.FlipTimeframe) flipTimeframeDropdown.getSelectedItem();
-		if (selectedTimeframe == null)
+		String timeframe = null;
+		if (selectedTimeframe != null && selectedTimeframe.isTimeframeBased())
 		{
-			selectedTimeframe = FlipSmartConfig.FlipTimeframe.ACTIVE;
+			timeframe = selectedTimeframe.getApiValue();
 		}
 
-		if (selectedTimeframe.isTimeframeBased())
-		{
-			// Use the new timeframe-based endpoint
-			String timeframe = selectedTimeframe.getApiValue();
-			Integer priceOffset = config.priceOffset() > 0 ? config.priceOffset() : null;
+		// Only generate random seed for manual refresh to get variety in suggestions
+		// Auto-refresh keeps same items so user can focus on setting up flips
+		Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
 
-			apiClient.getTimeframeFlipRecommendationsAsync(timeframe, cashStack, limit, priceOffset).thenAccept(timeframeResponse ->
+		// Use unified /flip-finder endpoint with all parameters
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe).thenAccept(response ->
+		{
+			handleRecommendationsResponse(response, scrollPos);
+		}).exceptionally(throwable ->
+		{
+			SwingUtilities.invokeLater(() ->
 			{
-				// Convert to FlipFinderResponse for UI compatibility
-				FlipFinderResponse response = timeframeResponse.toFlipFinderResponse();
-				handleRecommendationsResponse(response, scrollPos);
-			}).exceptionally(throwable ->
-			{
-				SwingUtilities.invokeLater(() ->
-				{
-					refreshButton.setEnabled(true);
-					showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
-					restoreScrollPosition(recommendedScrollPane, scrollPos);
-				});
-				return null;
+				refreshButton.setEnabled(true);
+				showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
-		}
-		else
-		{
-			// Use the existing flip-finder endpoint (Active mode)
-			FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
-			String flipStyle = selectedStyle != null ? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
-			// Only generate random seed for manual refresh to get variety in suggestions
-			// Auto-refresh keeps same items so user can focus on setting up flips
-			Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
-
-			apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed).thenAccept(response ->
-			{
-				handleRecommendationsResponse(response, scrollPos);
-			}).exceptionally(throwable ->
-			{
-				SwingUtilities.invokeLater(() ->
-				{
-					refreshButton.setEnabled(true);
-					showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
-					restoreScrollPosition(recommendedScrollPane, scrollPos);
-				});
-				return null;
-			});
-		}
+			return null;
+		});
 	}
 
 	/**
