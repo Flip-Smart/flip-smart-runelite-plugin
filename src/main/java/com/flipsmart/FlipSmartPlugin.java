@@ -53,6 +53,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class FlipSmartPlugin extends Plugin
 {
 	private static final int INVENTORY_CONTAINER_ID = 93;
+	private static final int COINS_ITEM_ID = 995;
 
 	@Inject
 	private Client client;
@@ -1508,26 +1509,30 @@ public class FlipSmartPlugin extends Plugin
 		try
 		{
 			java.util.List<FlipSmartApiClient.BankItem> items = collectTradeableBankItems();
-			
+
 			if (items == null || items.isEmpty())
 			{
 				bankSnapshotInProgress = false;
 				return;
 			}
-			
-			log.info("Capturing bank snapshot: {} tradeable items for RSN {}", items.size(), rsn);
-			
-			// Send snapshot to API
-			apiClient.createBankSnapshotAsync(rsn, items).thenAccept(response ->
+
+			// Calculate additional wealth components for total wealth tracking
+			long inventoryValue = calculateInventoryValue();
+			long geOffersValue = calculateGEOffersValue();
+
+			log.info("Capturing bank snapshot: {} tradeable items, inv={}, ge={} for RSN {}",
+				items.size(), inventoryValue, geOffersValue, rsn);
+
+			// Send snapshot to API with wealth components
+			apiClient.createBankSnapshotAsync(rsn, items, inventoryValue, geOffersValue).thenAccept(response ->
 			{
 				if (response != null)
 				{
-					String valueStr = String.format("%,d", response.getTotalValue());
-					log.info("Bank snapshot captured: {} items worth {} GP", 
-						response.getItemCount(), valueStr);
+					String wealthStr = String.format("%,d", response.getTotalWealth());
+					log.info("Bank snapshot captured: {} items, {} GP total wealth",
+						response.getItemCount(), wealthStr);
 					postBankSnapshotMessage(
-						String.format("Bank snapshot saved: %,d items worth %s GP", 
-							response.getItemCount(), valueStr), 
+						String.format("Bank snapshot saved: %s GP total wealth", wealthStr),
 						false);
 				}
 				else
@@ -1613,35 +1618,157 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Convert a bank item to a BankItem if it's tradeable and has a price.
+	 * Convert a bank item to a BankItem if it's tradeable and has a price, or if it's coins.
 	 * @return BankItem or null if item should be skipped
 	 */
 	private FlipSmartApiClient.BankItem toTradeableBankItem(Item item)
 	{
 		int itemId = item.getId();
 		int quantity = item.getQuantity();
-		
+
 		// Skip empty slots and placeholder items
 		if (itemId <= 0 || quantity <= 0)
 		{
 			return null;
 		}
-		
+
+		// Coins are worth 1 GP each
+		if (itemId == COINS_ITEM_ID)
+		{
+			return new FlipSmartApiClient.BankItem(itemId, quantity, 1);
+		}
+
 		// Get item composition to check if tradeable
 		ItemComposition comp = itemManager.getItemComposition(itemId);
 		if (comp == null || !comp.isTradeable())
 		{
 			return null;
 		}
-		
+
 		// Get GE price - itemManager uses cached wiki prices
 		int gePrice = itemManager.getItemPrice(itemId);
 		if (gePrice <= 0)
 		{
 			return null;
 		}
-		
+
 		return new FlipSmartApiClient.BankItem(itemId, quantity, gePrice);
+	}
+
+	/**
+	 * Calculate the total value of items in the player's inventory.
+	 * Includes coins (as GP value) and tradeable items (at GE price).
+	 * @return Total value in GP, or 0 if inventory is unavailable
+	 */
+	private long calculateInventoryValue()
+	{
+		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
+		if (inventory == null)
+		{
+			return 0;
+		}
+
+		long totalValue = 0;
+
+		for (Item item : inventory.getItems())
+		{
+			int itemId = item.getId();
+			int quantity = item.getQuantity();
+
+			// Skip empty slots
+			if (itemId <= 0 || quantity <= 0)
+			{
+				continue;
+			}
+
+			// Coins are worth their quantity in GP
+			if (itemId == COINS_ITEM_ID)
+			{
+				totalValue += quantity;
+				continue;
+			}
+
+			// Only include tradeable items
+			ItemComposition comp = itemManager.getItemComposition(itemId);
+			if (comp == null || !comp.isTradeable())
+			{
+				continue;
+			}
+
+			// Get GE price
+			int gePrice = itemManager.getItemPrice(itemId);
+			if (gePrice > 0)
+			{
+				totalValue += (long) quantity * gePrice;
+			}
+		}
+
+		return totalValue;
+	}
+
+	/**
+	 * Calculate the total value locked in GE offers.
+	 * For buy offers: GP committed (remaining budget) + value of items already bought (pending collection)
+	 * For sell offers: Value of items still listed + GP already received (pending collection)
+	 * @return Total value in GP
+	 */
+	private long calculateGEOffersValue()
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return 0;
+		}
+
+		long totalValue = 0;
+
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer == null)
+			{
+				continue;
+			}
+
+			GrandExchangeOfferState state = offer.getState();
+			if (state == GrandExchangeOfferState.EMPTY)
+			{
+				continue;
+			}
+
+			int itemId = offer.getItemId();
+			int price = offer.getPrice();
+			int totalQty = offer.getTotalQuantity();
+			int filledQty = offer.getQuantitySold();
+			int remainingQty = totalQty - filledQty;
+
+			// Get current GE price for items
+			int itemPrice = itemManager.getItemPrice(itemId);
+			if (itemPrice <= 0)
+			{
+				itemPrice = price; // Fallback to offer price
+			}
+
+			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
+							state == GrandExchangeOfferState.BOUGHT ||
+							state == GrandExchangeOfferState.CANCELLED_BUY;
+
+			if (isBuy)
+			{
+				// Buy offer: GP is locked for remaining qty + items pending collection
+				long remainingBudget = (long) remainingQty * price;
+				long filledItemsValue = (long) filledQty * itemPrice;
+				totalValue += remainingBudget + filledItemsValue;
+			}
+			else
+			{
+				// Sell offer: Items are locked + GP pending collection
+				long remainingItemsValue = (long) remainingQty * itemPrice;
+				long filledGP = (long) filledQty * price;
+				totalValue += remainingItemsValue + filledGP;
+			}
+		}
+
+		return totalValue;
 	}
 
 	@Subscribe
@@ -2259,12 +2386,9 @@ public class FlipSmartPlugin extends Plugin
 		int totalCash = 0;
 		Item[] items = inventory.getItems();
 
-		// Item IDs for coins
-		final int COINS_995 = 995;
-
 		for (Item item : items)
 		{
-			if (item.getId() == COINS_995)
+			if (item.getId() == COINS_ITEM_ID)
 			{
 				totalCash += item.getQuantity();
 			}
