@@ -53,6 +53,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class FlipSmartPlugin extends Plugin
 {
 	private static final int INVENTORY_CONTAINER_ID = 93;
+	private static final int COINS_ITEM_ID = 995;
 
 	@Inject
 	private Client client;
@@ -1622,7 +1623,6 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private FlipSmartApiClient.BankItem toTradeableBankItem(Item item)
 	{
-		final int COINS_995 = 995;
 		int itemId = item.getId();
 		int quantity = item.getQuantity();
 
@@ -1633,7 +1633,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Coins are worth 1 GP each
-		if (itemId == COINS_995)
+		if (itemId == COINS_ITEM_ID)
 		{
 			return new FlipSmartApiClient.BankItem(itemId, quantity, 1);
 		}
@@ -1668,7 +1668,6 @@ public class FlipSmartPlugin extends Plugin
 			return 0;
 		}
 
-		final int COINS_995 = 995;
 		long totalValue = 0;
 
 		for (Item item : inventory.getItems())
@@ -1683,7 +1682,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			// Coins are worth their quantity in GP
-			if (itemId == COINS_995)
+			if (itemId == COINS_ITEM_ID)
 			{
 				totalValue += quantity;
 				continue;
@@ -2387,12 +2386,9 @@ public class FlipSmartPlugin extends Plugin
 		int totalCash = 0;
 		Item[] items = inventory.getItems();
 
-		// Item IDs for coins
-		final int COINS_995 = 995;
-
 		for (Item item : items)
 		{
-			if (item.getId() == COINS_995)
+			if (item.getId() == COINS_ITEM_ID)
 			{
 				totalCash += item.getQuantity();
 			}
