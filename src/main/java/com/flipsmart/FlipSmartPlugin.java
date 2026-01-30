@@ -71,6 +71,9 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeSlotOverlay geSlotOverlay;
 
 	@Inject
+	private GrandExchangeSlotBorderOverlay geSlotBorderOverlay;
+
+	@Inject
 	private FlipAssistOverlay flipAssistOverlay;
 
 	@Inject
@@ -175,6 +178,7 @@ public class FlipSmartPlugin extends Plugin
 		int price;
 		int previousQuantitySold;
 		long createdAtMillis;  // Timestamp when offer was created (for timer display)
+		long completedAtMillis;  // Timestamp when offer completed (0 if not complete)
 
 		// Default constructor for Gson deserialization
 		TrackedOffer() {}
@@ -188,6 +192,7 @@ public class FlipSmartPlugin extends Plugin
 			this.price = price;
 			this.previousQuantitySold = quantitySold;
 			this.createdAtMillis = System.currentTimeMillis();
+			this.completedAtMillis = 0;
 		}
 
 		// Constructor with explicit timestamp (for login restoration)
@@ -200,6 +205,20 @@ public class FlipSmartPlugin extends Plugin
 			this.price = price;
 			this.previousQuantitySold = quantitySold;
 			this.createdAtMillis = createdAtMillis;
+			this.completedAtMillis = 0;
+		}
+
+		// Constructor with explicit timestamps (for preserving completion state)
+		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.totalQuantity = totalQuantity;
+			this.price = price;
+			this.previousQuantitySold = quantitySold;
+			this.createdAtMillis = createdAtMillis;
+			this.completedAtMillis = completedAtMillis;
 		}
 	}
 	
@@ -533,6 +552,7 @@ public class FlipSmartPlugin extends Plugin
 		log.info("Flip Smart started!");
 		overlayManager.add(geOverlay);
 		overlayManager.add(geSlotOverlay);
+		overlayManager.add(geSlotBorderOverlay);
 		overlayManager.add(flipAssistOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
 		
@@ -571,6 +591,7 @@ public class FlipSmartPlugin extends Plugin
 		
 		overlayManager.remove(geOverlay);
 		overlayManager.remove(geSlotOverlay);
+		overlayManager.remove(geSlotBorderOverlay);
 		overlayManager.remove(flipAssistOverlay);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
@@ -1920,14 +1941,29 @@ public class FlipSmartPlugin extends Plugin
 		{
 			// During login, just track existing offers without recording transactions
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
-			
-			boolean isBuy = state == GrandExchangeOfferState.BUYING || 
+
+			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
 							state == GrandExchangeOfferState.BOUGHT ||
 							state == GrandExchangeOfferState.CANCELLED_BUY;
-			
+
 			// Track the current state so future changes are detected correctly
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
-			
+			// Preserve existing timestamp if we already have this offer tracked
+			TrackedOffer existing = trackedOffers.get(slot);
+			long originalTimestamp = (existing != null && existing.createdAtMillis > 0)
+				? existing.createdAtMillis
+				: System.currentTimeMillis();
+			long completedTimestamp = 0;
+
+			// Check if offer is already completed (BOUGHT/SOLD state)
+			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
+			{
+				completedTimestamp = (existing != null && existing.completedAtMillis > 0)
+					? existing.completedAtMillis
+					: System.currentTimeMillis();
+			}
+
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+
 			// Note: offline sync is now scheduled from LOGGED_IN state change
 			// after syncRSN() to ensure correct RSN-specific config key
 			return;
@@ -2197,12 +2233,25 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 
-			// Update tracked offer
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
+			// Update tracked offer - preserve original timestamp to prevent timer reset
+			long originalTimestamp = (previousOffer != null && previousOffer.createdAtMillis > 0)
+				? previousOffer.createdAtMillis
+				: System.currentTimeMillis();
+			long completedTimestamp = 0;
+
+			// Check if offer just completed (BOUGHT/SOLD state)
+			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
+			{
+				completedTimestamp = (previousOffer != null && previousOffer.completedAtMillis > 0)
+					? previousOffer.completedAtMillis
+					: System.currentTimeMillis();
+			}
+
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
 		}
 		else
 		{
-			// New offer with no items sold yet, track it
+			// New offer with no items sold yet, track it with fresh timestamp
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
 			// Clear Flip Assist focus if this order matches the focused flip

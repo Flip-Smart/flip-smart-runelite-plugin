@@ -40,9 +40,11 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final Color COLOR_UNCOMPETITIVE = new Color(215, 75, 75);      // Soft red
 	private static final Color COLOR_TIMER_TEXT = new Color(255, 255, 255);       // White
 	private static final Color COLOR_TIMER_SHADOW = new Color(0, 0, 0, 160);      // Subtle shadow
-	private static final Color COLOR_BORDER_COMPETITIVE = new Color(76, 187, 23, 180);
-	private static final Color COLOR_BORDER_UNCOMPETITIVE = new Color(215, 75, 75, 180);
 	private static final Color COLOR_FLIP_ASSIST_GLOW = new Color(255, 185, 50);  // Orange glow for flip assist
+
+	// Colorblind-safe alternative colors (blue/orange instead of green/red)
+	private static final Color COLOR_COMPETITIVE_CB = new Color(0, 102, 204);           // Blue
+	private static final Color COLOR_UNCOMPETITIVE_CB = new Color(255, 140, 0);         // Orange
 
 	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance();
 
@@ -60,6 +62,22 @@ public class GrandExchangeSlotOverlay extends Overlay
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ALWAYS_ON_TOP);
 		setPriority(OverlayPriority.HIGH);
+	}
+
+	/**
+	 * Get the competitive color (green or blue for colorblind mode)
+	 */
+	private Color getCompetitiveColor()
+	{
+		return config.colorblindMode() ? COLOR_COMPETITIVE_CB : COLOR_COMPETITIVE;
+	}
+
+	/**
+	 * Get the uncompetitive color (red or orange for colorblind mode)
+	 */
+	private Color getUncompetitiveColor()
+	{
+		return config.colorblindMode() ? COLOR_UNCOMPETITIVE_CB : COLOR_UNCOMPETITIVE;
 	}
 
 	@Override
@@ -189,34 +207,89 @@ public class GrandExchangeSlotOverlay extends Overlay
 		FlipSmartPlugin.TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
 		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
 
-		renderSlotBorder(graphics, bounds, competitiveness);
-		renderSlotTimer(graphics, bounds, trackedOffer);
+		// Render the indicator bar with colored background and timer
+		renderIndicatorBar(graphics, bounds, trackedOffer, offer, competitiveness, slot);
 		renderCompletionCheckbox(graphics, bounds, offer);
 
 		return checkForTooltip(bounds, offer);
 	}
 
 	/**
-	 * Render slot border if enabled
+	 * Render the indicator bar at the top of the slot with colored background
 	 */
-	private void renderSlotBorder(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.OfferCompetitiveness competitiveness)
+	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.TrackedOffer trackedOffer,
+									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
-		if (config.highlightSlotBorders())
+		// Bar dimensions - positioned at top of slot, full width
+		int barHeight = 18;
+		int barY = bounds.y + 2;
+		int barX = bounds.x + 3;
+		int barWidth = bounds.width - 6;
+
+		// Draw colored background based on competitiveness
+		if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
 		{
-			drawSlotBorder(graphics, bounds, competitiveness);
+			Color bgColor = (competitiveness == FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE)
+				? getCompetitiveBackgroundColor()
+				: getUncompetitiveBackgroundColor();
+
+			graphics.setColor(bgColor);
+			graphics.fillRoundRect(barX, barY, barWidth, barHeight, 4, 4);
+		}
+
+		// Draw timer if enabled
+		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
+		{
+			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
+								 offer.getState() == GrandExchangeOfferState.SOLD;
+
+			String timerText;
+			if (isComplete && trackedOffer.completedAtMillis > 0)
+			{
+				timerText = TimeUtils.formatFrozenElapsedTime(trackedOffer.createdAtMillis, trackedOffer.completedAtMillis);
+			}
+			else
+			{
+				timerText = TimeUtils.formatElapsedTime(trackedOffer.createdAtMillis);
+			}
+
+			Font originalFont = graphics.getFont();
+			graphics.setFont(new Font("Arial", Font.BOLD, 11));
+
+			int textY = barY + 13;
+
+			// Draw timer shadow and text
+			graphics.setColor(COLOR_TIMER_SHADOW);
+			graphics.drawString(timerText, barX + 6, textY + 1);
+			graphics.setColor(isComplete ? getCompetitiveColor() : COLOR_TIMER_TEXT);
+			graphics.drawString(timerText, barX + 5, textY);
+
+			graphics.setFont(originalFont);
 		}
 	}
 
 	/**
-	 * Render slot timer if enabled
+	 * Get semi-transparent competitive background color
 	 */
-	private void renderSlotTimer(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.TrackedOffer trackedOffer)
+	private Color getCompetitiveBackgroundColor()
 	{
-		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
+		if (config.colorblindMode())
 		{
-			int topY = bounds.y + 18;
-			drawTimer(graphics, bounds.x + 8, topY, trackedOffer.createdAtMillis);
+			return new Color(0, 102, 204, 60);  // Semi-transparent blue
 		}
+		return new Color(76, 187, 23, 60);  // Semi-transparent green
+	}
+
+	/**
+	 * Get semi-transparent uncompetitive background color
+	 */
+	private Color getUncompetitiveBackgroundColor()
+	{
+		if (config.colorblindMode())
+		{
+			return new Color(255, 140, 0, 60);  // Semi-transparent orange
+		}
+		return new Color(215, 75, 75, 60);  // Semi-transparent red
 	}
 
 	/**
@@ -229,6 +302,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		if (config.showCompetitivenessIndicators() && isComplete)
 		{
+			// Position checkbox at top-right of slot
 			int topY = bounds.y + 18;
 			drawCompletionCheckbox(graphics, bounds.x + bounds.width - 12, topY - 4);
 		}
@@ -278,41 +352,27 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Draw a subtle colored border/glow around the slot based on competitiveness
-	 */
-	private void drawSlotBorder(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.OfferCompetitiveness competitiveness)
-	{
-		Color borderColor;
-
-		switch (competitiveness)
-		{
-			case COMPETITIVE:
-				borderColor = COLOR_BORDER_COMPETITIVE;
-				break;
-			case UNCOMPETITIVE:
-				borderColor = COLOR_BORDER_UNCOMPETITIVE;
-				break;
-			default:
-				return; // No border for unknown
-		}
-
-		Stroke originalStroke = graphics.getStroke();
-
-		// Draw a softer inner glow effect (2px border with rounded corners)
-		graphics.setColor(borderColor);
-		graphics.setStroke(new BasicStroke(2));
-		graphics.drawRoundRect(bounds.x + 2, bounds.y + 2, bounds.width - 4, bounds.height - 4, 4, 4);
-
-		graphics.setStroke(originalStroke);
-	}
-
-	/**
 	 * Draw the timer showing elapsed time since offer creation
 	 * Uses text shadow instead of background for a cleaner look
+	 * Timer turns green and stops when offer completes
 	 */
-	private void drawTimer(Graphics2D graphics, int x, int y, long createdAtMillis)
+	private void drawTimer(Graphics2D graphics, int x, int y, long createdAtMillis, long completedAtMillis, boolean isComplete)
 	{
-		String timerText = TimeUtils.formatElapsedTime(createdAtMillis);
+		String timerText;
+		Color textColor;
+
+		if (isComplete && completedAtMillis > 0)
+		{
+			// Show frozen elapsed time and green color for completed offers
+			timerText = TimeUtils.formatFrozenElapsedTime(createdAtMillis, completedAtMillis);
+			textColor = getCompetitiveColor();
+		}
+		else
+		{
+			// Show running timer with white color
+			timerText = TimeUtils.formatElapsedTime(createdAtMillis);
+			textColor = COLOR_TIMER_TEXT;
+		}
 
 		Font originalFont = graphics.getFont();
 		graphics.setFont(new Font("Arial", Font.BOLD, 11));
@@ -322,14 +382,14 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.drawString(timerText, x + 1, y + 1);
 
 		// Draw main text
-		graphics.setColor(COLOR_TIMER_TEXT);
+		graphics.setColor(textColor);
 		graphics.drawString(timerText, x, y);
 
 		graphics.setFont(originalFont);
 	}
 
 	/**
-	 * Draw completion checkbox indicator (green checkmark for orders ready to collect)
+	 * Draw completion checkbox indicator (green/blue checkmark for orders ready to collect)
 	 */
 	private void drawCompletionCheckbox(Graphics2D graphics, int x, int y)
 	{
@@ -341,8 +401,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setColor(new Color(0, 0, 0, 80));
 		graphics.fillOval(centerX + 1, centerY + 1, size, size);
 
-		// Draw filled green circle
-		graphics.setColor(COLOR_COMPETITIVE);
+		// Draw filled circle (green or blue for colorblind mode)
+		graphics.setColor(getCompetitiveColor());
 		graphics.fillOval(centerX, centerY, size, size);
 
 		// Draw checkmark
@@ -435,7 +495,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			? offerPrice >= wikiPrice.instaSell
 			: offerPrice <= wikiPrice.instaBuy;
 
-		return isCompetitive ? COLOR_COMPETITIVE : COLOR_UNCOMPETITIVE;
+		return isCompetitive ? getCompetitiveColor() : getUncompetitiveColor();
 	}
 
 	/**
