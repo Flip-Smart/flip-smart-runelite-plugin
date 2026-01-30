@@ -215,20 +215,20 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Render the indicator bar at the top of the slot with colored background
+	 * Render the indicator bar at the top of the slot with colored background,
+	 * and timer below the item name.
 	 */
 	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.TrackedOffer trackedOffer,
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
-		// Bar dimensions - positioned at top of slot, full width
-		int barHeight = 18;
-		int barY = bounds.y + 2;
-		int barX = bounds.x + 3;
-		int barWidth = bounds.width - 6;
-
-		// Draw colored background based on competitiveness
+		// Draw colored background indicator at top of slot
 		if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
 		{
+			int barHeight = 18;
+			int barY = bounds.y + 2;
+			int barX = bounds.x + 3;
+			int barWidth = bounds.width - 6;
+
 			Color bgColor = (competitiveness == FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE)
 				? getCompetitiveBackgroundColor()
 				: getUncompetitiveBackgroundColor();
@@ -237,7 +237,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			graphics.fillRoundRect(barX, barY, barWidth, barHeight, 4, 4);
 		}
 
-		// Draw timer if enabled
+		// Draw timer below item name (to the right of item box)
 		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
@@ -256,13 +256,15 @@ public class GrandExchangeSlotOverlay extends Overlay
 			Font originalFont = graphics.getFont();
 			graphics.setFont(new Font("Arial", Font.BOLD, 11));
 
-			int textY = barY + 13;
+			// Position timer to the right of item box, below item name
+			int textX = bounds.x + 44;
+			int textY = bounds.y + (int)(bounds.height * 0.60);
 
 			// Draw timer shadow and text
 			graphics.setColor(COLOR_TIMER_SHADOW);
-			graphics.drawString(timerText, barX + 6, textY + 1);
+			graphics.drawString(timerText, textX + 1, textY + 1);
 			graphics.setColor(isComplete ? getCompetitiveColor() : COLOR_TIMER_TEXT);
-			graphics.drawString(timerText, barX + 5, textY);
+			graphics.drawString(timerText, textX, textY);
 
 			graphics.setFont(originalFont);
 		}
