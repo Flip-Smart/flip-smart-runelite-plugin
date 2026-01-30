@@ -51,14 +51,6 @@ public class GrandExchangeOverlay extends Overlay
 	private static final Color COLOR_PROGRESS_BG = new Color(40, 35, 28); // Dark progress bar background
 	private static final Color COLOR_PROGRESS_BORDER = new Color(20, 18, 15); // Progress bar border
 
-	// Competitiveness indicator colors
-	private static final Color COLOR_COMPETITIVE = new Color(50, 200, 80);       // Green
-	private static final Color COLOR_UNCOMPETITIVE = new Color(220, 60, 60);     // Red
-	private static final Color COLOR_UNKNOWN = new Color(150, 150, 150);         // Gray
-	private static final Color COLOR_TIMER = new Color(200, 200, 200);           // Light gray for timer text
-	private static final Color COLOR_BORDER_COMPETITIVE = new Color(50, 200, 80, 180);     // Semi-transparent green border
-	private static final Color COLOR_BORDER_UNCOMPETITIVE = new Color(220, 60, 60, 180);   // Semi-transparent red border
-
 	private static final int PADDING = 8;
 	private static final int LINE_HEIGHT = 17;
 	private static final int ICON_SIZE = 32;
@@ -73,18 +65,16 @@ public class GrandExchangeOverlay extends Overlay
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
-	private final FlipSmartPlugin plugin;
 
 	private boolean isCollapsed = false;
 	private Rectangle collapseButtonBounds = new Rectangle();
 
 	@Inject
-	private GrandExchangeOverlay(Client client, FlipSmartConfig config, ItemManager itemManager, FlipSmartPlugin plugin)
+	private GrandExchangeOverlay(Client client, FlipSmartConfig config, ItemManager itemManager)
 	{
 		this.client = client;
 		this.config = config;
 		this.itemManager = itemManager;
-		this.plugin = plugin;
 		
 		setPosition(OverlayPosition.DYNAMIC);
 		setPriority(OverlayPriority.MED);
@@ -321,47 +311,12 @@ public class GrandExchangeOverlay extends Overlay
 				}
 			}
 			
-			// Get tracked offer for timer and competitiveness
-			FlipSmartPlugin.TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
-			FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
-
-			// Calculate slot bounds for border highlighting
-			int slotStartY = currentY - LINE_HEIGHT + 4;
-			int slotHeight = LINE_HEIGHT * (config.showGEItemNames() ? 3 : 2) + 2;
-
-			// Draw slot border based on competitiveness (if enabled)
-			if (config.highlightSlotBorders())
-			{
-				drawSlotBorder(graphics, x + PADDING - 2, slotStartY, textWidth + 4, slotHeight, competitiveness);
-			}
-
-			// Line 1: Slot label + timer + competitiveness indicator
+			// Line 1: Slot label
 			String slotLabel = (slot + 1) + ". " + (isBuy ? "Buy" : "Sell");
 			graphics.setColor(Color.BLACK);
 			graphics.drawString(slotLabel, x + PADDING + 1, currentY + 1);
 			graphics.setColor(isBuy ? COLOR_BUY : COLOR_SELL);
 			graphics.drawString(slotLabel, x + PADDING, currentY);
-
-			// Draw timer after slot label (if enabled and timestamp exists)
-			if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
-			{
-				String timerText = TimeUtils.formatElapsedTime(trackedOffer.createdAtMillis);
-				FontMetrics fm = graphics.getFontMetrics();
-				int slotLabelWidth = fm.stringWidth(slotLabel);
-				int timerX = x + PADDING + slotLabelWidth + 8;
-
-				graphics.setColor(Color.BLACK);
-				graphics.drawString(timerText, timerX + 1, currentY + 1);
-				graphics.setColor(COLOR_TIMER);
-				graphics.drawString(timerText, timerX, currentY);
-			}
-
-			// Draw competitiveness indicator on the right side (if enabled)
-			if (config.showCompetitivenessIndicators())
-			{
-				int indicatorX = x + textWidth - 4;
-				drawCompetitivenessIndicator(graphics, indicatorX, currentY, competitiveness);
-			}
 
 			currentY += LINE_HEIGHT;
 			
@@ -501,10 +456,6 @@ public class GrandExchangeOverlay extends Overlay
 			
 			Color statusColor = getStatusColor(state, isBuy);
 
-			// Get tracked offer for timer and competitiveness
-			FlipSmartPlugin.TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
-			FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
-
 			// Draw compact icon
 			if (config.showGEItemIcons())
 			{
@@ -525,37 +476,14 @@ public class GrandExchangeOverlay extends Overlay
 			graphics.setColor(isBuy ? COLOR_BUY : COLOR_SELL);
 			graphics.drawString(displayText, textX, currentY);
 
-			// Calculate right-side content width for timer, percentage, and indicator
-			int rightX = x + totalWidth - PADDING;
-
-			// Draw competitiveness dot on far right (if enabled)
-			if (config.showCompetitivenessIndicators())
-			{
-				drawCompetitivenessDot(graphics, rightX - 6, currentY - 8, competitiveness);
-				rightX -= 10;
-			}
-
-			// Draw percentage
+			// Draw percentage on the right
 			String pctText = PERCENTAGE_FORMAT.format(percentage) + "%";
 			int pctWidth = metrics.stringWidth(pctText);
-			int pctX = rightX - pctWidth;
+			int pctX = x + totalWidth - PADDING - pctWidth;
 			graphics.setColor(Color.BLACK);
 			graphics.drawString(pctText, pctX + 1, currentY + 1);
 			graphics.setColor(statusColor);
 			graphics.drawString(pctText, pctX, currentY);
-			rightX = pctX - 4;
-
-			// Draw short timer (if enabled and timestamp exists)
-			if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
-			{
-				String timerText = TimeUtils.formatElapsedTimeShort(trackedOffer.createdAtMillis);
-				int timerWidth = metrics.stringWidth(timerText);
-				int timerX = rightX - timerWidth;
-				graphics.setColor(Color.BLACK);
-				graphics.drawString(timerText, timerX + 1, currentY + 1);
-				graphics.setColor(COLOR_TIMER);
-				graphics.drawString(timerText, timerX, currentY);
-			}
 
 			currentY += COMPACT_LINE_HEIGHT;
 		}
@@ -635,87 +563,6 @@ public class GrandExchangeOverlay extends Overlay
 		FontMetrics metrics = g.getFontMetrics();
 		int textX = x + (width - metrics.stringWidth(text)) / 2;
 		g.drawString(text, textX, y);
-	}
-
-	/**
-	 * Draw competitiveness indicator (checkmark, X, or question mark)
-	 */
-	private void drawCompetitivenessIndicator(Graphics2D graphics, int x, int y, FlipSmartPlugin.OfferCompetitiveness competitiveness)
-	{
-		Font originalFont = graphics.getFont();
-		graphics.setFont(new Font("Arial", Font.BOLD, 12));
-
-		switch (competitiveness)
-		{
-			case COMPETITIVE:
-				graphics.setColor(COLOR_COMPETITIVE);
-				graphics.drawString("\u2713", x, y);  // Unicode checkmark
-				break;
-			case UNCOMPETITIVE:
-				graphics.setColor(COLOR_UNCOMPETITIVE);
-				graphics.drawString("\u2717", x, y);  // Unicode X mark
-				break;
-			case UNKNOWN:
-			default:
-				graphics.setColor(COLOR_UNKNOWN);
-				graphics.drawString("?", x, y);
-				break;
-		}
-
-		graphics.setFont(originalFont);
-	}
-
-	/**
-	 * Draw a small competitiveness dot for compact mode
-	 */
-	private void drawCompetitivenessDot(Graphics2D graphics, int x, int y, FlipSmartPlugin.OfferCompetitiveness competitiveness)
-	{
-		int dotSize = 6;
-		Color dotColor;
-
-		switch (competitiveness)
-		{
-			case COMPETITIVE:
-				dotColor = COLOR_COMPETITIVE;
-				break;
-			case UNCOMPETITIVE:
-				dotColor = COLOR_UNCOMPETITIVE;
-				break;
-			case UNKNOWN:
-			default:
-				dotColor = COLOR_UNKNOWN;
-				break;
-		}
-
-		graphics.setColor(dotColor);
-		graphics.fillOval(x, y, dotSize, dotSize);
-	}
-
-	/**
-	 * Draw a colored border around an offer slot based on competitiveness
-	 */
-	private void drawSlotBorder(Graphics2D graphics, int x, int y, int width, int height, FlipSmartPlugin.OfferCompetitiveness competitiveness)
-	{
-		Color borderColor;
-
-		switch (competitiveness)
-		{
-			case COMPETITIVE:
-				borderColor = COLOR_BORDER_COMPETITIVE;
-				break;
-			case UNCOMPETITIVE:
-				borderColor = COLOR_BORDER_UNCOMPETITIVE;
-				break;
-			case UNKNOWN:
-			default:
-				return; // No border for unknown
-		}
-
-		Stroke originalStroke = graphics.getStroke();
-		graphics.setColor(borderColor);
-		graphics.setStroke(new BasicStroke(2));
-		graphics.drawRoundRect(x, y, width, height, 4, 4);
-		graphics.setStroke(originalStroke);
 	}
 
 	public void toggleCollapse()
