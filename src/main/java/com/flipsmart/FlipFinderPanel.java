@@ -438,12 +438,24 @@ public class FlipFinderPanel extends PluginPanel
 		flipTimeframeLabel.setForeground(Color.LIGHT_GRAY);
 		flipTimeframeLabel.setFont(FONT_PLAIN_12);
 
-		JPanel dropdownWrapper = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Row 1: Style dropdown
+		JPanel styleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		styleRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		styleRow.add(flipStyleLabel);
+		styleRow.add(flipStyleDropdown);
+
+		// Row 2: Timeframe dropdown
+		JPanel timeframeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		timeframeRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		timeframeRow.add(flipTimeframeLabel);
+		timeframeRow.add(flipTimeframeDropdown);
+
+		// Stack rows vertically
+		JPanel dropdownWrapper = new JPanel();
+		dropdownWrapper.setLayout(new BoxLayout(dropdownWrapper, BoxLayout.Y_AXIS));
 		dropdownWrapper.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		dropdownWrapper.add(flipStyleLabel);
-		dropdownWrapper.add(flipStyleDropdown);
-		dropdownWrapper.add(flipTimeframeLabel);
-		dropdownWrapper.add(flipTimeframeDropdown);
+		dropdownWrapper.add(styleRow);
+		dropdownWrapper.add(timeframeRow);
 
 		controlsPanel.add(dropdownWrapper, BorderLayout.WEST);
 
