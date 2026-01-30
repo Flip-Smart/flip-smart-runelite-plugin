@@ -354,43 +354,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Draw the timer showing elapsed time since offer creation
-	 * Uses text shadow instead of background for a cleaner look
-	 * Timer turns green and stops when offer completes
-	 */
-	private void drawTimer(Graphics2D graphics, int x, int y, long createdAtMillis, long completedAtMillis, boolean isComplete)
-	{
-		String timerText;
-		Color textColor;
-
-		if (isComplete && completedAtMillis > 0)
-		{
-			// Show frozen elapsed time and green color for completed offers
-			timerText = TimeUtils.formatFrozenElapsedTime(createdAtMillis, completedAtMillis);
-			textColor = getCompetitiveColor();
-		}
-		else
-		{
-			// Show running timer with white color
-			timerText = TimeUtils.formatElapsedTime(createdAtMillis);
-			textColor = COLOR_TIMER_TEXT;
-		}
-
-		Font originalFont = graphics.getFont();
-		graphics.setFont(new Font("Arial", Font.BOLD, 11));
-
-		// Draw shadow for readability (offset by 1 pixel)
-		graphics.setColor(COLOR_TIMER_SHADOW);
-		graphics.drawString(timerText, x + 1, y + 1);
-
-		// Draw main text
-		graphics.setColor(textColor);
-		graphics.drawString(timerText, x, y);
-
-		graphics.setFont(originalFont);
-	}
-
-	/**
 	 * Draw completion checkbox indicator (green/blue checkmark for orders ready to collect)
 	 */
 	private void drawCompletionCheckbox(Graphics2D graphics, int x, int y)
