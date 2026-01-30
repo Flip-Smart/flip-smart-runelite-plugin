@@ -71,9 +71,6 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeSlotOverlay geSlotOverlay;
 
 	@Inject
-	private GrandExchangeSlotBorderOverlay geSlotBorderOverlay;
-
-	@Inject
 	private FlipAssistOverlay flipAssistOverlay;
 
 	@Inject
@@ -552,7 +549,6 @@ public class FlipSmartPlugin extends Plugin
 		log.info("Flip Smart started!");
 		overlayManager.add(geOverlay);
 		overlayManager.add(geSlotOverlay);
-		overlayManager.add(geSlotBorderOverlay);
 		overlayManager.add(flipAssistOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
 		
@@ -591,7 +587,6 @@ public class FlipSmartPlugin extends Plugin
 		
 		overlayManager.remove(geOverlay);
 		overlayManager.remove(geSlotOverlay);
-		overlayManager.remove(geSlotBorderOverlay);
 		overlayManager.remove(flipAssistOverlay);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
