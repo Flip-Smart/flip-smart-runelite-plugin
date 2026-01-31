@@ -238,6 +238,18 @@ public interface FlipSmartConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "colorblindMode",
+		name = "Colorblind Mode",
+		description = "Use blue/orange colors instead of green/red for better accessibility",
+		section = displaySection,
+		position = 8
+	)
+	default boolean colorblindMode()
+	{
+		return false;
+	}
+
 	// ============================================
 	// Flip Assistant Section (Guided Workflow + Quick Actions)
 	// ============================================
