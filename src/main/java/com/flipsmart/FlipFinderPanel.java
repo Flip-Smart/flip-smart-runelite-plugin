@@ -622,6 +622,12 @@ public class FlipFinderPanel extends PluginPanel
 						}
 					});
 				}
+				catch (InterruptedException e)
+				{
+					Thread.currentThread().interrupt();
+					log.debug("Refresh token auth interrupted: {}", e.getMessage());
+					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				}
 				catch (Exception e)
 				{
 					log.debug("Refresh token auth failed: {}", e.getMessage());
@@ -1381,16 +1387,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showErrorInCompletedFlips(String message)
 	{
-		completedFlipsListContainer.removeAll();
-
-		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent("Completed Flips", message);
-		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		completedFlipsListContainer.add(errorPanel);
-
-		completedFlipsListContainer.revalidate();
-		completedFlipsListContainer.repaint();
+		showErrorInContainer(completedFlipsListContainer, "Completed Flips", message);
 	}
 
 	/**
@@ -1541,16 +1538,7 @@ public class FlipFinderPanel extends PluginPanel
 	private void showErrorInRecommended(String message)
 	{
 		statusLabel.setText("Error");
-		recommendedListContainer.removeAll();
-
-		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent("Flip Finder", message);
-		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		recommendedListContainer.add(errorPanel);
-
-		recommendedListContainer.revalidate();
-		recommendedListContainer.repaint();
+		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
 	}
 
 	/**
@@ -1558,16 +1546,29 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showErrorInActiveFlips(String message)
 	{
-		activeFlipsListContainer.removeAll();
+		showErrorInContainer(activeFlipsListContainer, "Active Flips", message);
+	}
+
+	/**
+	 * Helper method to show an error panel in any container.
+	 * Reduces code duplication across error display methods.
+	 *
+	 * @param container The panel container to show the error in
+	 * @param title The title for the error panel
+	 * @param message The error message to display
+	 */
+	private void showErrorInContainer(JPanel container, String title, String message)
+	{
+		container.removeAll();
 
 		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent("Active Flips", message);
+		errorPanel.setContent(title, message);
 		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		activeFlipsListContainer.add(errorPanel);
+		container.add(errorPanel);
 
-		activeFlipsListContainer.revalidate();
-		activeFlipsListContainer.repaint();
+		container.revalidate();
+		container.repaint();
 	}
 
 	/**

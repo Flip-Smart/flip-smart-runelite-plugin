@@ -348,13 +348,23 @@ public class FlipSmartApiClient
 		okhttp3.ResponseBody responseBody = response.body();
 		String jsonData = responseBody != null ? responseBody.string() : "";
 		JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
+		processTokenResponse(tokenResponse);
+	}
 
+	/**
+	 * Process token response and store access token, refresh token, and premium status.
+	 * Used by both login and refresh token flows to avoid code duplication.
+	 *
+	 * @param tokenResponse The JSON response containing access_token, optional refresh_token, and is_premium
+	 */
+	private void processTokenResponse(JsonObject tokenResponse)
+	{
 		synchronized (authLock)
 		{
 			jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
 			tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
 
-			// Store refresh token if provided (for persistent login)
+			// Store refresh token if provided (for persistent login / token rotation)
 			if (tokenResponse.has(REFRESH_TOKEN_KEY) && !tokenResponse.get(REFRESH_TOKEN_KEY).isJsonNull())
 			{
 				refreshToken = tokenResponse.get(REFRESH_TOKEN_KEY).getAsString();
@@ -441,22 +451,7 @@ public class FlipSmartApiClient
 					String jsonData = responseBody != null ? responseBody.string() : "";
 					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
 
-					synchronized (authLock)
-					{
-						jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
-						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
-
-						// Store new refresh token (token rotation)
-						if (tokenResponse.has(REFRESH_TOKEN_KEY) && !tokenResponse.get(REFRESH_TOKEN_KEY).isJsonNull())
-						{
-							refreshToken = tokenResponse.get(REFRESH_TOKEN_KEY).getAsString();
-						}
-
-						if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
-						{
-							setPremium(tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean());
-						}
-					}
+					processTokenResponse(tokenResponse);
 
 					log.info("Successfully refreshed access token (premium: {})", isPremium);
 					future.complete(true);
