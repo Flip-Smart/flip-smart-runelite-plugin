@@ -13,7 +13,6 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
-import net.runelite.api.ItemComposition;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
@@ -1672,9 +1671,8 @@ public class FlipSmartPlugin extends Plugin
 			return new FlipSmartApiClient.BankItem(itemId, quantity, 1);
 		}
 
-		// Get item composition to check if tradeable
-		ItemComposition comp = itemManager.getItemComposition(itemId);
-		if (comp == null || !comp.isTradeable())
+		// Check if tradeable
+		if (!ItemUtils.isTradeable(itemManager, itemId))
 		{
 			return null;
 		}
@@ -1723,8 +1721,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			// Only include tradeable items
-			ItemComposition comp = itemManager.getItemComposition(itemId);
-			if (comp == null || !comp.isTradeable())
+			if (!ItemUtils.isTradeable(itemManager, itemId))
 			{
 				continue;
 			}
@@ -1944,7 +1941,7 @@ public class FlipSmartPlugin extends Plugin
 		GrandExchangeOfferState state = offer.getState();
 		
 		// Get item name (must be called on client thread)
-		String itemName = itemManager.getItemComposition(itemId).getName();
+		String itemName = ItemUtils.getItemName(itemManager, itemId);
 		
 		// Check if this is during the login burst window
 		int currentTick = client.getTickCount();
@@ -2537,7 +2534,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		return configManager.getConfig(FlipSmartConfig.class);
 	}
-	
+
 	// Mouse listener for GE overlay clicks
 	private final MouseListener overlayMouseListener = new MouseListener()
 	{

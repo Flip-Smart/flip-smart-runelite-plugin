@@ -302,8 +302,8 @@ public class GrandExchangeOverlay extends Overlay
 							state == GrandExchangeOfferState.CANCELLED_BUY;
 			
 			double percentage = totalQuantity > 0 ? (quantitySold * 100.0) / totalQuantity : 0;
-			String itemName = itemManager.getItemComposition(itemId).getName();
-			
+			String itemName = ItemUtils.getItemName(itemManager, itemId);
+
 			// Determine status color based on offer state
 			Color statusColor = getStatusColor(state, isBuy);
 			
@@ -468,8 +468,8 @@ public class GrandExchangeOverlay extends Overlay
 							state == GrandExchangeOfferState.CANCELLED_BUY;
 			
 			double percentage = totalQuantity > 0 ? (quantitySold * 100.0) / totalQuantity : 0;
-			String itemName = itemManager.getItemComposition(itemId).getName();
-			
+			String itemName = ItemUtils.getItemName(itemManager, itemId);
+
 			// Truncate item name if too long
 			if (itemName.length() > MAX_ITEM_NAME_LENGTH)
 			{
