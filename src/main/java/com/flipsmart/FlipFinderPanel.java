@@ -624,7 +624,6 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				catch (InterruptedException e)
 				{
-					Thread.currentThread().interrupt();
 					log.debug("Refresh token auth interrupted: {}", e.getMessage());
 					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
 				}
