@@ -153,6 +153,24 @@ public class FlipSmartPlugin extends Plugin
 	private long lastBankSnapshotAttempt = 0;
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000; // 1 minute cooldown between attempts
 
+	// Timer delay constants (in milliseconds)
+	/** Delay before syncing offline fills after login */
+	private static final int OFFLINE_SYNC_DELAY_MS = 2000;
+	/** Delay before refreshing panel after sync */
+	private static final int PANEL_REFRESH_DELAY_MS = 1000;
+	/** Delay before cleaning up stale flips (allows GE state to stabilize) */
+	private static final int STALE_FLIP_CLEANUP_DELAY_MS = 15000;
+	/** Delay before validating inventory quantities */
+	private static final int INVENTORY_VALIDATION_DELAY_MS = 2000;
+	/** Delay before refreshing panel after transaction/collection */
+	private static final int TRANSACTION_REFRESH_DELAY_MS = 500;
+
+	// Threshold constants
+	/** Minimum interval between auto-refreshes (30 seconds) */
+	private static final long AUTO_REFRESH_MIN_INTERVAL_MS = 30_000;
+	/** Minimum cash stack to trigger auto-refresh on change */
+	private static final int AUTO_REFRESH_CASH_THRESHOLD = 100_000;
+
 	/**
 	 * Enum representing offer competitiveness relative to Wiki prices
 	 */
@@ -674,7 +692,7 @@ public class FlipSmartPlugin extends Plugin
 			// This must run AFTER syncRSN() so we have the correct RSN for the config key
 			if (!offlineSyncCompleted)
 			{
-				javax.swing.Timer syncTimer = new javax.swing.Timer(2000, e -> syncOfflineFills());
+				javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
 				syncTimer.setRepeats(false);
 				syncTimer.start();
 			}
@@ -1041,13 +1059,13 @@ public class FlipSmartPlugin extends Plugin
 		// Refresh the panel after a short delay
 		if (flipFinderPanel != null)
 		{
-			javax.swing.Timer refreshTimer = new javax.swing.Timer(1000, e -> flipFinderPanel.refresh());
+			javax.swing.Timer refreshTimer = new javax.swing.Timer(PANEL_REFRESH_DELAY_MS, e -> flipFinderPanel.refresh());
 			refreshTimer.setRepeats(false);
 			refreshTimer.start();
 		}
 		
 		// Schedule stale flip cleanup after GE state is stable
-		javax.swing.Timer cleanupTimer = new javax.swing.Timer(15000, e -> {
+		javax.swing.Timer cleanupTimer = new javax.swing.Timer(STALE_FLIP_CLEANUP_DELAY_MS, e -> {
 			if (!trackedOffers.isEmpty() || collectedItemIds.isEmpty())
 			{
 				cleanupStaleActiveFlips();
@@ -1070,7 +1088,7 @@ public class FlipSmartPlugin extends Plugin
 	private void scheduleInventoryQuantityValidation()
 	{
 		// Delay slightly to ensure cleanup has completed
-		javax.swing.Timer validationTimer = new javax.swing.Timer(2000, e -> {
+		javax.swing.Timer validationTimer = new javax.swing.Timer(INVENTORY_VALIDATION_DELAY_MS, e -> {
 			clientThread.invokeLater(this::validateInventoryQuantities);
 		});
 		validationTimer.setRepeats(false);
@@ -2149,7 +2167,7 @@ public class FlipSmartPlugin extends Plugin
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)
 				{
-					javax.swing.Timer refreshTimer = new javax.swing.Timer(500, e -> flipFinderPanel.refresh());
+					javax.swing.Timer refreshTimer = new javax.swing.Timer(TRANSACTION_REFRESH_DELAY_MS, e -> flipFinderPanel.refresh());
 					refreshTimer.setRepeats(false);
 					refreshTimer.start();
 				}
@@ -2444,11 +2462,11 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Updated cash stack: {}", currentCashStack);
 
 			// If cash stack changed significantly and we have a flip finder panel, refresh it
-			if (flipFinderPanel != null && totalCash > 100_000)
+			if (flipFinderPanel != null && totalCash > AUTO_REFRESH_CASH_THRESHOLD)
 			{
-				// Only auto-refresh if it's been more than 30 seconds since last refresh
+				// Only auto-refresh if it's been more than the minimum interval since last refresh
 				long now = System.currentTimeMillis();
-				if (now - lastFlipFinderRefresh > 30_000)
+				if (now - lastFlipFinderRefresh > AUTO_REFRESH_MIN_INTERVAL_MS)
 				{
 					lastFlipFinderRefresh = now;
 					flipFinderPanel.refresh();
