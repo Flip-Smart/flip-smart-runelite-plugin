@@ -61,6 +61,28 @@ public class GrandExchangeOverlay extends Overlay
 	// Compact mode constants
 	private static final int COMPACT_LINE_HEIGHT = 14;
 	private static final int COMPACT_ICON_SIZE = 18;
+
+	// Layout spacing constants
+	/** Extra padding added to collapsed header height */
+	private static final int COLLAPSED_EXTRA_PADDING = 4;
+	/** Spacing between offer dividers in height calculation */
+	private static final int DIVIDER_SPACING = 8;
+	/** Vertical padding after the title text */
+	private static final int TITLE_BOTTOM_PADDING = 4;
+	/** Y offset adjustment before drawing divider line */
+	private static final int DIVIDER_Y_OFFSET_BEFORE = -11;
+	/** Y offset adjustment after drawing divider line */
+	private static final int DIVIDER_Y_OFFSET_AFTER = 19;
+	/** Y offset for icon positioning above progress bar */
+	private static final int ICON_STACK_Y_OFFSET = 24;
+
+	// Compact mode spacing constants
+	/** Extra Y spacing after title in compact mode */
+	private static final int COMPACT_TITLE_SPACING = 2;
+	/** X adjustment for compact icon positioning */
+	private static final int COMPACT_ICON_X_OFFSET = -2;
+	/** Y adjustment for compact icon positioning */
+	private static final int COMPACT_ICON_Y_OFFSET = 4;
 	
 	private final Client client;
 	private final FlipSmartConfig config;
@@ -158,7 +180,7 @@ public class GrandExchangeOverlay extends Overlay
 		// If collapsed, only show the header
 		if (isCollapsed)
 		{
-			int collapsedHeight = LINE_HEIGHT + (PADDING * 2) + 4;
+			int collapsedHeight = LINE_HEIGHT + (PADDING * 2) + COLLAPSED_EXTRA_PADDING;
 			
 			// Draw background
 			graphics.setColor(COLOR_BACKGROUND);
@@ -224,8 +246,8 @@ public class GrandExchangeOverlay extends Overlay
 		}
 		
 		int totalHeight = (lineCount * LINE_HEIGHT) + (PADDING * 2);
-		totalHeight += dividerCount * 8;
-		totalHeight += 4; // Add 4px padding after title
+		totalHeight += dividerCount * DIVIDER_SPACING;
+		totalHeight += TITLE_BOTTOM_PADDING;
 		
 		// Draw background with GE-style brown
 		graphics.setColor(COLOR_BACKGROUND);
@@ -253,7 +275,7 @@ public class GrandExchangeOverlay extends Overlay
 		collapseButtonBounds = new Rectangle(x, y, totalWidth, LINE_HEIGHT + PADDING);
 		
 		currentY += LINE_HEIGHT;
-		currentY += 4; // Add 4px padding after title
+		currentY += TITLE_BOTTOM_PADDING;
 		
 		// Reset to regular font for content
 		graphics.setFont(FontManager.getRunescapeFont());
@@ -300,14 +322,14 @@ public class GrandExchangeOverlay extends Overlay
 				
 				if (previousWasVisible)
 				{
-					currentY += -11;
+					currentY += DIVIDER_Y_OFFSET_BEFORE;
 					
 					graphics.setColor(COLOR_DIVIDER);
 					int dividerX1 = x + PADDING;
 					int dividerX2 = x + textWidth + PADDING;
 					graphics.drawLine(dividerX1, currentY, dividerX2, currentY);
-					
-					currentY += 19;
+
+					currentY += DIVIDER_Y_OFFSET_AFTER;
 				}
 			}
 			
@@ -353,7 +375,7 @@ public class GrandExchangeOverlay extends Overlay
 					if (icon.getWidth() > 0)
 					{
 						int iconX = progressBarX + (PROGRESS_BAR_WIDTH - ICON_SIZE) / 2;
-						int iconY = progressBarY - ICON_SIZE / 2 + PROGRESS_BAR_HEIGHT / 2 - 24;
+						int iconY = progressBarY - ICON_SIZE / 2 + PROGRESS_BAR_HEIGHT / 2 - ICON_STACK_Y_OFFSET;
 						graphics.drawImage(icon, iconX, iconY, ICON_SIZE, ICON_SIZE, null);
 					}
 				}
@@ -424,7 +446,7 @@ public class GrandExchangeOverlay extends Overlay
 		// Set collapse button bounds
 		collapseButtonBounds = new Rectangle(x, y, totalWidth, totalHeight);
 		
-		currentY += COMPACT_LINE_HEIGHT + 2;
+		currentY += COMPACT_LINE_HEIGHT + COMPACT_TITLE_SPACING;
 		
 		// Render each slot
 		for (int slot = 0; slot < offers.length; slot++)
@@ -462,8 +484,8 @@ public class GrandExchangeOverlay extends Overlay
 				AsyncBufferedImage itemImage = itemManager.getImage(itemId);
 				if (itemImage != null && itemImage.getWidth() > 0)
 				{
-					int iconX = x + PADDING - 2;
-					int iconY = currentY - COMPACT_ICON_SIZE + 4;
+					int iconX = x + PADDING + COMPACT_ICON_X_OFFSET;
+					int iconY = currentY - COMPACT_ICON_SIZE + COMPACT_ICON_Y_OFFSET;
 					graphics.drawImage(itemImage, iconX, iconY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, null);
 				}
 			}
