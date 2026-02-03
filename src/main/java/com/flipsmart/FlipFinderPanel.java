@@ -650,11 +650,14 @@ public class FlipFinderPanel extends PluginPanel
 		String email = config.email();
 		String password = config.password();
 
+		// Always pre-fill email if available (helps users who need to re-login)
+		if (email != null && !email.isEmpty())
+		{
+			emailField.setText(email);
+		}
+
 		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
 		{
-			// Pre-fill the email field
-			emailField.setText(email);
-
 			// Try to authenticate in background
 			java.util.concurrent.CompletableFuture.runAsync(() -> {
 				FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
@@ -675,6 +678,12 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				});
 			});
+		}
+		else
+		{
+			// No stored credentials - show helpful message to user
+			loginStatusLabel.setText("Please login to continue");
+			loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 		}
 	}
 
