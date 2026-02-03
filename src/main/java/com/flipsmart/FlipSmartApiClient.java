@@ -47,6 +47,9 @@ public class FlipSmartApiClient
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
+	// Callback when authentication permanently fails (both refresh token and password fail)
+	private volatile Runnable onAuthFailure = null;
+
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
 	{
@@ -134,13 +137,15 @@ public class FlipSmartApiClient
 								Request retryRequest = request.newBuilder()
 									.header("Authorization", "Bearer " + jwtToken)
 									.build();
-								
+
 								// Retry without auth retry to prevent infinite loop
 								executeAsync(retryRequest, responseHandler, errorHandler, false)
 									.thenAccept(future::complete);
 							}
 							else
 							{
+								// Auth permanently failed - notify so UI can show login screen
+								notifyAuthFailure();
 								future.complete(null);
 							}
 						});
@@ -632,6 +637,27 @@ public class FlipSmartApiClient
 			tokenExpiry = 0;
 			refreshToken = null;
 			isPremium = false;
+		}
+	}
+
+	/**
+	 * Set callback for when authentication permanently fails.
+	 * This is called when both refresh token and password auth fail,
+	 * indicating the user needs to re-login manually.
+	 */
+	public void setOnAuthFailure(Runnable callback)
+	{
+		this.onAuthFailure = callback;
+	}
+
+	/**
+	 * Notify that authentication has permanently failed
+	 */
+	private void notifyAuthFailure()
+	{
+		if (onAuthFailure != null)
+		{
+			onAuthFailure.run();
 		}
 	}
 

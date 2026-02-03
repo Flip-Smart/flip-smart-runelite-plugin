@@ -186,7 +186,20 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Start with login panel, then check authentication
 		add(loginPanel, BorderLayout.CENTER);
-		
+
+		// Set up auth failure callback to redirect to login screen
+		apiClient.setOnAuthFailure(() -> SwingUtilities.invokeLater(() -> {
+			// Pre-fill email if available
+			String email = config.email();
+			if (email != null && !email.isEmpty())
+			{
+				emailField.setText(email);
+			}
+			loginStatusLabel.setText("Session expired. Please login again.");
+			loginStatusLabel.setForeground(new Color(255, 200, 100)); // Orange warning color
+			showLoginPanel();
+		}));
+
 		// Check if already authenticated and switch to main panel if so
 		checkAuthenticationAndShow();
 	}
