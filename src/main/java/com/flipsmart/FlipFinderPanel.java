@@ -186,7 +186,20 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Start with login panel, then check authentication
 		add(loginPanel, BorderLayout.CENTER);
-		
+
+		// Set up auth failure callback to redirect to login screen
+		apiClient.setOnAuthFailure(() -> SwingUtilities.invokeLater(() -> {
+			// Pre-fill email if available
+			String email = config.email();
+			if (email != null && !email.isEmpty())
+			{
+				emailField.setText(email);
+			}
+			loginStatusLabel.setText("Session expired. Please login again.");
+			loginStatusLabel.setForeground(new Color(255, 200, 100)); // Orange warning color
+			showLoginPanel();
+		}));
+
 		// Check if already authenticated and switch to main panel if so
 		checkAuthenticationAndShow();
 	}
@@ -650,11 +663,14 @@ public class FlipFinderPanel extends PluginPanel
 		String email = config.email();
 		String password = config.password();
 
+		// Always pre-fill email if available (helps users who need to re-login)
+		if (email != null && !email.isEmpty())
+		{
+			emailField.setText(email);
+		}
+
 		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
 		{
-			// Pre-fill the email field
-			emailField.setText(email);
-
 			// Try to authenticate in background
 			java.util.concurrent.CompletableFuture.runAsync(() -> {
 				FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
@@ -675,6 +691,12 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				});
 			});
+		}
+		else
+		{
+			// No stored credentials - show helpful message to user
+			loginStatusLabel.setText("Please login to continue");
+			loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 		}
 	}
 
