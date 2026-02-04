@@ -13,7 +13,6 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
-import net.runelite.api.ItemComposition;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
@@ -153,6 +152,24 @@ public class FlipSmartPlugin extends Plugin
 	private long lastBankSnapshotAttempt = 0;
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000; // 1 minute cooldown between attempts
 
+	// Timer delay constants (in milliseconds)
+	/** Delay before syncing offline fills after login */
+	private static final int OFFLINE_SYNC_DELAY_MS = 2000;
+	/** Delay before refreshing panel after sync */
+	private static final int PANEL_REFRESH_DELAY_MS = 1000;
+	/** Delay before cleaning up stale flips (allows GE state to stabilize) */
+	private static final int STALE_FLIP_CLEANUP_DELAY_MS = 15000;
+	/** Delay before validating inventory quantities */
+	private static final int INVENTORY_VALIDATION_DELAY_MS = 2000;
+	/** Delay before refreshing panel after transaction/collection */
+	private static final int TRANSACTION_REFRESH_DELAY_MS = 500;
+
+	// Threshold constants
+	/** Minimum interval between auto-refreshes (30 seconds) */
+	private static final long AUTO_REFRESH_MIN_INTERVAL_MS = 30_000;
+	/** Minimum cash stack to trigger auto-refresh on change */
+	private static final int AUTO_REFRESH_CASH_THRESHOLD = 100_000;
+
 	/**
 	 * Enum representing offer competitiveness relative to Wiki prices
 	 */
@@ -175,6 +192,7 @@ public class FlipSmartPlugin extends Plugin
 		int price;
 		int previousQuantitySold;
 		long createdAtMillis;  // Timestamp when offer was created (for timer display)
+		long completedAtMillis;  // Timestamp when offer completed (0 if not complete)
 
 		// Default constructor for Gson deserialization
 		TrackedOffer() {}
@@ -188,6 +206,7 @@ public class FlipSmartPlugin extends Plugin
 			this.price = price;
 			this.previousQuantitySold = quantitySold;
 			this.createdAtMillis = System.currentTimeMillis();
+			this.completedAtMillis = 0;
 		}
 
 		// Constructor with explicit timestamp (for login restoration)
@@ -200,6 +219,20 @@ public class FlipSmartPlugin extends Plugin
 			this.price = price;
 			this.previousQuantitySold = quantitySold;
 			this.createdAtMillis = createdAtMillis;
+			this.completedAtMillis = 0;
+		}
+
+		// Constructor with explicit timestamps (for preserving completion state)
+		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.totalQuantity = totalQuantity;
+			this.price = price;
+			this.previousQuantitySold = quantitySold;
+			this.createdAtMillis = createdAtMillis;
+			this.completedAtMillis = completedAtMillis;
 		}
 	}
 	
@@ -658,7 +691,7 @@ public class FlipSmartPlugin extends Plugin
 			// This must run AFTER syncRSN() so we have the correct RSN for the config key
 			if (!offlineSyncCompleted)
 			{
-				javax.swing.Timer syncTimer = new javax.swing.Timer(2000, e -> syncOfflineFills());
+				javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
 				syncTimer.setRepeats(false);
 				syncTimer.start();
 			}
@@ -1025,13 +1058,13 @@ public class FlipSmartPlugin extends Plugin
 		// Refresh the panel after a short delay
 		if (flipFinderPanel != null)
 		{
-			javax.swing.Timer refreshTimer = new javax.swing.Timer(1000, e -> flipFinderPanel.refresh());
+			javax.swing.Timer refreshTimer = new javax.swing.Timer(PANEL_REFRESH_DELAY_MS, e -> flipFinderPanel.refresh());
 			refreshTimer.setRepeats(false);
 			refreshTimer.start();
 		}
 		
 		// Schedule stale flip cleanup after GE state is stable
-		javax.swing.Timer cleanupTimer = new javax.swing.Timer(15000, e -> {
+		javax.swing.Timer cleanupTimer = new javax.swing.Timer(STALE_FLIP_CLEANUP_DELAY_MS, e -> {
 			if (!trackedOffers.isEmpty() || collectedItemIds.isEmpty())
 			{
 				cleanupStaleActiveFlips();
@@ -1054,7 +1087,7 @@ public class FlipSmartPlugin extends Plugin
 	private void scheduleInventoryQuantityValidation()
 	{
 		// Delay slightly to ensure cleanup has completed
-		javax.swing.Timer validationTimer = new javax.swing.Timer(2000, e -> {
+		javax.swing.Timer validationTimer = new javax.swing.Timer(INVENTORY_VALIDATION_DELAY_MS, e -> {
 			clientThread.invokeLater(this::validateInventoryQuantities);
 		});
 		validationTimer.setRepeats(false);
@@ -1638,9 +1671,8 @@ public class FlipSmartPlugin extends Plugin
 			return new FlipSmartApiClient.BankItem(itemId, quantity, 1);
 		}
 
-		// Get item composition to check if tradeable
-		ItemComposition comp = itemManager.getItemComposition(itemId);
-		if (comp == null || !comp.isTradeable())
+		// Check if tradeable
+		if (!ItemUtils.isTradeable(itemManager, itemId))
 		{
 			return null;
 		}
@@ -1689,8 +1721,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			// Only include tradeable items
-			ItemComposition comp = itemManager.getItemComposition(itemId);
-			if (comp == null || !comp.isTradeable())
+			if (!ItemUtils.isTradeable(itemManager, itemId))
 			{
 				continue;
 			}
@@ -1910,7 +1941,7 @@ public class FlipSmartPlugin extends Plugin
 		GrandExchangeOfferState state = offer.getState();
 		
 		// Get item name (must be called on client thread)
-		String itemName = itemManager.getItemComposition(itemId).getName();
+		String itemName = ItemUtils.getItemName(itemManager, itemId);
 		
 		// Check if this is during the login burst window
 		int currentTick = client.getTickCount();
@@ -1920,14 +1951,29 @@ public class FlipSmartPlugin extends Plugin
 		{
 			// During login, just track existing offers without recording transactions
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
-			
-			boolean isBuy = state == GrandExchangeOfferState.BUYING || 
+
+			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
 							state == GrandExchangeOfferState.BOUGHT ||
 							state == GrandExchangeOfferState.CANCELLED_BUY;
-			
+
 			// Track the current state so future changes are detected correctly
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
-			
+			// Preserve existing timestamp if we already have this offer tracked
+			TrackedOffer existing = trackedOffers.get(slot);
+			long originalTimestamp = (existing != null && existing.createdAtMillis > 0)
+				? existing.createdAtMillis
+				: System.currentTimeMillis();
+			long completedTimestamp = 0;
+
+			// Check if offer is already completed (BOUGHT/SOLD state)
+			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
+			{
+				completedTimestamp = (existing != null && existing.completedAtMillis > 0)
+					? existing.completedAtMillis
+					: System.currentTimeMillis();
+			}
+
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+
 			// Note: offline sync is now scheduled from LOGGED_IN state change
 			// after syncRSN() to ensure correct RSN-specific config key
 			return;
@@ -2118,7 +2164,7 @@ public class FlipSmartPlugin extends Plugin
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)
 				{
-					javax.swing.Timer refreshTimer = new javax.swing.Timer(500, e -> flipFinderPanel.refresh());
+					javax.swing.Timer refreshTimer = new javax.swing.Timer(TRANSACTION_REFRESH_DELAY_MS, e -> flipFinderPanel.refresh());
 					refreshTimer.setRepeats(false);
 					refreshTimer.start();
 				}
@@ -2197,12 +2243,25 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 
-			// Update tracked offer
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold));
+			// Update tracked offer - preserve original timestamp to prevent timer reset
+			long originalTimestamp = (previousOffer != null && previousOffer.createdAtMillis > 0)
+				? previousOffer.createdAtMillis
+				: System.currentTimeMillis();
+			long completedTimestamp = 0;
+
+			// Check if offer just completed (BOUGHT/SOLD state)
+			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
+			{
+				completedTimestamp = (previousOffer != null && previousOffer.completedAtMillis > 0)
+					? previousOffer.completedAtMillis
+					: System.currentTimeMillis();
+			}
+
+			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
 		}
 		else
 		{
-			// New offer with no items sold yet, track it
+			// New offer with no items sold yet, track it with fresh timestamp
 			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
 			// Clear Flip Assist focus if this order matches the focused flip
@@ -2400,11 +2459,11 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Updated cash stack: {}", currentCashStack);
 
 			// If cash stack changed significantly and we have a flip finder panel, refresh it
-			if (flipFinderPanel != null && totalCash > 100_000)
+			if (flipFinderPanel != null && totalCash > AUTO_REFRESH_CASH_THRESHOLD)
 			{
-				// Only auto-refresh if it's been more than 30 seconds since last refresh
+				// Only auto-refresh if it's been more than the minimum interval since last refresh
 				long now = System.currentTimeMillis();
-				if (now - lastFlipFinderRefresh > 30_000)
+				if (now - lastFlipFinderRefresh > AUTO_REFRESH_MIN_INTERVAL_MS)
 				{
 					lastFlipFinderRefresh = now;
 					flipFinderPanel.refresh();
@@ -2475,7 +2534,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		return configManager.getConfig(FlipSmartConfig.class);
 	}
-	
+
 	// Mouse listener for GE overlay clicks
 	private final MouseListener overlayMouseListener = new MouseListener()
 	{

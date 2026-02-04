@@ -33,7 +33,8 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_EMAIL = "email";
-	private static final String CONFIG_KEY_PASSWORD = "password";
+	private static final String CONFIG_KEY_PASSWORD = "password";  // Deprecated: kept for migration
+	private static final String CONFIG_KEY_REFRESH_TOKEN = "refreshToken";
 	
 	// Constants for duplicated literals
 	private static final String FONT_ARIAL = "Arial";
@@ -208,7 +209,20 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Start with login panel, then check authentication
 		add(loginPanel, BorderLayout.CENTER);
-		
+
+		// Set up auth failure callback to redirect to login screen
+		apiClient.setOnAuthFailure(() -> SwingUtilities.invokeLater(() -> {
+			// Pre-fill email if available
+			String email = config.email();
+			if (email != null && !email.isEmpty())
+			{
+				emailField.setText(email);
+			}
+			loginStatusLabel.setText("Session expired. Please login again.");
+			loginStatusLabel.setForeground(new Color(255, 200, 100)); // Orange warning color
+			showLoginPanel();
+		}));
+
 		// Check if already authenticated and switch to main panel if so
 		checkAuthenticationAndShow();
 	}
@@ -641,26 +655,93 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Check if already authenticated and show appropriate panel
+	 * Check if already authenticated and show appropriate panel.
+	 * Tries refresh token first (secure), falls back to legacy password if needed.
 	 */
 	private void checkAuthenticationAndShow()
 	{
-		// Try to authenticate silently with saved credentials
+		// First, try to authenticate with refresh token (secure method)
+		String refreshToken = config.refreshToken();
+		String email = config.email();
+
+		if (refreshToken != null && !refreshToken.isEmpty())
+		{
+			// Pre-fill email field if available
+			if (email != null && !email.isEmpty())
+			{
+				emailField.setText(email);
+			}
+
+			// Load refresh token into API client and try to authenticate
+			apiClient.setRefreshToken(refreshToken);
+
+			java.util.concurrent.CompletableFuture.runAsync(() -> {
+				// Try refresh token authentication
+				try
+				{
+					Boolean success = apiClient.refreshAccessTokenAsync().get();
+					SwingUtilities.invokeLater(() -> {
+						if (Boolean.TRUE.equals(success))
+						{
+							// Save new refresh token (token rotation)
+							saveRefreshToken(apiClient.getRefreshToken());
+							onAuthenticationSuccess(null, false);
+						}
+						else
+						{
+							// Refresh token invalid/expired, clear it
+							clearRefreshToken();
+							// Fall back to legacy password auth
+							tryLegacyPasswordAuth();
+						}
+					});
+				}
+				catch (InterruptedException e)
+				{
+					log.debug("Refresh token auth interrupted: {}", e.getMessage());
+					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				}
+				catch (Exception e)
+				{
+					log.debug("Refresh token auth failed: {}", e.getMessage());
+					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				}
+			});
+		}
+		else
+		{
+			// No refresh token, try legacy password auth
+			tryLegacyPasswordAuth();
+		}
+	}
+
+	/**
+	 * Try to authenticate with legacy stored password (migration path).
+	 * After successful login, the password will be cleared and replaced with refresh token.
+	 */
+	private void tryLegacyPasswordAuth()
+	{
 		String email = config.email();
 		String password = config.password();
-		
+
+		// Always pre-fill email if available (helps users who need to re-login)
+		if (email != null && !email.isEmpty())
+		{
+			emailField.setText(email);
+		}
+
 		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
 		{
-			// Pre-fill the email field
-			emailField.setText(email);
-			
 			// Try to authenticate in background
 			java.util.concurrent.CompletableFuture.runAsync(() -> {
 				FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
-				
+
 				SwingUtilities.invokeLater(() -> {
 					if (result.success)
 					{
+						// Migration: save refresh token and clear password
+						saveRefreshToken(apiClient.getRefreshToken());
+						clearPassword();
 						onAuthenticationSuccess(null, false);
 					}
 					else
@@ -672,6 +753,12 @@ public class FlipFinderPanel extends PluginPanel
 				});
 			});
 		}
+		else
+		{
+			// No stored credentials - show helpful message to user
+			loginStatusLabel.setText("Please login to continue");
+			loginStatusLabel.setForeground(Color.LIGHT_GRAY);
+		}
 	}
 
 	/**
@@ -681,26 +768,29 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		String email = emailField.getText().trim();
 		String password = new String(passwordField.getPassword());
-		
+
 		if (email.isEmpty() || password.isEmpty())
 		{
 			showLoginStatus("Please enter email and password", false);
 			return;
 		}
-		
+
 		setLoginButtonsEnabled(false);
 		showLoginStatus("Logging in...", true);
-		
+
 		java.util.concurrent.CompletableFuture.runAsync(() -> {
 			FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
-			
+
 			SwingUtilities.invokeLater(() -> {
 				setLoginButtonsEnabled(true);
-				
+
 				if (result.success)
 				{
-					// Save credentials for next session
-					saveCredentials(email, password);
+					// Save email and refresh token (NOT password) for next session
+					saveEmail(email);
+					saveRefreshToken(apiClient.getRefreshToken());
+					// Clear any legacy password storage
+					clearPassword();
 					onAuthenticationSuccess(result.message, true);
 				}
 				else
@@ -718,26 +808,29 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		String email = emailField.getText().trim();
 		String password = new String(passwordField.getPassword());
-		
+
 		if (email.isEmpty() || password.isEmpty())
 		{
 			showLoginStatus("Please enter email and password", false);
 			return;
 		}
-		
+
 		setLoginButtonsEnabled(false);
 		showLoginStatus("Creating account...", true);
-		
+
 		java.util.concurrent.CompletableFuture.runAsync(() -> {
 			FlipSmartApiClient.AuthResult result = apiClient.signup(email, password);
-			
+
 			SwingUtilities.invokeLater(() -> {
 				setLoginButtonsEnabled(true);
-				
+
 				if (result.success)
 				{
-					// Save credentials for next session
-					saveCredentials(email, password);
+					// Save email and refresh token (NOT password) for next session
+					saveEmail(email);
+					saveRefreshToken(apiClient.getRefreshToken());
+					// Clear any legacy password storage
+					clearPassword();
 					onAuthenticationSuccess(result.message, true);
 				}
 				else
@@ -749,8 +842,44 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Save credentials for next session
+	 * Save email for next session
 	 */
+	private void saveEmail(String email)
+	{
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
+	}
+
+	/**
+	 * Save refresh token for persistent login (replaces password storage)
+	 */
+	private void saveRefreshToken(String refreshToken)
+	{
+		if (refreshToken != null && !refreshToken.isEmpty())
+		{
+			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_REFRESH_TOKEN, refreshToken);
+		}
+	}
+
+	/**
+	 * Clear refresh token (on logout or revocation)
+	 */
+	private void clearRefreshToken()
+	{
+		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_REFRESH_TOKEN);
+	}
+
+	/**
+	 * Clear legacy password storage (migration cleanup)
+	 */
+	private void clearPassword()
+	{
+		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD);
+	}
+
+	/**
+	 * @deprecated Use saveEmail() and saveRefreshToken() instead
+	 */
+	@Deprecated
 	private void saveCredentials(String email, String password)
 	{
 		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
@@ -974,16 +1103,19 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void handleLogout()
 	{
-		// Clear API client authentication
+		// Clear API client authentication (includes refresh token)
 		apiClient.clearAuth();
-		
+
+		// Clear stored refresh token
+		clearRefreshToken();
+
 		// Clear password field but keep email
 		passwordField.setText("");
-		
+
 		// Reset status
 		loginStatusLabel.setText("Logged out successfully");
 		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-		
+
 		// Show login panel
 		showLoginPanel();
 	}
@@ -1356,16 +1488,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showErrorInCompletedFlips(String message)
 	{
-		completedFlipsListContainer.removeAll();
-
-		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent("Completed Flips", message);
-		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		completedFlipsListContainer.add(errorPanel);
-
-		completedFlipsListContainer.revalidate();
-		completedFlipsListContainer.repaint();
+		showErrorInContainer(completedFlipsListContainer, "Completed Flips", message);
 	}
 
 	/**
@@ -1516,16 +1639,7 @@ public class FlipFinderPanel extends PluginPanel
 	private void showErrorInRecommended(String message)
 	{
 		statusLabel.setText("Error");
-		recommendedListContainer.removeAll();
-
-		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent("Flip Finder", message);
-		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		recommendedListContainer.add(errorPanel);
-
-		recommendedListContainer.revalidate();
-		recommendedListContainer.repaint();
+		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
 	}
 
 	/**
@@ -1533,16 +1647,29 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showErrorInActiveFlips(String message)
 	{
-		activeFlipsListContainer.removeAll();
+		showErrorInContainer(activeFlipsListContainer, "Active Flips", message);
+	}
+
+	/**
+	 * Helper method to show an error panel in any container.
+	 * Reduces code duplication across error display methods.
+	 *
+	 * @param container The panel container to show the error in
+	 * @param title The title for the error panel
+	 * @param message The error message to display
+	 */
+	private void showErrorInContainer(JPanel container, String title, String message)
+	{
+		container.removeAll();
 
 		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent("Active Flips", message);
+		errorPanel.setContent(title, message);
 		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		activeFlipsListContainer.add(errorPanel);
+		container.add(errorPanel);
 
-		activeFlipsListContainer.revalidate();
-		activeFlipsListContainer.repaint();
+		container.revalidate();
+		container.repaint();
 	}
 
 	/**

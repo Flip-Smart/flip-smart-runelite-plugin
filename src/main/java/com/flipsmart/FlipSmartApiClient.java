@@ -21,8 +21,10 @@ public class FlipSmartApiClient
 	private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	private static final String ACCESS_TOKEN_KEY = "access_token";
+	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
+	private static final String DEVICE_INFO = "RuneLite Plugin";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -36,11 +38,17 @@ public class FlipSmartApiClient
 	private volatile String jwtToken = null;
 	private volatile long tokenExpiry = 0;
 
+	// Refresh token for persistent login (stored via config, but kept in memory for use)
+	private volatile String refreshToken = null;
+
 	// Premium status (updated on login)
 	private volatile boolean isPremium = false;
 
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
+
+	// Callback when authentication permanently fails (both refresh token and password fail)
+	private volatile Runnable onAuthFailure = null;
 
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
@@ -129,13 +137,15 @@ public class FlipSmartApiClient
 								Request retryRequest = request.newBuilder()
 									.header("Authorization", "Bearer " + jwtToken)
 									.build();
-								
+
 								// Retry without auth retry to prevent infinite loop
 								executeAsync(retryRequest, responseHandler, errorHandler, false)
 									.thenAccept(future::complete);
 							}
 							else
 							{
+								// Auth permanently failed - notify so UI can show login screen
+								notifyAuthFailure();
 								future.complete(null);
 							}
 						});
@@ -192,9 +202,33 @@ public class FlipSmartApiClient
 	}
 	
 	/**
-	 * Authenticate with the API and obtain a JWT token via login (async)
+	 * Authenticate with the API and obtain a JWT token.
+	 * Tries refresh token first (if available), falls back to email/password.
 	 */
 	private CompletableFuture<Boolean> authenticateAsync()
+	{
+		// Try refresh token first if we have one
+		if (refreshToken != null && !refreshToken.isEmpty())
+		{
+			return refreshAccessTokenAsync()
+				.thenCompose(success -> {
+					if (success)
+					{
+						return CompletableFuture.completedFuture(true);
+					}
+					// Refresh failed, clear it and fall back to password auth
+					refreshToken = null;
+					return loginWithPasswordAsync();
+				});
+		}
+
+		return loginWithPasswordAsync();
+	}
+
+	/**
+	 * Authenticate using stored email/password (legacy fallback)
+	 */
+	private CompletableFuture<Boolean> loginWithPasswordAsync()
 	{
 		return loginAsync(config.email(), config.password())
 			.thenApply(result -> result.success);
@@ -253,11 +287,13 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Build the login HTTP request
+	 * Build the login HTTP request (includes refresh token request for persistent login)
 	 */
 	private Request buildLoginRequest(String email, String password)
 	{
-		String url = String.format("%s/auth/login", getApiUrl());
+		// Request refresh token for persistent plugin login
+		String url = String.format("%s/auth/login?include_refresh=true&device_info=%s",
+			getApiUrl(), DEVICE_INFO);
 
 		JsonObject jsonBody = new JsonObject();
 		jsonBody.addProperty("email", email);
@@ -310,18 +346,34 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Process successful login response and store token
+	 * Process successful login response and store tokens
 	 */
 	private void processSuccessfulLogin(Response response) throws IOException
 	{
 		okhttp3.ResponseBody responseBody = response.body();
 		String jsonData = responseBody != null ? responseBody.string() : "";
 		JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
+		processTokenResponse(tokenResponse);
+	}
 
+	/**
+	 * Process token response and store access token, refresh token, and premium status.
+	 * Used by both login and refresh token flows to avoid code duplication.
+	 *
+	 * @param tokenResponse The JSON response containing access_token, optional refresh_token, and is_premium
+	 */
+	private void processTokenResponse(JsonObject tokenResponse)
+	{
 		synchronized (authLock)
 		{
 			jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
 			tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
+
+			// Store refresh token if provided (for persistent login / token rotation)
+			if (tokenResponse.has(REFRESH_TOKEN_KEY) && !tokenResponse.get(REFRESH_TOKEN_KEY).isJsonNull())
+			{
+				refreshToken = tokenResponse.get(REFRESH_TOKEN_KEY).getAsString();
+			}
 
 			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
 			{
@@ -345,6 +397,100 @@ public class FlipSmartApiClient
 			log.error("Login failed: {}", e.getMessage());
 			return new AuthResult(false, "Login failed: " + e.getMessage());
 		}
+	}
+
+	/**
+	 * Exchange a refresh token for new access and refresh tokens.
+	 * This is used for persistent login without storing passwords.
+	 *
+	 * @return CompletableFuture with true if refresh succeeded, false otherwise
+	 */
+	public CompletableFuture<Boolean> refreshAccessTokenAsync()
+	{
+		CompletableFuture<Boolean> future = new CompletableFuture<>();
+
+		if (refreshToken == null || refreshToken.isEmpty())
+		{
+			future.complete(false);
+			return future;
+		}
+
+		String url = String.format("%s/auth/refresh?device_info=%s", getApiUrl(), DEVICE_INFO);
+
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty(REFRESH_TOKEN_KEY, refreshToken);
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+
+		Request request = new Request.Builder()
+			.url(url)
+			.post(body)
+			.build();
+
+		httpClient.newCall(request).enqueue(new Callback()
+		{
+			@Override
+			public void onFailure(Call call, IOException e)
+			{
+				log.debug("Refresh token exchange failed: {}", e.getMessage());
+				future.complete(false);
+			}
+
+			@Override
+			public void onResponse(Call call, Response response) throws IOException
+			{
+				try (response)
+				{
+					if (!response.isSuccessful())
+					{
+						log.debug("Refresh token rejected (status {})", response.code());
+						// Clear invalid refresh token
+						synchronized (authLock)
+						{
+							refreshToken = null;
+						}
+						future.complete(false);
+						return;
+					}
+
+					okhttp3.ResponseBody responseBody = response.body();
+					String jsonData = responseBody != null ? responseBody.string() : "";
+					JsonObject tokenResponse = gson.fromJson(jsonData, JsonObject.class);
+
+					processTokenResponse(tokenResponse);
+
+					log.info("Successfully refreshed access token (premium: {})", isPremium);
+					future.complete(true);
+				}
+				catch (Exception e)
+				{
+					log.error("Error processing refresh response: {}", e.getMessage());
+					future.complete(false);
+				}
+			}
+		});
+
+		return future;
+	}
+
+	/**
+	 * Set the refresh token directly (used when loading from config).
+	 * @param token The refresh token
+	 */
+	public void setRefreshToken(String token)
+	{
+		synchronized (authLock)
+		{
+			this.refreshToken = token;
+		}
+	}
+
+	/**
+	 * Get the current refresh token (for saving to config).
+	 * @return The refresh token, or null if not set
+	 */
+	public String getRefreshToken()
+	{
+		return refreshToken;
 	}
 	
 	/**
@@ -481,7 +627,7 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Clear the current authentication token
+	 * Clear the current authentication tokens (access and refresh)
 	 */
 	public void clearAuth()
 	{
@@ -489,7 +635,29 @@ public class FlipSmartApiClient
 		{
 			jwtToken = null;
 			tokenExpiry = 0;
+			refreshToken = null;
 			isPremium = false;
+		}
+	}
+
+	/**
+	 * Set callback for when authentication permanently fails.
+	 * This is called when both refresh token and password auth fail,
+	 * indicating the user needs to re-login manually.
+	 */
+	public void setOnAuthFailure(Runnable callback)
+	{
+		this.onAuthFailure = callback;
+	}
+
+	/**
+	 * Notify that authentication has permanently failed
+	 */
+	private void notifyAuthFailure()
+	{
+		if (onAuthFailure != null)
+		{
+			onAuthFailure.run();
 		}
 	}
 

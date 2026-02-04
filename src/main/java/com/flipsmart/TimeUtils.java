@@ -19,6 +19,27 @@ public final class TimeUtils
 	public static String formatElapsedTime(long createdAtMillis)
 	{
 		long elapsed = Math.max(0, System.currentTimeMillis() - createdAtMillis);
+		return formatMilliseconds(elapsed);
+	}
+
+	/**
+	 * Format elapsed time between two timestamps as H:MM:SS or M:SS (for completed offers)
+	 *
+	 * @param startMillis The timestamp in milliseconds when the event started
+	 * @param endMillis The timestamp in milliseconds when the event ended
+	 * @return Formatted elapsed time string
+	 */
+	public static String formatFrozenElapsedTime(long startMillis, long endMillis)
+	{
+		long elapsed = Math.max(0, endMillis - startMillis);
+		return formatMilliseconds(elapsed);
+	}
+
+	/**
+	 * Format milliseconds as H:MM:SS or M:SS
+	 */
+	private static String formatMilliseconds(long elapsed)
+	{
 		long seconds = (elapsed / 1000) % 60;
 		long minutes = (elapsed / 60000) % 60;
 		long hours = elapsed / 3600000;

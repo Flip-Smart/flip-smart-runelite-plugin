@@ -51,11 +51,23 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "password",
 		name = "",
-		description = "",
+		description = "Deprecated: Use refresh token instead",
 		hidden = true,
 		secret = true
 	)
 	default String password()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "refreshToken",
+		name = "",
+		description = "Refresh token for persistent login (do not edit manually)",
+		hidden = true,
+		secret = true
+	)
+	default String refreshToken()
 	{
 		return "";
 	}
@@ -248,6 +260,18 @@ public interface FlipSmartConfig extends Config
 	default boolean highlightSlotBorders()
 	{
 		return true;
+	}
+
+	@ConfigItem(
+		keyName = "colorblindMode",
+		name = "Colorblind Mode",
+		description = "Use blue/orange colors instead of green/red for better accessibility",
+		section = displaySection,
+		position = 8
+	)
+	default boolean colorblindMode()
+	{
+		return false;
 	}
 
 	// ============================================
