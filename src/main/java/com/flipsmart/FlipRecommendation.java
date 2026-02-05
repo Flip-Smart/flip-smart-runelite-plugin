@@ -83,27 +83,11 @@ public class FlipRecommendation
 	private Integer costPerFlip;
 
 	/**
-	 * Format GP amount for display
-	 */
-	public String formatGP(int amount)
-	{
-		if (amount >= 1_000_000)
-		{
-			return String.format("%.1fM", amount / 1_000_000.0);
-		}
-		else if (amount >= 1_000)
-		{
-			return String.format("%.1fK", amount / 1_000.0);
-		}
-		return String.valueOf(amount);
-	}
-
-	/**
 	 * Get formatted margin text
 	 */
 	public String getFormattedMargin()
 	{
-		return formatGP(margin) + " gp";
+		return GpUtils.formatGPWithSuffix(margin);
 	}
 
 	/**
@@ -111,7 +95,7 @@ public class FlipRecommendation
 	 */
 	public String getFormattedROI()
 	{
-		return String.format("%.1f%%", roiPercent);
+		return GpUtils.formatROI(roiPercent);
 	}
 
 	/**
@@ -119,7 +103,7 @@ public class FlipRecommendation
 	 */
 	public String getFormattedPotentialProfit()
 	{
-		return formatGP(potentialProfit) + " gp";
+		return GpUtils.formatGPWithSuffix(potentialProfit);
 	}
 }
 

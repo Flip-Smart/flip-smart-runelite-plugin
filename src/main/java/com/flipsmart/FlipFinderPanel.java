@@ -1974,18 +1974,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private String formatGP(int amount)
 	{
-		int absAmount = Math.abs(amount);
-		String sign = amount < 0 ? "-" : "";
-		
-		if (absAmount >= 1_000_000)
-		{
-			return String.format("%s%.1fM", sign, absAmount / 1_000_000.0);
-		}
-		else if (absAmount >= 1_000)
-		{
-			return String.format("%s%.1fK", sign, absAmount / 1_000.0);
-		}
-		return String.valueOf(amount);
+		return GpUtils.formatGPSigned(amount);
 	}
 
 	/**
@@ -1993,7 +1982,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private String formatGPExact(int amount)
 	{
-		return String.format("%,d", amount);
+		return GpUtils.formatGPExact(amount);
 	}
 
 	/**
