@@ -1035,8 +1035,10 @@ public class FlipSmartApiClient
 	 * @param limit Number of recommendations to return
 	 * @param priceOffset Optional price offset for buy/sell recommendations
 	 * @return CompletableFuture with the timeframe-based recommendations
+	 * @deprecated Since 1.5.0. Use {@link #getProfileFlipRecommendationsAsync} with the timeframe parameter instead.
+	 *             This method will be removed in version 2.0.0.
 	 */
-	@Deprecated
+	@Deprecated(since = "1.5.0", forRemoval = true)
 	public CompletableFuture<TimeframeFlipFinderResponse> getTimeframeFlipRecommendationsAsync(
 		String timeframe, Integer cashStack, int limit, Integer priceOffset)
 	{
