@@ -204,7 +204,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			return null;
 		}
 
-		FlipSmartPlugin.TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
+		TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
 		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
 
 		// Render the indicator bar with colored background and timer
@@ -218,7 +218,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Render the slot overlay with colored border around the entire slot
 	 * and timer in the top-right corner (like Flipping Utilities).
 	 */
-	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, FlipSmartPlugin.TrackedOffer trackedOffer,
+	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, TrackedOffer trackedOffer,
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
 		// Draw colored border around the entire slot
@@ -236,19 +236,19 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 
 		// Draw timer in top-right corner
-		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.createdAtMillis > 0)
+		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.getCreatedAtMillis() > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
 								 offer.getState() == GrandExchangeOfferState.SOLD;
 
 			String timerText;
-			if (isComplete && trackedOffer.completedAtMillis > 0)
+			if (isComplete && trackedOffer.getCompletedAtMillis() > 0)
 			{
-				timerText = TimeUtils.formatFrozenElapsedTime(trackedOffer.createdAtMillis, trackedOffer.completedAtMillis);
+				timerText = TimeUtils.formatFrozenElapsedTime(trackedOffer.getCreatedAtMillis(), trackedOffer.getCompletedAtMillis());
 			}
 			else
 			{
-				timerText = TimeUtils.formatElapsedTime(trackedOffer.createdAtMillis);
+				timerText = TimeUtils.formatElapsedTime(trackedOffer.getCreatedAtMillis());
 			}
 
 			Font originalFont = graphics.getFont();
