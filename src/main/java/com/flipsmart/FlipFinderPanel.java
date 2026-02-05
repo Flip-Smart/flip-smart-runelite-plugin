@@ -930,6 +930,12 @@ public class FlipFinderPanel extends PluginPanel
 						// Success! Set the token and switch to main panel
 						stopDeviceAuthPolling();
 						apiClient.setAuthToken(status.getAccessToken());
+						// Save refresh token for session persistence across client restarts
+						if (status.getRefreshToken() != null)
+						{
+							apiClient.setRefreshToken(status.getRefreshToken());
+							saveRefreshToken(status.getRefreshToken());
+						}
 						SwingUtilities.invokeLater(() ->
 							onAuthenticationSuccess("Login successful!", true));
 						break;
