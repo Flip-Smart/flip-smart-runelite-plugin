@@ -741,18 +741,22 @@ public class FlipSmartApiClient
 		private String status;  // pending, authorized, expired
 		private String accessToken;
 		private String tokenType;
-		
+		private String refreshToken;  // For session persistence across client restarts
+
 		/** Default constructor required for Gson deserialization */
 		public DeviceStatusResponse() { }
-		
+
 		public String getStatus() { return status; }
 		public void setStatus(String status) { this.status = status; }
-		
+
 		public String getAccessToken() { return accessToken; }
 		public void setAccessToken(String accessToken) { this.accessToken = accessToken; }
-		
+
 		public String getTokenType() { return tokenType; }
 		public void setTokenType(String tokenType) { this.tokenType = tokenType; }
+
+		public String getRefreshToken() { return refreshToken; }
+		public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
 	}
 	
 	/**
@@ -877,8 +881,12 @@ public class FlipSmartApiClient
 					if ("authorized".equals(statusResponse.getStatus()) && json.has(ACCESS_TOKEN_KEY))
 					{
 						statusResponse.setAccessToken(json.get(ACCESS_TOKEN_KEY).getAsString());
-						statusResponse.setTokenType(json.has("token_type") 
+						statusResponse.setTokenType(json.has("token_type")
 							? json.get("token_type").getAsString() : "bearer");
+						if (json.has("refresh_token"))
+						{
+							statusResponse.setRefreshToken(json.get("refresh_token").getAsString());
+						}
 					}
 					
 					future.complete(statusResponse);
