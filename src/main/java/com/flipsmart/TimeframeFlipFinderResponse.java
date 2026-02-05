@@ -2,6 +2,8 @@ package com.flipsmart;
 
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.util.List;
 import java.util.Map;
@@ -61,137 +63,54 @@ public class TimeframeFlipFinderResponse
 		private double overallRoiPercent;
 	}
 
+	/**
+	 * Timeframe recommendation extending FlipRecommendation with additional fields.
+	 * Inherits all common fields to reduce code duplication.
+	 */
 	@Data
-	public static class TimeframeRecommendation
+	@EqualsAndHashCode(callSuper = true)
+	@ToString(callSuper = true)
+	public static class TimeframeRecommendation extends FlipRecommendation
 	{
-		@SerializedName("item_id")
-		private int itemId;
-
-		@SerializedName("item_name")
-		private String itemName;
-
-		private boolean members;
-
-		@SerializedName("buy_limit")
-		private Integer buyLimit;
-
-		// Current market prices
-		@SerializedName("instant_buy_price")
-		private int instantBuyPrice;
-
-		@SerializedName("instant_sell_price")
-		private int instantSellPrice;
-
-		// Recommended prices
-		@SerializedName("recommended_buy_price")
-		private int recommendedBuyPrice;
-
-		@SerializedName("recommended_sell_price")
-		private int recommendedSellPrice;
-
-		@SerializedName("recommended_quantity")
-		private int recommendedQuantity;
-
-		// Profit metrics
-		private int margin;
-
-		@SerializedName("roi_percent")
-		private double roiPercent;
-
-		@SerializedName("ge_tax")
-		private Integer geTax;
-
-		// Volume/liquidity
-		@SerializedName("volume_per_hour")
-		private double volumePerHour;
-
+		// Additional timeframe-specific fields
 		@SerializedName("daily_volume")
 		private int dailyVolume;
 
-		// Legacy compatibility scores
-		@SerializedName("liquidity_score")
-		private double liquidityScore;
-
-		@SerializedName("liquidity_rating")
-		private String liquidityRating;
-
-		@SerializedName("risk_score")
-		private double riskScore;
-
-		@SerializedName("risk_rating")
-		private String riskRating;
-
-		@SerializedName("efficiency_score")
-		private double efficiencyScore;
-
-		@SerializedName("efficiency_rating")
-		private String efficiencyRating;
-
-		// Factor scores (timeframe-specific)
 		@SerializedName("factor_scores")
 		private FactorScores factorScores;
 
 		@SerializedName("weighted_score")
 		private double weightedScore;
 
-		// Profit projections
-		@SerializedName("potential_profit")
-		private int potentialProfit;
-
-		@SerializedName("total_cost")
-		private int totalCost;
-
 		/**
-		 * Get formatted margin text
-		 */
-		public String getFormattedMargin()
-		{
-			return GpUtils.formatGPWithSuffix(margin);
-		}
-
-		/**
-		 * Get formatted ROI text
-		 */
-		public String getFormattedROI()
-		{
-			return GpUtils.formatROI(roiPercent);
-		}
-
-		/**
-		 * Get formatted potential profit text
-		 */
-		public String getFormattedPotentialProfit()
-		{
-			return GpUtils.formatGPWithSuffix(potentialProfit);
-		}
-
-		/**
-		 * Convert to FlipRecommendation for UI compatibility
+		 * Convert to base FlipRecommendation for UI compatibility.
+		 * Since we extend FlipRecommendation, we can simply return this cast appropriately,
+		 * or create a copy if needed.
 		 */
 		public FlipRecommendation toFlipRecommendation()
 		{
 			FlipRecommendation rec = new FlipRecommendation();
-			rec.setItemId(itemId);
-			rec.setItemName(itemName);
-			rec.setMembers(members);
-			rec.setBuyLimit(buyLimit);
-			rec.setInstantBuyPrice(instantBuyPrice);
-			rec.setInstantSellPrice(instantSellPrice);
-			rec.setRecommendedBuyPrice(recommendedBuyPrice);
-			rec.setRecommendedSellPrice(recommendedSellPrice);
-			rec.setRecommendedQuantity(recommendedQuantity);
-			rec.setMargin(margin);
-			rec.setRoiPercent(roiPercent);
-			rec.setGeTax(geTax != null ? geTax : 0);
-			rec.setVolumePerHour(volumePerHour);
-			rec.setLiquidityScore(liquidityScore);
-			rec.setLiquidityRating(liquidityRating);
-			rec.setRiskScore(riskScore);
-			rec.setRiskRating(riskRating);
-			rec.setEfficiencyScore(efficiencyScore);
-			rec.setEfficiencyRating(efficiencyRating);
-			rec.setPotentialProfit(potentialProfit);
-			rec.setTotalCost(totalCost);
+			rec.setItemId(getItemId());
+			rec.setItemName(getItemName());
+			rec.setMembers(isMembers());
+			rec.setBuyLimit(getBuyLimit());
+			rec.setInstantBuyPrice(getInstantBuyPrice());
+			rec.setInstantSellPrice(getInstantSellPrice());
+			rec.setRecommendedBuyPrice(getRecommendedBuyPrice());
+			rec.setRecommendedSellPrice(getRecommendedSellPrice());
+			rec.setRecommendedQuantity(getRecommendedQuantity());
+			rec.setMargin(getMargin());
+			rec.setRoiPercent(getRoiPercent());
+			rec.setGeTax(getGeTax());
+			rec.setVolumePerHour(getVolumePerHour());
+			rec.setLiquidityScore(getLiquidityScore());
+			rec.setLiquidityRating(getLiquidityRating());
+			rec.setRiskScore(getRiskScore());
+			rec.setRiskRating(getRiskRating());
+			rec.setEfficiencyScore(getEfficiencyScore());
+			rec.setEfficiencyRating(getEfficiencyRating());
+			rec.setPotentialProfit(getPotentialProfit());
+			rec.setTotalCost(getTotalCost());
 			return rec;
 		}
 	}
