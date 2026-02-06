@@ -989,33 +989,90 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Fetch flip recommendations from the API asynchronously
+	 * Fetch flip recommendations from the API asynchronously.
+	 *
+	 * @param cashStack Player's available cash in GP (optional)
+	 * @param flipStyle Flip style (conservative, balanced, aggressive)
+	 * @param limit Number of recommendations to return
+	 * @param randomSeed Random seed for variety in suggestions (optional)
+	 * @param timeframe Target flip timeframe (30m, 2h, 4h, 12h) or null for Active mode
+	 * @return CompletableFuture with flip recommendations
 	 */
-	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(Integer cashStack, String flipStyle, int limit, Integer randomSeed)
+	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe)
 	{
 		String apiUrl = getApiUrl();
-		
+
 		// Build URL with query parameters
 		StringBuilder urlBuilder = new StringBuilder();
 		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
-		
+
 		if (cashStack != null)
 		{
 			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
 		}
-		
+
 		if (randomSeed != null)
 		{
 			urlBuilder.append(String.format("&random_seed=%d", randomSeed));
 		}
-		
+
+		if (timeframe != null)
+		{
+			urlBuilder.append(String.format("&timeframe=%s", timeframe));
+		}
+
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
 			.get();
-		
+
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 			gson.fromJson(jsonData, FlipFinderResponse.class));
+	}
+
+	/**
+	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String)} instead.
+	 * This method uses the deprecated /flip-finder/timeframe endpoint.
+	 *
+	 * Fetch timeframe-based flip recommendations from the API asynchronously.
+	 * Uses the /flip-finder/timeframe endpoint with multi-factor scoring.
+	 *
+	 * @param timeframe The target flip timeframe (30m, 2h, 4h, 12h)
+	 * @param cashStack Optional cash stack for budget-aware recommendations
+	 * @param limit Number of recommendations to return
+	 * @param priceOffset Optional price offset for buy/sell recommendations
+	 * @return CompletableFuture with the timeframe-based recommendations
+	 * @deprecated Since 1.5.0. Use {@link #getProfileFlipRecommendationsAsync} with the timeframe parameter instead.
+	 *             This method will be removed in version 2.0.0.
+	 */
+	@Deprecated(since = "1.5.0", forRemoval = true)
+	public CompletableFuture<TimeframeFlipFinderResponse> getTimeframeFlipRecommendationsAsync(
+		String timeframe, Integer cashStack, int limit, Integer priceOffset)
+	{
+		String apiUrl = getApiUrl();
+
+		// Build URL with query parameters
+		StringBuilder urlBuilder = new StringBuilder();
+		urlBuilder.append(String.format("%s/flip-finder/timeframe?timeframe=%s&limit=%d", apiUrl, timeframe, limit));
+
+		if (cashStack != null)
+		{
+			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
+		}
+
+		if (priceOffset != null && priceOffset > 0)
+		{
+			urlBuilder.append(String.format("&price_offset=%d", priceOffset));
+		}
+
+		String url = urlBuilder.toString();
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, TimeframeFlipFinderResponse.class));
 	}
 
 	/**

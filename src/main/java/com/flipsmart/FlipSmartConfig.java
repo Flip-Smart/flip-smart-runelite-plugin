@@ -120,11 +120,23 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "flipTimeframe",
+		name = "Timeframe",
+		description = "Target flip timeframe: Active (standard recommendations), or time-optimized profiles (30m, 2h, 4h, 12h)",
+		section = flipFinderSection,
+		position = 3
+	)
+	default FlipTimeframe flipTimeframe()
+	{
+		return FlipTimeframe.ACTIVE;
+	}
+
+	@ConfigItem(
 		keyName = "flipFinderRefreshMinutes",
 		name = "Refresh Interval (minutes)",
 		description = "How often to refresh flip recommendations (1-60 minutes)",
 		section = flipFinderSection,
-		position = 4
+		position = 5
 	)
 	default int flipFinderRefreshMinutes()
 	{
@@ -476,6 +488,43 @@ public interface FlipSmartConfig extends Config
 		public String toString()
 		{
 			return name().charAt(0) + name().substring(1).toLowerCase();
+		}
+	}
+
+	// ============================================
+	// Flip Timeframe Enum
+	// ============================================
+	enum FlipTimeframe
+	{
+		ACTIVE("active", "Active"),
+		THIRTY_MINS("30m", "30 mins"),
+		TWO_HOURS("2h", "2 hours"),
+		FOUR_HOURS("4h", "4 hours"),
+		TWELVE_HOURS("12h", "12 hours");
+
+		private final String apiValue;
+		private final String displayName;
+
+		FlipTimeframe(String apiValue, String displayName)
+		{
+			this.apiValue = apiValue;
+			this.displayName = displayName;
+		}
+
+		public String getApiValue()
+		{
+			return apiValue;
+		}
+
+		public boolean isTimeframeBased()
+		{
+			return this != ACTIVE;
+		}
+
+		@Override
+		public String toString()
+		{
+			return displayName;
 		}
 	}
 
