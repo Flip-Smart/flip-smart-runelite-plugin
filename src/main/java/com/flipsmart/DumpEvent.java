@@ -110,7 +110,7 @@ public class DumpEvent
 	public String toChatMessage()
 	{
 		String profitStr = estimatedProfit != null
-			? String.format("~%s", formatGP(estimatedProfit))
+			? String.format("~%s", GpUtils.formatGPExact(estimatedProfit))
 			: "Unknown";
 
 		String eventType = "pump".equalsIgnoreCase(priceChangeType) ? "PUMP" : "DUMP";
@@ -122,18 +122,11 @@ public class DumpEvent
 			itemName,
 			changeSymbol,
 			priceDropPercent,
-			formatGP(buyPrice),
-			formatGP(sellPrice),
+			GpUtils.formatGPExact(buyPrice),
+			GpUtils.formatGPExact(sellPrice),
 			buyLimit != null ? String.format("%,d", buyLimit) : "Unknown",
 			profitStr
 		);
 	}
 
-	/**
-	 * Format GP with commas
-	 */
-	private static String formatGP(int value)
-	{
-		return String.format("%,d", value);
-	}
 }
