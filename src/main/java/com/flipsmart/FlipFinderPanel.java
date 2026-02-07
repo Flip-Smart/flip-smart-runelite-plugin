@@ -149,6 +149,9 @@ public class FlipFinderPanel extends PluginPanel
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
 
+	// Cache blocklists for quick access when blocking items
+	private volatile List<BlocklistSummary> cachedBlocklists = new ArrayList<>();
+
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
 		super(false);
@@ -2027,23 +2030,28 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(FONT_BOLD_13);
-		// Limit the name label width to ensure chart icon always fits
-		// Panel is ~220px wide, minus item icon (36px), chart icon (20px), padding (14px) = ~150px for name
-		nameLabel.setPreferredSize(new Dimension(150, nameLabel.getPreferredSize().height));
-		nameLabel.setMaximumSize(new Dimension(150, Integer.MAX_VALUE));
+		// Limit the name label width to ensure icons always fit
+		// Panel is ~220px wide, minus item icon (36px), block+chart icons (40px), padding (14px) = ~130px for name
+		nameLabel.setPreferredSize(new Dimension(130, nameLabel.getPreferredSize().height));
+		nameLabel.setMaximumSize(new Dimension(130, Integer.MAX_VALUE));
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
-		
-		// Create chart icon with fixed size wrapper to guarantee it's always visible
+
+		// Create icons panel with chart icon and block icon
+		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+		iconsPanel.setOpaque(false);
+
+		// Create block icon
+		JLabel blockIconLabel = createBlockIconLabel(itemId, itemName);
+		iconsPanel.add(blockIconLabel);
+
+		// Create chart icon
 		JLabel chartIconLabel = createChartIconLabel(itemId);
-		JPanel chartIconWrapper = new JPanel(new BorderLayout());
-		chartIconWrapper.setOpaque(false);
-		chartIconWrapper.add(chartIconLabel, BorderLayout.CENTER);
-		chartIconWrapper.setPreferredSize(new Dimension(20, 16));
-		
+		iconsPanel.add(chartIconLabel);
+
 		topPanel.add(namePanel, BorderLayout.CENTER);
-		topPanel.add(chartIconWrapper, BorderLayout.EAST);
+		topPanel.add(iconsPanel, BorderLayout.EAST);
 
 		return new HeaderPanels(topPanel, namePanel);
 	}
@@ -2145,8 +2153,215 @@ public class FlipFinderPanel extends PluginPanel
 				chartLabel.setIcon(new ImageIcon(chartIcon));
 			}
 		});
-		
+
 		return chartLabel;
+	}
+
+	/**
+	 * Create a clickable block icon label that adds the item to a blocklist.
+	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
+	 */
+	private JLabel createBlockIconLabel(int itemId, String itemName)
+	{
+		// Create a ban/block icon (14x14 pixels)
+		java.awt.image.BufferedImage blockIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g2d = blockIcon.createGraphics();
+		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+		// Clear background to transparent
+		g2d.setComposite(java.awt.AlphaComposite.Clear);
+		g2d.fillRect(0, 0, 14, 14);
+		g2d.setComposite(java.awt.AlphaComposite.SrcOver);
+
+		// Draw circle outline in a muted red color
+		Color normalColor = new Color(180, 100, 100);
+		g2d.setColor(normalColor);
+		g2d.setStroke(new java.awt.BasicStroke(1.5f));
+		g2d.drawOval(1, 1, 11, 11);
+		// Draw diagonal slash
+		g2d.drawLine(3, 11, 11, 3);
+
+		g2d.dispose();
+
+		JLabel blockLabel = new JLabel(new ImageIcon(blockIcon));
+		blockLabel.setToolTipText("Block this item from recommendations");
+		blockLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		blockLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+		blockLabel.setOpaque(false);
+
+		// Add click listener to block the item
+		blockLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				e.consume();
+				handleBlockItemClick(itemId, itemName);
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				// Highlight on hover - brighter red
+				java.awt.image.BufferedImage hoverIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+				java.awt.Graphics2D g = hoverIcon.createGraphics();
+				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+				g.setComposite(java.awt.AlphaComposite.Clear);
+				g.fillRect(0, 0, 14, 14);
+				g.setComposite(java.awt.AlphaComposite.SrcOver);
+
+				Color hoverColor = new Color(255, 100, 100);
+				g.setColor(hoverColor);
+				g.setStroke(new java.awt.BasicStroke(1.5f));
+				g.drawOval(1, 1, 11, 11);
+				g.drawLine(3, 11, 11, 3);
+				g.dispose();
+
+				blockLabel.setIcon(new ImageIcon(hoverIcon));
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				// Restore normal icon
+				blockLabel.setIcon(new ImageIcon(blockIcon));
+			}
+		});
+
+		return blockLabel;
+	}
+
+	/**
+	 * Handle click on the block icon for an item.
+	 * Shows a confirmation dialog and adds to the first available blocklist.
+	 */
+	private void handleBlockItemClick(int itemId, String itemName)
+	{
+		// Fetch blocklists if not cached
+		if (cachedBlocklists.isEmpty())
+		{
+			fetchBlocklistsAndShowDialog(itemId, itemName);
+		}
+		else
+		{
+			showBlockConfirmationDialog(itemId, itemName);
+		}
+	}
+
+	/**
+	 * Fetch blocklists from the API and then show the block dialog.
+	 */
+	private void fetchBlocklistsAndShowDialog(int itemId, String itemName)
+	{
+		apiClient.getBlocklistsAsync().thenAccept(response -> {
+			if (response != null && response.getBlocklists() != null)
+			{
+				cachedBlocklists = response.getBlocklists();
+			}
+			SwingUtilities.invokeLater(() -> showBlockConfirmationDialog(itemId, itemName));
+		}).exceptionally(ex -> {
+			log.warn("Failed to fetch blocklists: {}", ex.getMessage());
+			SwingUtilities.invokeLater(() -> {
+				JOptionPane.showMessageDialog(
+					FlipFinderPanel.this,
+					"Failed to load blocklists. Please try again.",
+					"Error",
+					JOptionPane.ERROR_MESSAGE
+				);
+			});
+			return null;
+		});
+	}
+
+	/**
+	 * Show a confirmation dialog and add the item to a blocklist.
+	 */
+	private void showBlockConfirmationDialog(int itemId, String itemName)
+	{
+		if (cachedBlocklists.isEmpty())
+		{
+			// No blocklists exist - offer to create one
+			int result = JOptionPane.showConfirmDialog(
+				this,
+				"You don't have any blocklists yet.\nWould you like to create one on the FlipSmart website?",
+				"No Blocklists",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.QUESTION_MESSAGE
+			);
+			if (result == JOptionPane.YES_OPTION)
+			{
+				LinkBrowser.browse("https://flipsmart.net/watchlists");
+			}
+			return;
+		}
+
+		// Find the first active blocklist, or use the first one
+		BlocklistSummary targetBlocklist = cachedBlocklists.stream()
+			.filter(BlocklistSummary::is_active)
+			.findFirst()
+			.orElse(cachedBlocklists.get(0));
+
+		String message = String.format(
+			"Block \"%s\" from recommendations?\n\nThis will add it to your \"%s\" blocklist.",
+			itemName,
+			targetBlocklist.getName()
+		);
+
+		int result = JOptionPane.showConfirmDialog(
+			this,
+			message,
+			"Block Item",
+			JOptionPane.YES_NO_OPTION,
+			JOptionPane.QUESTION_MESSAGE
+		);
+
+		if (result == JOptionPane.YES_OPTION)
+		{
+			blockItem(targetBlocklist.getId(), itemId, itemName);
+		}
+	}
+
+	/**
+	 * Add an item to a blocklist via the API.
+	 */
+	private void blockItem(int blocklistId, int itemId, String itemName)
+	{
+		apiClient.addItemToBlocklistAsync(blocklistId, itemId).thenAccept(success -> {
+			SwingUtilities.invokeLater(() -> {
+				if (success)
+				{
+					JOptionPane.showMessageDialog(
+						FlipFinderPanel.this,
+						String.format("\"%s\" has been blocked.\nIt will no longer appear in recommendations.", itemName),
+						"Item Blocked",
+						JOptionPane.INFORMATION_MESSAGE
+					);
+					// Refresh recommendations to remove the blocked item
+					refresh();
+				}
+				else
+				{
+					JOptionPane.showMessageDialog(
+						FlipFinderPanel.this,
+						"Failed to block item. Please try again.",
+						"Error",
+						JOptionPane.ERROR_MESSAGE
+					);
+				}
+			});
+		}).exceptionally(ex -> {
+			log.warn("Failed to block item {}: {}", itemId, ex.getMessage());
+			SwingUtilities.invokeLater(() -> {
+				JOptionPane.showMessageDialog(
+					FlipFinderPanel.this,
+					"Failed to block item. Please try again.",
+					"Error",
+					JOptionPane.ERROR_MESSAGE
+				);
+			});
+			return null;
+		});
 	}
 
 	/**
