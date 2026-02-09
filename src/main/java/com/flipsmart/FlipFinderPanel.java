@@ -48,6 +48,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String FORMAT_MARGIN_ROI_LOSS = "Margin: %s (%.1f%% ROI) - Loss";
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
+	private static final String ERROR_DIALOG_TITLE = "Error";
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String RISK_NA = "Risk: N/A";
@@ -1647,7 +1648,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showErrorInRecommended(String message)
 	{
-		statusLabel.setText("Error");
+		statusLabel.setText(ERROR_DIALOG_TITLE);
 		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
 	}
 
@@ -2235,7 +2236,7 @@ public class FlipFinderPanel extends PluginPanel
 				JOptionPane.showMessageDialog(
 					FlipFinderPanel.this,
 					"Failed to load blocklists. Please try again.",
-					"Error",
+					ERROR_DIALOG_TITLE,
 					JOptionPane.ERROR_MESSAGE
 				);
 			});
@@ -2267,7 +2268,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Find the first active blocklist, or use the first one
 		BlocklistSummary targetBlocklist = cachedBlocklists.stream()
-			.filter(BlocklistSummary::is_active)
+			.filter(BlocklistSummary::isActive)
 			.findFirst()
 			.orElse(cachedBlocklists.get(0));
 
@@ -2298,11 +2299,11 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		apiClient.addItemToBlocklistAsync(blocklistId, itemId).thenAccept(success -> {
 			SwingUtilities.invokeLater(() -> {
-				if (success)
+				if (Boolean.TRUE.equals(success))
 				{
 					JOptionPane.showMessageDialog(
 						FlipFinderPanel.this,
-						String.format("\"%s\" has been blocked.\nIt will no longer appear in recommendations.", itemName),
+						String.format("\"%s\" has been blocked.%nIt will no longer appear in recommendations.", itemName),
 						"Item Blocked",
 						JOptionPane.INFORMATION_MESSAGE
 					);
@@ -2314,7 +2315,7 @@ public class FlipFinderPanel extends PluginPanel
 					JOptionPane.showMessageDialog(
 						FlipFinderPanel.this,
 						"Failed to block item. Please try again.",
-						"Error",
+						ERROR_DIALOG_TITLE,
 						JOptionPane.ERROR_MESSAGE
 					);
 				}
@@ -2325,7 +2326,7 @@ public class FlipFinderPanel extends PluginPanel
 				JOptionPane.showMessageDialog(
 					FlipFinderPanel.this,
 					"Failed to block item. Please try again.",
-					"Error",
+					ERROR_DIALOG_TITLE,
 					JOptionPane.ERROR_MESSAGE
 				);
 			});
@@ -3488,7 +3489,7 @@ public class FlipFinderPanel extends PluginPanel
 						JOptionPane.showMessageDialog(
 							this,
 							"Failed to dismiss active flip. Please try again.",
-							"Error",
+							ERROR_DIALOG_TITLE,
 							JOptionPane.ERROR_MESSAGE
 						);
 					}

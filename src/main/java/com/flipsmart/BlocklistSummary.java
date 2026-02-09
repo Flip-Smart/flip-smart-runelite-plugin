@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.google.gson.annotations.SerializedName;
 import lombok.Data;
 
 /**
@@ -11,10 +12,16 @@ public class BlocklistSummary
 	private int id;
 	private String name;
 	private String description;
-	private int item_count;
-	private String share_id;
-	private boolean is_public;
-	private boolean is_active;
-	private String created_at;
-	private String updated_at;
+	@SerializedName("item_count")
+	private int itemCount;
+	@SerializedName("share_id")
+	private String shareId;
+	@SerializedName("is_public")
+	private boolean isPublic;
+	@SerializedName("is_active")
+	private boolean isActive;
+	@SerializedName("created_at")
+	private String createdAt;
+	@SerializedName("updated_at")
+	private String updatedAt;
 }
