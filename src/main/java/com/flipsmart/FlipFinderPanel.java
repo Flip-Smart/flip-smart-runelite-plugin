@@ -2074,42 +2074,44 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
+	 * Draw a bar chart icon onto a 14x14 image with the given colors.
+	 */
+	private java.awt.image.BufferedImage drawChartIcon(Color barColor, Color baselineColor)
+	{
+		java.awt.image.BufferedImage icon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(java.awt.AlphaComposite.Clear);
+		g.fillRect(0, 0, 14, 14);
+		g.setComposite(java.awt.AlphaComposite.SrcOver);
+
+		g.setColor(barColor);
+		g.fillRect(1, 9, 3, 4);   // Short bar
+		g.fillRect(5, 5, 3, 8);   // Medium bar
+		g.fillRect(9, 2, 3, 11);  // Tall bar
+
+		g.setColor(baselineColor);
+		g.drawLine(0, 13, 13, 13);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
 	 * Create a clickable chart icon label that opens the item's page on the website.
 	 * Uses a simple bar chart icon drawn with Java 2D graphics.
 	 */
 	private JLabel createChartIconLabel(int itemId)
 	{
-		// Create a simple bar chart icon (14x14 pixels)
-		java.awt.image.BufferedImage chartIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-		java.awt.Graphics2D g2d = chartIcon.createGraphics();
-		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+		java.awt.image.BufferedImage chartIcon = drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
 
-		// Clear background to transparent
-		g2d.setComposite(java.awt.AlphaComposite.Clear);
-		g2d.fillRect(0, 0, 14, 14);
-		g2d.setComposite(java.awt.AlphaComposite.SrcOver);
-
-		// Draw bar chart bars in a light blue/cyan color
-		Color barColor = new Color(100, 180, 255);
-		g2d.setColor(barColor);
-		
-		// Three bars of different heights (like a trending chart)
-		g2d.fillRect(1, 9, 3, 4);   // Short bar
-		g2d.fillRect(5, 5, 3, 8);   // Medium bar
-		g2d.fillRect(9, 2, 3, 11);  // Tall bar
-		
-		// Draw baseline
-		g2d.setColor(new Color(150, 150, 150));
-		g2d.drawLine(0, 13, 13, 13);
-		
-		g2d.dispose();
-		
 		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
 		chartLabel.setToolTipText("View price history on Flip Smart website");
 		chartLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 0));
 		chartLabel.setOpaque(false);
-		
+
 		// Add click listener to open website
 		chartLabel.addMouseListener(new MouseAdapter()
 		{
@@ -2120,36 +2122,16 @@ public class FlipFinderPanel extends PluginPanel
 				e.consume();
 				LinkBrowser.browse(WEBSITE_ITEM_URL + itemId);
 			}
-			
+
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				// Highlight on hover - redraw with brighter color
-				java.awt.image.BufferedImage hoverIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-				java.awt.Graphics2D g = hoverIcon.createGraphics();
-				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-
-				// Clear background to transparent
-				g.setComposite(java.awt.AlphaComposite.Clear);
-				g.fillRect(0, 0, 14, 14);
-				g.setComposite(java.awt.AlphaComposite.SrcOver);
-
-				Color hoverColor = new Color(150, 220, 255);
-				g.setColor(hoverColor);
-				g.fillRect(1, 9, 3, 4);
-				g.fillRect(5, 5, 3, 8);
-				g.fillRect(9, 2, 3, 11);
-				g.setColor(new Color(200, 200, 200));
-				g.drawLine(0, 13, 13, 13);
-				g.dispose();
-				
-				chartLabel.setIcon(new ImageIcon(hoverIcon));
+				chartLabel.setIcon(new ImageIcon(drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200))));
 			}
-			
+
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				// Restore normal icon
 				chartLabel.setIcon(new ImageIcon(chartIcon));
 			}
 		});
@@ -2158,30 +2140,34 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
+	 * Draw a ban/circle-slash icon onto a 14x14 image with the given color.
+	 */
+	private java.awt.image.BufferedImage drawBlockIcon(Color color)
+	{
+		java.awt.image.BufferedImage icon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(java.awt.AlphaComposite.Clear);
+		g.fillRect(0, 0, 14, 14);
+		g.setComposite(java.awt.AlphaComposite.SrcOver);
+
+		g.setColor(color);
+		g.setStroke(new java.awt.BasicStroke(1.5f));
+		g.drawOval(1, 1, 11, 11);
+		g.drawLine(3, 11, 11, 3);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
 	 * Create a clickable block icon label that adds the item to a blocklist.
 	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
 	 */
 	private JLabel createBlockIconLabel(int itemId, String itemName)
 	{
-		// Create a ban/block icon (14x14 pixels)
-		java.awt.image.BufferedImage blockIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-		java.awt.Graphics2D g2d = blockIcon.createGraphics();
-		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-
-		// Clear background to transparent
-		g2d.setComposite(java.awt.AlphaComposite.Clear);
-		g2d.fillRect(0, 0, 14, 14);
-		g2d.setComposite(java.awt.AlphaComposite.SrcOver);
-
-		// Draw circle outline in a muted red color
-		Color normalColor = new Color(180, 100, 100);
-		g2d.setColor(normalColor);
-		g2d.setStroke(new java.awt.BasicStroke(1.5f));
-		g2d.drawOval(1, 1, 11, 11);
-		// Draw diagonal slash
-		g2d.drawLine(3, 11, 11, 3);
-
-		g2d.dispose();
+		java.awt.image.BufferedImage blockIcon = drawBlockIcon(new Color(180, 100, 100));
 
 		JLabel blockLabel = new JLabel(new ImageIcon(blockIcon));
 		blockLabel.setToolTipText("Block this item from recommendations");
@@ -2202,29 +2188,12 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				// Highlight on hover - brighter red
-				java.awt.image.BufferedImage hoverIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-				java.awt.Graphics2D g = hoverIcon.createGraphics();
-				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-
-				g.setComposite(java.awt.AlphaComposite.Clear);
-				g.fillRect(0, 0, 14, 14);
-				g.setComposite(java.awt.AlphaComposite.SrcOver);
-
-				Color hoverColor = new Color(255, 100, 100);
-				g.setColor(hoverColor);
-				g.setStroke(new java.awt.BasicStroke(1.5f));
-				g.drawOval(1, 1, 11, 11);
-				g.drawLine(3, 11, 11, 3);
-				g.dispose();
-
-				blockLabel.setIcon(new ImageIcon(hoverIcon));
+				blockLabel.setIcon(new ImageIcon(drawBlockIcon(new Color(255, 100, 100))));
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				// Restore normal icon
 				blockLabel.setIcon(new ImageIcon(blockIcon));
 			}
 		});
@@ -2847,23 +2816,9 @@ public class FlipFinderPanel extends PluginPanel
 			BorderFactory.createLineBorder(COLOR_FOCUSED_BORDER, 2),
 			BorderFactory.createEmptyBorder(6, 8, 6, 8)
 		));
-		
-		// Update child panel backgrounds
-		for (Component comp : panel.getComponents())
-		{
-			if (comp instanceof JPanel)
-			{
-				((JPanel) comp).setBackground(COLOR_FOCUSED_BG);
-				for (Component child : ((JPanel) comp).getComponents())
-				{
-					if (child instanceof JPanel)
-					{
-						((JPanel) child).setBackground(COLOR_FOCUSED_BG);
-					}
-				}
-			}
-		}
-		
+
+		updateChildBackgrounds(panel, COLOR_FOCUSED_BG);
+
 		panel.revalidate();
 		panel.repaint();
 	}
@@ -2875,23 +2830,9 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
-		
-		// Reset child panel backgrounds
-		for (Component comp : panel.getComponents())
-		{
-			if (comp instanceof JPanel)
-			{
-				((JPanel) comp).setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				for (Component child : ((JPanel) comp).getComponents())
-				{
-					if (child instanceof JPanel)
-					{
-						((JPanel) child).setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					}
-				}
-			}
-		}
-		
+
+		updateChildBackgrounds(panel, ColorScheme.DARKER_GRAY_COLOR);
+
 		panel.revalidate();
 		panel.repaint();
 	}
