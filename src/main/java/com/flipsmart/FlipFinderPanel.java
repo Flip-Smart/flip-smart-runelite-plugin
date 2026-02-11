@@ -153,7 +153,7 @@ public class FlipFinderPanel extends PluginPanel
 	// Cache blocklists for quick access when blocking items
 	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
 	private volatile long blocklistCacheTimestamp = 0;
-	private static final long BLOCKLIST_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+	private static final long BLOCKLIST_CACHE_TTL_MS = 5L * 60 * 1000; // 5 minutes
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
