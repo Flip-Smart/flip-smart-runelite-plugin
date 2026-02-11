@@ -151,7 +151,9 @@ public class FlipFinderPanel extends PluginPanel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
 
 	// Cache blocklists for quick access when blocking items
-	private volatile List<BlocklistSummary> cachedBlocklists = new ArrayList<>();
+	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
+	private volatile long blocklistCacheTimestamp = 0;
+	private static final long BLOCKLIST_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -2208,8 +2210,9 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void handleBlockItemClick(int itemId, String itemName)
 	{
-		// Fetch blocklists if not cached
-		if (cachedBlocklists.isEmpty())
+		// Fetch blocklists if not cached or cache has expired
+		boolean cacheExpired = System.currentTimeMillis() - blocklistCacheTimestamp > BLOCKLIST_CACHE_TTL_MS;
+		if (cachedBlocklists.isEmpty() || cacheExpired)
 		{
 			fetchBlocklistsAndShowDialog(itemId, itemName);
 		}
@@ -2227,7 +2230,9 @@ public class FlipFinderPanel extends PluginPanel
 		apiClient.getBlocklistsAsync().thenAccept(response -> {
 			if (response != null && response.getBlocklists() != null)
 			{
-				cachedBlocklists = response.getBlocklists();
+				cachedBlocklists.clear();
+				cachedBlocklists.addAll(response.getBlocklists());
+				blocklistCacheTimestamp = System.currentTimeMillis();
 			}
 			SwingUtilities.invokeLater(() -> showBlockConfirmationDialog(itemId, itemName));
 		}).exceptionally(ex -> {
@@ -2261,7 +2266,7 @@ public class FlipFinderPanel extends PluginPanel
 			);
 			if (result == JOptionPane.YES_OPTION)
 			{
-				LinkBrowser.browse("https://flipsmart.net/watchlists");
+				LinkBrowser.browse("https://flipsmart.net/blocklists");
 			}
 			return;
 		}
