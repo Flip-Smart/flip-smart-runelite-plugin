@@ -1833,4 +1833,78 @@ public class FlipSmartApiClient
 	{
 		return System.currentTimeMillis() - lastWikiPriceFetch > WIKI_PRICE_CACHE_DURATION_MS;
 	}
+
+	// =========================================================================
+	// Blocklist API Methods
+	// =========================================================================
+
+	/**
+	 * Fetch user's blocklists from the API asynchronously.
+	 * Blocklists are used to hide specific items from flip recommendations.
+	 *
+	 * @return CompletableFuture with the user's blocklists
+	 */
+	public CompletableFuture<BlocklistsResponse> getBlocklistsAsync()
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/blocklists", apiUrl);
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, BlocklistsResponse.class));
+	}
+
+	/**
+	 * Add an item to a blocklist asynchronously.
+	 * Blocked items will be excluded from flip recommendations.
+	 *
+	 * @param blocklistId The ID of the blocklist to add the item to
+	 * @param itemId The OSRS item ID to block
+	 * @param reason Optional reason for blocking (can be null)
+	 * @return CompletableFuture that completes with true on success, false on failure
+	 */
+	public CompletableFuture<Boolean> addItemToBlocklistAsync(int blocklistId, int itemId, String reason)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/blocklists/%d/items", apiUrl, blocklistId);
+
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty(JSON_KEY_ITEM_ID, itemId);
+		if (reason != null && !reason.isEmpty())
+		{
+			jsonBody.addProperty("reason", reason);
+		}
+
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(body);
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			// If we got here, the request succeeded
+			log.info("Added item {} to blocklist {}", itemId, blocklistId);
+			return true;
+		}).exceptionally(e ->
+		{
+			log.debug("Failed to add item to blocklist: {}", e.getMessage());
+			return false;
+		});
+	}
+
+	/**
+	 * Add an item to a blocklist asynchronously (without reason).
+	 *
+	 * @param blocklistId The ID of the blocklist to add the item to
+	 * @param itemId The OSRS item ID to block
+	 * @return CompletableFuture that completes with true on success, false on failure
+	 */
+	public CompletableFuture<Boolean> addItemToBlocklistAsync(int blocklistId, int itemId)
+	{
+		return addItemToBlocklistAsync(blocklistId, itemId, null);
+	}
 }

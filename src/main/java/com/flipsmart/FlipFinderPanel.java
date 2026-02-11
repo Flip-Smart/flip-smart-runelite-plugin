@@ -48,6 +48,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String FORMAT_MARGIN_ROI_LOSS = "Margin: %s (%.1f%% ROI) - Loss";
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
+	private static final String ERROR_DIALOG_TITLE = "Error";
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String RISK_NA = "Risk: N/A";
@@ -148,6 +149,11 @@ public class FlipFinderPanel extends PluginPanel
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
+
+	// Cache blocklists for quick access when blocking items
+	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
+	private volatile long blocklistCacheTimestamp = 0;
+	private static final long BLOCKLIST_CACHE_TTL_MS = 5L * 60 * 1000; // 5 minutes
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -1644,7 +1650,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showErrorInRecommended(String message)
 	{
-		statusLabel.setText("Error");
+		statusLabel.setText(ERROR_DIALOG_TITLE);
 		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
 	}
 
@@ -2027,23 +2033,28 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(FONT_BOLD_13);
-		// Limit the name label width to ensure chart icon always fits
-		// Panel is ~220px wide, minus item icon (36px), chart icon (20px), padding (14px) = ~150px for name
-		nameLabel.setPreferredSize(new Dimension(150, nameLabel.getPreferredSize().height));
-		nameLabel.setMaximumSize(new Dimension(150, Integer.MAX_VALUE));
+		// Limit the name label width to ensure icons always fit
+		// Panel is ~220px wide, minus item icon (36px), block+chart icons (40px), padding (14px) = ~130px for name
+		nameLabel.setPreferredSize(new Dimension(130, nameLabel.getPreferredSize().height));
+		nameLabel.setMaximumSize(new Dimension(130, Integer.MAX_VALUE));
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
-		
-		// Create chart icon with fixed size wrapper to guarantee it's always visible
+
+		// Create icons panel with chart icon and block icon
+		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+		iconsPanel.setOpaque(false);
+
+		// Create block icon
+		JLabel blockIconLabel = createBlockIconLabel(itemId, itemName);
+		iconsPanel.add(blockIconLabel);
+
+		// Create chart icon
 		JLabel chartIconLabel = createChartIconLabel(itemId);
-		JPanel chartIconWrapper = new JPanel(new BorderLayout());
-		chartIconWrapper.setOpaque(false);
-		chartIconWrapper.add(chartIconLabel, BorderLayout.CENTER);
-		chartIconWrapper.setPreferredSize(new Dimension(20, 16));
-		
+		iconsPanel.add(chartIconLabel);
+
 		topPanel.add(namePanel, BorderLayout.CENTER);
-		topPanel.add(chartIconWrapper, BorderLayout.EAST);
+		topPanel.add(iconsPanel, BorderLayout.EAST);
 
 		return new HeaderPanels(topPanel, namePanel);
 	}
@@ -2066,42 +2077,44 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
+	 * Draw a bar chart icon onto a 14x14 image with the given colors.
+	 */
+	private java.awt.image.BufferedImage drawChartIcon(Color barColor, Color baselineColor)
+	{
+		java.awt.image.BufferedImage icon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(java.awt.AlphaComposite.Clear);
+		g.fillRect(0, 0, 14, 14);
+		g.setComposite(java.awt.AlphaComposite.SrcOver);
+
+		g.setColor(barColor);
+		g.fillRect(1, 9, 3, 4);   // Short bar
+		g.fillRect(5, 5, 3, 8);   // Medium bar
+		g.fillRect(9, 2, 3, 11);  // Tall bar
+
+		g.setColor(baselineColor);
+		g.drawLine(0, 13, 13, 13);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
 	 * Create a clickable chart icon label that opens the item's page on the website.
 	 * Uses a simple bar chart icon drawn with Java 2D graphics.
 	 */
 	private JLabel createChartIconLabel(int itemId)
 	{
-		// Create a simple bar chart icon (14x14 pixels)
-		java.awt.image.BufferedImage chartIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-		java.awt.Graphics2D g2d = chartIcon.createGraphics();
-		g2d.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+		java.awt.image.BufferedImage chartIcon = drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
 
-		// Clear background to transparent
-		g2d.setComposite(java.awt.AlphaComposite.Clear);
-		g2d.fillRect(0, 0, 14, 14);
-		g2d.setComposite(java.awt.AlphaComposite.SrcOver);
-
-		// Draw bar chart bars in a light blue/cyan color
-		Color barColor = new Color(100, 180, 255);
-		g2d.setColor(barColor);
-		
-		// Three bars of different heights (like a trending chart)
-		g2d.fillRect(1, 9, 3, 4);   // Short bar
-		g2d.fillRect(5, 5, 3, 8);   // Medium bar
-		g2d.fillRect(9, 2, 3, 11);  // Tall bar
-		
-		// Draw baseline
-		g2d.setColor(new Color(150, 150, 150));
-		g2d.drawLine(0, 13, 13, 13);
-		
-		g2d.dispose();
-		
 		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
 		chartLabel.setToolTipText("View price history on Flip Smart website");
 		chartLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 0));
 		chartLabel.setOpaque(false);
-		
+
 		// Add click listener to open website
 		chartLabel.addMouseListener(new MouseAdapter()
 		{
@@ -2112,41 +2125,218 @@ public class FlipFinderPanel extends PluginPanel
 				e.consume();
 				LinkBrowser.browse(WEBSITE_ITEM_URL + itemId);
 			}
-			
+
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				// Highlight on hover - redraw with brighter color
-				java.awt.image.BufferedImage hoverIcon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-				java.awt.Graphics2D g = hoverIcon.createGraphics();
-				g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-
-				// Clear background to transparent
-				g.setComposite(java.awt.AlphaComposite.Clear);
-				g.fillRect(0, 0, 14, 14);
-				g.setComposite(java.awt.AlphaComposite.SrcOver);
-
-				Color hoverColor = new Color(150, 220, 255);
-				g.setColor(hoverColor);
-				g.fillRect(1, 9, 3, 4);
-				g.fillRect(5, 5, 3, 8);
-				g.fillRect(9, 2, 3, 11);
-				g.setColor(new Color(200, 200, 200));
-				g.drawLine(0, 13, 13, 13);
-				g.dispose();
-				
-				chartLabel.setIcon(new ImageIcon(hoverIcon));
+				chartLabel.setIcon(new ImageIcon(drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200))));
 			}
-			
+
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				// Restore normal icon
 				chartLabel.setIcon(new ImageIcon(chartIcon));
 			}
 		});
-		
+
 		return chartLabel;
+	}
+
+	/**
+	 * Draw a ban/circle-slash icon onto a 14x14 image with the given color.
+	 */
+	private java.awt.image.BufferedImage drawBlockIcon(Color color)
+	{
+		java.awt.image.BufferedImage icon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		java.awt.Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(java.awt.AlphaComposite.Clear);
+		g.fillRect(0, 0, 14, 14);
+		g.setComposite(java.awt.AlphaComposite.SrcOver);
+
+		g.setColor(color);
+		g.setStroke(new java.awt.BasicStroke(1.5f));
+		g.drawOval(1, 1, 11, 11);
+		g.drawLine(3, 11, 11, 3);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
+	 * Create a clickable block icon label that adds the item to a blocklist.
+	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
+	 */
+	private JLabel createBlockIconLabel(int itemId, String itemName)
+	{
+		java.awt.image.BufferedImage blockIcon = drawBlockIcon(new Color(180, 100, 100));
+
+		JLabel blockLabel = new JLabel(new ImageIcon(blockIcon));
+		blockLabel.setToolTipText("Block this item from recommendations");
+		blockLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		blockLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+		blockLabel.setOpaque(false);
+
+		// Add click listener to block the item
+		blockLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				e.consume();
+				handleBlockItemClick(itemId, itemName);
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				blockLabel.setIcon(new ImageIcon(drawBlockIcon(new Color(255, 100, 100))));
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				blockLabel.setIcon(new ImageIcon(blockIcon));
+			}
+		});
+
+		return blockLabel;
+	}
+
+	/**
+	 * Handle click on the block icon for an item.
+	 * Shows a confirmation dialog and adds to the first available blocklist.
+	 */
+	private void handleBlockItemClick(int itemId, String itemName)
+	{
+		// Fetch blocklists if not cached or cache has expired
+		boolean cacheExpired = System.currentTimeMillis() - blocklistCacheTimestamp > BLOCKLIST_CACHE_TTL_MS;
+		if (cachedBlocklists.isEmpty() || cacheExpired)
+		{
+			fetchBlocklistsAndShowDialog(itemId, itemName);
+		}
+		else
+		{
+			showBlockConfirmationDialog(itemId, itemName);
+		}
+	}
+
+	/**
+	 * Fetch blocklists from the API and then show the block dialog.
+	 */
+	private void fetchBlocklistsAndShowDialog(int itemId, String itemName)
+	{
+		apiClient.getBlocklistsAsync().thenAccept(response -> {
+			if (response != null && response.getBlocklists() != null)
+			{
+				cachedBlocklists.clear();
+				cachedBlocklists.addAll(response.getBlocklists());
+				blocklistCacheTimestamp = System.currentTimeMillis();
+			}
+			SwingUtilities.invokeLater(() -> showBlockConfirmationDialog(itemId, itemName));
+		}).exceptionally(ex -> {
+			log.warn("Failed to fetch blocklists: {}", ex.getMessage());
+			SwingUtilities.invokeLater(() -> {
+				JOptionPane.showMessageDialog(
+					FlipFinderPanel.this,
+					"Failed to load blocklists. Please try again.",
+					ERROR_DIALOG_TITLE,
+					JOptionPane.ERROR_MESSAGE
+				);
+			});
+			return null;
+		});
+	}
+
+	/**
+	 * Show a confirmation dialog and add the item to a blocklist.
+	 */
+	private void showBlockConfirmationDialog(int itemId, String itemName)
+	{
+		if (cachedBlocklists.isEmpty())
+		{
+			// No blocklists exist - offer to create one
+			int result = JOptionPane.showConfirmDialog(
+				this,
+				"You don't have any blocklists yet.\nWould you like to create one on the FlipSmart website?",
+				"No Blocklists",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.QUESTION_MESSAGE
+			);
+			if (result == JOptionPane.YES_OPTION)
+			{
+				LinkBrowser.browse("https://flipsmart.net/blocklists");
+			}
+			return;
+		}
+
+		// Find the first active blocklist, or use the first one
+		BlocklistSummary targetBlocklist = cachedBlocklists.stream()
+			.filter(BlocklistSummary::isActive)
+			.findFirst()
+			.orElse(cachedBlocklists.get(0));
+
+		String message = String.format(
+			"Block \"%s\" from recommendations?\n\nThis will add it to your \"%s\" blocklist.",
+			itemName,
+			targetBlocklist.getName()
+		);
+
+		int result = JOptionPane.showConfirmDialog(
+			this,
+			message,
+			"Block Item",
+			JOptionPane.YES_NO_OPTION,
+			JOptionPane.QUESTION_MESSAGE
+		);
+
+		if (result == JOptionPane.YES_OPTION)
+		{
+			blockItem(targetBlocklist.getId(), itemId, itemName);
+		}
+	}
+
+	/**
+	 * Add an item to a blocklist via the API.
+	 */
+	private void blockItem(int blocklistId, int itemId, String itemName)
+	{
+		apiClient.addItemToBlocklistAsync(blocklistId, itemId).thenAccept(success -> {
+			SwingUtilities.invokeLater(() -> {
+				if (Boolean.TRUE.equals(success))
+				{
+					JOptionPane.showMessageDialog(
+						FlipFinderPanel.this,
+						String.format("\"%s\" has been blocked.%nIt will no longer appear in recommendations.", itemName),
+						"Item Blocked",
+						JOptionPane.INFORMATION_MESSAGE
+					);
+					// Refresh recommendations to remove the blocked item
+					refresh();
+				}
+				else
+				{
+					JOptionPane.showMessageDialog(
+						FlipFinderPanel.this,
+						"Failed to block item. Please try again.",
+						ERROR_DIALOG_TITLE,
+						JOptionPane.ERROR_MESSAGE
+					);
+				}
+			});
+		}).exceptionally(ex -> {
+			log.warn("Failed to block item {}: {}", itemId, ex.getMessage());
+			SwingUtilities.invokeLater(() -> {
+				JOptionPane.showMessageDialog(
+					FlipFinderPanel.this,
+					"Failed to block item. Please try again.",
+					ERROR_DIALOG_TITLE,
+					JOptionPane.ERROR_MESSAGE
+				);
+			});
+			return null;
+		});
 	}
 
 	/**
@@ -2632,23 +2822,9 @@ public class FlipFinderPanel extends PluginPanel
 			BorderFactory.createLineBorder(COLOR_FOCUSED_BORDER, 2),
 			BorderFactory.createEmptyBorder(6, 8, 6, 8)
 		));
-		
-		// Update child panel backgrounds
-		for (Component comp : panel.getComponents())
-		{
-			if (comp instanceof JPanel)
-			{
-				((JPanel) comp).setBackground(COLOR_FOCUSED_BG);
-				for (Component child : ((JPanel) comp).getComponents())
-				{
-					if (child instanceof JPanel)
-					{
-						((JPanel) child).setBackground(COLOR_FOCUSED_BG);
-					}
-				}
-			}
-		}
-		
+
+		updateChildBackgrounds(panel, COLOR_FOCUSED_BG);
+
 		panel.revalidate();
 		panel.repaint();
 	}
@@ -2660,23 +2836,9 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		panel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		panel.setBorder(new EmptyBorder(8, 10, 8, 10));
-		
-		// Reset child panel backgrounds
-		for (Component comp : panel.getComponents())
-		{
-			if (comp instanceof JPanel)
-			{
-				((JPanel) comp).setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				for (Component child : ((JPanel) comp).getComponents())
-				{
-					if (child instanceof JPanel)
-					{
-						((JPanel) child).setBackground(ColorScheme.DARKER_GRAY_COLOR);
-					}
-				}
-			}
-		}
-		
+
+		updateChildBackgrounds(panel, ColorScheme.DARKER_GRAY_COLOR);
+
 		panel.revalidate();
 		panel.repaint();
 	}
@@ -3332,7 +3494,7 @@ public class FlipFinderPanel extends PluginPanel
 						JOptionPane.showMessageDialog(
 							this,
 							"Failed to dismiss active flip. Please try again.",
-							"Error",
+							ERROR_DIALOG_TITLE,
 							JOptionPane.ERROR_MESSAGE
 						);
 					}
