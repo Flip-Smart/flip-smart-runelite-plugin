@@ -252,8 +252,13 @@ public class AutoRecommendService
 	/**
 	 * Called when a GE slot becomes empty (user collected items or GP).
 	 * Re-evaluates focus based on current state using session's collected items.
+	 *
+	 * @param itemId The item that was collected
+	 * @param wasBuy Whether the collected offer was a buy order
+	 * @param itemName The item name (from the collected TrackedOffer, since it's already removed from session)
+	 * @param quantity The filled quantity (from the collected TrackedOffer)
 	 */
-	public synchronized void onOfferCollected(int itemId, boolean wasBuy)
+	public synchronized void onOfferCollected(int itemId, boolean wasBuy, String itemName, int quantity)
 	{
 		if (!active)
 		{
@@ -270,8 +275,8 @@ public class AutoRecommendService
 
 			if (needsSell)
 			{
-				log.info("Auto-recommend: Buy collected for {} - focusing sell", itemId);
-				focusNextCollectedItemSell();
+				log.info("Auto-recommend: Buy collected for {} x{} - focusing sell", itemName, quantity);
+				focusSellForItem(itemId, itemName, quantity);
 			}
 			else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 			{
@@ -281,7 +286,7 @@ public class AutoRecommendService
 		else
 		{
 			// User collected sell GP - advance to next action
-			log.info("Auto-recommend: Sell collected for {} - advancing", itemId);
+			log.info("Auto-recommend: Sell collected for {} - advancing", itemName);
 			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 			{
 				focusCurrent();
@@ -547,9 +552,42 @@ public class AutoRecommendService
 	}
 
 	/**
-	 * Focus the sell side for a collected item using session state.
-	 * Finds items in session.collectedItemIds that have a recommended sell price,
-	 * and don't already have an active sell slot in the GE.
+	 * Focus the sell side for a specific item with known name and quantity.
+	 * Used when we have direct info from the just-collected TrackedOffer.
+	 */
+	private void focusSellForItem(int itemId, String itemName, int quantity)
+	{
+		PlayerSession session = plugin.getSession();
+		Integer sellPrice = session.getRecommendedPrice(itemId);
+
+		if (sellPrice == null || sellPrice <= 0)
+		{
+			log.warn("Auto-recommend: No recommended sell price for {} ({})", itemName, itemId);
+			focusNextCollectedItemSell();
+			return;
+		}
+
+		int priceOffset = config.priceOffset();
+		FocusedFlip focus = FocusedFlip.forSell(
+			itemId,
+			itemName,
+			sellPrice,
+			quantity,
+			priceOffset
+		);
+
+		invokeFocusCallback(focus);
+		invokeQueueAdvancedCallback();
+
+		updateStatus(String.format("Auto: Sell %s @ %s gp",
+			itemName, GpUtils.formatGPWithSuffix(sellPrice)));
+	}
+
+	/**
+	 * Focus the sell side for the next collected item that needs selling.
+	 * Used when we don't have direct item info (e.g., after sell placed, queue advance).
+	 * Falls back to recommendation queue for item name/quantity since the TrackedOffer
+	 * may have been removed from session when the buy offer was collected.
 	 */
 	private void focusNextCollectedItemSell()
 	{
@@ -569,30 +607,16 @@ public class AutoRecommendService
 				continue;
 			}
 
-			// Look up item name and quantity from tracked offers
+			// Look up item name and quantity from recommendation queue
 			String itemName = null;
 			int quantity = 0;
-			for (TrackedOffer offer : session.getTrackedOffers().values())
+			for (FlipRecommendation rec : recommendationQueue)
 			{
-				if (offer.getItemId() == itemId && offer.isBuy())
+				if (rec.getItemId() == itemId)
 				{
-					itemName = offer.getItemName();
-					quantity = offer.getPreviousQuantitySold();
+					itemName = rec.getItemName();
+					quantity = rec.getRecommendedQuantity();
 					break;
-				}
-			}
-
-			// Fallback: try to find name from recommendation queue
-			if (itemName == null)
-			{
-				for (FlipRecommendation rec : recommendationQueue)
-				{
-					if (rec.getItemId() == itemId)
-					{
-						itemName = rec.getItemName();
-						quantity = rec.getRecommendedQuantity();
-						break;
-					}
 				}
 			}
 

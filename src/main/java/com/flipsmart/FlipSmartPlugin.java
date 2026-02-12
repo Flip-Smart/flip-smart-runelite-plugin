@@ -2134,7 +2134,12 @@ public class FlipSmartPlugin extends Plugin
 				// Notify auto-recommend service of collection
 				if (autoRecommendService != null && autoRecommendService.isActive())
 				{
-					autoRecommendService.onOfferCollected(collectedOffer.getItemId(), collectedOffer.isBuy());
+					autoRecommendService.onOfferCollected(
+						collectedOffer.getItemId(),
+						collectedOffer.isBuy(),
+						collectedOffer.getItemName(),
+						collectedOffer.getPreviousQuantitySold()
+					);
 				}
 
 				// Refresh panel to show updated state
