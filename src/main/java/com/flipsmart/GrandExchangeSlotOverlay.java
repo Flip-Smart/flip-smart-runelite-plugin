@@ -35,6 +35,10 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final int GE_OFFER_PRICE_BUTTON_CHILD = 54;     // Child ID for "Set price" button
 	private static final int GE_OFFER_CONFIRM_BUTTON_CHILD = 58;   // Child ID for "Confirm" button
 
+	// Main GE panel: buy/sell button child IDs within each slot widget (465.7-14)
+	private static final int GE_SLOT_BUY_BUTTON_CHILD = 0;   // Buy button within empty slot
+	private static final int GE_SLOT_SELL_BUTTON_CHILD = 1;  // Sell button within empty slot
+
 	// Colors - designed to blend with GE's brown/tan color scheme
 	private static final Color COLOR_COMPETITIVE = new Color(76, 187, 23);        // OSRS green
 	private static final Color COLOR_UNCOMPETITIVE = new Color(215, 75, 75);      // Soft red
@@ -520,7 +524,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 	/**
 	 * Draw orange glow highlights on GE buttons based on the current flip assist step.
-	 * Uses widget child IDs discovered from Flipping Copilot source code.
+	 * Handles both the main GE panel (8-slot overview) and the offer setup panel.
 	 */
 	private void drawFlipAssistButtonHighlights(Graphics2D graphics)
 	{
@@ -530,40 +534,90 @@ public class GrandExchangeSlotOverlay extends Overlay
 			return;
 		}
 
-		// Get the offer container widget (465, 26)
+		// Handle steps on the main GE panel (SELECT_ITEM / SELL_ITEMS)
+		if (step == FlipAssistOverlay.FlipAssistStep.SELECT_ITEM ||
+			step == FlipAssistOverlay.FlipAssistStep.SELL_ITEMS)
+		{
+			drawMainPanelButtonHighlights(graphics, step);
+			return;
+		}
+
+		// Handle steps on the offer setup panel (SET_QUANTITY, SET_PRICE, CONFIRM)
+		drawOfferSetupButtonHighlights(graphics, step);
+	}
+
+	/**
+	 * Highlight buy/sell buttons on empty GE slots in the main 8-slot panel.
+	 */
+	private void drawMainPanelButtonHighlights(Graphics2D graphics, FlipAssistOverlay.FlipAssistStep step)
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return;
+		}
+
+		int buttonChild = (step == FlipAssistOverlay.FlipAssistStep.SELECT_ITEM)
+			? GE_SLOT_BUY_BUTTON_CHILD
+			: GE_SLOT_SELL_BUTTON_CHILD;
+
+		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
+		{
+			if (offers[slot].getState() != GrandExchangeOfferState.EMPTY)
+			{
+				continue;
+			}
+
+			Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, GE_SLOT_CONTAINER_START + slot);
+			if (slotWidget == null || slotWidget.isHidden())
+			{
+				continue;
+			}
+
+			Widget buttonWidget = slotWidget.getChild(buttonChild);
+			if (buttonWidget != null && !buttonWidget.isHidden())
+			{
+				Rectangle bounds = buttonWidget.getBounds();
+				if (bounds != null && bounds.width > 0)
+				{
+					drawOrangeGlow(graphics, bounds);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Highlight buttons on the offer setup panel (quantity, price, confirm).
+	 * Uses widget child IDs discovered from Flipping Copilot source code.
+	 */
+	private void drawOfferSetupButtonHighlights(Graphics2D graphics, FlipAssistOverlay.FlipAssistStep step)
+	{
 		Widget offerContainer = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_CONTAINER);
 		if (offerContainer == null || offerContainer.isHidden())
 		{
 			return;
 		}
 
-		Widget targetWidget = null;
 		int childId = -1;
 
 		switch (step)
 		{
 			case SET_QUANTITY:
-				// Quantity button is child 51 of the offer container
 				childId = GE_OFFER_QUANTITY_BUTTON_CHILD;
 				break;
 			case SET_PRICE:
 			case SET_SELL_PRICE:
-				// Price button is child 54 of the offer container
 				childId = GE_OFFER_PRICE_BUTTON_CHILD;
 				break;
 			case CONFIRM_OFFER:
 			case CONFIRM_SELL:
-				// Confirm button is child 58 of the offer container
 				childId = GE_OFFER_CONFIRM_BUTTON_CHILD;
 				break;
 			default:
 				return;
 		}
 
-		if (childId >= 0)
-		{
-			targetWidget = offerContainer.getChild(childId);
-		}
+		Widget targetWidget = offerContainer.getChild(childId);
 
 		if (targetWidget != null && !targetWidget.isHidden())
 		{
@@ -576,7 +630,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 					step == FlipAssistOverlay.FlipAssistStep.SET_PRICE ||
 					step == FlipAssistOverlay.FlipAssistStep.SET_SELL_PRICE)
 				{
-					// Shrink height and center vertically
 					int shrinkAmount = bounds.height / 3;
 					bounds = new Rectangle(
 						bounds.x,
