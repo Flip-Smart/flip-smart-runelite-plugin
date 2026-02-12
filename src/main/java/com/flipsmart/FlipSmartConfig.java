@@ -345,6 +345,18 @@ public interface FlipSmartConfig extends Config
 		return 0;
 	}
 
+	@ConfigItem(
+		keyName = "enableAutoRecommend",
+		name = "Auto-Recommend",
+		description = "Automatically cycle through flip recommendations one by one into Flip Assist",
+		section = flipAssistantSection,
+		position = 5
+	)
+	default boolean enableAutoRecommend()
+	{
+		return false;
+	}
+
 	// ============================================
 	// Market Dumps Section
 	// ============================================

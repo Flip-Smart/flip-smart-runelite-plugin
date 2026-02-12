@@ -106,6 +106,10 @@ public class FlipSmartPlugin extends Plugin
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
 
+	// Auto-recommend service
+	@Getter
+	private AutoRecommendService autoRecommendService;
+
 	// Centralized session state management
 	private final PlayerSession session = new PlayerSession();
 
@@ -507,6 +511,21 @@ public class FlipSmartPlugin extends Plugin
 		// Start dump alert service
 		dumpAlertService.start();
 
+		// Initialize auto-recommend service
+		autoRecommendService = new AutoRecommendService(config, this);
+		autoRecommendService.setOnFocusChanged(focus -> {
+			flipAssistOverlay.setFocusedFlip(focus);
+			if (focus != null)
+			{
+				log.info("Auto-recommend focus set: {} {} @ {} gp",
+					focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
+			}
+			else
+			{
+				flipAssistOverlay.clearFocus();
+			}
+		});
+
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
 	}
@@ -554,6 +573,12 @@ public class FlipSmartPlugin extends Plugin
 		// Stop dump alert service
 		dumpAlertService.stop();
 
+		// Stop auto-recommend service
+		if (autoRecommendService != null)
+		{
+			autoRecommendService.stop();
+		}
+
 		// Clear API client cache
 		apiClient.clearCache();
 	}
@@ -575,7 +600,17 @@ public class FlipSmartPlugin extends Plugin
 		{
 			session.onLogout();
 			persistOfferState();
-			
+
+			// Stop auto-recommend on logout
+			if (autoRecommendService != null && autoRecommendService.isActive())
+			{
+				autoRecommendService.stop();
+				if (flipFinderPanel != null)
+				{
+					flipFinderPanel.updateAutoRecommendButton(false);
+				}
+			}
+
 			// Update panel to show logged out state (saves API requests while at login screen)
 			if (flipFinderPanel != null)
 			{
@@ -2174,6 +2209,15 @@ public class FlipSmartPlugin extends Plugin
 				completedTimestamp = (previousOffer != null && previousOffer.getCompletedAtMillis() > 0)
 					? previousOffer.getCompletedAtMillis()
 					: System.currentTimeMillis();
+
+				// Notify auto-recommend service when a buy order fully completes
+				if (isBuy && state == GrandExchangeOfferState.BOUGHT
+					&& autoRecommendService != null && autoRecommendService.isActive())
+				{
+					Integer recSellPrice = session.getRecommendedPrice(itemId);
+					int pricePerItem = spent / quantitySold;
+					autoRecommendService.onBuyOrderCompleted(itemId, itemName, quantitySold, pricePerItem, recSellPrice);
+				}
 			}
 
 			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
@@ -2191,9 +2235,9 @@ public class FlipSmartPlugin extends Plugin
 			{
 				log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
 					itemName, 0, price, slot, totalQuantity);
-				
+
 				Integer recommendedSellPrice = session.getRecommendedPrice(itemId);
-				
+
 				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 					.builder(itemId, itemName, true, 0, price)
 					.geSlot(slot)
@@ -2201,8 +2245,14 @@ public class FlipSmartPlugin extends Plugin
 					.rsn(getCurrentRsnSafe().orElse(null))
 					.totalQuantity(totalQuantity)
 					.build());
+
+				// Notify auto-recommend service of new buy order
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onBuyOrderPlaced(itemId);
+				}
 			}
-			
+
 			// When a SELL order is placed, mark the active flip as "selling" phase
 			// This updates the backend so the webapp shows the correct phase
 			if (!isBuy && totalQuantity > 0 && previousOffer == null)
@@ -2212,6 +2262,12 @@ public class FlipSmartPlugin extends Plugin
 				if (rsn != null)
 				{
 					apiClient.markActiveFlipSellingAsync(itemId, rsn);
+				}
+
+				// Notify auto-recommend service of sell order placed
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onSellOrderPlaced(itemId);
 				}
 			}
 			
@@ -2233,22 +2289,28 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
+		// When auto-recommend is active, it manages focus transitions itself
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			return;
+		}
+
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null)
 		{
 			return;
 		}
-		
+
 		// Clear focus if the item matches and the order type matches the step
 		if (focusedFlip.getItemId() == itemId)
 		{
 			boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
 			if (stepMatches)
 			{
-				log.info("Clearing Flip Assist focus - order submitted for {} ({})", 
+				log.info("Clearing Flip Assist focus - order submitted for {} ({})",
 					focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
 				flipAssistOverlay.clearFocus();
-				
+
 				// Also update the panel's visual state
 				if (flipFinderPanel != null)
 				{

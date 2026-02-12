@@ -150,6 +150,10 @@ public class FlipFinderPanel extends PluginPanel
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
 
+	// Auto-recommend UI
+	private JToggleButton autoRecommendButton;
+	private JLabel autoRecommendStatusLabel;
+
 	// Cache blocklists for quick access when blocking items
 	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
 	private volatile long blocklistCacheTimestamp = 0;
@@ -401,9 +405,17 @@ public class FlipFinderPanel extends PluginPanel
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> refresh(true));
 
+		// Auto-recommend toggle button
+		autoRecommendButton = new JToggleButton("Auto");
+		autoRecommendButton.setFocusable(false);
+		autoRecommendButton.setMargin(new Insets(2, 4, 2, 4));
+		autoRecommendButton.setToolTipText("Auto-cycle through recommendations into Flip Assist");
+		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
+
 		headerPanel.add(titleLabel);
 		headerPanel.add(logoutButton);
 		headerPanel.add(refreshButton);
+		headerPanel.add(autoRecommendButton);
 
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
@@ -486,6 +498,13 @@ public class FlipFinderPanel extends PluginPanel
 		statusLabel.setForeground(Color.LIGHT_GRAY);
 		statusLabel.setFont(FONT_PLAIN_12);
 		statusPanel.add(statusLabel, BorderLayout.CENTER);
+
+		// Auto-recommend status label (hidden by default)
+		autoRecommendStatusLabel = new JLabel();
+		autoRecommendStatusLabel.setForeground(new Color(255, 200, 50));
+		autoRecommendStatusLabel.setFont(FONT_PLAIN_12);
+		autoRecommendStatusLabel.setVisible(false);
+		statusPanel.add(autoRecommendStatusLabel, BorderLayout.SOUTH);
 
 		// Combine controls and status into top panel
 		JPanel topPanel = new JPanel();
@@ -3650,6 +3669,77 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		
 		return minProfitablePrice;
+	}
+
+	/**
+	 * Toggle auto-recommend on/off.
+	 * When turned on, starts cycling through current recommendations into Flip Assist.
+	 */
+	private void toggleAutoRecommend()
+	{
+		AutoRecommendService service = plugin.getAutoRecommendService();
+		if (service == null)
+		{
+			autoRecommendButton.setSelected(false);
+			return;
+		}
+
+		if (autoRecommendButton.isSelected())
+		{
+			// Starting auto-recommend
+			if (currentRecommendations.isEmpty())
+			{
+				autoRecommendButton.setSelected(false);
+				autoRecommendStatusLabel.setText("No recommendations - refresh first");
+				autoRecommendStatusLabel.setVisible(true);
+				return;
+			}
+
+			// Wire status callback
+			service.setOnStatusChanged(status -> SwingUtilities.invokeLater(() -> {
+				autoRecommendStatusLabel.setText(status);
+				autoRecommendStatusLabel.setVisible(true);
+			}));
+
+			service.start(new ArrayList<>(currentRecommendations));
+
+			// Switch to Recommended tab
+			tabbedPane.setSelectedIndex(0);
+
+			autoRecommendButton.setBackground(ColorScheme.BRAND_ORANGE);
+			autoRecommendButton.setText("Auto \u25CF");
+			log.info("Auto-recommend enabled with {} recommendations", currentRecommendations.size());
+		}
+		else
+		{
+			// Stopping auto-recommend
+			service.stop();
+			autoRecommendButton.setBackground(null);
+			autoRecommendButton.setText("Auto");
+			autoRecommendStatusLabel.setVisible(false);
+			log.info("Auto-recommend disabled");
+		}
+	}
+
+	/**
+	 * Update the auto-recommend button state (e.g., when service is stopped externally).
+	 */
+	public void updateAutoRecommendButton(boolean active)
+	{
+		SwingUtilities.invokeLater(() -> {
+			autoRecommendButton.setSelected(active);
+			if (active)
+			{
+				autoRecommendButton.setBackground(ColorScheme.BRAND_ORANGE);
+				autoRecommendButton.setText("Auto \u25CF");
+			}
+			else
+			{
+				autoRecommendButton.setBackground(null);
+				autoRecommendButton.setText("Auto");
+				autoRecommendStatusLabel.setVisible(false);
+			}
+		});
 	}
 }
 
