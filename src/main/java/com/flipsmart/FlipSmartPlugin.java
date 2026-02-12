@@ -116,6 +116,9 @@ public class FlipSmartPlugin extends Plugin
 	// Auto-refresh timer for flip finder
 	private java.util.Timer flipFinderRefreshTimer;
 
+	// Auto-recommend refresh timer (2-minute cycle)
+	private java.util.Timer autoRecommendRefreshTimer;
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -123,6 +126,10 @@ public class FlipSmartPlugin extends Plugin
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
+	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
+
+	/** Auto-recommend queue refresh interval (2 minutes) */
+	private static final long AUTO_RECOMMEND_REFRESH_INTERVAL_MS = 2 * 60 * 1000L;
 
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
@@ -573,9 +580,11 @@ public class FlipSmartPlugin extends Plugin
 		// Stop dump alert service
 		dumpAlertService.stop();
 
-		// Stop auto-recommend service
+		// Stop auto-recommend service and timer
+		stopAutoRecommendRefreshTimer();
 		if (autoRecommendService != null)
 		{
+			persistAutoRecommendState();
 			autoRecommendService.stop();
 		}
 
@@ -601,7 +610,7 @@ public class FlipSmartPlugin extends Plugin
 			session.onLogout();
 			persistOfferState();
 
-			// Stop auto-recommend on logout
+			// Stop auto-recommend on logout (state was already persisted above)
 			if (autoRecommendService != null && autoRecommendService.isActive())
 			{
 				autoRecommendService.stop();
@@ -610,6 +619,7 @@ public class FlipSmartPlugin extends Plugin
 					flipFinderPanel.updateAutoRecommendButton(false);
 				}
 			}
+			stopAutoRecommendRefreshTimer();
 
 			// Update panel to show logged out state (saves API requests while at login screen)
 			if (flipFinderPanel != null)
@@ -641,6 +651,9 @@ public class FlipSmartPlugin extends Plugin
 			// Restore collected items from config (items bought but not yet sold)
 			// Must be after syncRSN() so we have the correct RSN for the config key
 			restoreCollectedItems();
+
+			// Restore auto-recommend state from previous session
+			restoreAutoRecommendState();
 
 			// Schedule offline sync after a delay to ensure all GE events have been processed
 			// This must run AFTER syncRSN() so we have the correct RSN for the config key
@@ -731,8 +744,11 @@ public class FlipSmartPlugin extends Plugin
 				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
 			}
 		}
+
+		// Persist auto-recommend state
+		persistAutoRecommendState();
 	}
-	
+
 	/**
 	 * Sync fills that occurred while offline.
 	 * Records current GE state to the backend. Cleanup of stale flips happens
@@ -2115,6 +2131,12 @@ public class FlipSmartPlugin extends Plugin
 					}
 				}
 				
+				// Notify auto-recommend service of collection
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onOfferCollected(collectedOffer.getItemId(), collectedOffer.isBuy());
+				}
+
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)
 				{
@@ -2217,6 +2239,13 @@ public class FlipSmartPlugin extends Plugin
 					Integer recSellPrice = session.getRecommendedPrice(itemId);
 					int pricePerItem = spent / quantitySold;
 					autoRecommendService.onBuyOrderCompleted(itemId, itemName, quantitySold, pricePerItem, recSellPrice);
+				}
+
+				// Notify auto-recommend service when a sell order fully completes
+				if (!isBuy && state == GrandExchangeOfferState.SOLD
+					&& autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onSellOrderCompleted(itemId);
 				}
 			}
 
@@ -2491,6 +2520,15 @@ public class FlipSmartPlugin extends Plugin
 						flipFinderPanel.refresh();
 					});
 				}
+
+				// Check for inactive auto-recommend offers
+				if (autoRecommendService != null && autoRecommendService.isActive() && flipFinderPanel != null)
+				{
+					autoRecommendService.checkInactiveOffers(
+						session.getTrackedOffers(),
+						flipFinderPanel.getCurrentRecommendations()
+					);
+				}
 			}
 		}, refreshIntervalMs, refreshIntervalMs);
 
@@ -2508,6 +2546,118 @@ public class FlipSmartPlugin extends Plugin
 			flipFinderRefreshTimer = null;
 			log.info("Flip Finder auto-refresh stopped");
 		}
+	}
+
+	/**
+	 * Start the auto-recommend refresh timer (2-minute interval).
+	 * Fetches fresh recommendations and feeds them to the auto-recommend queue.
+	 */
+	void startAutoRecommendRefreshTimer()
+	{
+		stopAutoRecommendRefreshTimer();
+
+		autoRecommendRefreshTimer = new java.util.Timer("AutoRecommendRefreshTimer", true);
+		autoRecommendRefreshTimer.scheduleAtFixedRate(new java.util.TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				if (!session.isLoggedIntoRunescape()
+					|| autoRecommendService == null
+					|| !autoRecommendService.isActive())
+				{
+					return;
+				}
+
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() ->
+					{
+						log.debug("Auto-recommend refresh cycle");
+						flipFinderPanel.refresh();
+					});
+				}
+			}
+		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
+
+		log.info("Auto-recommend refresh timer started (every 2 minutes)");
+	}
+
+	void stopAutoRecommendRefreshTimer()
+	{
+		if (autoRecommendRefreshTimer != null)
+		{
+			autoRecommendRefreshTimer.cancel();
+			autoRecommendRefreshTimer = null;
+		}
+	}
+
+	// =====================
+	// Auto-Recommend Persistence
+	// =====================
+
+	private String getAutoRecommendStateKey()
+	{
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			return AUTO_RECOMMEND_STATE_KEY_PREFIX + "unknown";
+		}
+		return AUTO_RECOMMEND_STATE_KEY_PREFIX + session.getRsn();
+	}
+
+	/**
+	 * Persist auto-recommend state to config for session survival.
+	 */
+	private void persistAutoRecommendState()
+	{
+		if (autoRecommendService == null || !autoRecommendService.isActive())
+		{
+			// Clean up any stale persisted state
+			configManager.unsetConfiguration(CONFIG_GROUP, getAutoRecommendStateKey());
+			return;
+		}
+
+		AutoRecommendService.PersistedState state = autoRecommendService.getStateForPersistence();
+		String json = gson.toJson(state);
+		configManager.setConfiguration(CONFIG_GROUP, getAutoRecommendStateKey(), json);
+		log.info("Persisted auto-recommend state ({} items in queue)", state.queue != null ? state.queue.size() : 0);
+	}
+
+	/**
+	 * Restore auto-recommend state from config after login.
+	 */
+	private void restoreAutoRecommendState()
+	{
+		String json = configManager.getConfiguration(CONFIG_GROUP, getAutoRecommendStateKey());
+		if (json == null || json.isEmpty())
+		{
+			return;
+		}
+
+		try
+		{
+			AutoRecommendService.PersistedState state = gson.fromJson(json, AutoRecommendService.PersistedState.class);
+			if (autoRecommendService.restoreState(state, AutoRecommendService.MAX_PERSISTED_AGE_MS))
+			{
+				log.info("Restored auto-recommend state from previous session");
+
+				// Update the panel button
+				if (flipFinderPanel != null)
+				{
+					flipFinderPanel.updateAutoRecommendButton(true);
+				}
+
+				// Start the refresh timer
+				startAutoRecommendRefreshTimer();
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("Failed to restore auto-recommend state: {}", e.getMessage());
+		}
+
+		// Always clear the persisted state after attempting restore
+		configManager.unsetConfiguration(CONFIG_GROUP, getAutoRecommendStateKey());
 	}
 
 	@Provides

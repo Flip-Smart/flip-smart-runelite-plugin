@@ -72,6 +72,10 @@ public class FlipFinderPanel extends PluginPanel
 	// Very light/transparent so they don't conflict with text colors
 	private static final Color COLOR_PRICE_HIGHER_BG = new Color(60, 90, 60);  // Subtle green - selling higher than estimate
 	private static final Color COLOR_PRICE_LOWER_BG = new Color(90, 55, 55);   // Subtle red - selling lower than estimate
+
+	// Colors for auto-recommend highlighted item
+	private static final Color COLOR_AUTO_RECOMMEND_BORDER = new Color(255, 185, 50);
+	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
 	
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
@@ -1297,6 +1301,13 @@ public class FlipFinderPanel extends PluginPanel
 
 			// Validate focus after refresh in case focused item is no longer recommended
 			validateFocus();
+
+			// If auto-recommend is active, refresh the queue with new recommendations
+			AutoRecommendService service = plugin.getAutoRecommendService();
+			if (service != null && service.isActive())
+			{
+				service.refreshQueue(new ArrayList<>(currentRecommendations));
+			}
 		});
 	}
 
@@ -1788,9 +1799,22 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		recommendedListContainer.removeAll();
 
+		// Check if auto-recommend is active and get current focused item
+		AutoRecommendService service = plugin.getAutoRecommendService();
+		FlipRecommendation autoRecCurrent = (service != null && service.isActive())
+			? service.getCurrentRecommendation() : null;
+
 		for (FlipRecommendation rec : recommendations)
 		{
-			recommendedListContainer.add(createRecommendationPanel(rec));
+			JPanel panel = createRecommendationPanel(rec);
+
+			// Highlight if this is the current auto-recommend item
+			if (autoRecCurrent != null && autoRecCurrent.getItemId() == rec.getItemId())
+			{
+				applyAutoRecommendStyle(panel);
+			}
+
+			recommendedListContainer.add(panel);
 			recommendedListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
 		}
 
@@ -2861,6 +2885,19 @@ public class FlipFinderPanel extends PluginPanel
 		panel.revalidate();
 		panel.repaint();
 	}
+
+	/**
+	 * Apply the auto-recommend highlight style to a recommendation panel.
+	 */
+	private void applyAutoRecommendStyle(JPanel panel)
+	{
+		panel.setBackground(COLOR_AUTO_RECOMMEND_BG);
+		panel.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(COLOR_AUTO_RECOMMEND_BORDER, 2),
+			new EmptyBorder(6, 8, 6, 8)
+		));
+		updateChildBackgrounds(panel, COLOR_AUTO_RECOMMEND_BG);
+	}
 	
 	/**
 	 * Get the current focused flip
@@ -3701,10 +3738,17 @@ public class FlipFinderPanel extends PluginPanel
 				autoRecommendStatusLabel.setVisible(true);
 			}));
 
+			// Wire queue advanced callback to repaint panel highlight
+			service.setOnQueueAdvanced(() ->
+				populateRecommendations(new ArrayList<>(currentRecommendations)));
+
 			service.start(new ArrayList<>(currentRecommendations));
 
 			// Switch to Recommended tab
 			tabbedPane.setSelectedIndex(0);
+
+			// Start the 2-minute refresh timer
+			plugin.startAutoRecommendRefreshTimer();
 
 			autoRecommendButton.setBackground(ColorScheme.BRAND_ORANGE);
 			autoRecommendButton.setText("Auto \u25CF");
@@ -3714,9 +3758,15 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			// Stopping auto-recommend
 			service.stop();
+			plugin.stopAutoRecommendRefreshTimer();
+
 			autoRecommendButton.setBackground(null);
 			autoRecommendButton.setText("Auto");
 			autoRecommendStatusLabel.setVisible(false);
+
+			// Repaint recommendations to remove highlight
+			populateRecommendations(new ArrayList<>(currentRecommendations));
+
 			log.info("Auto-recommend disabled");
 		}
 	}
