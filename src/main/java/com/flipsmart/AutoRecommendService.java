@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.Queue;
 import java.util.function.Consumer;
 
 /**
@@ -17,7 +15,8 @@ import java.util.function.Consumer;
  *
  * When active, this service automatically focuses recommendations into Flip Assist
  * one-by-one. When the user places a buy order, it advances to the next recommendation.
- * When a buy order completes, it queues the sell side for that item.
+ * When a buy order completes, it uses session state (collectedItemIds + recommendedPrices)
+ * to guide the user through the sell side.
  *
  * Thread safety: All public methods are synchronized. Callbacks are dispatched
  * on the Swing EDT via SwingUtilities.invokeLater.
@@ -27,8 +26,6 @@ public class AutoRecommendService
 {
 	/** Maximum number of GE slots available per player */
 	private static final int MAX_GE_SLOTS = 8;
-	/** GE tax rate applied to sell transactions */
-	private static final double GE_TAX_RATE = 0.98;
 	/** How long before a buy offer is considered stale (15 minutes) */
 	private static final long INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000L;
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
@@ -41,9 +38,6 @@ public class AutoRecommendService
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
 	private int currentIndex;
 	private volatile boolean active;
-
-	// Pending sells: items that finished buying and need to be sold
-	private final Queue<PendingSell> pendingSells = new ConcurrentLinkedQueue<>();
 
 	// Timestamp of last queue refresh for staleness checks
 	private volatile long lastQueueRefreshMillis;
@@ -61,26 +55,6 @@ public class AutoRecommendService
 	private volatile Runnable onQueueAdvanced;
 
 	/**
-	 * Represents an item that completed buying and is waiting to be sold.
-	 * Package-private for Gson serialization.
-	 */
-	static class PendingSell
-	{
-		final int itemId;
-		final String itemName;
-		final int sellPrice;
-		final int quantity;
-
-		PendingSell(int itemId, String itemName, int sellPrice, int quantity)
-		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.sellPrice = sellPrice;
-			this.quantity = quantity;
-		}
-	}
-
-	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
 	 * Package-private for Gson serialization.
 	 */
@@ -89,7 +63,6 @@ public class AutoRecommendService
 		boolean active;
 		List<FlipRecommendation> queue;
 		int currentIndex;
-		List<PendingSell> pendingSells;
 		long savedAtMillis;
 	}
 
@@ -141,17 +114,16 @@ public class AutoRecommendService
 			return;
 		}
 
+		// getActiveFlipItemIds() includes all GE buy/sell items + collected items
 		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-		Set<Integer> geBuyItemIds = plugin.getCurrentGEBuyItemIds();
 
 		recommendationQueue.clear();
-		pendingSells.clear();
 		staleNotifiedItemIds.clear();
 		currentIndex = 0;
 
 		for (FlipRecommendation rec : recommendations)
 		{
-			if (!activeItemIds.contains(rec.getItemId()) && !geBuyItemIds.contains(rec.getItemId()))
+			if (!activeItemIds.contains(rec.getItemId()))
 			{
 				recommendationQueue.add(rec);
 			}
@@ -179,7 +151,6 @@ public class AutoRecommendService
 	{
 		active = false;
 		recommendationQueue.clear();
-		pendingSells.clear();
 		staleNotifiedItemIds.clear();
 		currentIndex = 0;
 
@@ -216,41 +187,24 @@ public class AutoRecommendService
 
 	/**
 	 * Called when a buy order completes (fully bought).
-	 * Queues the sell for this item.
+	 * Prompts user to collect items. Sell price is already stored in session
+	 * via setRecommendedSellPrice() when the buy order was placed.
 	 */
-	public synchronized void onBuyOrderCompleted(int itemId, String itemName, int quantity, int buyPrice, Integer recommendedSellPrice)
+	public synchronized void onBuyOrderCompleted(int itemId, String itemName)
 	{
 		if (!active)
 		{
 			return;
 		}
 
-		if (quantity <= 0 || buyPrice <= 0)
-		{
-			log.warn("Auto-recommend: Invalid buy completion params - qty={}, price={}", quantity, buyPrice);
-			return;
-		}
-
-		int sellPrice;
-		if (recommendedSellPrice != null && recommendedSellPrice > 0)
-		{
-			sellPrice = recommendedSellPrice;
-		}
-		else
-		{
-			sellPrice = (int) Math.ceil((buyPrice + 1) / GE_TAX_RATE);
-		}
-
-		pendingSells.add(new PendingSell(itemId, itemName, sellPrice, quantity));
-		log.info("Auto-recommend: Buy complete for {} x{} - queued sell at {} gp", itemName, quantity, sellPrice);
-
+		log.info("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
 		updateStatus(String.format("Auto: Collect %s from GE", itemName));
 
 		// If we're not currently focused on a buy recommendation, focus sell
 		FlipRecommendation currentRec = getCurrentRecommendation();
 		if (currentRec == null || !hasAvailableGESlots())
 		{
-			focusNextPendingSell();
+			focusNextCollectedItemSell();
 		}
 	}
 
@@ -264,17 +218,15 @@ public class AutoRecommendService
 			return;
 		}
 
-		pendingSells.removeIf(ps -> ps.itemId == itemId);
-
 		log.info("Auto-recommend: Sell order placed for item {} - checking next action", itemId);
 
 		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 		{
 			focusCurrent();
 		}
-		else if (!pendingSells.isEmpty())
+		else if (hasCollectedItemsToSell())
 		{
-			focusNextPendingSell();
+			focusNextCollectedItemSell();
 		}
 		else if (currentIndex >= recommendationQueue.size())
 		{
@@ -299,7 +251,7 @@ public class AutoRecommendService
 
 	/**
 	 * Called when a GE slot becomes empty (user collected items or GP).
-	 * Re-evaluates focus based on current state.
+	 * Re-evaluates focus based on current state using session's collected items.
 	 */
 	public synchronized void onOfferCollected(int itemId, boolean wasBuy)
 	{
@@ -310,12 +262,16 @@ public class AutoRecommendService
 
 		if (wasBuy)
 		{
-			// User collected bought items - focus the sell side if pending
-			boolean hasPendingSell = pendingSells.stream().anyMatch(ps -> ps.itemId == itemId);
-			if (hasPendingSell)
+			// User collected bought items - check if they need to sell
+			// Session collectedItemIds is updated by the plugin before this call
+			PlayerSession session = plugin.getSession();
+			boolean needsSell = session.getCollectedItemIds().contains(itemId)
+				&& session.getRecommendedPrice(itemId) != null;
+
+			if (needsSell)
 			{
 				log.info("Auto-recommend: Buy collected for {} - focusing sell", itemId);
-				focusNextPendingSell();
+				focusNextCollectedItemSell();
 			}
 			else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 			{
@@ -330,11 +286,11 @@ public class AutoRecommendService
 			{
 				focusCurrent();
 			}
-			else if (!pendingSells.isEmpty())
+			else if (hasCollectedItemsToSell())
 			{
-				focusNextPendingSell();
+				focusNextCollectedItemSell();
 			}
-			else if (currentIndex >= recommendationQueue.size() && pendingSells.isEmpty())
+			else if (currentIndex >= recommendationQueue.size() && !hasCollectedItemsToSell())
 			{
 				updateStatus("Auto: Queue complete - all flips done!");
 			}
@@ -358,14 +314,13 @@ public class AutoRecommendService
 
 		FlipRecommendation currentRec = getCurrentRecommendation();
 
-		// Filter new recommendations
+		// Filter new recommendations - getActiveFlipItemIds() includes all GE items + collected items
 		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-		Set<Integer> geBuyItemIds = plugin.getCurrentGEBuyItemIds();
 
 		List<FlipRecommendation> filtered = new ArrayList<>();
 		for (FlipRecommendation rec : newRecommendations)
 		{
-			if (!activeItemIds.contains(rec.getItemId()) && !geBuyItemIds.contains(rec.getItemId()))
+			if (!activeItemIds.contains(rec.getItemId()))
 			{
 				filtered.add(rec);
 			}
@@ -479,7 +434,6 @@ public class AutoRecommendService
 		state.active = active;
 		state.queue = new ArrayList<>(recommendationQueue);
 		state.currentIndex = currentIndex;
-		state.pendingSells = new ArrayList<>(pendingSells);
 		state.savedAtMillis = System.currentTimeMillis();
 		return state;
 	}
@@ -516,18 +470,12 @@ public class AutoRecommendService
 		currentIndex = Math.min(state.currentIndex, recommendationQueue.size() - 1);
 		currentIndex = Math.max(0, currentIndex);
 
-		pendingSells.clear();
-		if (state.pendingSells != null)
-		{
-			pendingSells.addAll(state.pendingSells);
-		}
-
 		staleNotifiedItemIds.clear();
 		active = true;
 		lastQueueRefreshMillis = state.savedAtMillis;
 
-		log.info("Auto-recommend: Restored state with {} items in queue, index {}, {} pending sells",
-			recommendationQueue.size(), currentIndex, pendingSells.size());
+		log.info("Auto-recommend: Restored state with {} items in queue, index {}",
+			recommendationQueue.size(), currentIndex);
 
 		focusCurrent();
 		return true;
@@ -553,9 +501,9 @@ public class AutoRecommendService
 
 		if (currentIndex >= recommendationQueue.size())
 		{
-			if (!pendingSells.isEmpty())
+			if (hasCollectedItemsToSell())
 			{
-				focusNextPendingSell();
+				focusNextCollectedItemSell();
 			}
 			else
 			{
@@ -598,28 +546,109 @@ public class AutoRecommendService
 			currentIndex + 1, recommendationQueue.size(), rec.getItemName()));
 	}
 
-	private void focusNextPendingSell()
+	/**
+	 * Focus the sell side for a collected item using session state.
+	 * Finds items in session.collectedItemIds that have a recommended sell price,
+	 * and don't already have an active sell slot in the GE.
+	 */
+	private void focusNextCollectedItemSell()
 	{
-		PendingSell sell = pendingSells.peek();
-		if (sell == null)
+		PlayerSession session = plugin.getSession();
+
+		for (int itemId : session.getCollectedItemIds())
 		{
+			Integer sellPrice = session.getRecommendedPrice(itemId);
+			if (sellPrice == null || sellPrice <= 0)
+			{
+				continue;
+			}
+
+			// Skip if already has an active sell slot
+			if (session.hasActiveSellSlotForItem(itemId))
+			{
+				continue;
+			}
+
+			// Look up item name and quantity from tracked offers
+			String itemName = null;
+			int quantity = 0;
+			for (TrackedOffer offer : session.getTrackedOffers().values())
+			{
+				if (offer.getItemId() == itemId && offer.isBuy())
+				{
+					itemName = offer.getItemName();
+					quantity = offer.getPreviousQuantitySold();
+					break;
+				}
+			}
+
+			// Fallback: try to find name from recommendation queue
+			if (itemName == null)
+			{
+				for (FlipRecommendation rec : recommendationQueue)
+				{
+					if (rec.getItemId() == itemId)
+					{
+						itemName = rec.getItemName();
+						quantity = rec.getRecommendedQuantity();
+						break;
+					}
+				}
+			}
+
+			if (itemName == null)
+			{
+				log.warn("Auto-recommend: Cannot find item name for collected item {}", itemId);
+				continue;
+			}
+
+			int priceOffset = config.priceOffset();
+			FocusedFlip focus = FocusedFlip.forSell(
+				itemId,
+				itemName,
+				sellPrice,
+				quantity,
+				priceOffset
+			);
+
+			invokeFocusCallback(focus);
+			invokeQueueAdvancedCallback();
+
+			updateStatus(String.format("Auto: Sell %s @ %s gp",
+				itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 			return;
 		}
 
-		int priceOffset = config.priceOffset();
-		FocusedFlip focus = FocusedFlip.forSell(
-			sell.itemId,
-			sell.itemName,
-			sell.sellPrice,
-			sell.quantity,
-			priceOffset
-		);
+		// No collected items need selling - check buy queue
+		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+		{
+			focusCurrent();
+		}
+		else
+		{
+			updateStatus("Auto: Waiting for offers to complete");
+		}
+	}
 
-		invokeFocusCallback(focus);
-		invokeQueueAdvancedCallback();
+	/**
+	 * Check if there are collected items that still need to be sold.
+	 * An item needs selling if it's in collectedItemIds, has a recommended price,
+	 * and doesn't already have an active sell slot.
+	 */
+	private boolean hasCollectedItemsToSell()
+	{
+		PlayerSession session = plugin.getSession();
 
-		updateStatus(String.format("Auto: Sell %s @ %s gp",
-			sell.itemName, GpUtils.formatGPWithSuffix(sell.sellPrice)));
+		for (int itemId : session.getCollectedItemIds())
+		{
+			Integer sellPrice = session.getRecommendedPrice(itemId);
+			if (sellPrice != null && sellPrice > 0 && !session.hasActiveSellSlotForItem(itemId))
+			{
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	// =====================
@@ -675,11 +704,6 @@ public class AutoRecommendService
 	public synchronized int getQueueSize()
 	{
 		return recommendationQueue.size();
-	}
-
-	public int getPendingSellCount()
-	{
-		return pendingSells.size();
 	}
 
 	private boolean hasAvailableGESlots()

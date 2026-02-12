@@ -2236,9 +2236,7 @@ public class FlipSmartPlugin extends Plugin
 				if (isBuy && state == GrandExchangeOfferState.BOUGHT
 					&& autoRecommendService != null && autoRecommendService.isActive())
 				{
-					Integer recSellPrice = session.getRecommendedPrice(itemId);
-					int pricePerItem = spent / quantitySold;
-					autoRecommendService.onBuyOrderCompleted(itemId, itemName, quantitySold, pricePerItem, recSellPrice);
+					autoRecommendService.onBuyOrderCompleted(itemId, itemName);
 				}
 
 				// Notify auto-recommend service when a sell order fully completes
