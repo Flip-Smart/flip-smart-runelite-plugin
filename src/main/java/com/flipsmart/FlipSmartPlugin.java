@@ -566,16 +566,14 @@ public class FlipSmartPlugin extends Plugin
 		// Track login/hopping to avoid recording existing GE offers
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
-			session.setLastLoginTick(client.getTickCount());
-			session.setOfflineSyncCompleted(false);
+			session.onLoginStateChange(client.getTickCount());
 			// Note: Don't clear collectedItemIds here - we'll restore them after RSN is known
-			log.debug("Login state change detected, setting lastLoginTick to {}", session.getLastLoginTick());
 		}
 		
 		// Persist offer state when logging out and show "log in to game" message
 		if (gameState == GameState.LOGIN_SCREEN)
 		{
-			session.setLoggedIntoRunescape(false);
+			session.onLogout();
 			persistOfferState();
 			
 			// Update panel to show logged out state (saves API requests while at login screen)
@@ -588,7 +586,7 @@ public class FlipSmartPlugin extends Plugin
 		if (gameState == GameState.LOGGED_IN)
 		{
 			log.info("Player logged in");
-			session.setLoggedIntoRunescape(true);
+			session.onLoggedIn();
 			syncRSN();
 			updateCashStack();
 
@@ -638,8 +636,7 @@ public class FlipSmartPlugin extends Plugin
 		java.util.Set<Integer> persisted = loadPersistedCollectedItems();
 		if (!persisted.isEmpty())
 		{
-			session.clearCollectedItems();
-			session.getCollectedItemIds().addAll(persisted);
+			session.restoreCollectedItems(persisted);
 			log.info("Restored {} collected items from previous session: {}", persisted.size(), persisted);
 		}
 		else

@@ -3,6 +3,7 @@ package com.flipsmart;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -107,7 +108,7 @@ public class PlayerSession
 
 	public Set<Integer> getCollectedItemIds()
 	{
-		return collectedItemIds;
+		return Collections.unmodifiableSet(collectedItemIds);
 	}
 
 	public void addCollectedItem(int itemId)
@@ -140,7 +141,7 @@ public class PlayerSession
 
 	public Map<Integer, TrackedOffer> getTrackedOffers()
 	{
-		return trackedOffers;
+		return Collections.unmodifiableMap(trackedOffers);
 	}
 
 	public TrackedOffer getTrackedOffer(int slot)
