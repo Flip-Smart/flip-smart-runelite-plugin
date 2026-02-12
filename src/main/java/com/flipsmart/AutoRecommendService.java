@@ -1,11 +1,10 @@
 package com.flipsmart;
 
-import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -16,28 +15,34 @@ import java.util.function.Consumer;
  * When active, this service automatically focuses recommendations into Flip Assist
  * one-by-one. When the user places a buy order, it advances to the next recommendation.
  * When a buy order completes, it queues the sell side for that item.
+ *
+ * Thread safety: All public methods are synchronized. Callbacks are dispatched
+ * on the Swing EDT via SwingUtilities.invokeLater.
  */
 @Slf4j
 public class AutoRecommendService
 {
+	/** Maximum number of GE slots available per player */
+	private static final int MAX_GE_SLOTS = 8;
+	/** GE tax rate applied to sell transactions */
+	private static final double GE_TAX_RATE = 0.98;
+
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
 
-	// Queue state
+	// Queue state - guarded by synchronized(this)
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
-	@Getter
-	private int currentIndex = 0;
-	@Getter
-	private boolean active = false;
+	private int currentIndex;
+	private volatile boolean active;
 
 	// Pending sells: items that finished buying and need to be sold
-	private final Queue<PendingSell> pendingSells = new LinkedList<>();
+	private final Queue<PendingSell> pendingSells = new ConcurrentLinkedQueue<>();
 
 	// Callback to update Flip Assist overlay and panel
-	private Consumer<FocusedFlip> onFocusChanged;
+	private volatile Consumer<FocusedFlip> onFocusChanged;
 
 	// Callback to update status text in the panel
-	private Consumer<String> onStatusChanged;
+	private volatile Consumer<String> onStatusChanged;
 
 	/**
 	 * Represents an item that completed buying and is waiting to be sold
@@ -81,10 +86,18 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * Whether the auto-recommend service is currently active.
+	 */
+	public boolean isActive()
+	{
+		return active;
+	}
+
+	/**
 	 * Start auto-recommend with the given recommendations.
 	 * Filters out items already in GE slots or active flips.
 	 */
-	public void start(List<FlipRecommendation> recommendations)
+	public synchronized void start(List<FlipRecommendation> recommendations)
 	{
 		if (recommendations == null || recommendations.isEmpty())
 		{
@@ -122,7 +135,7 @@ public class AutoRecommendService
 	/**
 	 * Stop auto-recommend and clear the queue.
 	 */
-	public void stop()
+	public synchronized void stop()
 	{
 		active = false;
 		recommendationQueue.clear();
@@ -130,10 +143,7 @@ public class AutoRecommendService
 		currentIndex = 0;
 
 		// Clear focus
-		if (onFocusChanged != null)
-		{
-			onFocusChanged.accept(null);
-		}
+		invokeFocusCallback(null);
 
 		log.info("Auto-recommend stopped");
 	}
@@ -142,7 +152,7 @@ public class AutoRecommendService
 	 * Called when the user places a new buy order for the focused item.
 	 * Stores the recommended sell price and advances to the next recommendation.
 	 */
-	public void onBuyOrderPlaced(int itemId)
+	public synchronized void onBuyOrderPlaced(int itemId)
 	{
 		if (!active)
 		{
@@ -166,10 +176,16 @@ public class AutoRecommendService
 	 * Called when a buy order completes (fully bought).
 	 * Queues the sell for this item.
 	 */
-	public void onBuyOrderCompleted(int itemId, String itemName, int quantity, int buyPrice, Integer recommendedSellPrice)
+	public synchronized void onBuyOrderCompleted(int itemId, String itemName, int quantity, int buyPrice, Integer recommendedSellPrice)
 	{
 		if (!active)
 		{
+			return;
+		}
+
+		if (quantity <= 0 || buyPrice <= 0)
+		{
+			log.warn("Auto-recommend: Invalid buy completion params - qty={}, price={}", quantity, buyPrice);
 			return;
 		}
 
@@ -181,8 +197,8 @@ public class AutoRecommendService
 		}
 		else
 		{
-			// Fallback: minimum profitable price (breakeven + 1gp after 2% tax)
-			sellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
+			// Fallback: minimum profitable price (breakeven + 1gp after GE tax)
+			sellPrice = (int) Math.ceil((buyPrice + 1) / GE_TAX_RATE);
 		}
 
 		pendingSells.add(new PendingSell(itemId, itemName, sellPrice, quantity));
@@ -201,7 +217,7 @@ public class AutoRecommendService
 	 * Called when a sell order is placed for an item.
 	 * Removes it from pending sells and advances.
 	 */
-	public void onSellOrderPlaced(int itemId)
+	public synchronized void onSellOrderPlaced(int itemId)
 	{
 		if (!active)
 		{
@@ -232,6 +248,7 @@ public class AutoRecommendService
 
 	/**
 	 * Advance to the next recommendation in the queue.
+	 * Must be called while holding the lock (from synchronized method).
 	 */
 	private void advanceToNext()
 	{
@@ -273,6 +290,7 @@ public class AutoRecommendService
 
 	/**
 	 * Focus the current recommendation in Flip Assist.
+	 * Must be called while holding the lock (from synchronized method).
 	 */
 	private void focusCurrent()
 	{
@@ -292,10 +310,7 @@ public class AutoRecommendService
 			priceOffset
 		);
 
-		if (onFocusChanged != null)
-		{
-			onFocusChanged.accept(focus);
-		}
+		invokeFocusCallback(focus);
 
 		updateStatus(String.format("Auto: %d/%d - %s",
 			currentIndex + 1, recommendationQueue.size(), rec.getItemName()));
@@ -303,6 +318,7 @@ public class AutoRecommendService
 
 	/**
 	 * Focus the next pending sell item in Flip Assist.
+	 * Must be called while holding the lock (from synchronized method).
 	 */
 	private void focusNextPendingSell()
 	{
@@ -321,19 +337,28 @@ public class AutoRecommendService
 			priceOffset
 		);
 
-		if (onFocusChanged != null)
-		{
-			onFocusChanged.accept(focus);
-		}
+		invokeFocusCallback(focus);
 
 		updateStatus(String.format("Auto: Sell %s @ %s gp",
 			sell.itemName, GpUtils.formatGPWithSuffix(sell.sellPrice)));
 	}
 
 	/**
+	 * Invoke the focus callback on the Swing EDT.
+	 */
+	private void invokeFocusCallback(FocusedFlip focus)
+	{
+		Consumer<FocusedFlip> callback = onFocusChanged;
+		if (callback != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(focus));
+		}
+	}
+
+	/**
 	 * Get the current recommendation, or null if queue is exhausted.
 	 */
-	public FlipRecommendation getCurrentRecommendation()
+	public synchronized FlipRecommendation getCurrentRecommendation()
 	{
 		if (currentIndex >= 0 && currentIndex < recommendationQueue.size())
 		{
@@ -343,9 +368,17 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * Get the current index in the queue.
+	 */
+	public synchronized int getCurrentIndex()
+	{
+		return currentIndex;
+	}
+
+	/**
 	 * Get the total number of recommendations in the queue.
 	 */
-	public int getQueueSize()
+	public synchronized int getQueueSize()
 	{
 		return recommendationQueue.size();
 	}
@@ -360,22 +393,22 @@ public class AutoRecommendService
 
 	/**
 	 * Check if there are available GE slots for new buy orders.
-	 * Players have 8 GE slots total.
 	 */
 	private boolean hasAvailableGESlots()
 	{
-		return plugin.getSession().getTrackedOffers().size() < 8;
+		return plugin.getSession().getTrackedOffers().size() < MAX_GE_SLOTS;
 	}
 
 	/**
-	 * Update the status text in the panel.
+	 * Update the status text in the panel via the Swing EDT.
 	 */
 	private void updateStatus(String status)
 	{
 		log.debug("Auto-recommend status: {}", status);
-		if (onStatusChanged != null)
+		Consumer<String> callback = onStatusChanged;
+		if (callback != null)
 		{
-			onStatusChanged.accept(status);
+			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(status));
 		}
 	}
 }
