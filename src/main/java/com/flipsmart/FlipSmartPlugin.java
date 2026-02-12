@@ -106,50 +106,24 @@ public class FlipSmartPlugin extends Plugin
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
 
-	// Player's current cash stack (detected from inventory)
-	@Getter
-	private int currentCashStack = 0;
+	// Centralized session state management
+	private final PlayerSession session = new PlayerSession();
 
 	// Auto-refresh timer for flip finder
 	private java.util.Timer flipFinderRefreshTimer;
-	private long lastFlipFinderRefresh = 0;
 
-	// Track GE offers to detect when they complete
-	private final Map<Integer, TrackedOffer> trackedOffers = new ConcurrentHashMap<>();
-	
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
-	private int lastLoginTick = 0;
-	
-	// Track recommended prices from flip finder (item_id -> recommended_sell_price)
-	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
 
 	// Config keys for persisting offer state
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
-	
-	// Flag to track if we've synced offline fills on this login
-	private boolean offlineSyncCompleted = false;
-	
-	// Current RSN (set on login)
-	@Getter
-	private String currentRsn = null;
-	
-	// Track if player is logged into RuneScape (not our API, but the game itself)
-	@Getter
-	private boolean loggedIntoRunescape = false;
-	
-	// Track items collected from GE in current session (waiting to be sold)
-	// These should show as active flips even though they're no longer in GE slots
-	private final java.util.Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
-	
+
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
-	
-	// Bank snapshot tracking
-	private volatile boolean bankSnapshotInProgress = false;
-	private long lastBankSnapshotAttempt = 0;
+
+	// Bank snapshot cooldown constant
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000; // 1 minute cooldown between attempts
 
 	// Timer delay constants (in milliseconds)
@@ -180,69 +154,45 @@ public class FlipSmartPlugin extends Plugin
 		UNKNOWN           // Gray ? - Wiki price unavailable
 	}
 
-	/**
-	 * Helper class to track GE offers (serializable for persistence)
-	 */
-	public static class TrackedOffer
-	{
-		int itemId;
-		String itemName;
-		boolean isBuy;
-		int totalQuantity;
-		int price;
-		int previousQuantitySold;
-		long createdAtMillis;  // Timestamp when offer was created (for timer display)
-		long completedAtMillis;  // Timestamp when offer completed (0 if not complete)
-
-		// Default constructor for Gson deserialization
-		TrackedOffer() {}
-
-		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
-		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.isBuy = isBuy;
-			this.totalQuantity = totalQuantity;
-			this.price = price;
-			this.previousQuantitySold = quantitySold;
-			this.createdAtMillis = System.currentTimeMillis();
-			this.completedAtMillis = 0;
-		}
-
-		// Constructor with explicit timestamp (for login restoration)
-		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis)
-		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.isBuy = isBuy;
-			this.totalQuantity = totalQuantity;
-			this.price = price;
-			this.previousQuantitySold = quantitySold;
-			this.createdAtMillis = createdAtMillis;
-			this.completedAtMillis = 0;
-		}
-
-		// Constructor with explicit timestamps (for preserving completion state)
-		TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
-		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.isBuy = isBuy;
-			this.totalQuantity = totalQuantity;
-			this.price = price;
-			this.previousQuantitySold = quantitySold;
-			this.createdAtMillis = createdAtMillis;
-			this.completedAtMillis = completedAtMillis;
-		}
-	}
 	
+	/**
+	 * Get the centralized player session state.
+	 */
+	public PlayerSession getSession()
+	{
+		return session;
+	}
+
+	/**
+	 * Get current RSN (delegates to session for backwards compatibility).
+	 */
+	public String getCurrentRsn()
+	{
+		return session.getRsn();
+	}
+
+	/**
+	 * Get current cash stack (delegates to session for backwards compatibility).
+	 */
+	public int getCurrentCashStack()
+	{
+		return session.getCurrentCashStack();
+	}
+
+	/**
+	 * Check if player is logged into RuneScape (delegates to session for backwards compatibility).
+	 */
+	public boolean isLoggedIntoRunescape()
+	{
+		return session.isLoggedIntoRunescape();
+	}
+
 	/**
 	 * Store recommended sell price when user views/acts on a flip recommendation
 	 */
 	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)
 	{
-		recommendedPrices.put(itemId, recommendedSellPrice);
-		log.debug("Stored recommended sell price for item {}: {}", itemId, recommendedSellPrice);
+		session.setRecommendedPrice(itemId, recommendedSellPrice);
 	}
 
 	/**
@@ -250,7 +200,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public TrackedOffer getTrackedOffer(int slot)
 	{
-		return trackedOffers.get(slot);
+		return session.getTrackedOffer(slot);
 	}
 
 	/**
@@ -289,22 +239,22 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Try to get real-time wiki prices first
-		FlipSmartApiClient.WikiPrice wikiPrice = apiClient.getWikiPrice(offer.itemId);
+		FlipSmartApiClient.WikiPrice wikiPrice = apiClient.getWikiPrice(offer.getItemId());
 
 		if (wikiPrice != null)
 		{
-			int targetPrice = offer.isBuy ? wikiPrice.instaSell : wikiPrice.instaBuy;
-			return compareOfferPrice(offer.price, targetPrice, offer.isBuy);
+			int targetPrice = offer.isBuy() ? wikiPrice.instaSell : wikiPrice.instaBuy;
+			return compareOfferPrice(offer.getPrice(), targetPrice, offer.isBuy());
 		}
 
 		// Fallback to GE guide price if real-time prices unavailable
-		int guidePrice = itemManager.getItemPrice(offer.itemId);
+		int guidePrice = itemManager.getItemPrice(offer.getItemId());
 		if (guidePrice <= 0)
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
 
-		return compareOfferPrice(offer.price, guidePrice, offer.isBuy);
+		return compareOfferPrice(offer.getPrice(), guidePrice, offer.isBuy());
 	}
 
 	/**
@@ -344,21 +294,21 @@ public class FlipSmartPlugin extends Plugin
 	{
 		java.util.List<PendingOrder> pendingOrders = new java.util.ArrayList<>();
 		
-		for (java.util.Map.Entry<Integer, TrackedOffer> entry : trackedOffers.entrySet())
+		for (java.util.Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
 		{
 			TrackedOffer offer = entry.getValue();
 			
 			// Include all buy orders (pending or partially filled)
-			if (offer.isBuy)
+			if (offer.isBuy())
 			{
-				Integer recommendedSellPrice = recommendedPrices.get(offer.itemId);
+				Integer recommendedSellPrice = session.getRecommendedPrice(offer.getItemId());
 				
 				PendingOrder pending = new PendingOrder(
-					offer.itemId,
-					offer.itemName,
-					offer.totalQuantity,
-					offer.previousQuantitySold, // How many filled so far
-					offer.price,
+					offer.getItemId(),
+					offer.getItemName(),
+					offer.getTotalQuantity(),
+					offer.getPreviousQuantitySold(), // How many filled so far
+					offer.getPrice(),
 					recommendedSellPrice,
 					entry.getKey() // slot
 				);
@@ -375,19 +325,9 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public java.util.Set<Integer> getCurrentGEBuyItemIds()
 	{
-		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
-		
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.isBuy)
-			{
-				itemIds.add(offer.itemId);
-			}
-		}
-		
-		return itemIds;
+		return session.getCurrentGEBuyItemIds();
 	}
-	
+
 	/**
 	 * Get all active flip item IDs - items that should show as active flips.
 	 * This includes:
@@ -397,18 +337,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public java.util.Set<Integer> getActiveFlipItemIds()
 	{
-		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
-		
-		// Add items currently in ANY GE slots (buy OR sell)
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			itemIds.add(offer.itemId);
-		}
-		
-		// Add items collected from GE (waiting to be sold)
-		itemIds.addAll(collectedItemIds);
-		
-		return itemIds;
+		return session.getActiveFlipItemIds();
 	}
 	
 	/**
@@ -444,7 +373,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public void markItemSold(int itemId)
 	{
-		if (collectedItemIds.remove(itemId))
+		if (session.removeCollectedItem(itemId))
 		{
 			log.debug("Removed item {} from collected tracking (sold)", itemId);
 		}
@@ -466,14 +395,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private boolean hasActiveSellSlotForItem(int itemId)
 	{
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.itemId == itemId && !offer.isBuy)
-			{
-				return true;
-			}
-		}
-		return false;
+		return session.hasActiveSellSlotForItem(itemId);
 	}
 	
 	/**
@@ -596,10 +518,10 @@ public class FlipSmartPlugin extends Plugin
 		
 		// Persist offer state before shutting down (handles cases where client is closed without logout)
 		// Only persist if we have a valid RSN to avoid overwriting good data
-		if (currentRsn != null && !currentRsn.isEmpty())
+		if (session.getRsn() != null && !session.getRsn().isEmpty())
 		{
 			persistOfferState();
-			log.info("Persisted offer state on shutdown for {}", currentRsn);
+			log.info("Persisted offer state on shutdown for {}", session.getRsn());
 		}
 		
 		overlayManager.remove(geOverlay);
@@ -644,16 +566,14 @@ public class FlipSmartPlugin extends Plugin
 		// Track login/hopping to avoid recording existing GE offers
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
-			lastLoginTick = client.getTickCount();
-			offlineSyncCompleted = false;
+			session.onLoginStateChange(client.getTickCount());
 			// Note: Don't clear collectedItemIds here - we'll restore them after RSN is known
-			log.debug("Login state change detected, setting lastLoginTick to {}", lastLoginTick);
 		}
 		
 		// Persist offer state when logging out and show "log in to game" message
 		if (gameState == GameState.LOGIN_SCREEN)
 		{
-			loggedIntoRunescape = false;
+			session.onLogout();
 			persistOfferState();
 			
 			// Update panel to show logged out state (saves API requests while at login screen)
@@ -666,7 +586,7 @@ public class FlipSmartPlugin extends Plugin
 		if (gameState == GameState.LOGGED_IN)
 		{
 			log.info("Player logged in");
-			loggedIntoRunescape = true;
+			session.onLoggedIn();
 			syncRSN();
 			updateCashStack();
 
@@ -689,7 +609,7 @@ public class FlipSmartPlugin extends Plugin
 
 			// Schedule offline sync after a delay to ensure all GE events have been processed
 			// This must run AFTER syncRSN() so we have the correct RSN for the config key
-			if (!offlineSyncCompleted)
+			if (!session.isOfflineSyncCompleted())
 			{
 				javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
 				syncTimer.setRepeats(false);
@@ -711,19 +631,18 @@ public class FlipSmartPlugin extends Plugin
 	private void restoreCollectedItems()
 	{
 		String key = getCollectedItemsKey();
-		log.info("Attempting to restore collected items for RSN: {} (key: {})", currentRsn, key);
+		log.info("Attempting to restore collected items for RSN: {} (key: {})", session.getRsn(), key);
 		
 		java.util.Set<Integer> persisted = loadPersistedCollectedItems();
 		if (!persisted.isEmpty())
 		{
-			collectedItemIds.clear();
-			collectedItemIds.addAll(persisted);
+			session.restoreCollectedItems(persisted);
 			log.info("Restored {} collected items from previous session: {}", persisted.size(), persisted);
 		}
 		else
 		{
-			log.info("No collected items found in config for RSN: {}", currentRsn);
-			collectedItemIds.clear();
+			log.info("No collected items found in config for RSN: {}", session.getRsn());
+			session.clearCollectedItems();
 		}
 	}
 	
@@ -738,43 +657,43 @@ public class FlipSmartPlugin extends Plugin
 		String collectedKey = getCollectedItemsKey();
 		
 		// Persist tracked offers
-		if (trackedOffers.isEmpty())
+		if (session.getTrackedOffers().isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, offersKey);
-			log.debug("No tracked offers to persist for {}", currentRsn);
+			log.debug("No tracked offers to persist for {}", session.getRsn());
 		}
 		else
 		{
 			try
 			{
-				Map<Integer, TrackedOffer> offersToSave = new HashMap<>(trackedOffers);
+				Map<Integer, TrackedOffer> offersToSave = session.getOffersForPersistence();
 				String json = gson.toJson(offersToSave);
 				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
-				log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), currentRsn);
+				log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), session.getRsn());
 			}
 			catch (Exception e)
 			{
-				log.error("Failed to persist offer state for {}: {}", currentRsn, e.getMessage());
+				log.error("Failed to persist offer state for {}: {}", session.getRsn(), e.getMessage());
 			}
 		}
 		
 		// Persist collected item IDs (items bought but not yet sold)
-		if (collectedItemIds.isEmpty())
+		if (session.getCollectedItemIds().isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
-			log.debug("No collected items to persist for {}", currentRsn);
+			log.debug("No collected items to persist for {}", session.getRsn());
 		}
 		else
 		{
 			try
 			{
-				String json = gson.toJson(new java.util.ArrayList<>(collectedItemIds));
+				String json = gson.toJson(new java.util.ArrayList<>(session.getCollectedItemsForPersistence()));
 				configManager.setConfiguration(CONFIG_GROUP, collectedKey, json);
-				log.info("Persisted {} collected item IDs for {} (active flips)", collectedItemIds.size(), currentRsn);
+				log.info("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
 			}
 			catch (Exception e)
 			{
-				log.error("Failed to persist collected items for {}: {}", currentRsn, e.getMessage());
+				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
 			}
 		}
 	}
@@ -786,21 +705,21 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void syncOfflineFills()
 	{
-		if (offlineSyncCompleted)
+		if (session.isOfflineSyncCompleted())
 		{
 			return;
 		}
-		offlineSyncCompleted = true;
+		session.setOfflineSyncCompleted(true);
 		
 		// Load persisted offers from last session to compare against current state
 		Map<Integer, TrackedOffer> persistedOffers = loadPersistedOffers();
 		log.debug("Loaded {} persisted offers, comparing with {} current offers", 
-			persistedOffers.size(), trackedOffers.size());
+			persistedOffers.size(), session.getTrackedOffers().size());
 		
 		// Always sync current offers - handles both:
 		// 1. Offers with persisted state (compare for offline fills)
 		// 2. Offers WITHOUT persisted state (record as new transactions)
-		if (!trackedOffers.isEmpty())
+		if (!session.getTrackedOffers().isEmpty())
 		{
 			syncCurrentOffersWithPersisted(persistedOffers);
 		}
@@ -813,7 +732,7 @@ public class FlipSmartPlugin extends Plugin
 			configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
 		}
 		
-		log.info("Offline sync completed for {}", currentRsn);
+		log.info("Offline sync completed for {}", session.getRsn());
 		
 		// Schedule panel refresh and cleanup
 		schedulePostSyncTasks();
@@ -824,43 +743,43 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void syncCurrentOffersWithPersisted(Map<Integer, TrackedOffer> persistedOffers)
 	{
-		for (Map.Entry<Integer, TrackedOffer> entry : trackedOffers.entrySet())
+		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
 		{
 			int slot = entry.getKey();
 			TrackedOffer currentOffer = entry.getValue();
 			TrackedOffer persistedOffer = persistedOffers.get(slot);
 			
-			if (persistedOffer != null && persistedOffer.itemId == currentOffer.itemId)
+			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
 			{
 				// Restore the original timestamp from persisted offer for timer continuity
-				currentOffer.createdAtMillis = persistedOffer.createdAtMillis;
+				currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
 
 				// Have persisted state - check for offline fills
 				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
 			}
-			else if (currentOffer.totalQuantity > 0)
+			else if (currentOffer.getTotalQuantity() > 0)
 			{
 				// No persisted state but there's an active order - record it
 				log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
-					currentOffer.isBuy ? "BUY" : "SELL",
-					currentOffer.itemName, slot, currentOffer.previousQuantitySold, 
-					currentOffer.totalQuantity, currentOffer.price);
+					currentOffer.isBuy() ? "BUY" : "SELL",
+					currentOffer.getItemName(), slot, currentOffer.getPreviousQuantitySold(), 
+					currentOffer.getTotalQuantity(), currentOffer.getPrice());
 				
-				Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
+				Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
 				
 				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
-						currentOffer.previousQuantitySold, currentOffer.price)
+					.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
+						currentOffer.getPreviousQuantitySold(), currentOffer.getPrice())
 					.geSlot(slot)
 					.recommendedSellPrice(recommendedSellPrice)
 					.rsn(getCurrentRsnSafe().orElse(null))
-					.totalQuantity(currentOffer.totalQuantity)
+					.totalQuantity(currentOffer.getTotalQuantity())
 					.build());
 				
 				// For buy orders with fills, add to collected tracking so it shows in active flips
-				if (currentOffer.isBuy && currentOffer.previousQuantitySold > 0)
+				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
 				{
-					collectedItemIds.add(currentOffer.itemId);
+					session.addCollectedItem(currentOffer.getItemId());
 				}
 			}
 		}
@@ -871,26 +790,26 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void recordOfflineFillsIfAny(int slot, TrackedOffer currentOffer, TrackedOffer persistedOffer)
 	{
-		int offlineFills = currentOffer.previousQuantitySold - persistedOffer.previousQuantitySold;
+		int offlineFills = currentOffer.getPreviousQuantitySold() - persistedOffer.getPreviousQuantitySold();
 		if (offlineFills <= 0)
 		{
 			return;
 		}
 		
 		log.debug("Detected {} offline fills for {} (slot {}): {} -> {} (order size: {})",
-			offlineFills, currentOffer.itemName, slot,
-			persistedOffer.previousQuantitySold, currentOffer.previousQuantitySold,
-			currentOffer.totalQuantity);
+			offlineFills, currentOffer.getItemName(), slot,
+			persistedOffer.getPreviousQuantitySold(), currentOffer.getPreviousQuantitySold(),
+			currentOffer.getTotalQuantity());
 		
-		Integer recommendedSellPrice = currentOffer.isBuy ? recommendedPrices.get(currentOffer.itemId) : null;
+		Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
 		
 		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-			.builder(currentOffer.itemId, currentOffer.itemName, currentOffer.isBuy,
-				offlineFills, currentOffer.price)
+			.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
+				offlineFills, currentOffer.getPrice())
 			.geSlot(slot)
 			.recommendedSellPrice(recommendedSellPrice)
 			.rsn(getCurrentRsnSafe().orElse(null))
-			.totalQuantity(currentOffer.totalQuantity)
+			.totalQuantity(currentOffer.getTotalQuantity())
 			.build());
 	}
 	
@@ -905,15 +824,15 @@ public class FlipSmartPlugin extends Plugin
 			int slot = entry.getKey();
 			TrackedOffer persistedOffer = entry.getValue();
 			
-			if (trackedOffers.containsKey(slot))
+			if (session.getTrackedOffers().containsKey(slot))
 			{
 				continue;
 			}
 			
 			log.info("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
-				slot, persistedOffer.itemName, persistedOffer.totalQuantity);
+				slot, persistedOffer.getItemName(), persistedOffer.getTotalQuantity());
 			
-			if (persistedOffer.isBuy)
+			if (persistedOffer.isBuy())
 			{
 				handleEmptyBuySlot(persistedOffer);
 			}
@@ -930,19 +849,19 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void handleEmptySellSlot(TrackedOffer persistedOffer)
 	{
-		int soldQuantity = persistedOffer.previousQuantitySold;
+		int soldQuantity = persistedOffer.getPreviousQuantitySold();
 		
 		if (soldQuantity > 0)
 		{
 			log.info("Detected {} {} sold offline. Recording SELL transaction.",
-				soldQuantity, persistedOffer.itemName);
+				soldQuantity, persistedOffer.getItemName());
 			
 			// Record the offline sell transaction
 			recordOfflineSellTransaction(persistedOffer, soldQuantity);
 		}
 		else
 		{
-			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.itemName);
+			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
 		}
 	}
 	
@@ -960,11 +879,11 @@ public class FlipSmartPlugin extends Plugin
 		
 		// Create a SELL transaction for the items that sold offline
 		apiClient.recordTransactionAsync(
-			persistedOffer.itemId,
-			persistedOffer.itemName,
+			persistedOffer.getItemId(),
+			persistedOffer.getItemName(),
 			"SELL",
 			soldQuantity,
-			persistedOffer.price,
+			persistedOffer.getPrice(),
 			rsn
 		);
 	}
@@ -975,8 +894,8 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void handleEmptyBuySlot(TrackedOffer persistedOffer)
 	{
-		int inventoryCount = getInventoryCountForItem(persistedOffer.itemId);
-		int trackedFills = persistedOffer.previousQuantitySold;
+		int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
+		int trackedFills = persistedOffer.getPreviousQuantitySold();
 		
 		if (inventoryCount > 0)
 		{
@@ -985,7 +904,7 @@ public class FlipSmartPlugin extends Plugin
 		else if (trackedFills > 0)
 		{
 			log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
-				persistedOffer.itemName, trackedFills);
+				persistedOffer.getItemName(), trackedFills);
 		}
 	}
 	
@@ -995,7 +914,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void handleBuyOrderWithInventory(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
 	{
-		collectedItemIds.add(persistedOffer.itemId);
+		session.addCollectedItem(persistedOffer.getItemId());
 		
 		int actualFills = calculateActualFills(persistedOffer, inventoryCount, trackedFills);
 		
@@ -1006,7 +925,7 @@ public class FlipSmartPlugin extends Plugin
 		else
 		{
 			log.info("Adding {} to collected tracking (had {} items filled before going offline)",
-				persistedOffer.itemName, trackedFills);
+				persistedOffer.getItemName(), trackedFills);
 		}
 	}
 	
@@ -1018,9 +937,9 @@ public class FlipSmartPlugin extends Plugin
 		int actualFills = Math.max(inventoryCount, trackedFills);
 		
 		// If we have at least order_size items, the order completed fully
-		if (inventoryCount >= persistedOffer.totalQuantity)
+		if (inventoryCount >= persistedOffer.getTotalQuantity())
 		{
-			actualFills = persistedOffer.totalQuantity;
+			actualFills = persistedOffer.getTotalQuantity();
 		}
 		
 		return actualFills;
@@ -1032,7 +951,7 @@ public class FlipSmartPlugin extends Plugin
 	private void syncOfflineCompletedOrder(TrackedOffer persistedOffer, int inventoryCount, int trackedFills, int actualFills)
 	{
 		log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
-			persistedOffer.itemName, trackedFills, inventoryCount, actualFills);
+			persistedOffer.getItemName(), trackedFills, inventoryCount, actualFills);
 		
 		String rsn = getCurrentRsnSafe().orElse(null);
 		if (rsn == null)
@@ -1041,11 +960,11 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		apiClient.syncActiveFlipAsync(
-			persistedOffer.itemId,
-			persistedOffer.itemName,
+			persistedOffer.getItemId(),
+			persistedOffer.getItemName(),
 			actualFills,
-			persistedOffer.totalQuantity,
-			persistedOffer.price,
+			persistedOffer.getTotalQuantity(),
+			persistedOffer.getPrice(),
 			rsn
 		);
 	}
@@ -1065,7 +984,7 @@ public class FlipSmartPlugin extends Plugin
 		
 		// Schedule stale flip cleanup after GE state is stable
 		javax.swing.Timer cleanupTimer = new javax.swing.Timer(STALE_FLIP_CLEANUP_DELAY_MS, e -> {
-			if (!trackedOffers.isEmpty() || collectedItemIds.isEmpty())
+			if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
 			{
 				cleanupStaleActiveFlips();
 				// After cleanup, validate inventory quantities against active flips
@@ -1191,9 +1110,9 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private boolean isItemInActiveBuySlot(int itemId)
 	{
-		for (TrackedOffer offer : trackedOffers.values())
+		for (TrackedOffer offer : session.getTrackedOffers().values())
 		{
-			if (offer.itemId == itemId && offer.isBuy)
+			if (offer.getItemId() == itemId && offer.isBuy())
 			{
 				return true;
 			}
@@ -1223,15 +1142,15 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		// Count items in active SELL slots (these are still "ours")
-		for (TrackedOffer offer : trackedOffers.values())
+		for (TrackedOffer offer : session.getTrackedOffers().values())
 		{
-			if (!offer.isBuy && offer.itemId > 0)
+			if (!offer.isBuy() && offer.getItemId() > 0)
 			{
 				// For sell offers: total - sold = remaining in slot
-				int remainingInSlot = offer.totalQuantity - offer.previousQuantitySold;
+				int remainingInSlot = offer.getTotalQuantity() - offer.getPreviousQuantitySold();
 				if (remainingInSlot > 0)
 				{
-					counts.merge(offer.itemId, remainingInSlot, Integer::sum);
+					counts.merge(offer.getItemId(), remainingInSlot, Integer::sum);
 				}
 			}
 		}
@@ -1333,7 +1252,7 @@ public class FlipSmartPlugin extends Plugin
 		String rsn = client.getLocalPlayer().getName();
 		if (rsn != null && !rsn.isEmpty())
 		{
-			currentRsn = rsn;
+			session.setRsn(rsn);
 			log.info("RSN synced: {}", rsn);
 			apiClient.updateRSN(rsn);
 		}
@@ -1350,17 +1269,17 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public Optional<String> getCurrentRsnSafe()
 	{
-		if (currentRsn != null && !currentRsn.isEmpty())
+		if (session.getRsn() != null && !session.getRsn().isEmpty())
 		{
-			return Optional.of(currentRsn);
+			return Optional.of(session.getRsn());
 		}
 		
 		// Try to get RSN from client if not cached
 		if (client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null)
 		{
-			currentRsn = client.getLocalPlayer().getName();
-			log.info("RSN fetched from client on-demand: {}", currentRsn);
-			return Optional.of(currentRsn);
+			session.setRsn(client.getLocalPlayer().getName());
+			log.info("RSN fetched from client on-demand: {}", session.getRsn());
+			return Optional.of(session.getRsn());
 		}
 		
 		log.warn("Unable to determine RSN - transactions will be recorded without RSN");
@@ -1372,20 +1291,20 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private String getPersistedOffersKey()
 	{
-		if (currentRsn == null || currentRsn.isEmpty())
+		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
 			return PERSISTED_OFFERS_KEY_PREFIX + "unknown";
 		}
-		return PERSISTED_OFFERS_KEY_PREFIX + currentRsn;
+		return PERSISTED_OFFERS_KEY_PREFIX + session.getRsn();
 	}
 	
 	private String getCollectedItemsKey()
 	{
-		if (currentRsn == null || currentRsn.isEmpty())
+		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
 			return COLLECTED_ITEMS_KEY_PREFIX + "unknown";
 		}
-		return COLLECTED_ITEMS_KEY_PREFIX + currentRsn;
+		return COLLECTED_ITEMS_KEY_PREFIX + session.getRsn();
 	}
 	
 	/**
@@ -1406,12 +1325,12 @@ public class FlipSmartPlugin extends Plugin
 			
 			Type type = new TypeToken<java.util.List<Integer>>(){}.getType();
 			java.util.List<Integer> items = gson.fromJson(json, type);
-			log.debug("Loaded {} persisted collected items for {}", items != null ? items.size() : 0, currentRsn);
+			log.debug("Loaded {} persisted collected items for {}", items != null ? items.size() : 0, session.getRsn());
 			return items != null ? new java.util.HashSet<>(items) : new java.util.HashSet<>();
 		}
 		catch (Exception e)
 		{
-			log.error("Failed to load persisted collected items for {}: {}", currentRsn, e.getMessage());
+			log.error("Failed to load persisted collected items for {}: {}", session.getRsn(), e.getMessage());
 			return new java.util.HashSet<>();
 		}
 	}
@@ -1429,18 +1348,18 @@ public class FlipSmartPlugin extends Plugin
 			String json = configManager.getConfiguration(CONFIG_GROUP, key);
 			if (json == null || json.isEmpty())
 			{
-				log.debug("No persisted offers found for {}", currentRsn);
+				log.debug("No persisted offers found for {}", session.getRsn());
 				return new HashMap<>();
 			}
 			
 			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
 			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
-			log.info("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, currentRsn);
+			log.info("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, session.getRsn());
 			return offers != null ? offers : new HashMap<>();
 		}
 		catch (Exception e)
 		{
-			log.error("Failed to load persisted offers for {}: {}", currentRsn, e.getMessage());
+			log.error("Failed to load persisted offers for {}: {}", session.getRsn(), e.getMessage());
 			return new HashMap<>();
 		}
 	}
@@ -1470,14 +1389,14 @@ public class FlipSmartPlugin extends Plugin
 	private void onBankContainerChanged()
 	{
 		// Don't attempt if snapshot is already in progress
-		if (bankSnapshotInProgress)
+		if (session.isBankSnapshotInProgress())
 		{
 			return;
 		}
 		
 		// Enforce local cooldown to prevent spam
 		long now = System.currentTimeMillis();
-		if (now - lastBankSnapshotAttempt < BANK_SNAPSHOT_COOLDOWN_MS)
+		if (now - session.getLastBankSnapshotAttempt() < BANK_SNAPSHOT_COOLDOWN_MS)
 		{
 			return;
 		}
@@ -1495,8 +1414,8 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		
-		lastBankSnapshotAttempt = now;
-		bankSnapshotInProgress = true;
+		session.setLastBankSnapshotAttempt(now);
+		session.setBankSnapshotInProgress(true);
 		
 		// Check rate limit first
 		apiClient.checkBankSnapshotStatusAsync(rsn).thenAccept(status ->
@@ -1505,9 +1424,9 @@ public class FlipSmartPlugin extends Plugin
 			{
 				log.debug("Failed to check bank snapshot status");
 				postBankSnapshotMessage("Failed to check snapshot status - will retry", true);
-				bankSnapshotInProgress = false;
+				session.setBankSnapshotInProgress(false);
 				// Reset cooldown on failure to allow retry
-				lastBankSnapshotAttempt = 0;
+				session.setLastBankSnapshotAttempt(0);
 				return;
 			}
 			
@@ -1516,7 +1435,7 @@ public class FlipSmartPlugin extends Plugin
 				log.debug("Bank snapshot not available: {}", status.getMessage());
 				// Don't spam the user - only show message if they might be expecting a snapshot
 				// The rate limit message from server contains the next available time
-				bankSnapshotInProgress = false;
+				session.setBankSnapshotInProgress(false);
 				return;
 			}
 			
@@ -1526,9 +1445,9 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("Error checking bank snapshot status: {}", e.getMessage());
 			postBankSnapshotMessage("Connection error - will retry", true);
-			bankSnapshotInProgress = false;
+			session.setBankSnapshotInProgress(false);
 			// Reset cooldown on network failure to allow retry
-			lastBankSnapshotAttempt = 0;
+			session.setLastBankSnapshotAttempt(0);
 			return null;
 		});
 	}
@@ -1545,7 +1464,7 @@ public class FlipSmartPlugin extends Plugin
 
 			if (items == null || items.isEmpty())
 			{
-				bankSnapshotInProgress = false;
+				session.setBankSnapshotInProgress(false);
 				return;
 			}
 
@@ -1573,14 +1492,14 @@ public class FlipSmartPlugin extends Plugin
 					log.debug("Failed to create bank snapshot");
 					postBankSnapshotMessage("Failed to save bank snapshot", true);
 				}
-				bankSnapshotInProgress = false;
+				session.setBankSnapshotInProgress(false);
 			}).exceptionally(e ->
 			{
 				log.debug("Error creating bank snapshot: {}", e.getMessage());
 				postBankSnapshotMessage("Connection error - will retry", true);
-				bankSnapshotInProgress = false;
+				session.setBankSnapshotInProgress(false);
 				// Reset cooldown on network failure to allow retry
-				lastBankSnapshotAttempt = 0;
+				session.setLastBankSnapshotAttempt(0);
 				return null;
 			});
 		}
@@ -1588,7 +1507,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.error("Error capturing bank snapshot: {}", e.getMessage());
 			postBankSnapshotMessage("Error capturing bank data", true);
-			bankSnapshotInProgress = false;
+			session.setBankSnapshotInProgress(false);
 		}
 	}
 	
@@ -1945,7 +1864,7 @@ public class FlipSmartPlugin extends Plugin
 		
 		// Check if this is during the login burst window
 		int currentTick = client.getTickCount();
-		boolean isLoginBurst = (currentTick - lastLoginTick) <= GE_LOGIN_BURST_WINDOW;
+		boolean isLoginBurst = (currentTick - session.getLastLoginTick()) <= GE_LOGIN_BURST_WINDOW;
 		
 		if (isLoginBurst && state != GrandExchangeOfferState.EMPTY)
 		{
@@ -1958,21 +1877,21 @@ public class FlipSmartPlugin extends Plugin
 
 			// Track the current state so future changes are detected correctly
 			// Preserve existing timestamp if we already have this offer tracked
-			TrackedOffer existing = trackedOffers.get(slot);
-			long originalTimestamp = (existing != null && existing.createdAtMillis > 0)
-				? existing.createdAtMillis
+			TrackedOffer existing = session.getTrackedOffer(slot);
+			long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
+				? existing.getCreatedAtMillis()
 				: System.currentTimeMillis();
 			long completedTimestamp = 0;
 
 			// Check if offer is already completed (BOUGHT/SOLD state)
 			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
 			{
-				completedTimestamp = (existing != null && existing.completedAtMillis > 0)
-					? existing.completedAtMillis
+				completedTimestamp = (existing != null && existing.getCompletedAtMillis() > 0)
+					? existing.getCompletedAtMillis()
 					: System.currentTimeMillis();
 			}
 
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
 
 			// Note: offline sync is now scheduled from LOGGED_IN state change
 			// after syncRSN() to ensure correct RSN-specific config key
@@ -1990,46 +1909,46 @@ public class FlipSmartPlugin extends Plugin
 			// Only record the cancellation if some items were actually filled
 			if (quantitySold > 0)
 			{
-				TrackedOffer previousOffer = trackedOffers.get(slot);
+				TrackedOffer previousOffer = session.getTrackedOffer(slot);
 				
 				// Check if we have any unfilled items that need to be recorded as cancelled
-				if (previousOffer != null && quantitySold > previousOffer.previousQuantitySold)
+				if (previousOffer != null && quantitySold > previousOffer.getPreviousQuantitySold())
 				{
 					// Record the final partial fill before cancellation
-					int newQuantity = quantitySold - previousOffer.previousQuantitySold;
+					int newQuantity = quantitySold - previousOffer.getPreviousQuantitySold();
 					int pricePerItem = spent / quantitySold;
 
 					log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
 						isBuy ? "BUY" : "SELL",
-						previousOffer.itemName,
+						previousOffer.getItemName(),
 						newQuantity,
-						previousOffer.totalQuantity,
+						previousOffer.getTotalQuantity(),
 						pricePerItem);
 
 					// Get recommended sell price if available
-					Integer recommendedSellPrice = isBuy ? recommendedPrices.get(itemId) : null;
+					Integer recommendedSellPrice = isBuy ? session.getRecommendedPrice(itemId) : null;
 					
 					apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-						.builder(itemId, previousOffer.itemName, isBuy, newQuantity, pricePerItem)
+						.builder(itemId, previousOffer.getItemName(), isBuy, newQuantity, pricePerItem)
 						.geSlot(slot)
 						.recommendedSellPrice(recommendedSellPrice)
 						.rsn(getCurrentRsnSafe().orElse(null))
-						.totalQuantity(previousOffer.totalQuantity)
+						.totalQuantity(previousOffer.getTotalQuantity())
 						.build());
 				}
 				
 			log.info("Order cancelled: {} {} - {} items filled out of {}",
 				isBuy ? "BUY" : "SELL",
-				previousOffer != null ? previousOffer.itemName : itemName,
+				previousOffer != null ? previousOffer.getItemName() : itemName,
 				quantitySold,
 				totalQuantity);
 		}
 		else
 		{
-			TrackedOffer previousOffer = trackedOffers.get(slot);
+			TrackedOffer previousOffer = session.getTrackedOffer(slot);
 			log.info("Order cancelled with no fills: {} {}",
 				isBuy ? "BUY" : "SELL",
-				previousOffer != null ? previousOffer.itemName : itemName);
+				previousOffer != null ? previousOffer.getItemName() : itemName);
 			
 			// For cancelled BUY orders with 0 fills, dismiss the active flip
 			// There's nothing to track - the order never filled
@@ -2050,10 +1969,10 @@ public class FlipSmartPlugin extends Plugin
 			// so they still show as active flips until the user sells them
 			if (isBuy && quantitySold > 0)
 			{
-				TrackedOffer cancelledOffer = trackedOffers.get(slot);
+				TrackedOffer cancelledOffer = session.getTrackedOffer(slot);
 				log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold", 
-					quantitySold, cancelledOffer != null ? cancelledOffer.totalQuantity : "?");
-				collectedItemIds.add(itemId);
+					quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
+				session.addCollectedItem(itemId);
 				
 				// CRITICAL: Sync the actual filled quantity with the backend
 				// When order is cancelled early, the backend still has the original order quantity
@@ -2063,10 +1982,10 @@ public class FlipSmartPlugin extends Plugin
 				{
 					int pricePerItem = spent / quantitySold;
 					log.info("Syncing cancelled order quantity to backend: {} x{} (was {})", 
-						cancelledOffer.itemName, quantitySold, cancelledOffer.totalQuantity);
+						cancelledOffer.getItemName(), quantitySold, cancelledOffer.getTotalQuantity());
 					apiClient.syncActiveFlipAsync(
 						itemId,
-						cancelledOffer.itemName,
+						cancelledOffer.getItemName(),
 						quantitySold,  // Actual filled quantity
 						quantitySold,  // New order quantity = actual filled (order is complete now)
 						pricePerItem,
@@ -2082,7 +2001,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 			
 			// Clean up tracked offer
-			trackedOffers.remove(slot);
+			session.removeTrackedOffer(slot);
 			return;
 		}
 		
@@ -2090,39 +2009,39 @@ public class FlipSmartPlugin extends Plugin
 		// This includes when user clicks "Modify Order" - items/gold return to inventory
 		if (state == GrandExchangeOfferState.EMPTY)
 		{
-			TrackedOffer collectedOffer = trackedOffers.remove(slot);
+			TrackedOffer collectedOffer = session.removeTrackedOffer(slot);
 			
 			if (collectedOffer != null)
 			{
 				// Track collected buy offers so they still show as active flips until sold
-				if (collectedOffer.isBuy && collectedOffer.previousQuantitySold > 0)
+				if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0)
 				{
 					log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
-						collectedOffer.itemName, collectedOffer.previousQuantitySold);
-					collectedItemIds.add(collectedOffer.itemId);
+						collectedOffer.getItemName(), collectedOffer.getPreviousQuantitySold());
+					session.addCollectedItem(collectedOffer.getItemId());
 					
 					// Check if the order completed fully and we might have missed fills
 					// This handles the case where fills happened rapidly or while we weren't tracking
-					int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
-					int trackedFills = collectedOffer.previousQuantitySold;
+					int inventoryCount = getInventoryCountForItem(collectedOffer.getItemId());
+					int trackedFills = collectedOffer.getPreviousQuantitySold();
 					
 					// If inventory shows more items than we tracked, sync with backend
 					if (inventoryCount > trackedFills)
 					{
 						log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
-							collectedOffer.itemName, trackedFills, inventoryCount);
+							collectedOffer.getItemName(), trackedFills, inventoryCount);
 						
 						String rsn = getCurrentRsnSafe().orElse(null);
 						if (rsn != null)
 						{
 							// Use the inventory count as the actual fill count
-							int actualFills = Math.min(inventoryCount, collectedOffer.totalQuantity);
+							int actualFills = Math.min(inventoryCount, collectedOffer.getTotalQuantity());
 							apiClient.syncActiveFlipAsync(
-								collectedOffer.itemId,
-								collectedOffer.itemName,
+								collectedOffer.getItemId(),
+								collectedOffer.getItemName(),
 								actualFills,
-								collectedOffer.totalQuantity,
-								collectedOffer.price,
+								collectedOffer.getTotalQuantity(),
+								collectedOffer.getPrice(),
 								rsn
 							);
 						}
@@ -2131,33 +2050,33 @@ public class FlipSmartPlugin extends Plugin
 				// Handle SELL orders that go empty (modified/cancelled with items returned to inventory)
 				// This is critical for "Modify Order" on sell orders - items go back to inventory
 				// and should still be tracked as an active flip until actually sold
-				else if (!collectedOffer.isBuy)
+				else if (!collectedOffer.isBuy())
 				{
 					// Items returned to inventory from a sell order (modify/cancel)
 					// Check if we have items of this type in inventory to track
-					int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+					int inventoryCount = getInventoryCountForItem(collectedOffer.getItemId());
 					if (inventoryCount > 0)
 					{
 						log.info("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking", 
-							collectedOffer.itemName, inventoryCount);
-						collectedItemIds.add(collectedOffer.itemId);
+							collectedOffer.getItemName(), inventoryCount);
+						session.addCollectedItem(collectedOffer.getItemId());
 					}
 					else
 					{
 						log.info("Sell offer for {} went empty with no items in inventory - order may have fully sold", 
-							collectedOffer.itemName);
+							collectedOffer.getItemName());
 					}
 				}
 				// Handle BUY orders with 0 fills that might have filled while we weren't tracking
 				// This covers edge cases where fills happened between login and tracking
-				else if (collectedOffer.isBuy && collectedOffer.previousQuantitySold == 0)
+				else if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() == 0)
 				{
-					int inventoryCount = getInventoryCountForItem(collectedOffer.itemId);
+					int inventoryCount = getInventoryCountForItem(collectedOffer.getItemId());
 					if (inventoryCount > 0)
 					{
 						log.info("Buy order for {} went empty but found {} items in inventory - may have filled offline", 
-							collectedOffer.itemName, inventoryCount);
-						collectedItemIds.add(collectedOffer.itemId);
+							collectedOffer.getItemName(), inventoryCount);
+						session.addCollectedItem(collectedOffer.getItemId());
 					}
 				}
 				
@@ -2173,7 +2092,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Get the previously tracked offer for this slot
-		TrackedOffer previousOffer = trackedOffers.get(slot);
+		TrackedOffer previousOffer = session.getTrackedOffer(slot);
 
 		// Detect if quantity sold has increased (partial or full fill)
 		if (quantitySold > 0)
@@ -2183,7 +2102,7 @@ public class FlipSmartPlugin extends Plugin
 			if (previousOffer != null)
 			{
 				// Calculate how many items were just sold/bought
-				newQuantity = quantitySold - previousOffer.previousQuantitySold;
+				newQuantity = quantitySold - previousOffer.getPreviousQuantitySold();
 			}
 			else
 			{
@@ -2207,7 +2126,7 @@ public class FlipSmartPlugin extends Plugin
 					totalQuantity);
 
 				// Get recommended sell price if this was a buy from a recommendation
-				Integer recommendedSellPrice = isBuy ? recommendedPrices.get(itemId) : null;
+				Integer recommendedSellPrice = isBuy ? session.getRecommendedPrice(itemId) : null;
 				
 				// Record the transaction asynchronously with total order quantity
 				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
@@ -2221,7 +2140,7 @@ public class FlipSmartPlugin extends Plugin
 				// Clear recommended price after recording (only for buys)
 				if (isBuy && recommendedSellPrice != null)
 				{
-					recommendedPrices.remove(itemId);
+					session.removeRecommendedPrice(itemId);
 				}
 				
 				// If this was a sell, remove from collected tracking
@@ -2244,25 +2163,25 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			// Update tracked offer - preserve original timestamp to prevent timer reset
-			long originalTimestamp = (previousOffer != null && previousOffer.createdAtMillis > 0)
-				? previousOffer.createdAtMillis
+			long originalTimestamp = (previousOffer != null && previousOffer.getCreatedAtMillis() > 0)
+				? previousOffer.getCreatedAtMillis()
 				: System.currentTimeMillis();
 			long completedTimestamp = 0;
 
 			// Check if offer just completed (BOUGHT/SOLD state)
 			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
 			{
-				completedTimestamp = (previousOffer != null && previousOffer.completedAtMillis > 0)
-					? previousOffer.completedAtMillis
+				completedTimestamp = (previousOffer != null && previousOffer.getCompletedAtMillis() > 0)
+					? previousOffer.getCompletedAtMillis()
 					: System.currentTimeMillis();
 			}
 
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
 		}
 		else
 		{
 			// New offer with no items sold yet, track it with fresh timestamp
-			trackedOffers.put(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
+			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
 			
 			// Clear Flip Assist focus if this order matches the focused flip
 			clearFlipAssistFocusIfMatches(itemId, isBuy);
@@ -2273,7 +2192,7 @@ public class FlipSmartPlugin extends Plugin
 				log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
 					itemName, 0, price, slot, totalQuantity);
 				
-				Integer recommendedSellPrice = recommendedPrices.get(itemId);
+				Integer recommendedSellPrice = session.getRecommendedPrice(itemId);
 				
 				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 					.builder(itemId, itemName, true, 0, price)
@@ -2349,7 +2268,7 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			protected Integer getCashStack()
 			{
-				return currentCashStack > 0 ? currentCashStack : null;
+				return session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null;
 			}
 		};
 		
@@ -2374,10 +2293,10 @@ public class FlipSmartPlugin extends Plugin
 		// Connect auth success callback to sync RSN after Discord login
 		flipFinderPanel.setOnAuthSuccess(() -> {
 			// Sync RSN to API if we have one (player is logged in)
-			if (currentRsn != null && !currentRsn.isEmpty())
+			if (session.getRsn() != null && !session.getRsn().isEmpty())
 			{
-				log.info("Auth success callback - syncing RSN: {}", currentRsn);
-				apiClient.updateRSN(currentRsn);
+				log.info("Auth success callback - syncing RSN: {}", session.getRsn());
+				apiClient.updateRSN(session.getRsn());
 			}
 			else
 			{
@@ -2438,7 +2357,7 @@ public class FlipSmartPlugin extends Plugin
 		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
 		if (inventory == null)
 		{
-			currentCashStack = 0;
+			session.setCashStack(0);
 			return;
 		}
 
@@ -2453,19 +2372,19 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 
-		if (totalCash != currentCashStack)
+		if (totalCash != session.getCurrentCashStack())
 		{
-			currentCashStack = totalCash;
-			log.debug("Updated cash stack: {}", currentCashStack);
+			session.setCashStack(totalCash);
+			log.debug("Updated cash stack: {}", session.getCurrentCashStack());
 
 			// If cash stack changed significantly and we have a flip finder panel, refresh it
 			if (flipFinderPanel != null && totalCash > AUTO_REFRESH_CASH_THRESHOLD)
 			{
 				// Only auto-refresh if it's been more than the minimum interval since last refresh
 				long now = System.currentTimeMillis();
-				if (now - lastFlipFinderRefresh > AUTO_REFRESH_MIN_INTERVAL_MS)
+				if (now - session.getLastFlipFinderRefresh() > AUTO_REFRESH_MIN_INTERVAL_MS)
 				{
-					lastFlipFinderRefresh = now;
+					session.setLastFlipFinderRefresh(now);
 					flipFinderPanel.refresh();
 				}
 			}
@@ -2495,7 +2414,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				// Skip API calls if player is not logged into RuneScape
 				// This saves API requests and battery when at the login screen
-				if (!loggedIntoRunescape)
+				if (!session.isLoggedIntoRunescape())
 				{
 					log.debug("Skipping auto-refresh - player not logged into RuneScape");
 					return;
@@ -2506,7 +2425,7 @@ public class FlipSmartPlugin extends Plugin
 					javax.swing.SwingUtilities.invokeLater(() ->
 					{
 						log.debug("Auto-refreshing flip finder");
-						lastFlipFinderRefresh = System.currentTimeMillis();
+						session.setLastFlipFinderRefresh(System.currentTimeMillis());
 						flipFinderPanel.refresh();
 					});
 				}
