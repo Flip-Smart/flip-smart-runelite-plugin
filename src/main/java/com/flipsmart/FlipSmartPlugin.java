@@ -2051,11 +2051,12 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 			
-			// Clean up tracked offer
+			// Clean up tracked offer and recommended price
 			session.removeTrackedOffer(slot);
+			session.removeRecommendedPrice(itemId);
 			return;
 		}
-		
+
 		// Handle empty state (offer collected/cleared/modified)
 		// This includes when user clicks "Modify Order" - items/gold return to inventory
 		if (state == GrandExchangeOfferState.EMPTY)
@@ -2199,12 +2200,6 @@ public class FlipSmartPlugin extends Plugin
 					.totalQuantity(totalQuantity)
 					.build());
 				
-				// Clear recommended price after recording (only for buys)
-				if (isBuy && recommendedSellPrice != null)
-				{
-					session.removeRecommendedPrice(itemId);
-				}
-				
 				// If this was a sell, remove from collected tracking
 				if (!isBuy)
 				{
@@ -2268,6 +2263,13 @@ public class FlipSmartPlugin extends Plugin
 				log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
 					itemName, 0, price, slot, totalQuantity);
 
+				// Notify auto-recommend FIRST so it stores the recommended sell price
+				// before we read it for the transaction recording
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onBuyOrderPlaced(itemId);
+				}
+
 				Integer recommendedSellPrice = session.getRecommendedPrice(itemId);
 
 				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
@@ -2277,12 +2279,6 @@ public class FlipSmartPlugin extends Plugin
 					.rsn(getCurrentRsnSafe().orElse(null))
 					.totalQuantity(totalQuantity)
 					.build());
-
-				// Notify auto-recommend service of new buy order
-				if (autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onBuyOrderPlaced(itemId);
-				}
 			}
 
 			// When a SELL order is placed, mark the active flip as "selling" phase
@@ -2295,6 +2291,9 @@ public class FlipSmartPlugin extends Plugin
 				{
 					apiClient.markActiveFlipSellingAsync(itemId, rsn);
 				}
+
+				// Clean up recommended price - it has been consumed by the sell order
+				session.removeRecommendedPrice(itemId);
 
 				// Notify auto-recommend service of sell order placed
 				if (autoRecommendService != null && autoRecommendService.isActive())
