@@ -69,6 +69,13 @@ public class PlayerSession
 	private volatile long lastFlipFinderRefresh;
 
 	// =====================
+	// Auto-Recommend State
+	// =====================
+
+	/** Items already notified as stale during auto-recommend (avoid spamming) */
+	private final Set<Integer> staleNotifiedAutoRecommendItemIds = ConcurrentHashMap.newKeySet();
+
+	// =====================
 	// Session Identity Methods
 	// =====================
 
@@ -282,6 +289,7 @@ public class PlayerSession
 		collectedItemIds.clear();
 		trackedOffers.clear();
 		recommendedPrices.clear();
+		staleNotifiedAutoRecommendItemIds.clear();
 	}
 
 	// =====================
@@ -360,11 +368,38 @@ public class PlayerSession
 	}
 
 	/**
+	 * Check if there are available GE slots for new offers.
+	 */
+	public boolean hasAvailableGESlots()
+	{
+		return trackedOffers.size() < 8;
+	}
+
+	/**
 	 * Get a snapshot of collected item IDs for persistence.
 	 * Returns a new HashSet to avoid concurrent modification during serialization.
 	 */
 	public Set<Integer> getCollectedItemsForPersistence()
 	{
 		return new HashSet<>(collectedItemIds);
+	}
+
+	// =====================
+	// Auto-Recommend Stale Notification Methods
+	// =====================
+
+	public boolean isStaleNotified(int itemId)
+	{
+		return staleNotifiedAutoRecommendItemIds.contains(itemId);
+	}
+
+	public void addStaleNotified(int itemId)
+	{
+		staleNotifiedAutoRecommendItemIds.add(itemId);
+	}
+
+	public void clearStaleNotifications()
+	{
+		staleNotifiedAutoRecommendItemIds.clear();
 	}
 }

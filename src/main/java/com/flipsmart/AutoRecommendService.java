@@ -7,7 +7,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 /**
@@ -24,8 +23,6 @@ import java.util.function.Consumer;
 @Slf4j
 public class AutoRecommendService
 {
-	/** Maximum number of GE slots available per player */
-	private static final int MAX_GE_SLOTS = 8;
 	/** How long before a buy offer is considered stale (15 minutes) */
 	private static final long INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000L;
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
@@ -41,9 +38,6 @@ public class AutoRecommendService
 
 	// Timestamp of last queue refresh for staleness checks
 	private volatile long lastQueueRefreshMillis;
-
-	// Items already notified as stale (avoid spamming)
-	private final Set<Integer> staleNotifiedItemIds = ConcurrentHashMap.newKeySet();
 
 	// Callback to update Flip Assist overlay and panel
 	private volatile Consumer<FocusedFlip> onFocusChanged;
@@ -118,7 +112,7 @@ public class AutoRecommendService
 		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
 
 		recommendationQueue.clear();
-		staleNotifiedItemIds.clear();
+		plugin.getSession().clearStaleNotifications();
 		currentIndex = 0;
 
 		for (FlipRecommendation rec : recommendations)
@@ -151,7 +145,7 @@ public class AutoRecommendService
 	{
 		active = false;
 		recommendationQueue.clear();
-		staleNotifiedItemIds.clear();
+		plugin.getSession().clearStaleNotifications();
 		currentIndex = 0;
 
 		invokeFocusCallback(null);
@@ -356,7 +350,7 @@ public class AutoRecommendService
 		}
 
 		lastQueueRefreshMillis = System.currentTimeMillis();
-		staleNotifiedItemIds.clear();
+		plugin.getSession().clearStaleNotifications();
 
 		log.info("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
 		updateStatus(String.format("Auto: %d/%d - %s",
@@ -383,6 +377,8 @@ public class AutoRecommendService
 
 		long now = System.currentTimeMillis();
 
+		PlayerSession session = plugin.getSession();
+
 		for (TrackedOffer offer : trackedOffers.values())
 		{
 			if (!offer.isBuy() || offer.getCompletedAtMillis() > 0)
@@ -391,7 +387,7 @@ public class AutoRecommendService
 			}
 
 			int itemId = offer.getItemId();
-			if (staleNotifiedItemIds.contains(itemId))
+			if (session.isStaleNotified(itemId))
 			{
 				continue;
 			}
@@ -406,7 +402,7 @@ public class AutoRecommendService
 			boolean stillRecommended = currentRecommendations != null
 				&& currentRecommendations.stream().anyMatch(r -> r.getItemId() == itemId);
 
-			staleNotifiedItemIds.add(itemId);
+			session.addStaleNotified(itemId);
 
 			if (stillRecommended)
 			{
@@ -475,7 +471,7 @@ public class AutoRecommendService
 		currentIndex = Math.min(state.currentIndex, recommendationQueue.size() - 1);
 		currentIndex = Math.max(0, currentIndex);
 
-		staleNotifiedItemIds.clear();
+		plugin.getSession().clearStaleNotifications();
 		active = true;
 		lastQueueRefreshMillis = state.savedAtMillis;
 
@@ -732,6 +728,6 @@ public class AutoRecommendService
 
 	private boolean hasAvailableGESlots()
 	{
-		return plugin.getSession().getTrackedOffers().size() < MAX_GE_SLOTS;
+		return plugin.getSession().hasAvailableGESlots();
 	}
 }
