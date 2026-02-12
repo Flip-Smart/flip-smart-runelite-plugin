@@ -184,7 +184,7 @@ public class AutoRecommendService
 	 * Prompts user to collect items. Sell price is already stored in session
 	 * via setRecommendedSellPrice() when the buy order was placed.
 	 */
-	public synchronized void onBuyOrderCompleted(int itemId, String itemName)
+	public synchronized void onBuyOrderCompleted(String itemName)
 	{
 		if (!active)
 		{
@@ -376,9 +376,45 @@ public class AutoRecommendService
 		}
 
 		long now = System.currentTimeMillis();
-
 		PlayerSession session = plugin.getSession();
 
+		// Find the first stale buy offer that hasn't been notified yet
+		TrackedOffer staleOffer = findFirstStaleOffer(trackedOffers, session, now);
+		if (staleOffer == null)
+		{
+			return;
+		}
+
+		int itemId = staleOffer.getItemId();
+		session.addStaleNotified(itemId);
+
+		boolean stillRecommended = currentRecommendations != null
+			&& currentRecommendations.stream().anyMatch(r -> r.getItemId() == itemId);
+
+		if (stillRecommended)
+		{
+			updateStatus(String.format("Auto: %s slow fill - consider relisting at updated price",
+				staleOffer.getItemName()));
+		}
+		else
+		{
+			updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
+				staleOffer.getItemName()));
+		}
+
+		long age = now - staleOffer.getCreatedAtMillis();
+		log.info("Auto-recommend: Stale offer detected for {} (age: {}m, still recommended: {})",
+			staleOffer.getItemName(), age / 60000, stillRecommended);
+	}
+
+	/**
+	 * Find the first tracked buy offer that is stale and hasn't been notified yet.
+	 */
+	private TrackedOffer findFirstStaleOffer(
+		Map<Integer, TrackedOffer> trackedOffers,
+		PlayerSession session,
+		long now)
+	{
 		for (TrackedOffer offer : trackedOffers.values())
 		{
 			if (!offer.isBuy() || offer.getCompletedAtMillis() > 0)
@@ -386,40 +422,13 @@ public class AutoRecommendService
 				continue;
 			}
 
-			int itemId = offer.getItemId();
-			if (session.isStaleNotified(itemId))
-			{
-				continue;
-			}
-
 			long age = now - offer.getCreatedAtMillis();
-			if (age < INACTIVITY_TIMEOUT_MS)
+			if (age >= INACTIVITY_TIMEOUT_MS && !session.isStaleNotified(offer.getItemId()))
 			{
-				continue;
+				return offer;
 			}
-
-			// Item is stale - check if it's still recommended
-			boolean stillRecommended = currentRecommendations != null
-				&& currentRecommendations.stream().anyMatch(r -> r.getItemId() == itemId);
-
-			session.addStaleNotified(itemId);
-
-			if (stillRecommended)
-			{
-				updateStatus(String.format("Auto: %s slow fill - consider relisting at updated price",
-					offer.getItemName()));
-			}
-			else
-			{
-				updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
-					offer.getItemName()));
-			}
-
-			log.info("Auto-recommend: Stale offer detected for {} (age: {}m, still recommended: {})",
-				offer.getItemName(), age / 60000, stillRecommended);
-			// Only notify about one stale item at a time
-			break;
 		}
+		return null;
 	}
 
 	// =====================
@@ -581,94 +590,92 @@ public class AutoRecommendService
 
 	/**
 	 * Focus the sell side for the next collected item that needs selling.
-	 * Used when we don't have direct item info (e.g., after sell placed, queue advance).
-	 * Falls back to recommendation queue for item name/quantity since the TrackedOffer
-	 * may have been removed from session when the buy offer was collected.
+	 * Uses session state to find items and falls back to recommendation queue
+	 * for item name/quantity since TrackedOffer may have been removed.
 	 */
 	private void focusNextCollectedItemSell()
+	{
+		int sellableItemId = findNextSellableCollectedItem();
+		if (sellableItemId < 0)
+		{
+			// No collected items need selling - check buy queue
+			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+			{
+				focusCurrent();
+			}
+			else
+			{
+				updateStatus("Auto: Waiting for offers to complete");
+			}
+			return;
+		}
+
+		FlipRecommendation rec = findRecommendationForItem(sellableItemId);
+		if (rec == null)
+		{
+			log.warn("Auto-recommend: Cannot find item name for collected item {}", sellableItemId);
+			return;
+		}
+
+		Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
+		int priceOffset = config.priceOffset();
+		FocusedFlip focus = FocusedFlip.forSell(
+			sellableItemId,
+			rec.getItemName(),
+			sellPrice,
+			rec.getRecommendedQuantity(),
+			priceOffset
+		);
+
+		invokeFocusCallback(focus);
+		invokeQueueAdvancedCallback();
+
+		updateStatus(String.format("Auto: Sell %s @ %s gp",
+			rec.getItemName(), GpUtils.formatGPWithSuffix(sellPrice)));
+	}
+
+	/**
+	 * Find the next collected item that needs selling.
+	 * Returns the item ID, or -1 if none found.
+	 */
+	private int findNextSellableCollectedItem()
 	{
 		PlayerSession session = plugin.getSession();
 
 		for (int itemId : session.getCollectedItemIds())
 		{
 			Integer sellPrice = session.getRecommendedPrice(itemId);
-			if (sellPrice == null || sellPrice <= 0)
+			boolean hasSellPrice = sellPrice != null && sellPrice > 0;
+			if (hasSellPrice && !session.hasActiveSellSlotForItem(itemId))
 			{
-				continue;
+				return itemId;
 			}
-
-			// Skip if already has an active sell slot
-			if (session.hasActiveSellSlotForItem(itemId))
-			{
-				continue;
-			}
-
-			// Look up item name and quantity from recommendation queue
-			String itemName = null;
-			int quantity = 0;
-			for (FlipRecommendation rec : recommendationQueue)
-			{
-				if (rec.getItemId() == itemId)
-				{
-					itemName = rec.getItemName();
-					quantity = rec.getRecommendedQuantity();
-					break;
-				}
-			}
-
-			if (itemName == null)
-			{
-				log.warn("Auto-recommend: Cannot find item name for collected item {}", itemId);
-				continue;
-			}
-
-			int priceOffset = config.priceOffset();
-			FocusedFlip focus = FocusedFlip.forSell(
-				itemId,
-				itemName,
-				sellPrice,
-				quantity,
-				priceOffset
-			);
-
-			invokeFocusCallback(focus);
-			invokeQueueAdvancedCallback();
-
-			updateStatus(String.format("Auto: Sell %s @ %s gp",
-				itemName, GpUtils.formatGPWithSuffix(sellPrice)));
-			return;
 		}
 
-		// No collected items need selling - check buy queue
-		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+		return -1;
+	}
+
+	/**
+	 * Find a recommendation matching the given item ID from the queue.
+	 */
+	private FlipRecommendation findRecommendationForItem(int itemId)
+	{
+		for (FlipRecommendation rec : recommendationQueue)
 		{
-			focusCurrent();
+			if (rec.getItemId() == itemId)
+			{
+				return rec;
+			}
 		}
-		else
-		{
-			updateStatus("Auto: Waiting for offers to complete");
-		}
+		return null;
 	}
 
 	/**
 	 * Check if there are collected items that still need to be sold.
-	 * An item needs selling if it's in collectedItemIds, has a recommended price,
-	 * and doesn't already have an active sell slot.
 	 */
 	private boolean hasCollectedItemsToSell()
 	{
-		PlayerSession session = plugin.getSession();
-
-		for (int itemId : session.getCollectedItemIds())
-		{
-			Integer sellPrice = session.getRecommendedPrice(itemId);
-			if (sellPrice != null && sellPrice > 0 && !session.hasActiveSellSlotForItem(itemId))
-			{
-				return true;
-			}
-		}
-
-		return false;
+		return findNextSellableCollectedItem() >= 0;
 	}
 
 	// =====================

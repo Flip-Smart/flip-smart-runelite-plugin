@@ -409,17 +409,9 @@ public class FlipFinderPanel extends PluginPanel
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> refresh(true));
 
-		// Auto-recommend toggle button
-		autoRecommendButton = new JToggleButton("Auto");
-		autoRecommendButton.setFocusable(false);
-		autoRecommendButton.setMargin(new Insets(2, 4, 2, 4));
-		autoRecommendButton.setToolTipText("Auto-cycle through recommendations into Flip Assist");
-		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
-
 		headerPanel.add(titleLabel);
 		headerPanel.add(logoutButton);
 		headerPanel.add(refreshButton);
-		headerPanel.add(autoRecommendButton);
 
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
@@ -480,11 +472,19 @@ public class FlipFinderPanel extends PluginPanel
 		styleRow.add(flipStyleLabel);
 		styleRow.add(flipStyleDropdown);
 
-		// Row 2: Timeframe dropdown
+		// Auto-recommend toggle button
+		autoRecommendButton = new JToggleButton("Auto");
+		autoRecommendButton.setFocusable(false);
+		autoRecommendButton.setMargin(new Insets(2, 6, 2, 6));
+		autoRecommendButton.setToolTipText("Auto-cycle through recommendations into Flip Assist");
+		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
+
+		// Row 2: Timeframe dropdown + Auto button
 		JPanel timeframeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
 		timeframeRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		timeframeRow.add(flipTimeframeLabel);
 		timeframeRow.add(flipTimeframeDropdown);
+		timeframeRow.add(autoRecommendButton);
 
 		// Stack rows vertically
 		JPanel dropdownWrapper = new JPanel();

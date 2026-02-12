@@ -124,6 +124,7 @@ public class FlipSmartPlugin extends Plugin
 
 	// Config keys for persisting offer state
 	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
@@ -596,79 +597,79 @@ public class FlipSmartPlugin extends Plugin
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
 		GameState gameState = gameStateChanged.getGameState();
-		
+
 		// Track login/hopping to avoid recording existing GE offers
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
 			session.onLoginStateChange(client.getTickCount());
-			// Note: Don't clear collectedItemIds here - we'll restore them after RSN is known
 		}
-		
-		// Persist offer state when logging out and show "log in to game" message
+
 		if (gameState == GameState.LOGIN_SCREEN)
 		{
-			session.onLogout();
-			persistOfferState();
-
-			// Stop auto-recommend on logout (state was already persisted above)
-			if (autoRecommendService != null && autoRecommendService.isActive())
-			{
-				autoRecommendService.stop();
-				if (flipFinderPanel != null)
-				{
-					flipFinderPanel.updateAutoRecommendButton(false);
-				}
-			}
-			stopAutoRecommendRefreshTimer();
-
-			// Update panel to show logged out state (saves API requests while at login screen)
-			if (flipFinderPanel != null)
-			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
-			}
+			handleLogoutState();
 		}
-		
+
 		if (gameState == GameState.LOGGED_IN)
 		{
-			log.info("Player logged in");
-			session.onLoggedIn();
-			syncRSN();
-			updateCashStack();
+			handleLoggedInState();
+		}
+	}
 
-			// Fetch real-time wiki prices for competitiveness indicators
-			apiClient.fetchWikiPrices();
+	private void handleLogoutState()
+	{
+		session.onLogout();
+		persistOfferState();
 
-			// Fetch user entitlements (premium status) when logging into game
-			apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
-				log.info("User premium status: {}", isPremium);
-				// Update the flip finder panel if it exists
-				if (flipFinderPanel != null)
-				{
-					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
-				}
-			});
-
-			// Restore collected items from config (items bought but not yet sold)
-			// Must be after syncRSN() so we have the correct RSN for the config key
-			restoreCollectedItems();
-
-			// Restore auto-recommend state from previous session
-			restoreAutoRecommendState();
-
-			// Schedule offline sync after a delay to ensure all GE events have been processed
-			// This must run AFTER syncRSN() so we have the correct RSN for the config key
-			if (!session.isOfflineSyncCompleted())
-			{
-				javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
-				syncTimer.setRepeats(false);
-				syncTimer.start();
-			}
-
-			// Refresh flip finder with current cash stack
+		// Stop auto-recommend on logout (state was already persisted above)
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			autoRecommendService.stop();
 			if (flipFinderPanel != null)
 			{
-				flipFinderPanel.refresh();
+				flipFinderPanel.updateAutoRecommendButton(false);
 			}
+		}
+		stopAutoRecommendRefreshTimer();
+
+		if (flipFinderPanel != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
+		}
+	}
+
+	private void handleLoggedInState()
+	{
+		log.info("Player logged in");
+		session.onLoggedIn();
+		syncRSN();
+		updateCashStack();
+
+		apiClient.fetchWikiPrices();
+
+		apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
+			log.info("User premium status: {}", isPremium);
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
+			}
+		});
+
+		// Restore collected items from config (items bought but not yet sold)
+		// Must be after syncRSN() so we have the correct RSN for the config key
+		restoreCollectedItems();
+		restoreAutoRecommendState();
+
+		// Schedule offline sync after a delay to ensure all GE events have been processed
+		if (!session.isOfflineSyncCompleted())
+		{
+			javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
+			syncTimer.setRepeats(false);
+			syncTimer.start();
+		}
+
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.refresh();
 		}
 	}
 	
@@ -1344,7 +1345,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
-			return PERSISTED_OFFERS_KEY_PREFIX + "unknown";
+			return PERSISTED_OFFERS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return PERSISTED_OFFERS_KEY_PREFIX + session.getRsn();
 	}
@@ -1353,7 +1354,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
-			return COLLECTED_ITEMS_KEY_PREFIX + "unknown";
+			return COLLECTED_ITEMS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return COLLECTED_ITEMS_KEY_PREFIX + session.getRsn();
 	}
@@ -2236,7 +2237,7 @@ public class FlipSmartPlugin extends Plugin
 				if (isBuy && state == GrandExchangeOfferState.BOUGHT
 					&& autoRecommendService != null && autoRecommendService.isActive())
 				{
-					autoRecommendService.onBuyOrderCompleted(itemId, itemName);
+					autoRecommendService.onBuyOrderCompleted(itemName);
 				}
 
 				// Notify auto-recommend service when a sell order fully completes
@@ -2602,7 +2603,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
-			return AUTO_RECOMMEND_STATE_KEY_PREFIX + "unknown";
+			return AUTO_RECOMMEND_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return AUTO_RECOMMEND_STATE_KEY_PREFIX + session.getRsn();
 	}
