@@ -514,6 +514,7 @@ public class FlipFinderPanel extends PluginPanel
 		autoRecommendButton.setForeground(Color.WHITE);
 		autoRecommendButton.setToolTipText("Auto-cycle through recommendations into Flip Assist");
 		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
+		autoRecommendButton.setVisible(config.enableAutoRecommend());
 
 		// Row 2: Timeframe dropdown (left) + Auto button (right)
 		JPanel timeframeRow = new JPanel(new BorderLayout());
@@ -3798,6 +3799,13 @@ public class FlipFinderPanel extends PluginPanel
 
 			service.start(new ArrayList<>(currentRecommendations));
 
+			// Check if start() actually activated the service (it may bail if all items are filtered)
+			if (!service.isActive())
+			{
+				autoRecommendButton.setSelected(false);
+				return;
+			}
+
 			// Switch to Recommended tab
 			tabbedPane.setSelectedIndex(0);
 
@@ -3825,6 +3833,27 @@ public class FlipFinderPanel extends PluginPanel
 
 			log.info("Auto-recommend disabled");
 		}
+	}
+
+	/**
+	 * Show or hide the auto-recommend button based on config setting.
+	 */
+	public void setAutoRecommendVisible(boolean visible)
+	{
+		SwingUtilities.invokeLater(() -> {
+			autoRecommendButton.setVisible(visible);
+			if (!visible && autoRecommendButton.isSelected())
+			{
+				autoRecommendButton.setSelected(false);
+				AutoRecommendService service = plugin.getAutoRecommendService();
+				if (service != null && service.isActive())
+				{
+					service.stop();
+					plugin.stopAutoRecommendRefreshTimer();
+				}
+				autoRecommendStatusLabel.setVisible(false);
+			}
+		});
 	}
 
 	/**

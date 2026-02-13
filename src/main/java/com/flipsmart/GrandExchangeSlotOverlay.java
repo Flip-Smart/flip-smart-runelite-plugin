@@ -24,8 +24,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 	// GE Interface constants
 	private static final int GE_INTERFACE_GROUP = 465;
 
-	// The main offer container shows all 8 slots - child IDs for slot containers
-	// These are the container widgets for each of the 8 GE slots (0-7)
+	// The main offer container shows all GE slots - child IDs for slot containers
+	// These are the container widgets for each GE slot (0-7)
 	// Widget 465.7 through 465.14 are the slot containers in the main view
 	private static final int GE_SLOT_CONTAINER_START = 7;
 
@@ -36,8 +36,12 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final int GE_OFFER_CONFIRM_BUTTON_CHILD = 58;   // Child ID for "Confirm" button
 
 	// Main GE panel: buy/sell button child IDs within each slot widget (465.7-14)
+	// Discovered via RuneLite Widget Inspector
 	private static final int GE_SLOT_BUY_BUTTON_CHILD = 0;   // Buy button within empty slot
 	private static final int GE_SLOT_SELL_BUTTON_CHILD = 1;  // Sell button within empty slot
+
+	// Maximum number of GE slots available to a player
+	private static final int GE_MAX_SLOTS = 8;
 
 	// Colors - designed to blend with GE's brown/tan color scheme
 	private static final Color COLOR_COMPETITIVE = new Color(76, 187, 23);        // OSRS green
@@ -174,7 +178,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	{
 		TooltipData tooltip = null;
 
-		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
+		for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
 		{
 			TooltipData slotTooltip = renderSlot(graphics, slot, offers[slot]);
 			if (slotTooltip != null)
@@ -561,7 +565,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			? GE_SLOT_BUY_BUTTON_CHILD
 			: GE_SLOT_SELL_BUTTON_CHILD;
 
-		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
+		for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
 		{
 			Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, GE_SLOT_CONTAINER_START + slot);
 			if (offers[slot].getState() != GrandExchangeOfferState.EMPTY

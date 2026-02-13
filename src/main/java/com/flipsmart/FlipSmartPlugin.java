@@ -29,6 +29,7 @@ import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -591,6 +592,20 @@ public class FlipSmartPlugin extends Plugin
 
 		// Clear API client cache
 		apiClient.clearCache();
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged configChanged)
+	{
+		if (!"flipsmart".equals(configChanged.getGroup()))
+		{
+			return;
+		}
+
+		if ("enableAutoRecommend".equals(configChanged.getKey()) && flipFinderPanel != null)
+		{
+			flipFinderPanel.setAutoRecommendVisible(config.enableAutoRecommend());
+		}
 	}
 
 	@Subscribe

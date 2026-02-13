@@ -624,10 +624,18 @@ public class AutoRecommendService
 		if (rec == null)
 		{
 			log.warn("Auto-recommend: Cannot find item name for collected item {}", sellableItemId);
+			updateStatus("Auto: Collected item no longer in queue - sell manually");
 			return;
 		}
 
 		Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
+		if (sellPrice == null || sellPrice <= 0)
+		{
+			log.warn("Auto-recommend: No recommended sell price for collected item {} ({})", rec.getItemName(), sellableItemId);
+			updateStatus(String.format("Auto: No sell price for %s - sell manually", rec.getItemName()));
+			return;
+		}
+
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forSell(
 			sellableItemId,
