@@ -3,9 +3,11 @@ package com.flipsmart;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -67,6 +69,13 @@ public class PlayerSession
 
 	@Getter
 	private volatile long lastFlipFinderRefresh;
+
+	// =====================
+	// Auto-Recommend State
+	// =====================
+
+	/** Items already notified as stale during auto-recommend (avoid spamming) */
+	private final Set<Integer> staleNotifiedAutoRecommendItemIds = ConcurrentHashMap.newKeySet();
 
 	// =====================
 	// Session Identity Methods
@@ -282,6 +291,7 @@ public class PlayerSession
 		collectedItemIds.clear();
 		trackedOffers.clear();
 		recommendedPrices.clear();
+		staleNotifiedAutoRecommendItemIds.clear();
 	}
 
 	// =====================
@@ -360,11 +370,54 @@ public class PlayerSession
 	}
 
 	/**
+	 * Check if there are available GE slots for new offers.
+	 */
+	public boolean hasAvailableGESlots()
+	{
+		return trackedOffers.size() < 8;
+	}
+
+	/**
+	 * Get tracked offers that have completed (BOUGHT or SOLD state, ready to collect).
+	 */
+	public List<TrackedOffer> getCompletedOffers()
+	{
+		List<TrackedOffer> completed = new ArrayList<>();
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.isCompleted())
+			{
+				completed.add(offer);
+			}
+		}
+		return completed;
+	}
+
+	/**
 	 * Get a snapshot of collected item IDs for persistence.
 	 * Returns a new HashSet to avoid concurrent modification during serialization.
 	 */
 	public Set<Integer> getCollectedItemsForPersistence()
 	{
 		return new HashSet<>(collectedItemIds);
+	}
+
+	// =====================
+	// Auto-Recommend Stale Notification Methods
+	// =====================
+
+	public boolean isStaleNotified(int itemId)
+	{
+		return staleNotifiedAutoRecommendItemIds.contains(itemId);
+	}
+
+	public void addStaleNotified(int itemId)
+	{
+		staleNotifiedAutoRecommendItemIds.add(itemId);
+	}
+
+	public void clearStaleNotifications()
+	{
+		staleNotifiedAutoRecommendItemIds.clear();
 	}
 }

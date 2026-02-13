@@ -29,6 +29,7 @@ import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
@@ -106,19 +107,31 @@ public class FlipSmartPlugin extends Plugin
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
 
+	// Auto-recommend service
+	@Getter
+	private AutoRecommendService autoRecommendService;
+
 	// Centralized session state management
 	private final PlayerSession session = new PlayerSession();
 
 	// Auto-refresh timer for flip finder
 	private java.util.Timer flipFinderRefreshTimer;
 
+	// Auto-recommend refresh timer (2-minute cycle)
+	private java.util.Timer autoRecommendRefreshTimer;
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
 	// Config keys for persisting offer state
 	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
+	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
+
+	/** Auto-recommend queue refresh interval (2 minutes) */
+	private static final long AUTO_RECOMMEND_REFRESH_INTERVAL_MS = 2 * 60 * 1000L;
 
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
@@ -507,6 +520,22 @@ public class FlipSmartPlugin extends Plugin
 		// Start dump alert service
 		dumpAlertService.start();
 
+		// Initialize auto-recommend service
+		autoRecommendService = new AutoRecommendService(config, this);
+		autoRecommendService.setOnFocusChanged(focus -> {
+			flipAssistOverlay.setFocusedFlip(focus);
+			if (focus != null)
+			{
+				log.info("Auto-recommend focus set: {} {} @ {} gp",
+					focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
+			}
+			else
+			{
+				flipAssistOverlay.clearFocus();
+			}
+		});
+		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
+
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
 	}
@@ -554,73 +583,109 @@ public class FlipSmartPlugin extends Plugin
 		// Stop dump alert service
 		dumpAlertService.stop();
 
+		// Stop auto-recommend service and timer
+		stopAutoRecommendRefreshTimer();
+		if (autoRecommendService != null)
+		{
+			persistAutoRecommendState();
+			autoRecommendService.stop();
+		}
+
 		// Clear API client cache
 		apiClient.clearCache();
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged configChanged)
+	{
+		if (!"flipsmart".equals(configChanged.getGroup()))
+		{
+			return;
+		}
+
+		if ("enableAutoRecommend".equals(configChanged.getKey()) && flipFinderPanel != null)
+		{
+			flipFinderPanel.setAutoRecommendVisible(config.enableAutoRecommend());
+		}
 	}
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
 		GameState gameState = gameStateChanged.getGameState();
-		
+
 		// Track login/hopping to avoid recording existing GE offers
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
 			session.onLoginStateChange(client.getTickCount());
-			// Note: Don't clear collectedItemIds here - we'll restore them after RSN is known
 		}
-		
-		// Persist offer state when logging out and show "log in to game" message
+
 		if (gameState == GameState.LOGIN_SCREEN)
 		{
-			session.onLogout();
-			persistOfferState();
-			
-			// Update panel to show logged out state (saves API requests while at login screen)
-			if (flipFinderPanel != null)
-			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
-			}
+			handleLogoutState();
 		}
-		
+
 		if (gameState == GameState.LOGGED_IN)
 		{
-			log.info("Player logged in");
-			session.onLoggedIn();
-			syncRSN();
-			updateCashStack();
+			handleLoggedInState();
+		}
+	}
 
-			// Fetch real-time wiki prices for competitiveness indicators
-			apiClient.fetchWikiPrices();
+	private void handleLogoutState()
+	{
+		session.onLogout();
+		persistOfferState();
 
-			// Fetch user entitlements (premium status) when logging into game
-			apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
-				log.info("User premium status: {}", isPremium);
-				// Update the flip finder panel if it exists
-				if (flipFinderPanel != null)
-				{
-					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
-				}
-			});
-
-			// Restore collected items from config (items bought but not yet sold)
-			// Must be after syncRSN() so we have the correct RSN for the config key
-			restoreCollectedItems();
-
-			// Schedule offline sync after a delay to ensure all GE events have been processed
-			// This must run AFTER syncRSN() so we have the correct RSN for the config key
-			if (!session.isOfflineSyncCompleted())
-			{
-				javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
-				syncTimer.setRepeats(false);
-				syncTimer.start();
-			}
-
-			// Refresh flip finder with current cash stack
+		// Stop auto-recommend on logout (state was already persisted above)
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			autoRecommendService.stop();
 			if (flipFinderPanel != null)
 			{
-				flipFinderPanel.refresh();
+				flipFinderPanel.updateAutoRecommendButton(false);
 			}
+		}
+		stopAutoRecommendRefreshTimer();
+
+		if (flipFinderPanel != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
+		}
+	}
+
+	private void handleLoggedInState()
+	{
+		log.info("Player logged in");
+		session.onLoggedIn();
+		syncRSN();
+		updateCashStack();
+
+		apiClient.fetchWikiPrices();
+
+		apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
+			log.info("User premium status: {}", isPremium);
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
+			}
+		});
+
+		// Restore collected items from config (items bought but not yet sold)
+		// Must be after syncRSN() so we have the correct RSN for the config key
+		restoreCollectedItems();
+		restoreAutoRecommendState();
+
+		// Schedule offline sync after a delay to ensure all GE events have been processed
+		if (!session.isOfflineSyncCompleted())
+		{
+			javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
+			syncTimer.setRepeats(false);
+			syncTimer.start();
+		}
+
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.refresh();
 		}
 	}
 	
@@ -696,8 +761,11 @@ public class FlipSmartPlugin extends Plugin
 				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
 			}
 		}
+
+		// Persist auto-recommend state
+		persistAutoRecommendState();
 	}
-	
+
 	/**
 	 * Sync fills that occurred while offline.
 	 * Records current GE state to the backend. Cleanup of stale flips happens
@@ -1293,7 +1361,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
-			return PERSISTED_OFFERS_KEY_PREFIX + "unknown";
+			return PERSISTED_OFFERS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return PERSISTED_OFFERS_KEY_PREFIX + session.getRsn();
 	}
@@ -1302,7 +1370,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
-			return COLLECTED_ITEMS_KEY_PREFIX + "unknown";
+			return COLLECTED_ITEMS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return COLLECTED_ITEMS_KEY_PREFIX + session.getRsn();
 	}
@@ -2000,11 +2068,12 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 			
-			// Clean up tracked offer
+			// Clean up tracked offer and recommended price
 			session.removeTrackedOffer(slot);
+			session.removeRecommendedPrice(itemId);
 			return;
 		}
-		
+
 		// Handle empty state (offer collected/cleared/modified)
 		// This includes when user clicks "Modify Order" - items/gold return to inventory
 		if (state == GrandExchangeOfferState.EMPTY)
@@ -2080,6 +2149,17 @@ public class FlipSmartPlugin extends Plugin
 					}
 				}
 				
+				// Notify auto-recommend service of collection
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onOfferCollected(
+						collectedOffer.getItemId(),
+						collectedOffer.isBuy(),
+						collectedOffer.getItemName(),
+						collectedOffer.getPreviousQuantitySold()
+					);
+				}
+
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)
 				{
@@ -2137,12 +2217,6 @@ public class FlipSmartPlugin extends Plugin
 					.totalQuantity(totalQuantity)
 					.build());
 				
-				// Clear recommended price after recording (only for buys)
-				if (isBuy && recommendedSellPrice != null)
-				{
-					session.removeRecommendedPrice(itemId);
-				}
-				
 				// If this was a sell, remove from collected tracking
 				if (!isBuy)
 				{
@@ -2174,6 +2248,20 @@ public class FlipSmartPlugin extends Plugin
 				completedTimestamp = (previousOffer != null && previousOffer.getCompletedAtMillis() > 0)
 					? previousOffer.getCompletedAtMillis()
 					: System.currentTimeMillis();
+
+				// Notify auto-recommend service when a buy order fully completes
+				if (isBuy && state == GrandExchangeOfferState.BOUGHT
+					&& autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onBuyOrderCompleted(itemName);
+				}
+
+				// Notify auto-recommend service when a sell order fully completes
+				if (!isBuy && state == GrandExchangeOfferState.SOLD
+					&& autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onSellOrderCompleted(itemId);
+				}
 			}
 
 			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
@@ -2191,9 +2279,16 @@ public class FlipSmartPlugin extends Plugin
 			{
 				log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
 					itemName, 0, price, slot, totalQuantity);
-				
+
+				// Notify auto-recommend FIRST so it stores the recommended sell price
+				// before we read it for the transaction recording
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onBuyOrderPlaced(itemId);
+				}
+
 				Integer recommendedSellPrice = session.getRecommendedPrice(itemId);
-				
+
 				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 					.builder(itemId, itemName, true, 0, price)
 					.geSlot(slot)
@@ -2202,7 +2297,7 @@ public class FlipSmartPlugin extends Plugin
 					.totalQuantity(totalQuantity)
 					.build());
 			}
-			
+
 			// When a SELL order is placed, mark the active flip as "selling" phase
 			// This updates the backend so the webapp shows the correct phase
 			if (!isBuy && totalQuantity > 0 && previousOffer == null)
@@ -2212,6 +2307,15 @@ public class FlipSmartPlugin extends Plugin
 				if (rsn != null)
 				{
 					apiClient.markActiveFlipSellingAsync(itemId, rsn);
+				}
+
+				// Clean up recommended price - it has been consumed by the sell order
+				session.removeRecommendedPrice(itemId);
+
+				// Notify auto-recommend service of sell order placed
+				if (autoRecommendService != null && autoRecommendService.isActive())
+				{
+					autoRecommendService.onSellOrderPlaced(itemId);
 				}
 			}
 			
@@ -2233,22 +2337,28 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
+		// When auto-recommend is active, it manages focus transitions itself
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			return;
+		}
+
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null)
 		{
 			return;
 		}
-		
+
 		// Clear focus if the item matches and the order type matches the step
 		if (focusedFlip.getItemId() == itemId)
 		{
 			boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
 			if (stepMatches)
 			{
-				log.info("Clearing Flip Assist focus - order submitted for {} ({})", 
+				log.info("Clearing Flip Assist focus - order submitted for {} ({})",
 					focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
 				flipAssistOverlay.clearFocus();
-				
+
 				// Also update the panel's visual state
 				if (flipFinderPanel != null)
 				{
@@ -2429,6 +2539,15 @@ public class FlipSmartPlugin extends Plugin
 						flipFinderPanel.refresh();
 					});
 				}
+
+				// Check for inactive auto-recommend offers
+				if (autoRecommendService != null && autoRecommendService.isActive() && flipFinderPanel != null)
+				{
+					autoRecommendService.checkInactiveOffers(
+						session.getTrackedOffers(),
+						flipFinderPanel.getCurrentRecommendations()
+					);
+				}
 			}
 		}, refreshIntervalMs, refreshIntervalMs);
 
@@ -2446,6 +2565,118 @@ public class FlipSmartPlugin extends Plugin
 			flipFinderRefreshTimer = null;
 			log.info("Flip Finder auto-refresh stopped");
 		}
+	}
+
+	/**
+	 * Start the auto-recommend refresh timer (2-minute interval).
+	 * Fetches fresh recommendations and feeds them to the auto-recommend queue.
+	 */
+	void startAutoRecommendRefreshTimer()
+	{
+		stopAutoRecommendRefreshTimer();
+
+		autoRecommendRefreshTimer = new java.util.Timer("AutoRecommendRefreshTimer", true);
+		autoRecommendRefreshTimer.scheduleAtFixedRate(new java.util.TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				if (!session.isLoggedIntoRunescape()
+					|| autoRecommendService == null
+					|| !autoRecommendService.isActive())
+				{
+					return;
+				}
+
+				if (flipFinderPanel != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(() ->
+					{
+						log.debug("Auto-recommend refresh cycle");
+						flipFinderPanel.refresh();
+					});
+				}
+			}
+		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
+
+		log.info("Auto-recommend refresh timer started (every 2 minutes)");
+	}
+
+	void stopAutoRecommendRefreshTimer()
+	{
+		if (autoRecommendRefreshTimer != null)
+		{
+			autoRecommendRefreshTimer.cancel();
+			autoRecommendRefreshTimer = null;
+		}
+	}
+
+	// =====================
+	// Auto-Recommend Persistence
+	// =====================
+
+	private String getAutoRecommendStateKey()
+	{
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			return AUTO_RECOMMEND_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
+		}
+		return AUTO_RECOMMEND_STATE_KEY_PREFIX + session.getRsn();
+	}
+
+	/**
+	 * Persist auto-recommend state to config for session survival.
+	 */
+	private void persistAutoRecommendState()
+	{
+		if (autoRecommendService == null || !autoRecommendService.isActive())
+		{
+			// Clean up any stale persisted state
+			configManager.unsetConfiguration(CONFIG_GROUP, getAutoRecommendStateKey());
+			return;
+		}
+
+		AutoRecommendService.PersistedState state = autoRecommendService.getStateForPersistence();
+		String json = gson.toJson(state);
+		configManager.setConfiguration(CONFIG_GROUP, getAutoRecommendStateKey(), json);
+		log.info("Persisted auto-recommend state ({} items in queue)", state.queue != null ? state.queue.size() : 0);
+	}
+
+	/**
+	 * Restore auto-recommend state from config after login.
+	 */
+	private void restoreAutoRecommendState()
+	{
+		String json = configManager.getConfiguration(CONFIG_GROUP, getAutoRecommendStateKey());
+		if (json == null || json.isEmpty())
+		{
+			return;
+		}
+
+		try
+		{
+			AutoRecommendService.PersistedState state = gson.fromJson(json, AutoRecommendService.PersistedState.class);
+			if (autoRecommendService.restoreState(state, AutoRecommendService.MAX_PERSISTED_AGE_MS))
+			{
+				log.info("Restored auto-recommend state from previous session");
+
+				// Update the panel button
+				if (flipFinderPanel != null)
+				{
+					flipFinderPanel.updateAutoRecommendButton(true);
+				}
+
+				// Start the refresh timer
+				startAutoRecommendRefreshTimer();
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("Failed to restore auto-recommend state: {}", e.getMessage());
+		}
+
+		// Always clear the persisted state after attempting restore
+		configManager.unsetConfiguration(CONFIG_GROUP, getAutoRecommendStateKey());
 	}
 
 	@Provides
