@@ -563,13 +563,9 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		for (int slot = 0; slot < Math.min(offers.length, 8); slot++)
 		{
-			if (offers[slot].getState() != GrandExchangeOfferState.EMPTY)
-			{
-				continue;
-			}
-
 			Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, GE_SLOT_CONTAINER_START + slot);
-			if (slotWidget == null || slotWidget.isHidden())
+			if (offers[slot].getState() != GrandExchangeOfferState.EMPTY
+				|| slotWidget == null || slotWidget.isHidden())
 			{
 				continue;
 			}
