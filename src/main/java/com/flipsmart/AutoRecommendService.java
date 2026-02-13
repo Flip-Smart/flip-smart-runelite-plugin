@@ -51,6 +51,9 @@ public class AutoRecommendService
 	// Callback when auto-recommend stops itself (e.g., all slots full)
 	private volatile Runnable onAutoStopped;
 
+	// Callback to update the Flip Assist overlay message (when no flip is focused)
+	private volatile Consumer<String> onOverlayMessageChanged;
+
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
 	 * Package-private for Gson serialization.
@@ -87,6 +90,11 @@ public class AutoRecommendService
 	public void setOnAutoStopped(Runnable callback)
 	{
 		this.onAutoStopped = callback;
+	}
+
+	public void setOnOverlayMessageChanged(Consumer<String> callback)
+	{
+		this.onOverlayMessageChanged = callback;
 	}
 
 	public boolean isActive()
@@ -222,17 +230,23 @@ public class AutoRecommendService
 
 		log.info("Auto-recommend: Sell order placed for item {} - checking next action", itemId);
 
-		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
-		{
-			focusCurrent();
-		}
-		else if (hasCollectedItemsToSell())
+		// Priority: sell collected items first, then buy new ones
+		if (hasCollectedItemsToSell())
 		{
 			focusNextCollectedItemSell();
+		}
+		else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+		{
+			focusCurrent();
 		}
 		else if (currentIndex >= recommendationQueue.size())
 		{
 			updateStatus("Auto: Queue complete");
+		}
+		else
+		{
+			// Slots full after placing sell, wait for something to complete
+			promptCollection();
 		}
 	}
 
@@ -288,16 +302,17 @@ public class AutoRecommendService
 		else
 		{
 			// User collected sell GP - advance to next action
+			// Priority: sell collected items first, then buy new ones
 			log.info("Auto-recommend: Sell collected for {} - advancing", itemName);
-			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
-			{
-				focusCurrent();
-			}
-			else if (hasCollectedItemsToSell())
+			if (hasCollectedItemsToSell())
 			{
 				focusNextCollectedItemSell();
 			}
-			else if (currentIndex >= recommendationQueue.size() && !hasCollectedItemsToSell())
+			else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+			{
+				focusCurrent();
+			}
+			else if (currentIndex >= recommendationQueue.size())
 			{
 				updateStatus("Auto: Queue complete - all flips done!");
 			}
@@ -532,9 +547,8 @@ public class AutoRecommendService
 
 		if (!hasAvailableGESlots())
 		{
-			log.info("Auto-recommend: All GE slots full - stopping auto-recommend");
-			stop();
-			invokeAutoStoppedCallback();
+			log.info("Auto-recommend: All GE slots full - waiting for collection");
+			promptCollection();
 			return;
 		}
 
@@ -696,6 +710,38 @@ public class AutoRecommendService
 		return findNextSellableCollectedItem() >= 0;
 	}
 
+	/**
+	 * Show a status message prompting the user to collect completed offers.
+	 * Called when all GE slots are full but auto is still active.
+	 */
+	private void promptCollection()
+	{
+		// Clear the buy overlay so it doesn't show a buy instruction when slots are full
+		invokeFocusCallback(null);
+
+		String message;
+		List<TrackedOffer> completed = plugin.getSession().getCompletedOffers();
+		if (!completed.isEmpty())
+		{
+			TrackedOffer first = completed.get(0);
+			if (first.isBuy())
+			{
+				message = String.format("Collect %s from GE", first.getItemName());
+			}
+			else
+			{
+				message = "Collect profit from GE";
+			}
+		}
+		else
+		{
+			message = "Waiting for offers to complete";
+		}
+
+		updateStatus("Auto: " + message);
+		invokeOverlayMessageCallback(message);
+	}
+
 	// =====================
 	// Callbacks
 	// =====================
@@ -724,6 +770,15 @@ public class AutoRecommendService
 		if (callback != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(callback);
+		}
+	}
+
+	private void invokeOverlayMessageCallback(String message)
+	{
+		Consumer<String> callback = onOverlayMessageChanged;
+		if (callback != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(message));
 		}
 	}
 

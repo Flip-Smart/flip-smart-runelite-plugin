@@ -85,7 +85,10 @@ public class FlipAssistOverlay extends Overlay
 	
 	@Getter
 	private FocusedFlip focusedFlip;
-	
+
+	// Auto-recommend overlay message (shown in hint box when no flip is focused)
+	private volatile String autoStatusMessage;
+
 	// Animation state
 	private long animationStartTime = System.currentTimeMillis();
 	private static final long PULSE_DURATION = 1500; // ms for one pulse cycle
@@ -224,12 +227,16 @@ public class FlipAssistOverlay extends Overlay
 			return null;
 		}
 		
-		// If no flip is focused, show hint box when GE is open
+		// If no flip is focused, show hint box when GE is open or auto message is set
 		if (focusedFlip == null)
 		{
+			if (autoStatusMessage != null)
+			{
+				return renderHintBox(graphics, autoStatusMessage);
+			}
 			if (isGrandExchangeOpen())
 			{
-				return renderHintBox(graphics);
+				return renderHintBox(graphics, HINT_MESSAGE);
 			}
 			return null;
 		}
@@ -291,9 +298,9 @@ public class FlipAssistOverlay extends Overlay
 	}
 	
 	/**
-	 * Render a small hint box prompting user to click on a flip suggestion.
+	 * Render a small hint box with a title and message.
 	 */
-	private Dimension renderHintBox(Graphics2D graphics)
+	private Dimension renderHintBox(Graphics2D graphics, String message)
 	{
 		// Enable anti-aliasing
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
@@ -340,8 +347,8 @@ public class FlipAssistOverlay extends Overlay
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		graphics.setColor(COLOR_TEXT);
 		FontMetrics smallMetrics = graphics.getFontMetrics();
-		int msgWidth = smallMetrics.stringWidth(HINT_MESSAGE);
-		graphics.drawString(HINT_MESSAGE, (HINT_PANEL_WIDTH - msgWidth) / 2, 38);
+		int msgWidth = smallMetrics.stringWidth(message);
+		graphics.drawString(message, (HINT_PANEL_WIDTH - msgWidth) / 2, 38);
 		
 		return new Dimension(HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT);
 	}
@@ -838,8 +845,14 @@ public class FlipAssistOverlay extends Overlay
 		this.focusedFlip = focusedFlip;
 		if (focusedFlip != null)
 		{
+			this.autoStatusMessage = null;
 			setGELastSearchedItem(focusedFlip.getItemId());
 		}
+	}
+
+	public void setAutoStatusMessage(String message)
+	{
+		this.autoStatusMessage = message;
 	}
 	
 	private void setGELastSearchedItem(int itemId)
@@ -861,6 +874,7 @@ public class FlipAssistOverlay extends Overlay
 	public void clearFocus()
 	{
 		this.focusedFlip = null;
+		this.autoStatusMessage = null;
 		this.currentStep = FlipAssistStep.SELECT_ITEM;
 	}
 }

@@ -3,9 +3,11 @@ package com.flipsmart;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -373,6 +375,22 @@ public class PlayerSession
 	public boolean hasAvailableGESlots()
 	{
 		return trackedOffers.size() < 8;
+	}
+
+	/**
+	 * Get tracked offers that have completed (BOUGHT or SOLD state, ready to collect).
+	 */
+	public List<TrackedOffer> getCompletedOffers()
+	{
+		List<TrackedOffer> completed = new ArrayList<>();
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.isCompleted())
+			{
+				completed.add(offer);
+			}
+		}
+		return completed;
 	}
 
 	/**

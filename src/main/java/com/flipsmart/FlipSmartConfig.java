@@ -354,7 +354,7 @@ public interface FlipSmartConfig extends Config
 	)
 	default boolean enableAutoRecommend()
 	{
-		return false;
+		return true;
 	}
 
 	// ============================================

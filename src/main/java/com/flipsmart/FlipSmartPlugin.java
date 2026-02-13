@@ -534,6 +534,7 @@ public class FlipSmartPlugin extends Plugin
 				flipAssistOverlay.clearFocus();
 			}
 		});
+		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
