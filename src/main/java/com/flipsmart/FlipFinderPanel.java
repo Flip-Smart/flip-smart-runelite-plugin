@@ -76,6 +76,7 @@ public class FlipFinderPanel extends PluginPanel
 	// Colors for auto-recommend highlighted item
 	private static final Color COLOR_AUTO_RECOMMEND_BORDER = new Color(255, 185, 50);
 	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
+	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
 	
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
@@ -473,9 +474,44 @@ public class FlipFinderPanel extends PluginPanel
 		styleRow.add(flipStyleDropdown);
 
 		// Auto-recommend toggle button
-		autoRecommendButton = new JToggleButton("Auto");
+		autoRecommendButton = new JToggleButton("Auto") {
+			@Override
+			protected void paintComponent(java.awt.Graphics g)
+			{
+				super.paintComponent(g);
+				if (isSelected())
+				{
+					Graphics2D g2 = (Graphics2D) g.create();
+					g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+					Font f = getFont().deriveFont(Font.BOLD);
+					g2.setFont(f);
+					java.awt.FontMetrics fm = g2.getFontMetrics();
+					String text = "Auto";
+					int x = (getWidth() - fm.stringWidth(text)) / 2;
+					int y = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
+					// Draw dark outline
+					g2.setColor(new Color(40, 30, 0));
+					for (int dx = -1; dx <= 1; dx++)
+					{
+						for (int dy = -1; dy <= 1; dy++)
+						{
+							if (dx != 0 || dy != 0)
+							{
+								g2.drawString(text, x + dx, y + dy);
+							}
+						}
+					}
+					// Draw white text on top
+					g2.setColor(Color.WHITE);
+					g2.drawString(text, x, y);
+					g2.dispose();
+				}
+			}
+		};
 		autoRecommendButton.setFocusable(false);
 		autoRecommendButton.setMargin(new Insets(2, 8, 2, 8));
+		autoRecommendButton.setForeground(Color.WHITE);
 		autoRecommendButton.setToolTipText("Auto-cycle through recommendations into Flip Assist");
 		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
 
@@ -3751,6 +3787,15 @@ public class FlipFinderPanel extends PluginPanel
 			service.setOnQueueAdvanced(() ->
 				populateRecommendations(new ArrayList<>(currentRecommendations)));
 
+			// Wire auto-stopped callback (e.g., all GE slots full)
+			service.setOnAutoStopped(() -> {
+				plugin.stopAutoRecommendRefreshTimer();
+				updateAutoRecommendButton(false);
+				autoRecommendStatusLabel.setText("Auto: All GE slots full");
+				autoRecommendStatusLabel.setVisible(true);
+				populateRecommendations(new ArrayList<>(currentRecommendations));
+			});
+
 			service.start(new ArrayList<>(currentRecommendations));
 
 			// Switch to Recommended tab
@@ -3759,8 +3804,9 @@ public class FlipFinderPanel extends PluginPanel
 			// Start the 2-minute refresh timer
 			plugin.startAutoRecommendRefreshTimer();
 
-			autoRecommendButton.setBackground(ColorScheme.BRAND_ORANGE);
-			autoRecommendButton.setText("Auto \u25CF");
+			autoRecommendButton.setBackground(COLOR_AUTO_RECOMMEND_ACTIVE);
+			autoRecommendButton.setForeground(Color.WHITE);
+			autoRecommendButton.setText("Auto");
 			log.info("Auto-recommend enabled with {} recommendations", currentRecommendations.size());
 		}
 		else
@@ -3770,6 +3816,7 @@ public class FlipFinderPanel extends PluginPanel
 			plugin.stopAutoRecommendRefreshTimer();
 
 			autoRecommendButton.setBackground(null);
+			autoRecommendButton.setForeground(Color.WHITE);
 			autoRecommendButton.setText("Auto");
 			autoRecommendStatusLabel.setVisible(false);
 
@@ -3789,12 +3836,14 @@ public class FlipFinderPanel extends PluginPanel
 			autoRecommendButton.setSelected(active);
 			if (active)
 			{
-				autoRecommendButton.setBackground(ColorScheme.BRAND_ORANGE);
-				autoRecommendButton.setText("Auto \u25CF");
+				autoRecommendButton.setBackground(COLOR_AUTO_RECOMMEND_ACTIVE);
+				autoRecommendButton.setForeground(Color.WHITE);
+				autoRecommendButton.setText("Auto");
 			}
 			else
 			{
 				autoRecommendButton.setBackground(null);
+				autoRecommendButton.setForeground(Color.WHITE);
 				autoRecommendButton.setText("Auto");
 				autoRecommendStatusLabel.setVisible(false);
 			}

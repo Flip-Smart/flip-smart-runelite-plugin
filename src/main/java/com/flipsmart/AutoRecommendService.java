@@ -48,6 +48,9 @@ public class AutoRecommendService
 	// Callback when the queue advances (for panel highlight updates)
 	private volatile Runnable onQueueAdvanced;
 
+	// Callback when auto-recommend stops itself (e.g., all slots full)
+	private volatile Runnable onAutoStopped;
+
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
 	 * Package-private for Gson serialization.
@@ -79,6 +82,11 @@ public class AutoRecommendService
 	public void setOnQueueAdvanced(Runnable callback)
 	{
 		this.onQueueAdvanced = callback;
+	}
+
+	public void setOnAutoStopped(Runnable callback)
+	{
+		this.onAutoStopped = callback;
 	}
 
 	public boolean isActive()
@@ -524,7 +532,9 @@ public class AutoRecommendService
 
 		if (!hasAvailableGESlots())
 		{
-			updateStatus("Auto: All GE slots full");
+			log.info("Auto-recommend: All GE slots full - stopping auto-recommend");
+			stop();
+			invokeAutoStoppedCallback();
 			return;
 		}
 
@@ -694,6 +704,15 @@ public class AutoRecommendService
 	private void invokeQueueAdvancedCallback()
 	{
 		Runnable callback = onQueueAdvanced;
+		if (callback != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(callback);
+		}
+	}
+
+	private void invokeAutoStoppedCallback()
+	{
+		Runnable callback = onAutoStopped;
 		if (callback != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(callback);
