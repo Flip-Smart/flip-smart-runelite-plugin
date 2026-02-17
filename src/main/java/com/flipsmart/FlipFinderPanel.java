@@ -72,6 +72,11 @@ public class FlipFinderPanel extends PluginPanel
 	// Very light/transparent so they don't conflict with text colors
 	private static final Color COLOR_PRICE_HIGHER_BG = new Color(60, 90, 60);  // Subtle green - selling higher than estimate
 	private static final Color COLOR_PRICE_LOWER_BG = new Color(90, 55, 55);   // Subtle red - selling lower than estimate
+
+	// Colors for auto-recommend highlighted item
+	private static final Color COLOR_AUTO_RECOMMEND_BORDER = new Color(255, 185, 50);
+	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
+	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
 	
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
@@ -149,6 +154,10 @@ public class FlipFinderPanel extends PluginPanel
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
+
+	// Auto-recommend UI
+	private JToggleButton autoRecommendButton;
+	private JLabel autoRecommendStatusLabel;
 
 	// Cache blocklists for quick access when blocking items
 	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -464,11 +473,64 @@ public class FlipFinderPanel extends PluginPanel
 		styleRow.add(flipStyleLabel);
 		styleRow.add(flipStyleDropdown);
 
-		// Row 2: Timeframe dropdown
-		JPanel timeframeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Auto-recommend toggle button
+		autoRecommendButton = new JToggleButton("Auto") {
+			@Override
+			protected void paintComponent(java.awt.Graphics g)
+			{
+				super.paintComponent(g);
+				if (isSelected())
+				{
+					Graphics2D g2 = (Graphics2D) g.create();
+					g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+					Font f = getFont().deriveFont(Font.BOLD);
+					g2.setFont(f);
+					java.awt.FontMetrics fm = g2.getFontMetrics();
+					String text = "Auto";
+					int x = (getWidth() - fm.stringWidth(text)) / 2;
+					int y = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
+					// Draw dark outline
+					g2.setColor(new Color(40, 30, 0));
+					for (int dx = -1; dx <= 1; dx++)
+					{
+						for (int dy = -1; dy <= 1; dy++)
+						{
+							if (dx != 0 || dy != 0)
+							{
+								g2.drawString(text, x + dx, y + dy);
+							}
+						}
+					}
+					// Draw white text on top
+					g2.setColor(Color.WHITE);
+					g2.drawString(text, x, y);
+					g2.dispose();
+				}
+			}
+		};
+		autoRecommendButton.setFocusable(false);
+		autoRecommendButton.setMargin(new Insets(2, 8, 2, 8));
+		autoRecommendButton.setForeground(Color.WHITE);
+		autoRecommendButton.setToolTipText("Auto-cycle through recommendations into Flip Assist");
+		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
+		autoRecommendButton.setVisible(config.enableAutoRecommend());
+
+		// Row 2: Timeframe dropdown (left) + Auto button (right)
+		JPanel timeframeRow = new JPanel(new BorderLayout());
 		timeframeRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		timeframeRow.add(flipTimeframeLabel);
-		timeframeRow.add(flipTimeframeDropdown);
+
+		JPanel timeframeLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		timeframeLeft.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		timeframeLeft.add(flipTimeframeLabel);
+		timeframeLeft.add(flipTimeframeDropdown);
+
+		JPanel timeframeRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+		timeframeRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		timeframeRight.add(autoRecommendButton);
+
+		timeframeRow.add(timeframeLeft, BorderLayout.WEST);
+		timeframeRow.add(timeframeRight, BorderLayout.EAST);
 
 		// Stack rows vertically
 		JPanel dropdownWrapper = new JPanel();
@@ -486,6 +548,13 @@ public class FlipFinderPanel extends PluginPanel
 		statusLabel.setForeground(Color.LIGHT_GRAY);
 		statusLabel.setFont(FONT_PLAIN_12);
 		statusPanel.add(statusLabel, BorderLayout.CENTER);
+
+		// Auto-recommend status label (hidden by default)
+		autoRecommendStatusLabel = new JLabel();
+		autoRecommendStatusLabel.setForeground(new Color(255, 200, 50));
+		autoRecommendStatusLabel.setFont(FONT_PLAIN_12);
+		autoRecommendStatusLabel.setVisible(false);
+		statusPanel.add(autoRecommendStatusLabel, BorderLayout.SOUTH);
 
 		// Combine controls and status into top panel
 		JPanel topPanel = new JPanel();
@@ -1278,6 +1347,13 @@ public class FlipFinderPanel extends PluginPanel
 
 			// Validate focus after refresh in case focused item is no longer recommended
 			validateFocus();
+
+			// If auto-recommend is active, refresh the queue with new recommendations
+			AutoRecommendService service = plugin.getAutoRecommendService();
+			if (service != null && service.isActive())
+			{
+				service.refreshQueue(new ArrayList<>(currentRecommendations));
+			}
 		});
 	}
 
@@ -1769,9 +1845,22 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		recommendedListContainer.removeAll();
 
+		// Check if auto-recommend is active and get current focused item
+		AutoRecommendService service = plugin.getAutoRecommendService();
+		FlipRecommendation autoRecCurrent = (service != null && service.isActive())
+			? service.getCurrentRecommendation() : null;
+
 		for (FlipRecommendation rec : recommendations)
 		{
-			recommendedListContainer.add(createRecommendationPanel(rec));
+			JPanel panel = createRecommendationPanel(rec);
+
+			// Highlight if this is the current auto-recommend item
+			if (autoRecCurrent != null && autoRecCurrent.getItemId() == rec.getItemId())
+			{
+				applyAutoRecommendStyle(panel);
+			}
+
+			recommendedListContainer.add(panel);
 			recommendedListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
 		}
 
@@ -2842,6 +2931,19 @@ public class FlipFinderPanel extends PluginPanel
 		panel.revalidate();
 		panel.repaint();
 	}
+
+	/**
+	 * Apply the auto-recommend highlight style to a recommendation panel.
+	 */
+	private void applyAutoRecommendStyle(JPanel panel)
+	{
+		panel.setBackground(COLOR_AUTO_RECOMMEND_BG);
+		panel.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(COLOR_AUTO_RECOMMEND_BORDER, 2),
+			new EmptyBorder(6, 8, 6, 8)
+		));
+		updateChildBackgrounds(panel, COLOR_AUTO_RECOMMEND_BG);
+	}
 	
 	/**
 	 * Get the current focused flip
@@ -3650,6 +3752,122 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		
 		return minProfitablePrice;
+	}
+
+	/**
+	 * Toggle auto-recommend on/off.
+	 * When turned on, starts cycling through current recommendations into Flip Assist.
+	 */
+	private void toggleAutoRecommend()
+	{
+		AutoRecommendService service = plugin.getAutoRecommendService();
+		if (service == null)
+		{
+			autoRecommendButton.setSelected(false);
+			return;
+		}
+
+		if (autoRecommendButton.isSelected())
+		{
+			// Starting auto-recommend
+			if (currentRecommendations.isEmpty())
+			{
+				autoRecommendButton.setSelected(false);
+				autoRecommendStatusLabel.setText("No recommendations - refresh first");
+				autoRecommendStatusLabel.setVisible(true);
+				return;
+			}
+
+			// Wire status callback
+			service.setOnStatusChanged(status -> SwingUtilities.invokeLater(() -> {
+				autoRecommendStatusLabel.setText(status);
+				autoRecommendStatusLabel.setVisible(true);
+			}));
+
+			// Wire queue advanced callback to repaint panel highlight
+			service.setOnQueueAdvanced(() ->
+				populateRecommendations(new ArrayList<>(currentRecommendations)));
+
+			service.start(new ArrayList<>(currentRecommendations));
+
+			// Check if start() actually activated the service (it may bail if all items are filtered)
+			if (!service.isActive())
+			{
+				autoRecommendButton.setSelected(false);
+				return;
+			}
+
+			// Switch to Recommended tab
+			tabbedPane.setSelectedIndex(0);
+
+			// Start the 2-minute refresh timer
+			plugin.startAutoRecommendRefreshTimer();
+
+			autoRecommendButton.setBackground(COLOR_AUTO_RECOMMEND_ACTIVE);
+			autoRecommendButton.setForeground(Color.WHITE);
+			autoRecommendButton.setText("Auto");
+			log.info("Auto-recommend enabled with {} recommendations", currentRecommendations.size());
+		}
+		else
+		{
+			// Stopping auto-recommend
+			service.stop();
+			plugin.stopAutoRecommendRefreshTimer();
+
+			autoRecommendButton.setBackground(null);
+			autoRecommendButton.setForeground(Color.WHITE);
+			autoRecommendButton.setText("Auto");
+			autoRecommendStatusLabel.setVisible(false);
+
+			// Repaint recommendations to remove highlight
+			populateRecommendations(new ArrayList<>(currentRecommendations));
+
+			log.info("Auto-recommend disabled");
+		}
+	}
+
+	/**
+	 * Show or hide the auto-recommend button based on config setting.
+	 */
+	public void setAutoRecommendVisible(boolean visible)
+	{
+		SwingUtilities.invokeLater(() -> {
+			autoRecommendButton.setVisible(visible);
+			if (!visible && autoRecommendButton.isSelected())
+			{
+				autoRecommendButton.setSelected(false);
+				AutoRecommendService service = plugin.getAutoRecommendService();
+				if (service != null && service.isActive())
+				{
+					service.stop();
+					plugin.stopAutoRecommendRefreshTimer();
+				}
+				autoRecommendStatusLabel.setVisible(false);
+			}
+		});
+	}
+
+	/**
+	 * Update the auto-recommend button state (e.g., when service is stopped externally).
+	 */
+	public void updateAutoRecommendButton(boolean active)
+	{
+		SwingUtilities.invokeLater(() -> {
+			autoRecommendButton.setSelected(active);
+			if (active)
+			{
+				autoRecommendButton.setBackground(COLOR_AUTO_RECOMMEND_ACTIVE);
+				autoRecommendButton.setForeground(Color.WHITE);
+				autoRecommendButton.setText("Auto");
+			}
+			else
+			{
+				autoRecommendButton.setBackground(null);
+				autoRecommendButton.setForeground(Color.WHITE);
+				autoRecommendButton.setText("Auto");
+				autoRecommendStatusLabel.setVisible(false);
+			}
+		});
 	}
 }
 
