@@ -1823,6 +1823,14 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void autoFocusOnActiveFlip(int itemId)
 	{
+		// When auto-recommend is active, it manages focus transitions itself.
+		// Allowing this async call to set focus would race with onSellOrderPlaced(),
+		// causing the sell overlay to reappear after auto-recommend clears it.
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			return;
+		}
+
 		String rsn = getCurrentRsnSafe().orElse(null);
 		
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
@@ -2149,6 +2157,20 @@ public class FlipSmartPlugin extends Plugin
 					}
 				}
 				
+				// Ensure a recommended sell price exists for buy collections.
+				// The price may have been lost (plugin restart, queue refresh, etc.).
+				// Calculate a minimum profitable sell price as fallback so auto-recommend
+				// can always transition to the sell step after collecting a buy.
+				if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0
+					&& session.getRecommendedPrice(collectedOffer.getItemId()) == null)
+				{
+					int buyPrice = collectedOffer.getPrice();
+					int fallbackSellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
+					session.setRecommendedPrice(collectedOffer.getItemId(), fallbackSellPrice);
+					log.info("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",
+						collectedOffer.getItemName(), fallbackSellPrice, buyPrice);
+				}
+
 				// Notify auto-recommend service of collection
 				if (autoRecommendService != null && autoRecommendService.isActive())
 				{
@@ -2186,8 +2208,21 @@ public class FlipSmartPlugin extends Plugin
 			}
 			else
 			{
-				// First time seeing this offer with sold items
+				// First time seeing this offer with sold items — immediate fill on placement
 				newQuantity = quantitySold;
+
+				// For immediate-fill buys, pre-store the recommended sell price from auto-recommend
+				// BEFORE the transaction recording reads it. The queue advance (onBuyOrderPlaced)
+				// is deferred until AFTER putTrackedOffer so hasAvailableGESlots() is accurate.
+				if (isBuy && totalQuantity > 0 && autoRecommendService != null && autoRecommendService.isActive())
+				{
+					FlipRecommendation currentRec = autoRecommendService.getCurrentRecommendation();
+					if (currentRec != null && currentRec.getItemId() == itemId && currentRec.getRecommendedSellPrice() > 0)
+					{
+						log.info("Immediate-fill buy for {} - pre-storing recommended sell price {}", itemName, currentRec.getRecommendedSellPrice());
+						session.setRecommendedPrice(itemId, currentRec.getRecommendedSellPrice());
+					}
+				}
 			}
 
 			// Record transaction if we have new items
@@ -2253,7 +2288,7 @@ public class FlipSmartPlugin extends Plugin
 				if (isBuy && state == GrandExchangeOfferState.BOUGHT
 					&& autoRecommendService != null && autoRecommendService.isActive())
 				{
-					autoRecommendService.onBuyOrderCompleted(itemName);
+					autoRecommendService.onBuyOrderCompleted(itemId, itemName);
 				}
 
 				// Notify auto-recommend service when a sell order fully completes
@@ -2265,6 +2300,31 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+
+			// Handle immediate-fill auto-recommend transitions AFTER tracked offer is stored,
+			// so hasAvailableGESlots() correctly counts this slot as occupied.
+			if (previousOffer == null && totalQuantity > 0)
+			{
+				if (isBuy && autoRecommendService != null && autoRecommendService.isActive())
+				{
+					log.info("Immediate-fill buy for {} - advancing auto-recommend queue", itemName);
+					autoRecommendService.onBuyOrderPlaced(itemId);
+				}
+				else if (!isBuy)
+				{
+					log.info("Immediate-fill sell for {} - performing sell bookkeeping", itemName);
+					String rsn = getCurrentRsnSafe().orElse(null);
+					if (rsn != null)
+					{
+						apiClient.markActiveFlipSellingAsync(itemId, rsn);
+					}
+					session.removeRecommendedPrice(itemId);
+					if (autoRecommendService != null && autoRecommendService.isActive())
+					{
+						autoRecommendService.onSellOrderPlaced(itemId);
+					}
+				}
+			}
 		}
 		else
 		{

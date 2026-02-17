@@ -7,6 +7,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -52,7 +53,8 @@ public class AutoRecommendService
 	private volatile Runnable onAutoStopped;
 
 	// Callback to update the Flip Assist overlay message (when no flip is focused)
-	private volatile Consumer<String> onOverlayMessageChanged;
+	// BiConsumer<message, itemId> — itemId <= 0 means no icon
+	private volatile BiConsumer<String, Integer> onOverlayMessageChanged;
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -92,7 +94,7 @@ public class AutoRecommendService
 		this.onAutoStopped = callback;
 	}
 
-	public void setOnOverlayMessageChanged(Consumer<String> callback)
+	public void setOnOverlayMessageChanged(BiConsumer<String, Integer> callback)
 	{
 		this.onOverlayMessageChanged = callback;
 	}
@@ -200,7 +202,7 @@ public class AutoRecommendService
 	 * Prompts user to collect items. Sell price is already stored in session
 	 * via setRecommendedSellPrice() when the buy order was placed.
 	 */
-	public synchronized void onBuyOrderCompleted(String itemName)
+	public synchronized void onBuyOrderCompleted(int itemId, String itemName)
 	{
 		if (!active)
 		{
@@ -208,13 +210,15 @@ public class AutoRecommendService
 		}
 
 		log.info("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
-		updateStatus(String.format("Auto: Collect %s from GE", itemName));
+		updateStatus("Auto: Collect " + itemName + " from GE");
 
-		// If we're not currently focused on a buy recommendation, focus sell
-		FlipRecommendation currentRec = getCurrentRecommendation();
-		if (currentRec == null || !hasAvailableGESlots())
+		// When no GE slots are available, clear the buy focus and show collect overlay.
+		// The hint box only displays when focusedFlip is null.
+		// onOfferCollected will transition to sell when user actually collects.
+		if (!hasAvailableGESlots())
 		{
-			focusNextCollectedItemSell();
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback(itemName, itemId);
 		}
 	}
 
@@ -241,7 +245,10 @@ public class AutoRecommendService
 		}
 		else if (currentIndex >= recommendationQueue.size())
 		{
+			// Clear sell focus so the old sell overlay doesn't persist
+			invokeFocusCallback(null);
 			updateStatus("Auto: Queue complete");
+			invokeOverlayMessageCallback("All flips listed - waiting for sells");
 		}
 		else
 		{
@@ -283,27 +290,51 @@ public class AutoRecommendService
 
 		if (wasBuy)
 		{
-			// User collected bought items - check if they need to sell
-			// Session collectedItemIds is updated by the plugin before this call
-			PlayerSession session = plugin.getSession();
-			boolean needsSell = session.getCollectedItemIds().contains(itemId)
-				&& session.getRecommendedPrice(itemId) != null;
+			// User collected bought items — priority: SELL this item first.
+			// Session collectedItemIds is updated by the plugin before this call.
+			log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
 
-			if (needsSell)
+			// Ensure we have a sell price (may have been lost on plugin restart)
+			ensureSellPriceAvailable(itemId);
+
+			// 1. Sell THIS item if we have a price
+			PlayerSession session = plugin.getSession();
+			boolean isCollected = session.getCollectedItemIds().contains(itemId);
+			Integer sellPrice = session.getRecommendedPrice(itemId);
+			log.info("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
+				itemId, isCollected, sellPrice);
+
+			if (isCollected && sellPrice != null)
 			{
-				log.info("Auto-recommend: Buy collected for {} x{} - focusing sell", itemName, quantity);
+				log.info("Auto-recommend: Focusing sell for {} x{}", itemName, quantity);
 				focusSellForItem(itemId, itemName, quantity);
+				return;
 			}
-			else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+
+			// 2. Sell OTHER collected items that need selling
+			if (hasCollectedItemsToSell())
+			{
+				focusNextCollectedItemSell();
+				return;
+			}
+
+			// 3. Buy next item if a slot is free
+			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 			{
 				focusCurrent();
+				return;
 			}
+
+			// 4. Nothing to do — wait
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback("Waiting for flips");
 		}
 		else
 		{
-			// User collected sell GP - advance to next action
-			// Priority: sell collected items first, then buy new ones
+			// User collected sell GP — advance to next action.
+			// Priority: sell collected items first, then buy new ones.
 			log.info("Auto-recommend: Sell collected for {} - advancing", itemName);
+
 			if (hasCollectedItemsToSell())
 			{
 				focusNextCollectedItemSell();
@@ -312,10 +343,32 @@ public class AutoRecommendService
 			{
 				focusCurrent();
 			}
-			else if (currentIndex >= recommendationQueue.size())
+			else
 			{
-				updateStatus("Auto: Queue complete - all flips done!");
+				invokeFocusCallback(null);
+				invokeOverlayMessageCallback("Waiting for flips");
 			}
+		}
+	}
+
+	/**
+	 * Ensure a sell price is available for an item. If the stored price was lost
+	 * (e.g., plugin restart), try to recover it from the recommendation queue.
+	 */
+	private void ensureSellPriceAvailable(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session.getRecommendedPrice(itemId) != null)
+		{
+			return;
+		}
+
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		if (rec != null && rec.getRecommendedSellPrice() > 0)
+		{
+			log.info("Auto-recommend: Recovering sell price for item {} from queue ({})",
+				itemId, rec.getRecommendedSellPrice());
+			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
 		}
 	}
 
@@ -540,7 +593,10 @@ public class AutoRecommendService
 			}
 			else
 			{
+				// Clear focus so stale buy/sell overlay doesn't persist
+				invokeFocusCallback(null);
 				updateStatus("Auto: All recommendations listed");
+				invokeOverlayMessageCallback("All flips listed - waiting for sells");
 			}
 			return;
 		}
@@ -560,6 +616,13 @@ public class AutoRecommendService
 		FlipRecommendation rec = getCurrentRecommendation();
 		if (rec == null)
 		{
+			return;
+		}
+
+		// Never show a buy recommendation when all GE slots are occupied
+		if (!hasAvailableGESlots())
+		{
+			promptCollection();
 			return;
 		}
 
@@ -629,7 +692,9 @@ public class AutoRecommendService
 			}
 			else
 			{
-				updateStatus("Auto: Waiting for offers to complete");
+				// Clear any stale focus so the hint box can show
+				invokeFocusCallback(null);
+				promptCollection();
 			}
 			return;
 		}
@@ -719,27 +784,26 @@ public class AutoRecommendService
 		// Clear the buy overlay so it doesn't show a buy instruction when slots are full
 		invokeFocusCallback(null);
 
-		String message;
 		List<TrackedOffer> completed = plugin.getSession().getCompletedOffers();
 		if (!completed.isEmpty())
 		{
 			TrackedOffer first = completed.get(0);
 			if (first.isBuy())
 			{
-				message = String.format("Collect %s from GE", first.getItemName());
+				updateStatus("Auto: Collect " + first.getItemName() + " from GE");
+				invokeOverlayMessageCallback(first.getItemName(), first.getItemId());
 			}
 			else
 			{
-				message = "Collect profit from GE";
+				updateStatus("Auto: Collect profit from GE");
+				invokeOverlayMessageCallback("Collect profit from GE");
 			}
 		}
 		else
 		{
-			message = "Waiting for offers to complete";
+			updateStatus("Auto: Waiting for flips");
+			invokeOverlayMessageCallback("Waiting for flips");
 		}
-
-		updateStatus("Auto: " + message);
-		invokeOverlayMessageCallback(message);
 	}
 
 	// =====================
@@ -775,10 +839,15 @@ public class AutoRecommendService
 
 	private void invokeOverlayMessageCallback(String message)
 	{
-		Consumer<String> callback = onOverlayMessageChanged;
+		invokeOverlayMessageCallback(message, 0);
+	}
+
+	private void invokeOverlayMessageCallback(String message, int itemId)
+	{
+		BiConsumer<String, Integer> callback = onOverlayMessageChanged;
 		if (callback != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(message));
+			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(message, itemId));
 		}
 	}
 
