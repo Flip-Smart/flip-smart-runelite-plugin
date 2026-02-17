@@ -29,7 +29,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	// Widget 465.7 through 465.14 are the slot containers in the main view
 	private static final int GE_SLOT_CONTAINER_START = 7;
 
-	// GE offer setup panel and button widget IDs (from Flipping Copilot research)
+	// GE offer setup panel and button widget IDs
 	private static final int GE_OFFER_CONTAINER = 26;       // The offer setup container widget
 	private static final int GE_OFFER_QUANTITY_BUTTON_CHILD = 51;  // Child ID for "Set quantity" button
 	private static final int GE_OFFER_PRICE_BUTTON_CHILD = 54;     // Child ID for "Set price" button
@@ -588,7 +588,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 	/**
 	 * Highlight buttons on the offer setup panel (quantity, price, confirm).
-	 * Uses widget child IDs discovered from Flipping Copilot source code.
+	 * Uses GE offer setup widget child IDs for quantity, price, and confirm buttons.
 	 */
 	private void drawOfferSetupButtonHighlights(Graphics2D graphics, FlipAssistOverlay.FlipAssistStep step)
 	{
