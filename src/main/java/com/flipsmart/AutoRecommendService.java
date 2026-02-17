@@ -7,8 +7,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.ObjIntConsumer;
 
 /**
  * Manages the auto-recommend queue for cycling through flip recommendations.
@@ -28,6 +28,7 @@ public class AutoRecommendService
 	private static final long INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000L;
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
+	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
@@ -49,12 +50,9 @@ public class AutoRecommendService
 	// Callback when the queue advances (for panel highlight updates)
 	private volatile Runnable onQueueAdvanced;
 
-	// Callback when auto-recommend stops itself (e.g., all slots full)
-	private volatile Runnable onAutoStopped;
-
 	// Callback to update the Flip Assist overlay message (when no flip is focused)
-	// BiConsumer<message, itemId> — itemId <= 0 means no icon
-	private volatile BiConsumer<String, Integer> onOverlayMessageChanged;
+	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
+	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -89,12 +87,7 @@ public class AutoRecommendService
 		this.onQueueAdvanced = callback;
 	}
 
-	public void setOnAutoStopped(Runnable callback)
-	{
-		this.onAutoStopped = callback;
-	}
-
-	public void setOnOverlayMessageChanged(BiConsumer<String, Integer> callback)
+	public void setOnOverlayMessageChanged(ObjIntConsumer<String> callback)
 	{
 		this.onOverlayMessageChanged = callback;
 	}
@@ -290,64 +283,59 @@ public class AutoRecommendService
 
 		if (wasBuy)
 		{
-			// User collected bought items — priority: SELL this item first.
-			// Session collectedItemIds is updated by the plugin before this call.
-			log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
-
-			// Ensure we have a sell price (may have been lost on plugin restart)
-			ensureSellPriceAvailable(itemId);
-
-			// 1. Sell THIS item if we have a price
-			PlayerSession session = plugin.getSession();
-			boolean isCollected = session.getCollectedItemIds().contains(itemId);
-			Integer sellPrice = session.getRecommendedPrice(itemId);
-			log.info("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
-				itemId, isCollected, sellPrice);
-
-			if (isCollected && sellPrice != null)
-			{
-				log.info("Auto-recommend: Focusing sell for {} x{}", itemName, quantity);
-				focusSellForItem(itemId, itemName, quantity);
-				return;
-			}
-
-			// 2. Sell OTHER collected items that need selling
-			if (hasCollectedItemsToSell())
-			{
-				focusNextCollectedItemSell();
-				return;
-			}
-
-			// 3. Buy next item if a slot is free
-			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
-			{
-				focusCurrent();
-				return;
-			}
-
-			// 4. Nothing to do — wait
-			invokeFocusCallback(null);
-			invokeOverlayMessageCallback("Waiting for flips");
+			handleBuyCollected(itemId, itemName, quantity);
 		}
 		else
 		{
-			// User collected sell GP — advance to next action.
-			// Priority: sell collected items first, then buy new ones.
 			log.info("Auto-recommend: Sell collected for {} - advancing", itemName);
+			focusNextAvailableAction();
+		}
+	}
 
-			if (hasCollectedItemsToSell())
-			{
-				focusNextCollectedItemSell();
-			}
-			else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
-			{
-				focusCurrent();
-			}
-			else
-			{
-				invokeFocusCallback(null);
-				invokeOverlayMessageCallback("Waiting for flips");
-			}
+	/**
+	 * Handle collection of a completed buy offer.
+	 * Priority: sell THIS item > sell OTHER collected items > buy next > wait.
+	 */
+	private void handleBuyCollected(int itemId, String itemName, int quantity)
+	{
+		log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
+
+		ensureSellPriceAvailable(itemId);
+
+		PlayerSession session = plugin.getSession();
+		boolean isCollected = session.getCollectedItemIds().contains(itemId);
+		Integer sellPrice = session.getRecommendedPrice(itemId);
+		log.info("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
+			itemId, isCollected, sellPrice);
+
+		if (isCollected && sellPrice != null)
+		{
+			log.info("Auto-recommend: Focusing sell for {} x{}", itemName, quantity);
+			focusSellForItem(itemId, itemName, quantity);
+			return;
+		}
+
+		focusNextAvailableAction();
+	}
+
+	/**
+	 * Determine the next action based on current state.
+	 * Priority: sell collected items > buy next from queue > wait.
+	 */
+	private void focusNextAvailableAction()
+	{
+		if (hasCollectedItemsToSell())
+		{
+			focusNextCollectedItemSell();
+		}
+		else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+		{
+			focusCurrent();
+		}
+		else
+		{
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
 		}
 	}
 
@@ -802,7 +790,7 @@ public class AutoRecommendService
 		else
 		{
 			updateStatus("Auto: Waiting for flips");
-			invokeOverlayMessageCallback("Waiting for flips");
+			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
 		}
 	}
 
@@ -828,15 +816,6 @@ public class AutoRecommendService
 		}
 	}
 
-	private void invokeAutoStoppedCallback()
-	{
-		Runnable callback = onAutoStopped;
-		if (callback != null)
-		{
-			javax.swing.SwingUtilities.invokeLater(callback);
-		}
-	}
-
 	private void invokeOverlayMessageCallback(String message)
 	{
 		invokeOverlayMessageCallback(message, 0);
@@ -844,7 +823,7 @@ public class AutoRecommendService
 
 	private void invokeOverlayMessageCallback(String message, int itemId)
 	{
-		BiConsumer<String, Integer> callback = onOverlayMessageChanged;
+		ObjIntConsumer<String> callback = onOverlayMessageChanged;
 		if (callback != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(message, itemId));

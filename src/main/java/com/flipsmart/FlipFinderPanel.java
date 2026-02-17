@@ -3788,15 +3788,6 @@ public class FlipFinderPanel extends PluginPanel
 			service.setOnQueueAdvanced(() ->
 				populateRecommendations(new ArrayList<>(currentRecommendations)));
 
-			// Wire auto-stopped callback (e.g., all GE slots full)
-			service.setOnAutoStopped(() -> {
-				plugin.stopAutoRecommendRefreshTimer();
-				updateAutoRecommendButton(false);
-				autoRecommendStatusLabel.setText("Auto: All GE slots full");
-				autoRecommendStatusLabel.setVisible(true);
-				populateRecommendations(new ArrayList<>(currentRecommendations));
-			});
-
 			service.start(new ArrayList<>(currentRecommendations));
 
 			// Check if start() actually activated the service (it may bail if all items are filtered)

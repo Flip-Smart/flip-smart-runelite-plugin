@@ -598,7 +598,7 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
-		if (!"flipsmart".equals(configChanged.getGroup()))
+		if (!CONFIG_GROUP.equals(configChanged.getGroup()))
 		{
 			return;
 		}
