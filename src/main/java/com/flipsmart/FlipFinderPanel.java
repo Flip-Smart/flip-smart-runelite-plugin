@@ -1216,7 +1216,16 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	public void updatePremiumStatus()
 	{
-		subscribeLabel.setVisible(!apiClient.isPremium());
+		if (apiClient.isRsnBlocked())
+		{
+			subscribeLabel.setText("Subscribe to Premium for this account");
+			subscribeLabel.setVisible(true);
+		}
+		else
+		{
+			subscribeLabel.setText(SUBSCRIBE_MESSAGE);
+			subscribeLabel.setVisible(!apiClient.isPremium());
+		}
 	}
 
 	/**
@@ -1264,6 +1273,13 @@ public class FlipFinderPanel extends PluginPanel
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
 
+		// If RSN is blocked, show subscribe message instead of fetching recommendations
+		if (apiClient.isRsnBlocked())
+		{
+			showRsnBlockedMessage();
+			return;
+		}
+
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		// Don't clear container yet - keep showing old recommendations until new data arrives
@@ -1289,8 +1305,11 @@ public class FlipFinderPanel extends PluginPanel
 		// Auto-refresh keeps same items so user can focus on setting up flips
 		Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
 
+		// Pass RSN for RSN-level access enforcement
+		String rsn = plugin.getCurrentRsnSafe().orElse(null);
+
 		// Use unified /flip-finder endpoint with all parameters
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe).thenAccept(response ->
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn).thenAccept(response ->
 		{
 			handleRecommendationsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
@@ -1316,7 +1335,14 @@ public class FlipFinderPanel extends PluginPanel
 
 			if (response == null)
 			{
-				showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+				if (apiClient.isRsnBlocked())
+				{
+					showRsnBlockedMessage();
+				}
+				else
+				{
+					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+				}
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
 			}
@@ -1728,6 +1754,19 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		statusLabel.setText(ERROR_DIALOG_TITLE);
 		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
+	}
+
+	/**
+	 * Show a subscribe message when the current RSN is blocked (3rd+ account without premium).
+	 * Clears current recommendations and shows a CTA to subscribe.
+	 */
+	private void showRsnBlockedMessage()
+	{
+		currentRecommendations.clear();
+		showErrorInRecommended("Subscribe to Premium to get flip suggestions for this account");
+		subscribeLabel.setText("Subscribe to Premium for this account");
+		subscribeLabel.setVisible(true);
+		refreshButton.setEnabled(true);
 	}
 
 	/**
@@ -2747,6 +2786,13 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void setFocus(FlipRecommendation rec, JPanel panel)
 	{
+		// Block new buy-side flips when free user has hit their slot limit
+		if (!plugin.isPremium()
+			&& !plugin.getSession().hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		{
+			return;
+		}
+
 		// Create focused flip for buying with price offset applied
 		int priceOffset = config.priceOffset();
 		FocusedFlip newFocus = FocusedFlip.forBuy(

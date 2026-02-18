@@ -113,6 +113,12 @@ public class AutoRecommendService
 	 */
 	public synchronized void start(List<FlipRecommendation> recommendations)
 	{
+		if (plugin.getApiClient().isRsnBlocked())
+		{
+			updateStatus("Auto: Subscribe to Premium for this account");
+			return;
+		}
+
 		if (recommendations == null || recommendations.isEmpty())
 		{
 			updateStatus("Auto: No recommendations available");
@@ -865,6 +871,6 @@ public class AutoRecommendService
 
 	private boolean hasAvailableGESlots()
 	{
-		return plugin.getSession().hasAvailableGESlots();
+		return plugin.getSession().hasAvailableGESlots(plugin.getFlipSlotLimit());
 	}
 }

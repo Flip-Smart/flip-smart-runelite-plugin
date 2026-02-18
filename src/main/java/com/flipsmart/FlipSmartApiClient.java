@@ -44,6 +44,9 @@ public class FlipSmartApiClient
 	// Premium status (updated on login)
 	private volatile boolean isPremium = false;
 
+	// RSN-level blocked status (updated on entitlements fetch)
+	private volatile boolean isRsnBlocked = false;
+
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
@@ -627,6 +630,14 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Check if the current RSN is blocked (3rd+ account without premium)
+	 */
+	public boolean isRsnBlocked()
+	{
+		return isRsnBlocked;
+	}
+
+	/**
 	 * Clear the current authentication tokens (access and refresh)
 	 */
 	public void clearAuth()
@@ -637,6 +648,7 @@ public class FlipSmartApiClient
 			tokenExpiry = 0;
 			refreshToken = null;
 			isPremium = false;
+			isRsnBlocked = false;
 		}
 	}
 
@@ -662,10 +674,12 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Fetch user entitlements from the API to check premium status.
+	 * Fetch user entitlements from the API to check premium status and RSN-level access.
 	 * Call this when the player logs into the game.
+	 *
+	 * @param rsn The player's RuneScape Name (optional, for RSN-level entitlement checks)
 	 */
-	public CompletableFuture<Boolean> fetchEntitlementsAsync()
+	public CompletableFuture<Boolean> fetchEntitlementsAsync(String rsn)
 	{
 		if (!isAuthenticated())
 		{
@@ -673,6 +687,10 @@ public class FlipSmartApiClient
 		}
 
 		String url = String.format("%s/auth/entitlements", getApiUrl());
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url += "?rsn=" + rsn;
+		}
 
 		Request request = new Request.Builder()
 			.url(url)
@@ -687,8 +705,28 @@ public class FlipSmartApiClient
 				if (json.has(JSON_KEY_IS_PREMIUM))
 				{
 					isPremium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
-					log.info("Fetched entitlements - premium: {}", isPremium);
 				}
+
+				// Check RSN-level entitlement status
+				if (json.has("rsn_entitlement") && !json.get("rsn_entitlement").isJsonNull())
+				{
+					JsonObject rsnEntitlement = json.getAsJsonObject("rsn_entitlement");
+					if (rsnEntitlement.has("status"))
+					{
+						String status = rsnEntitlement.get("status").getAsString();
+						isRsnBlocked = "blocked".equals(status);
+					}
+					else
+					{
+						isRsnBlocked = false;
+					}
+				}
+				else
+				{
+					isRsnBlocked = false;
+				}
+
+				log.info("Fetched entitlements - premium: {}, rsnBlocked: {}", isPremium, isRsnBlocked);
 				return isPremium;
 			}
 			catch (Exception e)
@@ -996,10 +1034,11 @@ public class FlipSmartApiClient
 	 * @param limit Number of recommendations to return
 	 * @param randomSeed Random seed for variety in suggestions (optional)
 	 * @param timeframe Target flip timeframe (30m, 2h, 4h, 12h) or null for Active mode
+	 * @param rsn Player's RuneScape Name (optional, for RSN-level access enforcement)
 	 * @return CompletableFuture with flip recommendations
 	 */
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
-		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe)
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn)
 	{
 		String apiUrl = getApiUrl();
 
@@ -1022,6 +1061,11 @@ public class FlipSmartApiClient
 			urlBuilder.append(String.format("&timeframe=%s", timeframe));
 		}
 
+		if (rsn != null && !rsn.isEmpty())
+		{
+			urlBuilder.append(String.format("&rsn=%s", rsn));
+		}
+
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -1032,7 +1076,7 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String)} instead.
+	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String, String)} instead.
 	 * This method uses the deprecated /flip-finder/timeframe endpoint.
 	 *
 	 * Fetch timeframe-based flip recommendations from the API asynchronously.

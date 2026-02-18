@@ -176,6 +176,11 @@ public class FlipSmartPlugin extends Plugin
 		return session;
 	}
 
+	public FlipSmartApiClient getApiClient()
+	{
+		return apiClient;
+	}
+
 	/**
 	 * Get current RSN (delegates to session for backwards compatibility).
 	 */
@@ -206,6 +211,11 @@ public class FlipSmartPlugin extends Plugin
 	public boolean isPremium()
 	{
 		return apiClient.isPremium();
+	}
+
+	public int getFlipSlotLimit()
+	{
+		return isPremium() ? 8 : 2;
 	}
 
 	/**
@@ -670,7 +680,7 @@ public class FlipSmartPlugin extends Plugin
 
 		apiClient.fetchWikiPrices();
 
-		apiClient.fetchEntitlementsAsync().thenAccept(isPremium -> {
+		apiClient.fetchEntitlementsAsync(getCurrentRsnSafe().orElse(null)).thenAccept(isPremium -> {
 			log.info("User premium status: {}", isPremium);
 			if (flipFinderPanel != null)
 			{

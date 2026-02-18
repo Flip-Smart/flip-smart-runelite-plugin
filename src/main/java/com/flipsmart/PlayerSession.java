@@ -372,9 +372,9 @@ public class PlayerSession
 	/**
 	 * Check if there are available GE slots for new offers.
 	 */
-	public boolean hasAvailableGESlots()
+	public boolean hasAvailableGESlots(int slotLimit)
 	{
-		return trackedOffers.size() < 8;
+		return getActiveFlipItemIds().size() < slotLimit;
 	}
 
 	/**

@@ -63,6 +63,7 @@ public class FlipAssistOverlay extends Overlay
 	// Hint message
 	private static final String HINT_TITLE = "Flip Assist";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
+	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -78,6 +79,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String COINS_TEXT = "coins";
 	private static final int[] CHATBOX_WIDGET_GROUPS = {162, 163, 164, 217, 219, 229, 548, 161};
 	
+	private final FlipSmartPlugin flipSmartPlugin;
 	private final Client client;
 	private final ClientThread clientThread;
 	private final FlipSmartConfig config;
@@ -136,8 +138,9 @@ public class FlipAssistOverlay extends Overlay
 	private FlipAssistStep currentStep = FlipAssistStep.SELECT_ITEM;
 	
 	@Inject
-	private FlipAssistOverlay(Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
+	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
 	{
+		this.flipSmartPlugin = flipSmartPlugin;
 		this.client = client;
 		this.clientThread = clientThread;
 		this.config = config;
@@ -237,6 +240,11 @@ public class FlipAssistOverlay extends Overlay
 			}
 			if (isGrandExchangeOpen())
 			{
+				if (!flipSmartPlugin.isPremium()
+					&& !flipSmartPlugin.getSession().hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
+				{
+					return renderHintBox(graphics, UPGRADE_MESSAGE);
+				}
 				return renderHintBox(graphics, HINT_MESSAGE);
 			}
 			return null;
