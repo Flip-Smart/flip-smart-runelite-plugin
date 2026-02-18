@@ -229,9 +229,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, TrackedOffer trackedOffer,
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
-		// Draw colored border around the entire slot (free users: slots 0-1 only)
-		if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN
-			&& (plugin.isPremium() || slot < 2))
+		// Draw colored border around the entire slot
+		if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
 		{
 			Color borderColor = (competitiveness == FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE)
 				? getBorderCompetitiveColor()

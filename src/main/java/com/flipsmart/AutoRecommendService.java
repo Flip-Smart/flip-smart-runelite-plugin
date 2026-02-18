@@ -119,6 +119,12 @@ public class AutoRecommendService
 			return;
 		}
 
+		if (!plugin.isPremium() && !plugin.getSession().hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		{
+			updateStatus("Auto: Upgrade to Premium for more flip slots");
+			return;
+		}
+
 		if (recommendations == null || recommendations.isEmpty())
 		{
 			updateStatus("Auto: No recommendations available");

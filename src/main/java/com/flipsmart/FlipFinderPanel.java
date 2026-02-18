@@ -1280,6 +1280,13 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 
+		// If free user has hit their slot limit, show upgrade message instead of suggestions
+		if (!plugin.isPremium() && !plugin.getSession().hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		{
+			showSlotLimitMessage();
+			return;
+		}
+
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		// Don't clear container yet - keep showing old recommendations until new data arrives
@@ -1765,6 +1772,19 @@ public class FlipFinderPanel extends PluginPanel
 		currentRecommendations.clear();
 		showErrorInRecommended("Subscribe to Premium to get flip suggestions for this account");
 		subscribeLabel.setText("Subscribe to Premium for this account");
+		subscribeLabel.setVisible(true);
+		refreshButton.setEnabled(true);
+	}
+
+	/**
+	 * Show an upgrade message when a free user has reached their flip slot limit.
+	 * Clears recommendations and prompts the user to upgrade to Premium.
+	 */
+	private void showSlotLimitMessage()
+	{
+		currentRecommendations.clear();
+		showErrorInRecommended("Upgrade to Premium for more flip slots");
+		subscribeLabel.setText(SUBSCRIBE_MESSAGE);
 		subscribeLabel.setVisible(true);
 		refreshButton.setEnabled(true);
 	}
