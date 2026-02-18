@@ -83,7 +83,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	// Premium subscription link (update when dashboard URL is available)
 	private static final String SUBSCRIBE_LINK = "https://flipsmart.net/dashboard";
-	private static final String SUBSCRIBE_MESSAGE = "Subscribe to Premium for all suggestions";
+	private static final String SUBSCRIBE_MESSAGE = "Subscribe to Premium for all slots & RSNs";
 	
 	// Common fonts
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);

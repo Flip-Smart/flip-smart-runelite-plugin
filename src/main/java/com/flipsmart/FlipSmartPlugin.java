@@ -201,6 +201,14 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Check if the current user has premium subscription.
+	 */
+	public boolean isPremium()
+	{
+		return apiClient.isPremium();
+	}
+
+	/**
 	 * Store recommended sell price when user views/acts on a flip recommendation
 	 */
 	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)
