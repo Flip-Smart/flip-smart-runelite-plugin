@@ -374,7 +374,7 @@ public class PlayerSession
 	 */
 	public boolean hasAvailableGESlots(int slotLimit)
 	{
-		return getActiveFlipItemIds().size() < slotLimit;
+		return trackedOffers.size() < slotLimit;
 	}
 
 	/**
