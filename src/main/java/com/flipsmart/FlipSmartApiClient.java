@@ -24,6 +24,8 @@ public class FlipSmartApiClient
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
+	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
+	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	
 	private final OkHttpClient httpClient;
@@ -708,12 +710,12 @@ public class FlipSmartApiClient
 				}
 
 				// Check RSN-level entitlement status
-				if (json.has("rsn_entitlement") && !json.get("rsn_entitlement").isJsonNull())
+				if (json.has(JSON_KEY_RSN_ENTITLEMENT) && !json.get(JSON_KEY_RSN_ENTITLEMENT).isJsonNull())
 				{
-					JsonObject rsnEntitlement = json.getAsJsonObject("rsn_entitlement");
-					if (rsnEntitlement.has("status"))
+					JsonObject rsnEntitlement = json.getAsJsonObject(JSON_KEY_RSN_ENTITLEMENT);
+					if (rsnEntitlement.has(JSON_KEY_STATUS))
 					{
-						String status = rsnEntitlement.get("status").getAsString();
+						String status = rsnEntitlement.get(JSON_KEY_STATUS).getAsString();
 						isRsnBlocked = "blocked".equals(status);
 					}
 					else
@@ -914,7 +916,7 @@ public class FlipSmartApiClient
 					JsonObject json = gson.fromJson(jsonData, JsonObject.class);
 					
 					DeviceStatusResponse statusResponse = new DeviceStatusResponse();
-					statusResponse.setStatus(json.get("status").getAsString());
+					statusResponse.setStatus(json.get(JSON_KEY_STATUS).getAsString());
 					
 					if ("authorized".equals(statusResponse.getStatus()) && json.has(ACCESS_TOKEN_KEY))
 					{
