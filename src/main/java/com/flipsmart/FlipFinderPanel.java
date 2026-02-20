@@ -1281,7 +1281,8 @@ public class FlipFinderPanel extends PluginPanel
 		}
 
 		// If free user has hit their slot limit, show upgrade message instead of suggestions
-		if (!plugin.isPremium() && !plugin.getSession().hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		PlayerSession session = plugin.getSession();
+		if (session != null && !plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
 		{
 			showSlotLimitMessage();
 			return;
@@ -2807,8 +2808,9 @@ public class FlipFinderPanel extends PluginPanel
 	private void setFocus(FlipRecommendation rec, JPanel panel)
 	{
 		// Block new buy-side flips when free user has hit their slot limit
-		if (!plugin.isPremium()
-			&& !plugin.getSession().hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		PlayerSession session = plugin.getSession();
+		if (session != null && !plugin.isPremium()
+			&& !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
 		{
 			return;
 		}

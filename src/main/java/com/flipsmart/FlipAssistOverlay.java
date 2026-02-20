@@ -240,8 +240,9 @@ public class FlipAssistOverlay extends Overlay
 			}
 			if (isGrandExchangeOpen())
 			{
-				if (!flipSmartPlugin.isPremium()
-					&& !flipSmartPlugin.getSession().hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
+				PlayerSession session = flipSmartPlugin.getSession();
+				if (session != null && !flipSmartPlugin.isPremium()
+					&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
 				{
 					return renderHintBox(graphics, UPGRADE_MESSAGE);
 				}

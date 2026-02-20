@@ -649,7 +649,9 @@ public class FlipSmartApiClient
 			jwtToken = null;
 			tokenExpiry = 0;
 			refreshToken = null;
-			isPremium = false;
+			// Default to true during logout to avoid briefly blocking
+			// recommendations before the next entitlement check resolves
+			isPremium = true;
 			isRsnBlocked = false;
 		}
 	}
@@ -704,9 +706,14 @@ public class FlipSmartApiClient
 			try
 			{
 				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
-				if (json.has(JSON_KEY_IS_PREMIUM))
+				if (json.has(JSON_KEY_IS_PREMIUM) && json.get(JSON_KEY_IS_PREMIUM).isJsonPrimitive())
 				{
 					isPremium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
+				}
+				else
+				{
+					// Explicitly set to false when field is missing or malformed
+					isPremium = false;
 				}
 
 				// Check RSN-level entitlement status
