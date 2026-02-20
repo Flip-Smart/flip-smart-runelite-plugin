@@ -24,6 +24,8 @@ public class FlipSmartApiClient
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
+	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
+	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	
 	private final OkHttpClient httpClient;
@@ -43,6 +45,9 @@ public class FlipSmartApiClient
 
 	// Premium status (updated on login)
 	private volatile boolean isPremium = false;
+
+	// RSN-level blocked status (updated on entitlements fetch)
+	private volatile boolean isRsnBlocked = false;
 
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
@@ -627,6 +632,14 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Check if the current RSN is blocked (3rd+ account without premium)
+	 */
+	public boolean isRsnBlocked()
+	{
+		return isRsnBlocked;
+	}
+
+	/**
 	 * Clear the current authentication tokens (access and refresh)
 	 */
 	public void clearAuth()
@@ -636,7 +649,10 @@ public class FlipSmartApiClient
 			jwtToken = null;
 			tokenExpiry = 0;
 			refreshToken = null;
-			isPremium = false;
+			// Default to true during logout to avoid briefly blocking
+			// recommendations before the next entitlement check resolves
+			isPremium = true;
+			isRsnBlocked = false;
 		}
 	}
 
@@ -662,10 +678,12 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Fetch user entitlements from the API to check premium status.
+	 * Fetch user entitlements from the API to check premium status and RSN-level access.
 	 * Call this when the player logs into the game.
+	 *
+	 * @param rsn The player's RuneScape Name (optional, for RSN-level entitlement checks)
 	 */
-	public CompletableFuture<Boolean> fetchEntitlementsAsync()
+	public CompletableFuture<Boolean> fetchEntitlementsAsync(String rsn)
 	{
 		if (!isAuthenticated())
 		{
@@ -673,6 +691,10 @@ public class FlipSmartApiClient
 		}
 
 		String url = String.format("%s/auth/entitlements", getApiUrl());
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url += "?rsn=" + rsn;
+		}
 
 		Request request = new Request.Builder()
 			.url(url)
@@ -684,11 +706,36 @@ public class FlipSmartApiClient
 			try
 			{
 				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
-				if (json.has(JSON_KEY_IS_PREMIUM))
+				if (json.has(JSON_KEY_IS_PREMIUM) && json.get(JSON_KEY_IS_PREMIUM).isJsonPrimitive())
 				{
 					isPremium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
-					log.info("Fetched entitlements - premium: {}", isPremium);
 				}
+				else
+				{
+					// Explicitly set to false when field is missing or malformed
+					isPremium = false;
+				}
+
+				// Check RSN-level entitlement status
+				if (json.has(JSON_KEY_RSN_ENTITLEMENT) && !json.get(JSON_KEY_RSN_ENTITLEMENT).isJsonNull())
+				{
+					JsonObject rsnEntitlement = json.getAsJsonObject(JSON_KEY_RSN_ENTITLEMENT);
+					if (rsnEntitlement.has(JSON_KEY_STATUS))
+					{
+						String status = rsnEntitlement.get(JSON_KEY_STATUS).getAsString();
+						isRsnBlocked = "blocked".equals(status);
+					}
+					else
+					{
+						isRsnBlocked = false;
+					}
+				}
+				else
+				{
+					isRsnBlocked = false;
+				}
+
+				log.info("Fetched entitlements - premium: {}, rsnBlocked: {}", isPremium, isRsnBlocked);
 				return isPremium;
 			}
 			catch (Exception e)
@@ -876,7 +923,7 @@ public class FlipSmartApiClient
 					JsonObject json = gson.fromJson(jsonData, JsonObject.class);
 					
 					DeviceStatusResponse statusResponse = new DeviceStatusResponse();
-					statusResponse.setStatus(json.get("status").getAsString());
+					statusResponse.setStatus(json.get(JSON_KEY_STATUS).getAsString());
 					
 					if ("authorized".equals(statusResponse.getStatus()) && json.has(ACCESS_TOKEN_KEY))
 					{
@@ -996,10 +1043,11 @@ public class FlipSmartApiClient
 	 * @param limit Number of recommendations to return
 	 * @param randomSeed Random seed for variety in suggestions (optional)
 	 * @param timeframe Target flip timeframe (30m, 2h, 4h, 12h) or null for Active mode
+	 * @param rsn Player's RuneScape Name (optional, for RSN-level access enforcement)
 	 * @return CompletableFuture with flip recommendations
 	 */
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
-		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe)
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn)
 	{
 		String apiUrl = getApiUrl();
 
@@ -1022,6 +1070,11 @@ public class FlipSmartApiClient
 			urlBuilder.append(String.format("&timeframe=%s", timeframe));
 		}
 
+		if (rsn != null && !rsn.isEmpty())
+		{
+			urlBuilder.append(String.format("&rsn=%s", rsn));
+		}
+
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -1032,7 +1085,7 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String)} instead.
+	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String, String)} instead.
 	 * This method uses the deprecated /flip-finder/timeframe endpoint.
 	 *
 	 * Fetch timeframe-based flip recommendations from the API asynchronously.

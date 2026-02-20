@@ -113,6 +113,24 @@ public class AutoRecommendService
 	 */
 	public synchronized void start(List<FlipRecommendation> recommendations)
 	{
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		if (plugin.getApiClient().isRsnBlocked())
+		{
+			updateStatus("Auto: Subscribe to Premium for this account");
+			return;
+		}
+
+		if (!plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		{
+			updateStatus("Auto: Upgrade to Premium for more flip slots");
+			return;
+		}
+
 		if (recommendations == null || recommendations.isEmpty())
 		{
 			updateStatus("Auto: No recommendations available");
@@ -123,7 +141,7 @@ public class AutoRecommendService
 		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
 
 		recommendationQueue.clear();
-		plugin.getSession().clearStaleNotifications();
+		session.clearStaleNotifications();
 		currentIndex = 0;
 
 		for (FlipRecommendation rec : recommendations)
@@ -156,7 +174,11 @@ public class AutoRecommendService
 	{
 		active = false;
 		recommendationQueue.clear();
-		plugin.getSession().clearStaleNotifications();
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			session.clearStaleNotifications();
+		}
 		currentIndex = 0;
 
 		invokeFocusCallback(null);
@@ -300,9 +322,13 @@ public class AutoRecommendService
 	{
 		log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
 
-		ensureSellPriceAvailable(itemId);
-
 		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		ensureSellPriceAvailable(itemId);
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
 		Integer sellPrice = session.getRecommendedPrice(itemId);
 		log.info("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
@@ -865,6 +891,7 @@ public class AutoRecommendService
 
 	private boolean hasAvailableGESlots()
 	{
-		return plugin.getSession().hasAvailableGESlots();
+		PlayerSession session = plugin.getSession();
+		return session != null && session.hasAvailableGESlots(plugin.getFlipSlotLimit());
 	}
 }
