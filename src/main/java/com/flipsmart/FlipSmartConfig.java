@@ -464,6 +464,54 @@ public interface FlipSmartConfig extends Config
 	}
 
 	// ============================================
+	// Notifications Section
+	// ============================================
+	@ConfigSection(
+		name = "Notifications",
+		description = "Discord webhook notifications for trade events",
+		position = 6,
+		closedByDefault = false
+	)
+	String notificationsSection = "notifications";
+
+	@ConfigItem(
+		keyName = "discordWebhookUrl",
+		name = "Discord Webhook URL",
+		description = "Discord webhook URL for receiving notifications. Create one in Discord: Server Settings > Integrations > Webhooks",
+		section = notificationsSection,
+		position = 0,
+		secret = true
+	)
+	default String discordWebhookUrl()
+	{
+		return "";
+	}
+
+	@ConfigItem(
+		keyName = "notifySaleCompleted",
+		name = "Sale Completed",
+		description = "Notify when a sell order completes in the GE",
+		section = notificationsSection,
+		position = 1
+	)
+	default boolean notifySaleCompleted()
+	{
+		return true;
+	}
+
+	@ConfigItem(
+		keyName = "notifyFlipSuggestion",
+		name = "Flip Suggestions",
+		description = "Notify when a new flip opportunity is recommended",
+		section = notificationsSection,
+		position = 2
+	)
+	default boolean notifyFlipSuggestion()
+	{
+		return false;
+	}
+
+	// ============================================
 	// Flip Style Enum
 	// ============================================
 	enum FlipStyle

@@ -102,6 +102,12 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private ChatMessageManager chatMessageManager;
 
+	@Inject
+	private WebhookNotificationService webhookNotificationService;
+
+	@Inject
+	private WebhookSyncService webhookSyncService;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -507,6 +513,9 @@ public class FlipSmartPlugin extends Plugin
 		// Start dump alert service
 		dumpAlertService.start();
 
+		// Sync webhook config to backend if configured
+		webhookSyncService.syncIfChanged();
+
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
 	}
@@ -553,6 +562,9 @@ public class FlipSmartPlugin extends Plugin
 
 		// Stop dump alert service
 		dumpAlertService.stop();
+
+		// Shutdown webhook notification service
+		webhookNotificationService.shutdown();
 
 		// Clear API client cache
 		apiClient.clearCache();
@@ -2147,6 +2159,9 @@ public class FlipSmartPlugin extends Plugin
 				if (!isBuy)
 				{
 					markItemSold(itemId);
+
+					// Note: Sale completion webhooks are sent by the backend when a flip is
+					// detected (with full profit/ROI data). No plugin-side notification needed.
 				}
 
 				// Refresh active flips panel if it exists

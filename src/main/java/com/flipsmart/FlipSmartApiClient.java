@@ -1907,4 +1907,97 @@ public class FlipSmartApiClient
 	{
 		return addItemToBlocklistAsync(blocklistId, itemId, null);
 	}
+
+	// =========================================================================
+	// Webhook API Methods
+	// =========================================================================
+
+	/**
+	 * Update (or create) user's webhook configuration asynchronously.
+	 *
+	 * @param webhookUrl Discord webhook URL
+	 * @param notifySale Whether to notify on sale completion
+	 * @param notifySuggestion Whether to notify on flip suggestions
+	 * @param onSuccess Callback on success
+	 * @param onError Callback on error
+	 */
+	public void updateWebhookAsync(
+		String webhookUrl,
+		boolean notifySale,
+		boolean notifySuggestion,
+		Runnable onSuccess,
+		Consumer<String> onError
+	)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/profile/webhook", apiUrl);
+
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty("webhook_url", webhookUrl);
+		jsonBody.addProperty("notify_sale_completed", notifySale);
+		jsonBody.addProperty("notify_flip_suggestion", notifySuggestion);
+		jsonBody.addProperty("enabled", true);
+
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.put(body);
+
+		executeAsync(
+			requestBuilder,
+			jsonData -> {
+				log.debug("Webhook config updated successfully");
+				if (onSuccess != null)
+				{
+					onSuccess.run();
+				}
+				return null;
+			},
+			error -> {
+				log.debug("Failed to update webhook config: {}", error);
+				if (onError != null)
+				{
+					onError.accept(error);
+				}
+			},
+			true // retry on 401
+		);
+	}
+
+	/**
+	 * Delete user's webhook configuration asynchronously.
+	 *
+	 * @param onSuccess Callback on success
+	 * @param onError Callback on error
+	 */
+	public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/profile/webhook", apiUrl);
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.delete();
+
+		executeAsync(
+			requestBuilder,
+			jsonData -> {
+				log.debug("Webhook config deleted successfully");
+				if (onSuccess != null)
+				{
+					onSuccess.run();
+				}
+				return null;
+			},
+			error -> {
+				log.debug("Failed to delete webhook config: {}", error);
+				if (onError != null)
+				{
+					onError.accept(error);
+				}
+			},
+			true // retry on 401
+		);
+	}
 }
