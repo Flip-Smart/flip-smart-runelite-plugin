@@ -63,6 +63,7 @@ public class FlipAssistOverlay extends Overlay
 	// Hint message
 	private static final String HINT_TITLE = "Flip Assist";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
+	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -78,6 +79,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String COINS_TEXT = "coins";
 	private static final int[] CHATBOX_WIDGET_GROUPS = {162, 163, 164, 217, 219, 229, 548, 161};
 	
+	private final FlipSmartPlugin flipSmartPlugin;
 	private final Client client;
 	private final ClientThread clientThread;
 	private final FlipSmartConfig config;
@@ -85,7 +87,11 @@ public class FlipAssistOverlay extends Overlay
 	
 	@Getter
 	private FocusedFlip focusedFlip;
-	
+
+	// Auto-recommend overlay message (shown in hint box when no flip is focused)
+	private volatile String autoStatusMessage;
+	private volatile int autoStatusItemId;
+
 	// Animation state
 	private long animationStartTime = System.currentTimeMillis();
 	private static final long PULSE_DURATION = 1500; // ms for one pulse cycle
@@ -132,8 +138,9 @@ public class FlipAssistOverlay extends Overlay
 	private FlipAssistStep currentStep = FlipAssistStep.SELECT_ITEM;
 	
 	@Inject
-	private FlipAssistOverlay(Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
+	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
 	{
+		this.flipSmartPlugin = flipSmartPlugin;
 		this.client = client;
 		this.clientThread = clientThread;
 		this.config = config;
@@ -224,12 +231,22 @@ public class FlipAssistOverlay extends Overlay
 			return null;
 		}
 		
-		// If no flip is focused, show hint box when GE is open
+		// If no flip is focused, show hint box when GE is open or auto message is set
 		if (focusedFlip == null)
 		{
+			if (autoStatusMessage != null)
+			{
+				return renderHintBox(graphics, autoStatusMessage);
+			}
 			if (isGrandExchangeOpen())
 			{
-				return renderHintBox(graphics);
+				PlayerSession session = flipSmartPlugin.getSession();
+				if (session != null && !flipSmartPlugin.isPremium()
+					&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
+				{
+					return renderHintBox(graphics, UPGRADE_MESSAGE);
+				}
+				return renderHintBox(graphics, HINT_MESSAGE);
 			}
 			return null;
 		}
@@ -291,19 +308,28 @@ public class FlipAssistOverlay extends Overlay
 	}
 	
 	/**
-	 * Render a small hint box prompting user to click on a flip suggestion.
+	 * Render a small hint box with a title and message.
+	 * When an item icon is present, shows a two-line layout:
+	 *   "Flip Assist" title
+	 *   "Collect items from GE" subtitle
+	 *   [icon] item name
 	 */
-	private Dimension renderHintBox(Graphics2D graphics)
+	private Dimension renderHintBox(Graphics2D graphics, String message)
 	{
+		int itemId = autoStatusItemId;
+		boolean hasIcon = itemId > 0;
+		int hintIconSize = 20;
+		int panelHeight = hasIcon ? HINT_PANEL_HEIGHT + 18 : HINT_PANEL_HEIGHT;
+
 		// Enable anti-aliasing
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
-		
+
 		// Calculate pulse animation
 		long elapsed = System.currentTimeMillis() - animationStartTime;
 		double pulsePhase = (elapsed % PULSE_DURATION) / (double) PULSE_DURATION;
 		float pulseAlpha = (float) (0.5 + 0.5 * Math.sin(pulsePhase * 2 * Math.PI));
-		
+
 		// Draw subtle outer glow (animated)
 		Color glowColor = new Color(
 			COLOR_ACCENT_GLOW.getRed(),
@@ -312,12 +338,12 @@ public class FlipAssistOverlay extends Overlay
 			(int)(COLOR_ACCENT_GLOW.getAlpha() * pulseAlpha * 0.5)
 		);
 		graphics.setColor(glowColor);
-		graphics.fillRoundRect(-3, -3, HINT_PANEL_WIDTH + 6, HINT_PANEL_HEIGHT + 6, 10, 10);
-		
+		graphics.fillRoundRect(-3, -3, HINT_PANEL_WIDTH + 6, panelHeight + 6, 10, 10);
+
 		// Draw background
 		graphics.setColor(COLOR_BG_DARK);
-		graphics.fillRoundRect(0, 0, HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT, 8, 8);
-		
+		graphics.fillRoundRect(0, 0, HINT_PANEL_WIDTH, panelHeight, 8, 8);
+
 		// Draw accent border (animated)
 		Color borderColor = new Color(
 			COLOR_ACCENT.getRed(),
@@ -327,23 +353,52 @@ public class FlipAssistOverlay extends Overlay
 		);
 		graphics.setColor(borderColor);
 		graphics.setStroke(new BasicStroke(1.5f));
-		graphics.drawRoundRect(0, 0, HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT, 8, 8);
-		
+		graphics.drawRoundRect(0, 0, HINT_PANEL_WIDTH, panelHeight, 8, 8);
+
 		// Draw title
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		graphics.setColor(COLOR_ACCENT);
 		FontMetrics boldMetrics = graphics.getFontMetrics();
 		int titleWidth = boldMetrics.stringWidth(HINT_TITLE);
 		graphics.drawString(HINT_TITLE, (HINT_PANEL_WIDTH - titleWidth) / 2, 20);
-		
-		// Draw hint message
-		graphics.setFont(FontManager.getRunescapeSmallFont());
-		graphics.setColor(COLOR_TEXT);
-		FontMetrics smallMetrics = graphics.getFontMetrics();
-		int msgWidth = smallMetrics.stringWidth(HINT_MESSAGE);
-		graphics.drawString(HINT_MESSAGE, (HINT_PANEL_WIDTH - msgWidth) / 2, 38);
-		
-		return new Dimension(HINT_PANEL_WIDTH, HINT_PANEL_HEIGHT);
+
+		if (hasIcon)
+		{
+			// Two-line layout: subtitle + icon with item name
+			graphics.setFont(FontManager.getRunescapeSmallFont());
+			FontMetrics smallMetrics = graphics.getFontMetrics();
+
+			// Line 1: "Collect items from GE" subtitle
+			graphics.setColor(COLOR_TEXT_DIM);
+			String subtitle = "Collect items from GE";
+			int subtitleWidth = smallMetrics.stringWidth(subtitle);
+			graphics.drawString(subtitle, (HINT_PANEL_WIDTH - subtitleWidth) / 2, 36);
+
+			// Line 2: [icon] + item name
+			graphics.setColor(COLOR_TEXT);
+			AsyncBufferedImage itemImage = itemManager.getImage(itemId);
+			int msgWidth = smallMetrics.stringWidth(message);
+			int totalWidth = hintIconSize + 4 + msgWidth;
+			int startX = (HINT_PANEL_WIDTH - totalWidth) / 2;
+			int iconLineY = 54;
+
+			if (itemImage != null)
+			{
+				graphics.drawImage(itemImage, startX, iconLineY - hintIconSize + 4, hintIconSize, hintIconSize, null);
+			}
+			graphics.drawString(message, startX + hintIconSize + 4, iconLineY);
+		}
+		else
+		{
+			// Single-line layout: just the message
+			graphics.setFont(FontManager.getRunescapeSmallFont());
+			graphics.setColor(COLOR_TEXT);
+			FontMetrics smallMetrics = graphics.getFontMetrics();
+			int msgWidth = smallMetrics.stringWidth(message);
+			graphics.drawString(message, (HINT_PANEL_WIDTH - msgWidth) / 2, 38);
+		}
+
+		return new Dimension(HINT_PANEL_WIDTH, panelHeight);
 	}
 	
 	private int renderHeader(Graphics2D graphics, int y)
@@ -838,8 +893,15 @@ public class FlipAssistOverlay extends Overlay
 		this.focusedFlip = focusedFlip;
 		if (focusedFlip != null)
 		{
+			this.autoStatusMessage = null;
 			setGELastSearchedItem(focusedFlip.getItemId());
 		}
+	}
+
+	public void setAutoStatusMessage(String message, int itemId)
+	{
+		this.autoStatusMessage = message;
+		this.autoStatusItemId = itemId;
 	}
 	
 	private void setGELastSearchedItem(int itemId)
@@ -861,6 +923,8 @@ public class FlipAssistOverlay extends Overlay
 	public void clearFocus()
 	{
 		this.focusedFlip = null;
+		this.autoStatusMessage = null;
+		this.autoStatusItemId = 0;
 		this.currentStep = FlipAssistStep.SELECT_ITEM;
 	}
 }
