@@ -2,6 +2,7 @@ package com.flipsmart;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import net.runelite.api.GrandExchangeOfferState;
 
 /**
  * Tracks a GE offer's state for transaction detection.
@@ -22,14 +23,7 @@ public class TrackedOffer
 
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 	{
-		this.itemId = itemId;
-		this.itemName = itemName;
-		this.isBuy = isBuy;
-		this.totalQuantity = totalQuantity;
-		this.price = price;
-		this.previousQuantitySold = quantitySold;
-		this.createdAtMillis = System.currentTimeMillis();
-		this.completedAtMillis = 0;
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, System.currentTimeMillis(), 0);
 	}
 
 	/**
@@ -37,14 +31,7 @@ public class TrackedOffer
 	 */
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis)
 	{
-		this.itemId = itemId;
-		this.itemName = itemName;
-		this.isBuy = isBuy;
-		this.totalQuantity = totalQuantity;
-		this.price = price;
-		this.previousQuantitySold = quantitySold;
-		this.createdAtMillis = createdAtMillis;
-		this.completedAtMillis = 0;
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, createdAtMillis, 0);
 	}
 
 	/**
@@ -60,6 +47,40 @@ public class TrackedOffer
 		this.previousQuantitySold = quantitySold;
 		this.createdAtMillis = createdAtMillis;
 		this.completedAtMillis = completedAtMillis;
+	}
+
+	/**
+	 * Check if a GE offer state represents a buy-side offer.
+	 */
+	public static boolean isBuyState(GrandExchangeOfferState state)
+	{
+		return state == GrandExchangeOfferState.BUYING ||
+			state == GrandExchangeOfferState.BOUGHT ||
+			state == GrandExchangeOfferState.CANCELLED_BUY;
+	}
+
+	/**
+	 * Create a TrackedOffer preserving timestamps from an existing offer when available.
+	 * Falls back to the current time if no existing offer is present.
+	 */
+	public static TrackedOffer createWithPreservedTimestamps(
+		int itemId, String itemName, int totalQuantity,
+		int price, int quantitySold, TrackedOffer existing,
+		GrandExchangeOfferState state)
+	{
+		long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
+			? existing.getCreatedAtMillis()
+			: System.currentTimeMillis();
+		long completedTimestamp = 0;
+
+		if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
+		{
+			completedTimestamp = (existing != null && existing.getCompletedAtMillis() > 0)
+				? existing.getCompletedAtMillis()
+				: System.currentTimeMillis();
+		}
+
+		return new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp);
 	}
 
 	/**

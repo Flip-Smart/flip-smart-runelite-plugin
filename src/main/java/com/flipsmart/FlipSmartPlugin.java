@@ -1784,11 +1784,7 @@ public class FlipSmartPlugin extends Plugin
 				itemPrice = price; // Fallback to offer price
 			}
 
-			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
-							state == GrandExchangeOfferState.BOUGHT ||
-							state == GrandExchangeOfferState.CANCELLED_BUY;
-
-			if (isBuy)
+			if (TrackedOffer.isBuyState(state))
 			{
 				// Buy offer: GP is locked for remaining qty + items pending collection
 				long remainingBudget = (long) remainingQty * price;
@@ -1965,27 +1961,11 @@ public class FlipSmartPlugin extends Plugin
 			// During login, just track existing offers without recording transactions
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
 
-			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
-							state == GrandExchangeOfferState.BOUGHT ||
-							state == GrandExchangeOfferState.CANCELLED_BUY;
-
 			// Track the current state so future changes are detected correctly
 			// Preserve existing timestamp if we already have this offer tracked
 			TrackedOffer existing = session.getTrackedOffer(slot);
-			long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
-				? existing.getCreatedAtMillis()
-				: System.currentTimeMillis();
-			long completedTimestamp = 0;
-
-			// Check if offer is already completed (BOUGHT/SOLD state)
-			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
-			{
-				completedTimestamp = (existing != null && existing.getCompletedAtMillis() > 0)
-					? existing.getCompletedAtMillis()
-					: System.currentTimeMillis();
-			}
-
-			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
+				itemId, itemName, totalQuantity, price, quantitySold, existing, state));
 
 			// Note: offline sync is now scheduled from LOGGED_IN state change
 			// after syncRSN() to ensure correct RSN-specific config key
@@ -1993,9 +1973,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Check if this is a buy or sell offer
-		boolean isBuy = state == GrandExchangeOfferState.BUYING || 
-						state == GrandExchangeOfferState.BOUGHT ||
-						state == GrandExchangeOfferState.CANCELLED_BUY;
+		boolean isBuy = TrackedOffer.isBuyState(state);
 		
 		// Handle cancelled offers
 		if (state == GrandExchangeOfferState.CANCELLED_BUY || state == GrandExchangeOfferState.CANCELLED_SELL)
@@ -2289,35 +2267,21 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 
-			// Update tracked offer - preserve original timestamp to prevent timer reset
-			long originalTimestamp = (previousOffer != null && previousOffer.getCreatedAtMillis() > 0)
-				? previousOffer.getCreatedAtMillis()
-				: System.currentTimeMillis();
-			long completedTimestamp = 0;
-
-			// Check if offer just completed (BOUGHT/SOLD state)
-			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
+			// Notify auto-recommend service on order completion
+			if (state == GrandExchangeOfferState.BOUGHT
+				&& isBuy && autoRecommendService != null && autoRecommendService.isActive())
 			{
-				completedTimestamp = (previousOffer != null && previousOffer.getCompletedAtMillis() > 0)
-					? previousOffer.getCompletedAtMillis()
-					: System.currentTimeMillis();
-
-				// Notify auto-recommend service when a buy order fully completes
-				if (isBuy && state == GrandExchangeOfferState.BOUGHT
-					&& autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onBuyOrderCompleted(itemId, itemName);
-				}
-
-				// Notify auto-recommend service when a sell order fully completes
-				if (!isBuy && state == GrandExchangeOfferState.SOLD
-					&& autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onSellOrderCompleted(itemId);
-				}
+				autoRecommendService.onBuyOrderCompleted(itemId, itemName);
+			}
+			if (state == GrandExchangeOfferState.SOLD
+				&& !isBuy && autoRecommendService != null && autoRecommendService.isActive())
+			{
+				autoRecommendService.onSellOrderCompleted(itemId);
 			}
 
-			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+			// Update tracked offer - preserve original timestamp to prevent timer reset
+			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
+				itemId, itemName, totalQuantity, price, quantitySold, previousOffer, state));
 
 			// Handle immediate-fill auto-recommend transitions AFTER tracked offer is stored,
 			// so hasAvailableGESlots() correctly counts this slot as occupied.
