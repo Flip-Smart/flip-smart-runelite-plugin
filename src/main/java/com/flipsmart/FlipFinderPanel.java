@@ -141,6 +141,9 @@ public class FlipFinderPanel extends PluginPanel
 	private ScheduledExecutorService deviceAuthScheduler;
 	private ScheduledFuture<?> deviceAuthPollTask;
 	private volatile String currentDeviceCode;
+
+	// Auth transition timer (tracked for cleanup)
+	private Timer authTransitionTimer;
 	
 	// Callback for when authentication completes (to sync RSN)
 	private transient Runnable onAuthSuccess;
@@ -1122,6 +1125,11 @@ public class FlipFinderPanel extends PluginPanel
 			deviceAuthScheduler.shutdownNow();
 			deviceAuthScheduler = null;
 		}
+		if (authTransitionTimer != null)
+		{
+			authTransitionTimer.stop();
+			authTransitionTimer = null;
+		}
 	}
 
 	/**
@@ -1169,8 +1177,13 @@ public class FlipFinderPanel extends PluginPanel
 		if (showDelay && successMessage != null)
 		{
 			showLoginStatus(successMessage, true);
-			Timer timer = new Timer(500, e -> showMainPanel());
+			Timer timer = new Timer(500, e ->
+			{
+				showMainPanel();
+				authTransitionTimer = null;
+			});
 			timer.setRepeats(false);
+			authTransitionTimer = timer;
 			timer.start();
 		}
 		else
