@@ -103,6 +103,9 @@ public class FlipSmartPlugin extends Plugin
 	private DumpAlertService dumpAlertService;
 
 	@Inject
+	private OfflineSyncService offlineSyncService;
+
+	@Inject
 	private ChatMessageManager chatMessageManager;
 
 	@Inject
@@ -132,11 +135,9 @@ public class FlipSmartPlugin extends Plugin
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
-	// Config keys for persisting offer state
+	// Config keys for persisting state
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
-	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
-	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
 
 	/** Auto-recommend queue refresh interval (2 minutes) */
@@ -519,6 +520,9 @@ public class FlipSmartPlugin extends Plugin
 		// Start auto-refresh timer for flip finder
 		startFlipFinderRefreshTimer();
 
+		// Wire offline sync callback
+		offlineSyncService.setOnSyncComplete(this::schedulePostSyncTasks);
+
 		// Start dump alert service
 		dumpAlertService.start();
 
@@ -554,7 +558,7 @@ public class FlipSmartPlugin extends Plugin
 		// Only persist if we have a valid RSN to avoid overwriting good data
 		if (session.getRsn() != null && !session.getRsn().isEmpty())
 		{
-			persistOfferState();
+			offlineSyncService.persistOfferState();
 			log.info("Persisted offer state on shutdown for {}", session.getRsn());
 		}
 		
@@ -649,9 +653,10 @@ public class FlipSmartPlugin extends Plugin
 	private void handleLogoutState()
 	{
 		session.onLogout();
-		persistOfferState();
+		offlineSyncService.persistOfferState();
+		persistAutoRecommendState();
 
-		// Stop auto-recommend on logout (state was already persisted above)
+		// Stop auto-recommend on logout
 		if (autoRecommendService != null && autoRecommendService.isActive())
 		{
 			autoRecommendService.stop();
@@ -690,13 +695,13 @@ public class FlipSmartPlugin extends Plugin
 
 		// Restore collected items from config (items bought but not yet sold)
 		// Must be after syncRSN() so we have the correct RSN for the config key
-		restoreCollectedItems();
+		offlineSyncService.restoreCollectedItems();
 		restoreAutoRecommendState();
 
 		// Schedule offline sync after a delay to ensure all GE events have been processed
 		if (!session.isOfflineSyncCompleted())
 		{
-			scheduleOneShot(OFFLINE_SYNC_DELAY_MS, this::syncOfflineFills);
+			scheduleOneShot(OFFLINE_SYNC_DELAY_MS, offlineSyncService::syncOfflineFills);
 		}
 
 		if (flipFinderPanel != null)
@@ -705,353 +710,6 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 	
-	/**
-	 * Restore collected item IDs from persisted config.
-	 * These are items that were bought but not yet sold when the player logged out.
-	 */
-	private void restoreCollectedItems()
-	{
-		String key = getCollectedItemsKey();
-		log.info("Attempting to restore collected items for RSN: {} (key: {})", session.getRsn(), key);
-		
-		java.util.Set<Integer> persisted = loadPersistedCollectedItems();
-		if (!persisted.isEmpty())
-		{
-			session.restoreCollectedItems(persisted);
-			log.info("Restored {} collected items from previous session: {}", persisted.size(), persisted);
-		}
-		else
-		{
-			log.info("No collected items found in config for RSN: {}", session.getRsn());
-			session.clearCollectedItems();
-		}
-	}
-	
-	/**
-	 * Persist the current GE offer state to config for offline tracking.
-	 * Called when the player logs out.
-	 * Uses RSN-specific key to support multiple accounts.
-	 */
-	private void persistOfferState()
-	{
-		String offersKey = getPersistedOffersKey();
-		String collectedKey = getCollectedItemsKey();
-		
-		// Persist tracked offers
-		if (session.getTrackedOffers().isEmpty())
-		{
-			configManager.unsetConfiguration(CONFIG_GROUP, offersKey);
-			log.debug("No tracked offers to persist for {}", session.getRsn());
-		}
-		else
-		{
-			try
-			{
-				Map<Integer, TrackedOffer> offersToSave = session.getOffersForPersistence();
-				String json = gson.toJson(offersToSave);
-				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
-				log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), session.getRsn());
-			}
-			catch (Exception e)
-			{
-				log.error("Failed to persist offer state for {}: {}", session.getRsn(), e.getMessage());
-			}
-		}
-		
-		// Persist collected item IDs (items bought but not yet sold)
-		if (session.getCollectedItemIds().isEmpty())
-		{
-			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
-			log.debug("No collected items to persist for {}", session.getRsn());
-		}
-		else
-		{
-			try
-			{
-				String json = gson.toJson(new java.util.ArrayList<>(session.getCollectedItemsForPersistence()));
-				configManager.setConfiguration(CONFIG_GROUP, collectedKey, json);
-				log.info("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
-			}
-			catch (Exception e)
-			{
-				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
-			}
-		}
-
-		// Persist auto-recommend state
-		persistAutoRecommendState();
-	}
-
-	/**
-	 * Sync fills that occurred while offline.
-	 * Records current GE state to the backend. Cleanup of stale flips happens
-	 * later via schedulePostSyncTasks() after GE state is fully loaded.
-	 */
-	private void syncOfflineFills()
-	{
-		if (session.isOfflineSyncCompleted())
-		{
-			return;
-		}
-		session.setOfflineSyncCompleted(true);
-		
-		// Load persisted offers from last session to compare against current state
-		Map<Integer, TrackedOffer> persistedOffers = loadPersistedOffers();
-		log.debug("Loaded {} persisted offers, comparing with {} current offers", 
-			persistedOffers.size(), session.getTrackedOffers().size());
-		
-		// Always sync current offers - handles both:
-		// 1. Offers with persisted state (compare for offline fills)
-		// 2. Offers WITHOUT persisted state (record as new transactions)
-		if (!session.getTrackedOffers().isEmpty())
-		{
-			syncCurrentOffersWithPersisted(persistedOffers);
-		}
-		
-		// Handle slots that became empty while offline
-		if (!persistedOffers.isEmpty())
-		{
-			handleEmptyPersistedSlots(persistedOffers);
-			// Clear persisted state after sync (RSN-specific key)
-			configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
-		}
-		
-		log.info("Offline sync completed for {}", session.getRsn());
-		
-		// Schedule panel refresh and cleanup
-		schedulePostSyncTasks();
-	}
-	
-	/**
-	 * Sync current GE offers against persisted state to detect offline fills.
-	 */
-	private void syncCurrentOffersWithPersisted(Map<Integer, TrackedOffer> persistedOffers)
-	{
-		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
-		{
-			int slot = entry.getKey();
-			TrackedOffer currentOffer = entry.getValue();
-			TrackedOffer persistedOffer = persistedOffers.get(slot);
-			
-			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
-			{
-				// Restore the original timestamp from persisted offer for timer continuity
-				currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
-
-				// Have persisted state - check for offline fills
-				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
-			}
-			else if (currentOffer.getTotalQuantity() > 0)
-			{
-				// No persisted state but there's an active order - record it
-				log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
-					currentOffer.isBuy() ? "BUY" : "SELL",
-					currentOffer.getItemName(), slot, currentOffer.getPreviousQuantitySold(), 
-					currentOffer.getTotalQuantity(), currentOffer.getPrice());
-				
-				Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
-				
-				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
-						currentOffer.getPreviousQuantitySold(), currentOffer.getPrice())
-					.geSlot(slot)
-					.recommendedSellPrice(recommendedSellPrice)
-					.rsn(getCurrentRsnSafe().orElse(null))
-					.totalQuantity(currentOffer.getTotalQuantity())
-					.build());
-				
-				// For buy orders with fills, add to collected tracking so it shows in active flips
-				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
-				{
-					session.addCollectedItem(currentOffer.getItemId());
-				}
-			}
-		}
-	}
-	
-	/**
-	 * Record offline fills if the current offer has more fills than persisted.
-	 */
-	private void recordOfflineFillsIfAny(int slot, TrackedOffer currentOffer, TrackedOffer persistedOffer)
-	{
-		int offlineFills = currentOffer.getPreviousQuantitySold() - persistedOffer.getPreviousQuantitySold();
-		if (offlineFills <= 0)
-		{
-			return;
-		}
-		
-		log.debug("Detected {} offline fills for {} (slot {}): {} -> {} (order size: {})",
-			offlineFills, currentOffer.getItemName(), slot,
-			persistedOffer.getPreviousQuantitySold(), currentOffer.getPreviousQuantitySold(),
-			currentOffer.getTotalQuantity());
-		
-		Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
-		
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-			.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
-				offlineFills, currentOffer.getPrice())
-			.geSlot(slot)
-			.recommendedSellPrice(recommendedSellPrice)
-			.rsn(getCurrentRsnSafe().orElse(null))
-			.totalQuantity(currentOffer.getTotalQuantity())
-			.build());
-	}
-	
-	/**
-	 * Handle persisted slots that are now empty (offer completed or cancelled offline).
-	 * Checks inventory to detect orders that completed while offline.
-	 */
-	private void handleEmptyPersistedSlots(Map<Integer, TrackedOffer> persistedOffers)
-	{
-		for (Map.Entry<Integer, TrackedOffer> entry : persistedOffers.entrySet())
-		{
-			int slot = entry.getKey();
-			TrackedOffer persistedOffer = entry.getValue();
-			
-			if (session.getTrackedOffers().containsKey(slot))
-			{
-				continue;
-			}
-			
-			log.info("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
-				slot, persistedOffer.getItemName(), persistedOffer.getTotalQuantity());
-			
-			if (persistedOffer.isBuy())
-			{
-				handleEmptyBuySlot(persistedOffer);
-			}
-			else
-			{
-				handleEmptySellSlot(persistedOffer);
-			}
-		}
-	}
-	
-	/**
-	 * Handle an empty slot that was previously a sell order.
-	 * If items sold offline, record them as SELL transactions.
-	 */
-	private void handleEmptySellSlot(TrackedOffer persistedOffer)
-	{
-		int soldQuantity = persistedOffer.getPreviousQuantitySold();
-		
-		if (soldQuantity > 0)
-		{
-			log.info("Detected {} {} sold offline. Recording SELL transaction.",
-				soldQuantity, persistedOffer.getItemName());
-			
-			// Record the offline sell transaction
-			recordOfflineSellTransaction(persistedOffer, soldQuantity);
-		}
-		else
-		{
-			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
-		}
-	}
-	
-	/**
-	 * Record a SELL transaction for items that sold while offline.
-	 */
-	private void recordOfflineSellTransaction(TrackedOffer persistedOffer, int soldQuantity)
-	{
-		String rsn = getCurrentRsnSafe().orElse(null);
-		if (rsn == null)
-		{
-			log.warn("Cannot record offline sell - no RSN available");
-			return;
-		}
-		
-		// Create a SELL transaction for the items that sold offline
-		apiClient.recordTransactionAsync(
-			persistedOffer.getItemId(),
-			persistedOffer.getItemName(),
-			"SELL",
-			soldQuantity,
-			persistedOffer.getPrice(),
-			rsn
-		);
-	}
-	
-	/**
-	 * Handle an empty slot that was previously a buy order.
-	 * Checks inventory and syncs with backend if needed.
-	 */
-	private void handleEmptyBuySlot(TrackedOffer persistedOffer)
-	{
-		int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
-		int trackedFills = persistedOffer.getPreviousQuantitySold();
-		
-		if (inventoryCount > 0)
-		{
-			handleBuyOrderWithInventory(persistedOffer, inventoryCount, trackedFills);
-		}
-		else if (trackedFills > 0)
-		{
-			log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
-				persistedOffer.getItemName(), trackedFills);
-		}
-	}
-	
-	/**
-	 * Handle a completed buy order that has items in inventory.
-	 * Syncs with backend if inventory count exceeds tracked fills.
-	 */
-	private void handleBuyOrderWithInventory(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
-	{
-		session.addCollectedItem(persistedOffer.getItemId());
-		
-		int actualFills = calculateActualFills(persistedOffer, inventoryCount, trackedFills);
-		
-		if (actualFills > trackedFills)
-		{
-			syncOfflineCompletedOrder(persistedOffer, inventoryCount, trackedFills, actualFills);
-		}
-		else
-		{
-			log.info("Adding {} to collected tracking (had {} items filled before going offline)",
-				persistedOffer.getItemName(), trackedFills);
-		}
-	}
-	
-	/**
-	 * Calculate actual fills based on inventory count, tracked fills, and order size.
-	 */
-	private int calculateActualFills(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
-	{
-		int actualFills = Math.max(inventoryCount, trackedFills);
-		
-		// If we have at least order_size items, the order completed fully
-		if (inventoryCount >= persistedOffer.getTotalQuantity())
-		{
-			actualFills = persistedOffer.getTotalQuantity();
-		}
-		
-		return actualFills;
-	}
-	
-	/**
-	 * Sync an offline-completed order with the backend.
-	 */
-	private void syncOfflineCompletedOrder(TrackedOffer persistedOffer, int inventoryCount, int trackedFills, int actualFills)
-	{
-		log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
-			persistedOffer.getItemName(), trackedFills, inventoryCount, actualFills);
-		
-		String rsn = getCurrentRsnSafe().orElse(null);
-		if (rsn == null)
-		{
-			return;
-		}
-		
-		apiClient.syncActiveFlipAsync(
-			persistedOffer.getItemId(),
-			persistedOffer.getItemName(),
-			actualFills,
-			persistedOffer.getTotalQuantity(),
-			persistedOffer.getPrice(),
-			rsn
-		);
-	}
 	
 	/**
 	 * Schedule panel refresh and stale flip cleanup after offline sync.
@@ -1363,84 +1021,6 @@ public class FlipSmartPlugin extends Plugin
 		return Optional.empty();
 	}
 	
-	/**
-	 * Get the RSN-specific config key for persisted offers
-	 */
-	private String getPersistedOffersKey()
-	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return PERSISTED_OFFERS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return PERSISTED_OFFERS_KEY_PREFIX + session.getRsn();
-	}
-	
-	private String getCollectedItemsKey()
-	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return COLLECTED_ITEMS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return COLLECTED_ITEMS_KEY_PREFIX + session.getRsn();
-	}
-	
-	/**
-	 * Load previously persisted collected item IDs from config.
-	 * These are items that were bought but not yet sold when the player logged out.
-	 */
-	private java.util.Set<Integer> loadPersistedCollectedItems()
-	{
-		String key = getCollectedItemsKey();
-		
-		try
-		{
-			String json = configManager.getConfiguration(CONFIG_GROUP, key);
-			if (json == null || json.isEmpty())
-			{
-				return new java.util.HashSet<>();
-			}
-			
-			Type type = new TypeToken<java.util.List<Integer>>(){}.getType();
-			java.util.List<Integer> items = gson.fromJson(json, type);
-			log.debug("Loaded {} persisted collected items for {}", items != null ? items.size() : 0, session.getRsn());
-			return items != null ? new java.util.HashSet<>(items) : new java.util.HashSet<>();
-		}
-		catch (Exception e)
-		{
-			log.error("Failed to load persisted collected items for {}: {}", session.getRsn(), e.getMessage());
-			return new java.util.HashSet<>();
-		}
-	}
-	
-	/**
-	 * Load previously persisted tracked offers from config.
-	 * These represent the GE offer state when the player last logged out.
-	 */
-	private Map<Integer, TrackedOffer> loadPersistedOffers()
-	{
-		String key = getPersistedOffersKey();
-		
-		try
-		{
-			String json = configManager.getConfiguration(CONFIG_GROUP, key);
-			if (json == null || json.isEmpty())
-			{
-				log.debug("No persisted offers found for {}", session.getRsn());
-				return new HashMap<>();
-			}
-			
-			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
-			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
-			log.info("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, session.getRsn());
-			return offers != null ? offers : new HashMap<>();
-		}
-		catch (Exception e)
-		{
-			log.error("Failed to load persisted offers for {}: {}", session.getRsn(), e.getMessage());
-			return new HashMap<>();
-		}
-	}
-
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
