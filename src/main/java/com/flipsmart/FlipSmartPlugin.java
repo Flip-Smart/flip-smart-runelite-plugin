@@ -41,8 +41,10 @@ import java.awt.Rectangle;
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 @PluginDescriptor(
@@ -125,6 +127,9 @@ public class FlipSmartPlugin extends Plugin
 
 	// Auto-recommend refresh timer (2-minute cycle)
 	private java.util.Timer autoRecommendRefreshTimer;
+
+	// Track all active one-shot Swing timers for cleanup on shutdown
+	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
 
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
@@ -607,6 +612,9 @@ public class FlipSmartPlugin extends Plugin
 		// Stop auto-refresh timer
 		stopFlipFinderRefreshTimer();
 
+		// Stop all pending one-shot timers
+		stopAllOneShotTimers();
+
 		// Stop dump alert service
 		dumpAlertService.stop();
 
@@ -724,9 +732,7 @@ public class FlipSmartPlugin extends Plugin
 		// Schedule offline sync after a delay to ensure all GE events have been processed
 		if (!session.isOfflineSyncCompleted())
 		{
-			javax.swing.Timer syncTimer = new javax.swing.Timer(OFFLINE_SYNC_DELAY_MS, e -> syncOfflineFills());
-			syncTimer.setRepeats(false);
-			syncTimer.start();
+			scheduleOneShot(OFFLINE_SYNC_DELAY_MS, this::syncOfflineFills);
 		}
 
 		if (flipFinderPanel != null)
@@ -1091,13 +1097,12 @@ public class FlipSmartPlugin extends Plugin
 		// Refresh the panel after a short delay
 		if (flipFinderPanel != null)
 		{
-			javax.swing.Timer refreshTimer = new javax.swing.Timer(PANEL_REFRESH_DELAY_MS, e -> flipFinderPanel.refresh());
-			refreshTimer.setRepeats(false);
-			refreshTimer.start();
+			scheduleOneShot(PANEL_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
 		}
-		
+
 		// Schedule stale flip cleanup after GE state is stable
-		javax.swing.Timer cleanupTimer = new javax.swing.Timer(STALE_FLIP_CLEANUP_DELAY_MS, e -> {
+		scheduleOneShot(STALE_FLIP_CLEANUP_DELAY_MS, () ->
+		{
 			if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
 			{
 				cleanupStaleActiveFlips();
@@ -1109,8 +1114,6 @@ public class FlipSmartPlugin extends Plugin
 				log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
 			}
 		});
-		cleanupTimer.setRepeats(false);
-		cleanupTimer.start();
 	}
 	
 	/**
@@ -1120,11 +1123,7 @@ public class FlipSmartPlugin extends Plugin
 	private void scheduleInventoryQuantityValidation()
 	{
 		// Delay slightly to ensure cleanup has completed
-		javax.swing.Timer validationTimer = new javax.swing.Timer(INVENTORY_VALIDATION_DELAY_MS, e -> {
-			clientThread.invokeLater(this::validateInventoryQuantities);
-		});
-		validationTimer.setRepeats(false);
-		validationTimer.start();
+		scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () -> clientThread.invokeLater(this::validateInventoryQuantities));
 	}
 	
 	/**
@@ -1812,11 +1811,7 @@ public class FlipSmartPlugin extends Plugin
 				itemPrice = price; // Fallback to offer price
 			}
 
-			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
-							state == GrandExchangeOfferState.BOUGHT ||
-							state == GrandExchangeOfferState.CANCELLED_BUY;
-
-			if (isBuy)
+			if (TrackedOffer.isBuyState(state))
 			{
 				// Buy offer: GP is locked for remaining qty + items pending collection
 				long remainingBudget = (long) remainingQty * price;
@@ -1993,27 +1988,11 @@ public class FlipSmartPlugin extends Plugin
 			// During login, just track existing offers without recording transactions
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
 
-			boolean isBuy = state == GrandExchangeOfferState.BUYING ||
-							state == GrandExchangeOfferState.BOUGHT ||
-							state == GrandExchangeOfferState.CANCELLED_BUY;
-
 			// Track the current state so future changes are detected correctly
 			// Preserve existing timestamp if we already have this offer tracked
 			TrackedOffer existing = session.getTrackedOffer(slot);
-			long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
-				? existing.getCreatedAtMillis()
-				: System.currentTimeMillis();
-			long completedTimestamp = 0;
-
-			// Check if offer is already completed (BOUGHT/SOLD state)
-			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
-			{
-				completedTimestamp = (existing != null && existing.getCompletedAtMillis() > 0)
-					? existing.getCompletedAtMillis()
-					: System.currentTimeMillis();
-			}
-
-			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
+				itemId, itemName, totalQuantity, price, quantitySold, existing, state));
 
 			// Note: offline sync is now scheduled from LOGGED_IN state change
 			// after syncRSN() to ensure correct RSN-specific config key
@@ -2021,9 +2000,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Check if this is a buy or sell offer
-		boolean isBuy = state == GrandExchangeOfferState.BUYING || 
-						state == GrandExchangeOfferState.BOUGHT ||
-						state == GrandExchangeOfferState.CANCELLED_BUY;
+		boolean isBuy = TrackedOffer.isBuyState(state);
 		
 		// Handle cancelled offers
 		if (state == GrandExchangeOfferState.CANCELLED_BUY || state == GrandExchangeOfferState.CANCELLED_SELL)
@@ -2231,9 +2208,7 @@ public class FlipSmartPlugin extends Plugin
 				// Refresh panel to show updated state
 				if (flipFinderPanel != null)
 				{
-					javax.swing.Timer refreshTimer = new javax.swing.Timer(TRANSACTION_REFRESH_DELAY_MS, e -> flipFinderPanel.refresh());
-					refreshTimer.setRepeats(false);
-					refreshTimer.start();
+					scheduleOneShot(TRANSACTION_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
 				}
 			}
 			return;
@@ -2308,47 +2283,28 @@ public class FlipSmartPlugin extends Plugin
 				}
 
 				// Refresh active flips panel if it exists
-				// Use a Swing Timer to add a small delay without blocking the EDT
+				// Use a tracked one-shot timer to add a small delay without blocking the EDT
 				if (flipFinderPanel != null)
 				{
-					javax.swing.Timer refreshTimer = new javax.swing.Timer(500, e -> {
-						// This will update both pending orders and active flips
-						flipFinderPanel.refresh();
-					});
-					refreshTimer.setRepeats(false);
-					refreshTimer.start();
+					scheduleOneShot(TRANSACTION_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
 				}
+			}
+
+			// Notify auto-recommend service on order completion
+			if (state == GrandExchangeOfferState.BOUGHT
+				&& isBuy && autoRecommendService != null && autoRecommendService.isActive())
+			{
+				autoRecommendService.onBuyOrderCompleted(itemId, itemName);
+			}
+			if (state == GrandExchangeOfferState.SOLD
+				&& !isBuy && autoRecommendService != null && autoRecommendService.isActive())
+			{
+				autoRecommendService.onSellOrderCompleted(itemId);
 			}
 
 			// Update tracked offer - preserve original timestamp to prevent timer reset
-			long originalTimestamp = (previousOffer != null && previousOffer.getCreatedAtMillis() > 0)
-				? previousOffer.getCreatedAtMillis()
-				: System.currentTimeMillis();
-			long completedTimestamp = 0;
-
-			// Check if offer just completed (BOUGHT/SOLD state)
-			if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
-			{
-				completedTimestamp = (previousOffer != null && previousOffer.getCompletedAtMillis() > 0)
-					? previousOffer.getCompletedAtMillis()
-					: System.currentTimeMillis();
-
-				// Notify auto-recommend service when a buy order fully completes
-				if (isBuy && state == GrandExchangeOfferState.BOUGHT
-					&& autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onBuyOrderCompleted(itemId, itemName);
-				}
-
-				// Notify auto-recommend service when a sell order fully completes
-				if (!isBuy && state == GrandExchangeOfferState.SOLD
-					&& autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onSellOrderCompleted(itemId);
-				}
-			}
-
-			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp));
+			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
+				itemId, itemName, totalQuantity, price, quantitySold, previousOffer, state));
 
 			// Handle immediate-fill auto-recommend transitions AFTER tracked offer is stored,
 			// so hasAvailableGESlots() correctly counts this slot as occupied.
@@ -2677,6 +2633,42 @@ public class FlipSmartPlugin extends Plugin
 			flipFinderRefreshTimer = null;
 			log.info("Flip Finder auto-refresh stopped");
 		}
+	}
+
+	/**
+	 * Create and start a tracked one-shot Swing timer.
+	 * The timer is automatically removed from tracking after it fires.
+	 * All tracked timers are stopped during {@link #shutDown()}.
+	 */
+	private void scheduleOneShot(int delayMs, Runnable action)
+	{
+		javax.swing.Timer timer = new javax.swing.Timer(delayMs, null);
+		timer.addActionListener(e ->
+		{
+			try
+			{
+				action.run();
+			}
+			finally
+			{
+				activeOneShotTimers.remove(timer);
+			}
+		});
+		timer.setRepeats(false);
+		activeOneShotTimers.add(timer);
+		timer.start();
+	}
+
+	/**
+	 * Stop all active one-shot Swing timers.
+	 */
+	private void stopAllOneShotTimers()
+	{
+		for (javax.swing.Timer timer : activeOneShotTimers)
+		{
+			timer.stop();
+		}
+		activeOneShotTimers.clear();
 	}
 
 	/**
