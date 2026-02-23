@@ -2035,6 +2035,34 @@ public class FlipSmartApiClient
 	// Webhook API Methods
 	// =========================================================================
 
+	private static final String WEBHOOK_BASE_PATH = "/profile/webhook";
+
+	/**
+	 * Execute a simple webhook API call with standard success/error callback wiring.
+	 */
+	private void executeWebhookCall(Request request, String action, Runnable onSuccess, Consumer<String> onError)
+	{
+		executeAsync(
+			request,
+			jsonData -> {
+				log.debug("Webhook {} succeeded", action);
+				if (onSuccess != null)
+				{
+					onSuccess.run();
+				}
+				return null;
+			},
+			error -> {
+				log.debug("Webhook {} failed: {}", action, error);
+				if (onError != null)
+				{
+					onError.accept(error);
+				}
+			},
+			true
+		);
+	}
+
 	/**
 	 * Update (or create) user's webhook configuration asynchronously.
 	 *
@@ -2052,47 +2080,24 @@ public class FlipSmartApiClient
 		Consumer<String> onError
 	)
 	{
-		String apiUrl = getApiUrl();
-		String url = String.format("%s/profile/webhook", apiUrl);
-
 		JsonObject jsonBody = new JsonObject();
 		jsonBody.addProperty("webhook_url", webhookUrl);
 		jsonBody.addProperty("notify_sale_completed", notifySale);
 		jsonBody.addProperty("notify_flip_suggestion", notifySuggestion);
 		jsonBody.addProperty("enabled", true);
 
-		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
-
 		Request request = new Request.Builder()
-			.url(url)
-			.put(body)
+			.url(String.format("%s%s", getApiUrl(), WEBHOOK_BASE_PATH))
+			.put(RequestBody.create(JSON, jsonBody.toString()))
 			.build();
 
-		executeAsync(
-			request,
-			jsonData -> {
-				log.debug("Webhook config updated successfully");
-				if (onSuccess != null)
-				{
-					onSuccess.run();
-				}
-				return null;
-			},
-			error -> {
-				log.debug("Failed to update webhook config: {}", error);
-				if (onError != null)
-				{
-					onError.accept(error);
-				}
-			},
-			true // retry on 401
-		);
+		executeWebhookCall(request, "update", onSuccess, onError);
 	}
 
 	/**
 	 * Fetch user's full webhook configuration (including unmasked URL) from the backend.
 	 *
-	 * @param onSuccess Callback with webhook config JSON (webhook_url, enabled, notify_sale_completed, notify_flip_suggestion, notify_price_alert)
+	 * @param onSuccess Callback with webhook config JSON
 	 * @param onNotFound Callback when no webhook is configured (404)
 	 * @param onError Callback on error
 	 */
@@ -2102,18 +2107,15 @@ public class FlipSmartApiClient
 		Consumer<String> onError
 	)
 	{
-		String apiUrl = getApiUrl();
-		String url = String.format("%s/profile/webhook/url", apiUrl);
-
 		Request request = new Request.Builder()
-			.url(url)
+			.url(String.format("%s%s/url", getApiUrl(), WEBHOOK_BASE_PATH))
 			.get()
 			.build();
 
 		executeAsync(
 			request,
 			jsonData -> {
-				log.debug("Fetched webhook config from backend");
+				log.debug("Webhook fetch succeeded");
 				JsonObject config = gson.fromJson(jsonData, JsonObject.class);
 				if (onSuccess != null)
 				{
@@ -2132,14 +2134,14 @@ public class FlipSmartApiClient
 				}
 				else
 				{
-					log.debug("Failed to fetch webhook config: {}", error);
+					log.debug("Webhook fetch failed: {}", error);
 					if (onError != null)
 					{
 						onError.accept(error);
 					}
 				}
 			},
-			true // retry on 401
+			true
 		);
 	}
 
@@ -2149,25 +2151,12 @@ public class FlipSmartApiClient
 	 */
 	public void webhookHeartbeatAsync()
 	{
-		String apiUrl = getApiUrl();
-		String url = String.format("%s/profile/webhook/heartbeat", apiUrl);
-
 		Request request = new Request.Builder()
-			.url(url)
+			.url(String.format("%s%s/heartbeat", getApiUrl(), WEBHOOK_BASE_PATH))
 			.post(RequestBody.create(JSON, "{}"))
 			.build();
 
-		executeAsync(
-			request,
-			jsonData -> {
-				log.debug("Webhook heartbeat sent");
-				return null;
-			},
-			error -> {
-				log.debug("Webhook heartbeat failed (may not have webhook configured): {}", error);
-			},
-			true
-		);
+		executeWebhookCall(request, "heartbeat", null, null);
 	}
 
 	/**
@@ -2178,32 +2167,11 @@ public class FlipSmartApiClient
 	 */
 	public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
 	{
-		String apiUrl = getApiUrl();
-		String url = String.format("%s/profile/webhook", apiUrl);
-
 		Request request = new Request.Builder()
-			.url(url)
+			.url(String.format("%s%s", getApiUrl(), WEBHOOK_BASE_PATH))
 			.delete()
 			.build();
 
-		executeAsync(
-			request,
-			jsonData -> {
-				log.debug("Webhook config deleted successfully");
-				if (onSuccess != null)
-				{
-					onSuccess.run();
-				}
-				return null;
-			},
-			error -> {
-				log.debug("Failed to delete webhook config: {}", error);
-				if (onError != null)
-				{
-					onError.accept(error);
-				}
-			},
-			true // retry on 401
-		);
+		executeWebhookCall(request, "delete", onSuccess, onError);
 	}
 }
