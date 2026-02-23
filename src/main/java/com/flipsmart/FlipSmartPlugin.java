@@ -637,6 +637,13 @@ public class FlipSmartPlugin extends Plugin
 		{
 			flipFinderPanel.setAutoRecommendVisible(config.enableAutoRecommend());
 		}
+
+		// Sync webhook config changes to backend
+		String key = configChanged.getKey();
+		if ("discordWebhookUrl".equals(key) || "notifySaleCompleted".equals(key))
+		{
+			webhookSyncService.syncIfChanged();
+		}
 	}
 
 	@Subscribe
@@ -697,6 +704,15 @@ public class FlipSmartPlugin extends Plugin
 			if (flipFinderPanel != null)
 			{
 				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
+			}
+
+			// Pull webhook config after auth is confirmed
+			webhookSyncService.pullFromBackend();
+
+			// Send heartbeat so API knows plugin is online (only if webhook configured)
+			if (config.discordWebhookUrl() != null && !config.discordWebhookUrl().trim().isEmpty())
+			{
+				apiClient.webhookHeartbeatAsync();
 			}
 		});
 
@@ -2623,6 +2639,9 @@ public class FlipSmartPlugin extends Plugin
 					return;
 				}
 				
+				// Webhook sync — heartbeat handled inside pullFromBackend callback
+				webhookSyncService.pullAndHeartbeat();
+
 				if (flipFinderPanel != null && config.showFlipFinder())
 				{
 					javax.swing.SwingUtilities.invokeLater(() ->

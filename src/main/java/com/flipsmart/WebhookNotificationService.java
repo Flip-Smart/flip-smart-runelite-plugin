@@ -199,7 +199,7 @@ public class WebhookNotificationService
 
 		Request request = new Request.Builder()
 			.url(payload.webhookUrl)
-			.post(RequestBody.create(json, JSON))
+			.post(RequestBody.create(JSON, json))
 			.build();
 
 		httpClient.newCall(request).enqueue(new Callback()

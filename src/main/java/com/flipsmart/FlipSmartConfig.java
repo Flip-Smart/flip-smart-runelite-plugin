@@ -511,13 +511,7 @@ public interface FlipSmartConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(
-		keyName = "notifyFlipSuggestion",
-		name = "Flip Suggestions",
-		description = "Notify when a new flip opportunity is recommended",
-		section = notificationsSection,
-		position = 2
-	)
+	// Hidden — coming soon, not exposed in UI
 	default boolean notifyFlipSuggestion()
 	{
 		return false;
