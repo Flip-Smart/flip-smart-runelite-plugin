@@ -81,6 +81,14 @@ public class FlipSmartApiClient
 		}
 	}
 
+	/**
+	 * Add Authorization header with Bearer token to a request builder.
+	 */
+	private Request.Builder withAuthHeader(Request.Builder builder)
+	{
+		return builder.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken());
+	}
+
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
 	{
@@ -168,8 +176,7 @@ public class FlipSmartApiClient
 							if (authSuccess)
 							{
 								// Rebuild request with new token
-								Request retryRequest = request.newBuilder()
-									.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
+								Request retryRequest = withAuthHeader(request.newBuilder())
 									.build();
 
 								// Retry without auth retry to prevent infinite loop
@@ -227,10 +234,9 @@ public class FlipSmartApiClient
 				return CompletableFuture.completedFuture(null);
 			}
 
-			Request request = requestBuilder
-				.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
+			Request request = withAuthHeader(requestBuilder)
 				.build();
-			
+
 			return executeAsync(request, responseHandler, null, true);
 		});
 	}
@@ -752,9 +758,8 @@ public class FlipSmartApiClient
 			url += "?rsn=" + rsn;
 		}
 
-		Request request = new Request.Builder()
-			.url(url)
-			.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
+		Request request = withAuthHeader(new Request.Builder()
+			.url(url))
 			.get()
 			.build();
 
@@ -1614,9 +1619,8 @@ public class FlipSmartApiClient
 				urlBuilder.addQueryParameter("limit", String.valueOf(limit));
 			}
 
-			Request request = new Request.Builder()
-				.url(urlBuilder.build())
-				.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
+			Request request = withAuthHeader(new Request.Builder()
+				.url(urlBuilder.build()))
 				.get()
 				.build();
 
