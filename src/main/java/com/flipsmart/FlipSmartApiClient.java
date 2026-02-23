@@ -11,6 +11,9 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
@@ -35,7 +38,15 @@ public class FlipSmartApiClient
 	private final OkHttpClient httpClient;
 	private final Gson gson;
 	private final FlipSmartConfig config;
-	
+
+	// Rate limiting and resilience
+	private final CircuitBreaker circuitBreaker = new CircuitBreaker(5, 30_000);
+	private final RateLimiter rateLimiter = new RateLimiter(10, 1000);
+	private final ConcurrentHashMap<String, CompletableFuture<?>> inFlightRequests = new ConcurrentHashMap<>();
+
+	private static final int MAX_RETRIES = 3;
+	private static final long BASE_RETRY_DELAY_MS = 1000;
+
 	// Cache to avoid spamming the API
 	private final Map<Integer, CachedAnalysis> analysisCache = new ConcurrentHashMap<>();
 	private static final long CACHE_DURATION_MS = 180_000; // 3 minute cache
@@ -129,9 +140,9 @@ public class FlipSmartApiClient
 	}
 	
 	/**
-	 * Execute an HTTP request asynchronously with automatic retry on 401
-	 * This is the core method that handles all HTTP requests off the main threads
-	 * 
+	 * Execute an HTTP request asynchronously with circuit breaker, rate limiting,
+	 * request deduplication, automatic retry on 401, and exponential backoff on server errors.
+	 *
 	 * @param request The request to execute
 	 * @param responseHandler Function to process successful response body and return result
 	 * @param errorHandler Consumer to handle errors
@@ -139,17 +150,75 @@ public class FlipSmartApiClient
 	 * @param <T> The return type
 	 * @return CompletableFuture with the result
 	 */
-	private <T> CompletableFuture<T> executeAsync(Request request, Function<String, T> responseHandler, 
+	private <T> CompletableFuture<T> executeAsync(Request request, Function<String, T> responseHandler,
 												   Consumer<String> errorHandler, boolean retryOnAuth)
 	{
+		return executeAsyncWithRetry(request, responseHandler, errorHandler, retryOnAuth, 0);
+	}
+
+	@SuppressWarnings("unchecked")
+	private <T> CompletableFuture<T> executeAsyncWithRetry(Request request, Function<String, T> responseHandler,
+														   Consumer<String> errorHandler, boolean retryOnAuth,
+														   int attempt)
+	{
+		// Circuit breaker check
+		if (!circuitBreaker.allowRequest())
+		{
+			log.debug("Circuit breaker open, rejecting request to {}", request.url().encodedPath());
+			if (errorHandler != null)
+			{
+				errorHandler.accept("API temporarily unavailable");
+			}
+			return CompletableFuture.completedFuture(null);
+		}
+
+		// Rate limiter check
+		if (!rateLimiter.tryAcquire())
+		{
+			log.debug("Rate limited, dropping request to {}", request.url().encodedPath());
+			if (errorHandler != null)
+			{
+				errorHandler.accept("Rate limited");
+			}
+			return CompletableFuture.completedFuture(null);
+		}
+
+		// Request deduplication
+		String requestKey = request.method() + " " + request.url();
 		CompletableFuture<T> future = new CompletableFuture<>();
-		
+
+		CompletableFuture<?> existing = inFlightRequests.putIfAbsent(requestKey, future);
+		if (existing != null)
+		{
+			log.debug("Deduplicating request to {}", request.url().encodedPath());
+			return (CompletableFuture<T>) existing;
+		}
+
+		// Clean up dedup entry when done
+		future.whenComplete((result, ex) -> inFlightRequests.remove(requestKey, future));
+
 		httpClient.newCall(request).enqueue(new Callback()
 		{
 			@Override
 			public void onFailure(Call call, IOException e)
 			{
+				circuitBreaker.recordFailure();
 				log.debug("Request failed: {}", e.getMessage());
+
+				// Retry on network errors with backoff
+				if (attempt < MAX_RETRIES)
+				{
+					long delay = calculateRetryDelay(attempt);
+					log.debug("Retrying request to {} in {}ms (attempt {}/{})",
+						request.url().encodedPath(), delay, attempt + 1, MAX_RETRIES);
+
+					Executor delayed = CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS);
+					CompletableFuture.supplyAsync(() -> null, delayed).thenCompose(ignored ->
+						executeAsyncWithRetry(request, responseHandler, errorHandler, retryOnAuth, attempt + 1)
+					).thenAccept(future::complete);
+					return;
+				}
+
 				if (errorHandler != null)
 				{
 					errorHandler.accept("Connection error: " + e.getMessage());
@@ -180,7 +249,7 @@ public class FlipSmartApiClient
 									.build();
 
 								// Retry without auth retry to prevent infinite loop
-								executeAsync(retryRequest, responseHandler, errorHandler, false)
+								executeAsyncWithRetry(retryRequest, responseHandler, errorHandler, false, 0)
 									.thenAccept(future::complete);
 							}
 							else
@@ -192,9 +261,28 @@ public class FlipSmartApiClient
 						});
 						return;
 					}
-					
+
+					// Retry on server errors (502, 503, 504) with backoff
+					if (isRetryableServerError(response.code()) && attempt < MAX_RETRIES)
+					{
+						circuitBreaker.recordFailure();
+						long delay = calculateRetryDelay(attempt);
+						log.debug("Server error {}, retrying in {}ms (attempt {}/{})",
+							response.code(), delay, attempt + 1, MAX_RETRIES);
+
+						Executor delayed = CompletableFuture.delayedExecutor(delay, TimeUnit.MILLISECONDS);
+						CompletableFuture.supplyAsync(() -> null, delayed).thenCompose(ignored ->
+							executeAsyncWithRetry(request, responseHandler, errorHandler, retryOnAuth, attempt + 1)
+						).thenAccept(future::complete);
+						return;
+					}
+
 					if (!response.isSuccessful())
 					{
+						if (isRetryableServerError(response.code()))
+						{
+							circuitBreaker.recordFailure();
+						}
 						log.debug("Request returned error: {}", response.code());
 						if (errorHandler != null)
 						{
@@ -203,6 +291,8 @@ public class FlipSmartApiClient
 						future.complete(null);
 						return;
 					}
+
+					circuitBreaker.recordSuccess();
 
 					okhttp3.ResponseBody responseBody = response.body();
 					String jsonData = responseBody != null ? responseBody.string() : "";
@@ -216,8 +306,20 @@ public class FlipSmartApiClient
 				}
 			}
 		});
-		
+
 		return future;
+	}
+
+	private static boolean isRetryableServerError(int code)
+	{
+		return code == 502 || code == 503 || code == 504;
+	}
+
+	private static long calculateRetryDelay(int attempt)
+	{
+		long delay = BASE_RETRY_DELAY_MS * (1L << attempt); // 1s, 2s, 4s
+		double jitter = 0.8 + ThreadLocalRandom.current().nextDouble() * 0.4; // +/- 20%
+		return (long) (delay * jitter);
 	}
 	
 	/**
@@ -1646,6 +1748,14 @@ public class FlipSmartApiClient
 	public void getDumpsAsync(Consumer<DumpEvent[]> onSuccess, Consumer<String> onError)
 	{
 		getDumpsAsync("recency", 0, 50, onSuccess, onError);
+	}
+
+	/**
+	 * Shutdown background resources (rate limiter timer). Call on plugin shutdown.
+	 */
+	public void shutdown()
+	{
+		rateLimiter.shutdown();
 	}
 
 	/**
