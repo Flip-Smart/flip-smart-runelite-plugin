@@ -116,8 +116,9 @@ public class FlipSmartPlugin extends Plugin
 	@Getter
 	private AutoRecommendService autoRecommendService;
 
-	// Centralized session state management
-	private final PlayerSession session = new PlayerSession();
+	// Centralized session state management (provided via @Provides @Singleton)
+	@Inject
+	private PlayerSession session;
 
 	// Auto-refresh timer for flip finder
 	private java.util.Timer flipFinderRefreshTimer;
@@ -496,31 +497,6 @@ public class FlipSmartPlugin extends Plugin
 		return count;
 	}
 	
-	/**
-	 * Helper class for pending orders
-	 */
-	public static class PendingOrder
-	{
-		public final int itemId;
-		public final String itemName;
-		public final int quantity;        // Total quantity ordered
-		public final int quantityFilled;  // How many have been filled so far
-		public final int pricePerItem;
-		public final Integer recommendedSellPrice;
-		public final int slot;
-		
-		public PendingOrder(int itemId, String itemName, int quantity, int quantityFilled, int pricePerItem, Integer recommendedSellPrice, int slot)
-		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.quantity = quantity;
-			this.quantityFilled = quantityFilled;
-			this.pricePerItem = pricePerItem;
-			this.recommendedSellPrice = recommendedSellPrice;
-			this.slot = slot;
-		}
-	}
-
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -2781,6 +2757,13 @@ public class FlipSmartPlugin extends Plugin
 	FlipSmartConfig provideConfig(ConfigManager configManager)
 	{
 		return configManager.getConfig(FlipSmartConfig.class);
+	}
+
+	@Provides
+	@javax.inject.Singleton
+	PlayerSession providePlayerSession()
+	{
+		return new PlayerSession();
 	}
 
 	// Mouse listener for GE overlay clicks
