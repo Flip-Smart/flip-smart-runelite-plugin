@@ -2608,7 +2608,8 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void scheduleOneShot(int delayMs, Runnable action)
 	{
-		javax.swing.Timer timer = new javax.swing.Timer(delayMs, e ->
+		javax.swing.Timer timer = new javax.swing.Timer(delayMs, null);
+		timer.addActionListener(e ->
 		{
 			try
 			{
@@ -2616,7 +2617,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 			finally
 			{
-				activeOneShotTimers.remove(((javax.swing.Timer) e.getSource()));
+				activeOneShotTimers.remove(timer);
 			}
 		});
 		timer.setRepeats(false);
