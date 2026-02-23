@@ -29,6 +29,8 @@ public class FlipSmartApiClient
 	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
 	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
+	private static final String HEADER_AUTHORIZATION = "Authorization";
+	private static final String BEARER_PREFIX = "Bearer ";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -167,7 +169,7 @@ public class FlipSmartApiClient
 							{
 								// Rebuild request with new token
 								Request retryRequest = request.newBuilder()
-									.header("Authorization", "Bearer " + getJwtToken())
+									.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
 									.build();
 
 								// Retry without auth retry to prevent infinite loop
@@ -226,7 +228,7 @@ public class FlipSmartApiClient
 			}
 
 			Request request = requestBuilder
-				.header("Authorization", "Bearer " + getJwtToken())
+				.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
 				.build();
 			
 			return executeAsync(request, responseHandler, null, true);
@@ -752,7 +754,7 @@ public class FlipSmartApiClient
 
 		Request request = new Request.Builder()
 			.url(url)
-			.header("Authorization", "Bearer " + getJwtToken())
+			.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
 			.get()
 			.build();
 
@@ -1614,7 +1616,7 @@ public class FlipSmartApiClient
 
 			Request request = new Request.Builder()
 				.url(urlBuilder.build())
-				.header("Authorization", "Bearer " + getJwtToken())
+				.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
 				.get()
 				.build();
 
