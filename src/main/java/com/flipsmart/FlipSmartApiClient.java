@@ -2116,10 +2116,10 @@ public class FlipSmartApiClient
 			request,
 			jsonData -> {
 				log.debug("Webhook fetch succeeded");
-				JsonObject config = gson.fromJson(jsonData, JsonObject.class);
+				JsonObject webhookConfig = gson.fromJson(jsonData, JsonObject.class);
 				if (onSuccess != null)
 				{
-					onSuccess.accept(config);
+					onSuccess.accept(webhookConfig);
 				}
 				return null;
 			},

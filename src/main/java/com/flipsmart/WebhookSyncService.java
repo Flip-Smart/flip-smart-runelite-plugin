@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
 
@@ -15,6 +16,11 @@ import javax.inject.Singleton;
 @Singleton
 public class WebhookSyncService
 {
+	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String JSON_WEBHOOK_URL = "webhook_url";
+	private static final String JSON_NOTIFY_SALE = "notify_sale_completed";
+	private static final String JSON_NOTIFY_SUGGESTION = "notify_flip_suggestion";
+
 	private final FlipSmartConfig config;
 	private final FlipSmartApiClient apiClient;
 	private final ConfigManager configManager;
@@ -37,6 +43,47 @@ public class WebhookSyncService
 	}
 
 	/**
+	 * Extract common fields from a backend webhook config response.
+	 */
+	private static String extractUrl(JsonObject webhookConfig)
+	{
+		return webhookConfig.has(JSON_WEBHOOK_URL)
+			? webhookConfig.get(JSON_WEBHOOK_URL).getAsString() : "";
+	}
+
+	private static boolean extractNotifySale(JsonObject webhookConfig)
+	{
+		return webhookConfig.has(JSON_NOTIFY_SALE)
+			&& webhookConfig.get(JSON_NOTIFY_SALE).getAsBoolean();
+	}
+
+	private static boolean extractNotifySuggestion(JsonObject webhookConfig)
+	{
+		return webhookConfig.has(JSON_NOTIFY_SUGGESTION)
+			&& webhookConfig.get(JSON_NOTIFY_SUGGESTION).getAsBoolean();
+	}
+
+	/**
+	 * Apply backend webhook config to the plugin's local config.
+	 */
+	private void applyBackendConfig(String backendUrl, boolean notifySale, boolean notifySuggestion)
+	{
+		String currentUrl = config.discordWebhookUrl();
+		if (!backendUrl.isEmpty() && !backendUrl.equals(currentUrl))
+		{
+			configManager.setConfiguration(CONFIG_GROUP, "discordWebhookUrl", backendUrl);
+			log.info("Synced webhook URL from backend to plugin");
+		}
+		configManager.setConfiguration(CONFIG_GROUP, "notifySaleCompleted", String.valueOf(notifySale));
+		configManager.setConfiguration(CONFIG_GROUP, "notifyFlipSuggestion", String.valueOf(notifySuggestion));
+
+		lastPulledBackendUrl = backendUrl;
+		lastSyncedWebhookUrl = backendUrl.isEmpty() ? currentUrl : backendUrl;
+		lastSyncedNotifySale = notifySale;
+		lastSyncedNotifySuggestion = notifySuggestion;
+	}
+
+	/**
 	 * Pull webhook config from backend and update plugin config if needed.
 	 * Called on startup to ensure parity between web dashboard and plugin.
 	 */
@@ -44,52 +91,14 @@ public class WebhookSyncService
 	{
 		apiClient.fetchWebhookConfigAsync(
 			webhookConfig -> {
-				String backendUrl = webhookConfig.has("webhook_url")
-					? webhookConfig.get("webhook_url").getAsString() : "";
-				boolean enabled = webhookConfig.has("enabled")
-					&& webhookConfig.get("enabled").getAsBoolean();
-				boolean notifySale = webhookConfig.has("notify_sale_completed")
-					&& webhookConfig.get("notify_sale_completed").getAsBoolean();
-				boolean notifySuggestion = webhookConfig.has("notify_flip_suggestion")
-					&& webhookConfig.get("notify_flip_suggestion").getAsBoolean();
-
-				// Sync backend config to plugin
-				String currentUrl = config.discordWebhookUrl();
-				if (!backendUrl.isEmpty() && !backendUrl.equals(currentUrl))
-				{
-					configManager.setConfiguration(
-						"flipsmart",
-						"discordWebhookUrl",
-						backendUrl
-					);
-					log.info("Synced webhook URL from backend to plugin");
-				}
-				configManager.setConfiguration(
-					"flipsmart",
-					"notifySaleCompleted",
-					String.valueOf(notifySale)
+				applyBackendConfig(
+					extractUrl(webhookConfig),
+					extractNotifySale(webhookConfig),
+					extractNotifySuggestion(webhookConfig)
 				);
-				configManager.setConfiguration(
-					"flipsmart",
-					"notifyFlipSuggestion",
-					String.valueOf(notifySuggestion)
-				);
-
-				// Track what the backend has
-				lastPulledBackendUrl = backendUrl;
-
-				// Update cached state
-				lastSyncedWebhookUrl = backendUrl.isEmpty() ? currentUrl : backendUrl;
-				lastSyncedNotifySale = notifySale;
-				lastSyncedNotifySuggestion = notifySuggestion;
 			},
-			() -> {
-				// No webhook on backend
-				log.debug("No webhook configured on backend");
-			},
-			error -> {
-				log.warn("Failed to pull webhook config from backend: {}", error);
-			}
+			() -> log.debug("No webhook configured on backend"),
+			error -> log.warn("Failed to pull webhook config from backend: {}", error)
 		);
 	}
 
@@ -101,35 +110,27 @@ public class WebhookSyncService
 	{
 		apiClient.fetchWebhookConfigAsync(
 			webhookConfig -> {
-				// Process pull response (same as pullFromBackend)
-				String backendUrl = webhookConfig.has("webhook_url")
-					? webhookConfig.get("webhook_url").getAsString() : "";
-				boolean notifySale = webhookConfig.has("notify_sale_completed")
-					&& webhookConfig.get("notify_sale_completed").getAsBoolean();
+				String backendUrl = extractUrl(webhookConfig);
+				boolean notifySale = extractNotifySale(webhookConfig);
 
 				String currentUrl = config.discordWebhookUrl();
 				if (!backendUrl.isEmpty() && !backendUrl.equals(currentUrl))
 				{
-					configManager.setConfiguration("flipsmart", "discordWebhookUrl", backendUrl);
+					configManager.setConfiguration(CONFIG_GROUP, "discordWebhookUrl", backendUrl);
 				}
-				configManager.setConfiguration("flipsmart", "notifySaleCompleted", String.valueOf(notifySale));
+				configManager.setConfiguration(CONFIG_GROUP, "notifySaleCompleted", String.valueOf(notifySale));
 
 				lastPulledBackendUrl = backendUrl;
 				lastSyncedWebhookUrl = backendUrl.isEmpty() ? currentUrl : backendUrl;
 				lastSyncedNotifySale = notifySale;
 
-				// Now send heartbeat (sequential, no concurrent auth refresh)
 				if (backendUrl != null && !backendUrl.isEmpty())
 				{
 					apiClient.webhookHeartbeatAsync();
 				}
 			},
-			() -> {
-				log.debug("No webhook configured on backend");
-			},
-			error -> {
-				log.debug("Failed to pull webhook config: {}", error);
-			}
+			() -> log.debug("No webhook configured on backend"),
+			error -> log.debug("Failed to pull webhook config: {}", error)
 		);
 	}
 
@@ -142,7 +143,6 @@ public class WebhookSyncService
 		boolean notifySale = config.notifySaleCompleted();
 		boolean notifySuggestion = false;
 
-		// Check if any config has changed from what we last synced
 		boolean hasChanged = !equals(webhookUrl, lastSyncedWebhookUrl)
 			|| notifySale != lastSyncedNotifySale
 			|| notifySuggestion != lastSyncedNotifySuggestion;
@@ -158,7 +158,7 @@ public class WebhookSyncService
 
 		if (!hasChanged)
 		{
-			return; // Nothing changed
+			return;
 		}
 
 		// If webhook URL is empty, delete webhook from backend
@@ -167,19 +167,14 @@ public class WebhookSyncService
 			log.info("Webhook URL cleared in plugin config (lastSynced={})", lastSyncedWebhookUrl);
 			if (lastSyncedWebhookUrl != null && !lastSyncedWebhookUrl.trim().isEmpty())
 			{
-				// Was previously configured, now being removed
 				deleteWebhook();
 			}
 			return;
 		}
 
-		// Sync to backend
 		syncToBackend(webhookUrl, notifySale, notifySuggestion);
 	}
 
-	/**
-	 * Sync webhook config to backend
-	 */
 	private void syncToBackend(String webhookUrl, boolean notifySale, boolean notifySuggestion)
 	{
 		log.debug("Syncing webhook config to backend");
@@ -190,20 +185,14 @@ public class WebhookSyncService
 			notifySuggestion,
 			() -> {
 				log.info("Webhook config synced to backend successfully");
-				// Update cached values
 				lastSyncedWebhookUrl = webhookUrl;
 				lastSyncedNotifySale = notifySale;
 				lastSyncedNotifySuggestion = notifySuggestion;
 			},
-			error -> {
-				log.warn("Failed to sync webhook config to backend: {}", error);
-			}
+			error -> log.warn("Failed to sync webhook config to backend: {}", error)
 		);
 	}
 
-	/**
-	 * Delete webhook from backend
-	 */
 	private void deleteWebhook()
 	{
 		log.debug("Deleting webhook from backend");
@@ -211,20 +200,14 @@ public class WebhookSyncService
 		apiClient.deleteWebhookAsync(
 			() -> {
 				log.info("Webhook deleted from backend successfully");
-				// Clear cached values
 				lastSyncedWebhookUrl = null;
 				lastSyncedNotifySale = false;
 				lastSyncedNotifySuggestion = false;
 			},
-			error -> {
-				log.warn("Failed to delete webhook from backend: {}", error);
-			}
+			error -> log.warn("Failed to delete webhook from backend: {}", error)
 		);
 	}
 
-	/**
-	 * Helper to compare strings (handles nulls)
-	 */
 	private boolean equals(String a, String b)
 	{
 		if (a == null && b == null)

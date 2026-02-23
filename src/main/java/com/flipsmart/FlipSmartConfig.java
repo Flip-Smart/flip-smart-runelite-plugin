@@ -484,13 +484,13 @@ public interface FlipSmartConfig extends Config
 		position = 6,
 		closedByDefault = false
 	)
-	String notificationsSection = "notifications";
+	String NOTIFICATIONS_SECTION = "notifications";
 
 	@ConfigItem(
 		keyName = "discordWebhookUrl",
 		name = "Discord Webhook URL",
 		description = "Discord webhook URL for receiving notifications. Create one in Discord: Server Settings > Integrations > Webhooks",
-		section = notificationsSection,
+		section = NOTIFICATIONS_SECTION,
 		position = 0,
 		secret = true
 	)
@@ -503,7 +503,7 @@ public interface FlipSmartConfig extends Config
 		keyName = "notifySaleCompleted",
 		name = "Sale Completed",
 		description = "Notify when a sell order completes in the GE",
-		section = notificationsSection,
+		section = NOTIFICATIONS_SECTION,
 		position = 1
 	)
 	default boolean notifySaleCompleted()
