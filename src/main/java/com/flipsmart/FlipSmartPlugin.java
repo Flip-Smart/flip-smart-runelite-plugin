@@ -1,11 +1,9 @@
 package com.flipsmart;
 
 import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import com.google.inject.Provides;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GrandExchangeOffer;
@@ -21,10 +19,6 @@ import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
-import net.runelite.client.chat.ChatColorType;
-import net.runelite.client.chat.ChatMessageBuilder;
-import net.runelite.client.chat.ChatMessageManager;
-import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
@@ -38,12 +32,8 @@ import net.runelite.client.ui.overlay.OverlayManager;
 import javax.inject.Inject;
 import java.awt.Point;
 import java.awt.Rectangle;
-import java.lang.reflect.Type;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
@@ -115,9 +105,6 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeTracker grandExchangeTracker;
 
 	@Inject
-	private ChatMessageManager chatMessageManager;
-
-	@Inject
 	private WebhookSyncService webhookSyncService;
 
 	// Flip Finder panel
@@ -155,9 +142,6 @@ public class FlipSmartPlugin extends Plugin
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
 
-	// Bank snapshot cooldown constant
-	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000; // 1 minute cooldown between attempts
-
 	// Timer delay constants (in milliseconds)
 	/** Delay before syncing offline fills after login */
 	private static final int OFFLINE_SYNC_DELAY_MS = 2000;
@@ -167,8 +151,6 @@ public class FlipSmartPlugin extends Plugin
 	private static final int STALE_FLIP_CLEANUP_DELAY_MS = 15000;
 	/** Delay before validating inventory quantities */
 	private static final int INVENTORY_VALIDATION_DELAY_MS = 2000;
-	/** Delay before refreshing panel after transaction/collection */
-	private static final int TRANSACTION_REFRESH_DELAY_MS = 500;
 
 	// Threshold constants
 	/** Minimum interval between auto-refreshes (30 seconds) */
