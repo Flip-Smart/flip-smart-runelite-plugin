@@ -112,6 +112,9 @@ public class FlipSmartPlugin extends Plugin
 	private ActiveFlipTracker activeFlipTracker;
 
 	@Inject
+	private GrandExchangeTracker grandExchangeTracker;
+
+	@Inject
 	private ChatMessageManager chatMessageManager;
 
 	@Inject
@@ -463,6 +466,40 @@ public class FlipSmartPlugin extends Plugin
 		});
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 
+		// Wire GrandExchangeTracker callbacks
+		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
+		grandExchangeTracker.setRsnSupplier(this::getCurrentRsnSafe);
+		grandExchangeTracker.setOnPanelRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
+		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
+		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (flipFinderPanel != null) flipFinderPanel.updatePendingOrders(getPendingBuyOrders()); });
+		grandExchangeTracker.setOnFocusChanged(focus -> {
+			flipAssistOverlay.setFocusedFlip(focus);
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
+			}
+		});
+		grandExchangeTracker.setOnFocusClear((itemId, isBuy) -> {
+			FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
+			if (focusedFlip == null) return;
+			if (focusedFlip.getItemId() == itemId)
+			{
+				boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
+				if (stepMatches)
+				{
+					log.info("Clearing Flip Assist focus - order submitted for {} ({})",
+						focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
+					flipAssistOverlay.clearFocus();
+					if (flipFinderPanel != null)
+					{
+						javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+					}
+				}
+			}
+		});
+		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
+		grandExchangeTracker.setOneShotScheduler(this::scheduleOneShot);
+
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
 	}
@@ -728,128 +765,24 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired event)
 	{
-		// Check if the GE offer setup screen was just built
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
 		{
 			return;
 		}
-		
-		// Check if this is a SELL offer (type 1 = sell, type 0 = buy)
+
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 		if (offerType != 1)
 		{
-			// Not a sell offer, don't auto-focus
 			return;
 		}
-		
-		// Get the item ID being set up for sale
+
 		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		if (itemId <= 0)
 		{
 			return;
 		}
-		
-		// Check if we have an active flip for this item and auto-focus on it
-		autoFocusOnActiveFlip(itemId);
-	}
-	
-	/**
-	 * Auto-focus on an active flip when the player sets up a sell offer for that item.
-	 * This helps them see the recommended sell price without manually clicking in the panel.
-	 */
-	private void autoFocusOnActiveFlip(int itemId)
-	{
-		// When auto-recommend is active, it manages focus transitions itself.
-		// Allowing this async call to set focus would race with onSellOrderPlaced(),
-		// causing the sell overlay to reappear after auto-recommend clears it.
-		if (autoRecommendService != null && autoRecommendService.isActive())
-		{
-			return;
-		}
 
-		String rsn = getCurrentRsnSafe().orElse(null);
-		
-		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
-		{
-			if (response == null || response.getActiveFlips() == null)
-			{
-				return;
-			}
-			
-			// Find and focus on matching active flip
-			ActiveFlip matchingFlip = findActiveFlipForItem(response.getActiveFlips(), itemId);
-			if (matchingFlip != null)
-			{
-				setFocusForSell(matchingFlip);
-			}
-			else
-			{
-				log.debug("No active flip found for item {} when setting up sell offer", itemId);
-			}
-		});
-	}
-	
-	/**
-	 * Find an active flip matching the given item ID.
-	 */
-	private ActiveFlip findActiveFlipForItem(java.util.List<ActiveFlip> flips, int itemId)
-	{
-		for (ActiveFlip flip : flips)
-		{
-			if (flip.getItemId() == itemId)
-			{
-				return flip;
-			}
-		}
-		return null;
-	}
-	
-	/**
-	 * Set the Flip Assist focus for selling an active flip.
-	 * Prioritizes the panel's displayed sell price (which considers time thresholds
-	 * and market conditions), then falls back to recommended price or minimum profitable.
-	 */
-	private void setFocusForSell(ActiveFlip flip)
-	{
-		int sellPrice;
-		
-		// First, check if the panel has a cached "smart" sell price for this item
-		// This price considers time thresholds and current market conditions
-		Integer panelPrice = flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(flip.getItemId()) : null;
-		
-		if (panelPrice != null && panelPrice > 0)
-		{
-			sellPrice = panelPrice;
-			log.debug("Using panel's displayed sell price for {}: {} gp", flip.getItemName(), sellPrice);
-		}
-		else if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
-		{
-			sellPrice = flip.getRecommendedSellPrice();
-			log.debug("Using backend recommended sell price for {}: {} gp", flip.getItemName(), sellPrice);
-		}
-		else
-		{
-			// Calculate minimum profitable sell price (breakeven + 1gp after tax)
-			// GE tax is 2%, so: sellPrice * 0.98 >= buyPrice + 1
-			// sellPrice >= (buyPrice + 1) / 0.98
-			sellPrice = (int) Math.ceil((flip.getAverageBuyPrice() + 1) / 0.98);
-			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
-		}
-		
-		FocusedFlip focus = FocusedFlip.forSell(
-			flip.getItemId(),
-			flip.getItemName(),
-			sellPrice,
-			flip.getTotalQuantity()
-		);
-		
-		flipAssistOverlay.setFocusedFlip(focus);
-		log.info("Auto-focused on active flip for sell: {} @ {} gp", flip.getItemName(), sellPrice);
-		
-		if (flipFinderPanel != null)
-		{
-			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
-		}
+		grandExchangeTracker.autoFocusOnActiveFlip(itemId);
 	}
 
 	@Subscribe
@@ -858,7 +791,6 @@ public class FlipSmartPlugin extends Plugin
 		final int slot = offerEvent.getSlot();
 		final GrandExchangeOffer offer = offerEvent.getOffer();
 
-		// Skip if game is not in LOGGED_IN state
 		if (client.getGameState() != GameState.LOGGED_IN && offer.getState() == GrandExchangeOfferState.EMPTY)
 		{
 			return;
@@ -870,462 +802,23 @@ public class FlipSmartPlugin extends Plugin
 		int price = offer.getPrice();
 		int spent = offer.getSpent();
 		GrandExchangeOfferState state = offer.getState();
-		
-		// Get item name (must be called on client thread)
+
 		String itemName = ItemUtils.getItemName(itemManager, itemId);
-		
+
 		// Check if this is during the login burst window
 		int currentTick = client.getTickCount();
 		boolean isLoginBurst = (currentTick - session.getLastLoginTick()) <= GE_LOGIN_BURST_WINDOW;
-		
+
 		if (isLoginBurst && state != GrandExchangeOfferState.EMPTY)
 		{
-			// During login, just track existing offers without recording transactions
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
-
-			// Track the current state so future changes are detected correctly
-			// Preserve existing timestamp if we already have this offer tracked
 			TrackedOffer existing = session.getTrackedOffer(slot);
 			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
 				itemId, itemName, totalQuantity, price, quantitySold, existing, state));
-
-			// Note: offline sync is now scheduled from LOGGED_IN state change
-			// after syncRSN() to ensure correct RSN-specific config key
 			return;
 		}
 
-		// Check if this is a buy or sell offer
-		boolean isBuy = TrackedOffer.isBuyState(state);
-		
-		// Handle cancelled offers
-		if (state == GrandExchangeOfferState.CANCELLED_BUY || state == GrandExchangeOfferState.CANCELLED_SELL)
-		{
-			// Only record the cancellation if some items were actually filled
-			if (quantitySold > 0)
-			{
-				TrackedOffer previousOffer = session.getTrackedOffer(slot);
-				
-				// Check if we have any unfilled items that need to be recorded as cancelled
-				if (previousOffer != null && quantitySold > previousOffer.getPreviousQuantitySold())
-				{
-					// Record the final partial fill before cancellation
-					int newQuantity = quantitySold - previousOffer.getPreviousQuantitySold();
-					int pricePerItem = spent / quantitySold;
-
-					log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
-						isBuy ? "BUY" : "SELL",
-						previousOffer.getItemName(),
-						newQuantity,
-						previousOffer.getTotalQuantity(),
-						pricePerItem);
-
-					// Get recommended sell price if available
-					Integer recommendedSellPrice = isBuy ? session.getRecommendedPrice(itemId) : null;
-					
-					apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-						.builder(itemId, previousOffer.getItemName(), isBuy, newQuantity, pricePerItem)
-						.geSlot(slot)
-						.recommendedSellPrice(recommendedSellPrice)
-						.rsn(getCurrentRsnSafe().orElse(null))
-						.totalQuantity(previousOffer.getTotalQuantity())
-						.build());
-				}
-				
-			log.info("Order cancelled: {} {} - {} items filled out of {}",
-				isBuy ? "BUY" : "SELL",
-				previousOffer != null ? previousOffer.getItemName() : itemName,
-				quantitySold,
-				totalQuantity);
-		}
-		else
-		{
-			TrackedOffer previousOffer = session.getTrackedOffer(slot);
-			log.info("Order cancelled with no fills: {} {}",
-				isBuy ? "BUY" : "SELL",
-				previousOffer != null ? previousOffer.getItemName() : itemName);
-			
-			// For cancelled BUY orders with 0 fills, dismiss the active flip
-			// There's nothing to track - the order never filled
-			if (isBuy)
-			{
-				log.info("Dismissing active flip for {} - buy order cancelled with 0 fills", itemName);
-				apiClient.dismissActiveFlipAsync(itemId, getCurrentRsnSafe().orElse(null));
-				
-				// Refresh panel to remove the stale flip
-				if (flipFinderPanel != null)
-				{
-					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
-				}
-			}
-		}
-		
-		// For cancelled BUY orders with partial fills, track the items as collected
-			// so they still show as active flips until the user sells them
-			if (isBuy && quantitySold > 0)
-			{
-				TrackedOffer cancelledOffer = session.getTrackedOffer(slot);
-				log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold", 
-					quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
-				session.addCollectedItem(itemId);
-				
-				// CRITICAL: Sync the actual filled quantity with the backend
-				// When order is cancelled early, the backend still has the original order quantity
-				// We need to update it to reflect the actual items received
-				String rsn = getCurrentRsnSafe().orElse(null);
-				if (rsn != null && cancelledOffer != null)
-				{
-					int pricePerItem = spent / quantitySold;
-					log.info("Syncing cancelled order quantity to backend: {} x{} (was {})", 
-						cancelledOffer.getItemName(), quantitySold, cancelledOffer.getTotalQuantity());
-					apiClient.syncActiveFlipAsync(
-						itemId,
-						cancelledOffer.getItemName(),
-						quantitySold,  // Actual filled quantity
-						quantitySold,  // New order quantity = actual filled (order is complete now)
-						pricePerItem,
-						rsn
-					);
-				}
-				
-				// Refresh panel to show the flip with correct quantity
-				if (flipFinderPanel != null)
-				{
-					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.refreshActiveFlips());
-				}
-			}
-			
-			// Clean up tracked offer and recommended price
-			session.removeTrackedOffer(slot);
-			session.removeRecommendedPrice(itemId);
-			return;
-		}
-
-		// Handle empty state (offer collected/cleared/modified)
-		// This includes when user clicks "Modify Order" - items/gold return to inventory
-		if (state == GrandExchangeOfferState.EMPTY)
-		{
-			TrackedOffer collectedOffer = session.removeTrackedOffer(slot);
-			
-			if (collectedOffer != null)
-			{
-				// Track collected buy offers so they still show as active flips until sold
-				if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0)
-				{
-					log.info("Buy offer collected from GE: {} x{} - tracking until sold", 
-						collectedOffer.getItemName(), collectedOffer.getPreviousQuantitySold());
-					session.addCollectedItem(collectedOffer.getItemId());
-					
-					// Check if the order completed fully and we might have missed fills
-					// This handles the case where fills happened rapidly or while we weren't tracking
-					int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
-					int trackedFills = collectedOffer.getPreviousQuantitySold();
-					
-					// If inventory shows more items than we tracked, sync with backend
-					if (inventoryCount > trackedFills)
-					{
-						log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
-							collectedOffer.getItemName(), trackedFills, inventoryCount);
-						
-						String rsn = getCurrentRsnSafe().orElse(null);
-						if (rsn != null)
-						{
-							// Use the inventory count as the actual fill count
-							int actualFills = Math.min(inventoryCount, collectedOffer.getTotalQuantity());
-							apiClient.syncActiveFlipAsync(
-								collectedOffer.getItemId(),
-								collectedOffer.getItemName(),
-								actualFills,
-								collectedOffer.getTotalQuantity(),
-								collectedOffer.getPrice(),
-								rsn
-							);
-						}
-					}
-				}
-				// Handle SELL orders that go empty (modified/cancelled with items returned to inventory)
-				// This is critical for "Modify Order" on sell orders - items go back to inventory
-				// and should still be tracked as an active flip until actually sold
-				else if (!collectedOffer.isBuy())
-				{
-					// Items returned to inventory from a sell order (modify/cancel)
-					// Check if we have items of this type in inventory to track
-					int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
-					if (inventoryCount > 0)
-					{
-						log.info("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking", 
-							collectedOffer.getItemName(), inventoryCount);
-						session.addCollectedItem(collectedOffer.getItemId());
-					}
-					else
-					{
-						log.info("Sell offer for {} went empty with no items in inventory - order may have fully sold", 
-							collectedOffer.getItemName());
-					}
-				}
-				// Handle BUY orders with 0 fills that might have filled while we weren't tracking
-				// This covers edge cases where fills happened between login and tracking
-				else if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() == 0)
-				{
-					int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
-					if (inventoryCount > 0)
-					{
-						log.info("Buy order for {} went empty but found {} items in inventory - may have filled offline", 
-							collectedOffer.getItemName(), inventoryCount);
-						session.addCollectedItem(collectedOffer.getItemId());
-					}
-				}
-				
-				// Ensure a recommended sell price exists for buy collections.
-				// The price may have been lost (plugin restart, queue refresh, etc.).
-				// Calculate a minimum profitable sell price as fallback so auto-recommend
-				// can always transition to the sell step after collecting a buy.
-				if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0
-					&& session.getRecommendedPrice(collectedOffer.getItemId()) == null)
-				{
-					int buyPrice = collectedOffer.getPrice();
-					int fallbackSellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
-					session.setRecommendedPrice(collectedOffer.getItemId(), fallbackSellPrice);
-					log.info("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",
-						collectedOffer.getItemName(), fallbackSellPrice, buyPrice);
-				}
-
-				// Notify auto-recommend service of collection
-				if (autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onOfferCollected(
-						collectedOffer.getItemId(),
-						collectedOffer.isBuy(),
-						collectedOffer.getItemName(),
-						collectedOffer.getPreviousQuantitySold()
-					);
-				}
-
-				// Refresh panel to show updated state
-				if (flipFinderPanel != null)
-				{
-					scheduleOneShot(TRANSACTION_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
-				}
-			}
-			return;
-		}
-
-		// Get the previously tracked offer for this slot
-		TrackedOffer previousOffer = session.getTrackedOffer(slot);
-
-		// Detect if quantity sold has increased (partial or full fill)
-		if (quantitySold > 0)
-		{
-			int newQuantity = 0;
-
-			if (previousOffer != null)
-			{
-				// Calculate how many items were just sold/bought
-				newQuantity = quantitySold - previousOffer.getPreviousQuantitySold();
-			}
-			else
-			{
-				// First time seeing this offer with sold items — immediate fill on placement
-				newQuantity = quantitySold;
-
-				// For immediate-fill buys, pre-store the recommended sell price from auto-recommend
-				// BEFORE the transaction recording reads it. The queue advance (onBuyOrderPlaced)
-				// is deferred until AFTER putTrackedOffer so hasAvailableGESlots() is accurate.
-				if (isBuy && totalQuantity > 0 && autoRecommendService != null && autoRecommendService.isActive())
-				{
-					FlipRecommendation currentRec = autoRecommendService.getCurrentRecommendation();
-					if (currentRec != null && currentRec.getItemId() == itemId && currentRec.getRecommendedSellPrice() > 0)
-					{
-						log.info("Immediate-fill buy for {} - pre-storing recommended sell price {}", itemName, currentRec.getRecommendedSellPrice());
-						session.setRecommendedPrice(itemId, currentRec.getRecommendedSellPrice());
-					}
-				}
-			}
-
-			// Record transaction if we have new items
-			if (newQuantity > 0)
-			{
-				// Calculate the actual price per item from the spent amount
-				int pricePerItem = spent / quantitySold;
-
-				log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
-					isBuy ? "BUY" : "SELL",
-					itemName,
-					newQuantity,
-					pricePerItem,
-					slot,
-					quantitySold,
-					totalQuantity);
-
-				// Get recommended sell price if this was a buy from a recommendation
-				Integer recommendedSellPrice = isBuy ? session.getRecommendedPrice(itemId) : null;
-				
-				// Record the transaction asynchronously with total order quantity
-				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(itemId, itemName, isBuy, newQuantity, pricePerItem)
-					.geSlot(slot)
-					.recommendedSellPrice(recommendedSellPrice)
-					.rsn(getCurrentRsnSafe().orElse(null))
-					.totalQuantity(totalQuantity)
-					.build());
-				
-				// If this was a sell, remove from collected tracking
-				if (!isBuy)
-				{
-					activeFlipTracker.markItemSold(itemId);
-
-					// Note: Sale completion webhooks are sent by the backend when a flip is
-					// detected (with full profit/ROI data). No plugin-side notification needed.
-				}
-
-				// Refresh active flips panel if it exists
-				// Use a tracked one-shot timer to add a small delay without blocking the EDT
-				if (flipFinderPanel != null)
-				{
-					scheduleOneShot(TRANSACTION_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
-				}
-			}
-
-			// Notify auto-recommend service on order completion
-			if (state == GrandExchangeOfferState.BOUGHT
-				&& isBuy && autoRecommendService != null && autoRecommendService.isActive())
-			{
-				autoRecommendService.onBuyOrderCompleted(itemId, itemName);
-			}
-			if (state == GrandExchangeOfferState.SOLD
-				&& !isBuy && autoRecommendService != null && autoRecommendService.isActive())
-			{
-				autoRecommendService.onSellOrderCompleted(itemId);
-			}
-
-			// Update tracked offer - preserve original timestamp to prevent timer reset
-			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
-				itemId, itemName, totalQuantity, price, quantitySold, previousOffer, state));
-
-			// Handle immediate-fill auto-recommend transitions AFTER tracked offer is stored,
-			// so hasAvailableGESlots() correctly counts this slot as occupied.
-			if (previousOffer == null && totalQuantity > 0)
-			{
-				if (isBuy && autoRecommendService != null && autoRecommendService.isActive())
-				{
-					log.info("Immediate-fill buy for {} - advancing auto-recommend queue", itemName);
-					autoRecommendService.onBuyOrderPlaced(itemId);
-				}
-				else if (!isBuy)
-				{
-					log.info("Immediate-fill sell for {} - performing sell bookkeeping", itemName);
-					String rsn = getCurrentRsnSafe().orElse(null);
-					if (rsn != null)
-					{
-						apiClient.markActiveFlipSellingAsync(itemId, rsn);
-					}
-					session.removeRecommendedPrice(itemId);
-					if (autoRecommendService != null && autoRecommendService.isActive())
-					{
-						autoRecommendService.onSellOrderPlaced(itemId);
-					}
-				}
-			}
-		}
-		else
-		{
-			// New offer with no items sold yet, track it with fresh timestamp
-			session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
-			
-			// Clear Flip Assist focus if this order matches the focused flip
-			clearFlipAssistFocusIfMatches(itemId, isBuy);
-			
-			// Record new buy orders to the API (even with 0 fills) so webapp can track them
-			if (isBuy && totalQuantity > 0 && previousOffer == null)
-			{
-				log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
-					itemName, 0, price, slot, totalQuantity);
-
-				// Notify auto-recommend FIRST so it stores the recommended sell price
-				// before we read it for the transaction recording
-				if (autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onBuyOrderPlaced(itemId);
-				}
-
-				Integer recommendedSellPrice = session.getRecommendedPrice(itemId);
-
-				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(itemId, itemName, true, 0, price)
-					.geSlot(slot)
-					.recommendedSellPrice(recommendedSellPrice)
-					.rsn(getCurrentRsnSafe().orElse(null))
-					.totalQuantity(totalQuantity)
-					.build());
-			}
-
-			// When a SELL order is placed, mark the active flip as "selling" phase
-			// This updates the backend so the webapp shows the correct phase
-			if (!isBuy && totalQuantity > 0 && previousOffer == null)
-			{
-				log.info("Sell order placed for {} x{} - marking active flip as selling", itemName, totalQuantity);
-				String rsn = getCurrentRsnSafe().orElse(null);
-				if (rsn != null)
-				{
-					apiClient.markActiveFlipSellingAsync(itemId, rsn);
-				}
-
-				// Clean up recommended price - it has been consumed by the sell order
-				session.removeRecommendedPrice(itemId);
-
-				// Notify auto-recommend service of sell order placed
-				if (autoRecommendService != null && autoRecommendService.isActive())
-				{
-					autoRecommendService.onSellOrderPlaced(itemId);
-				}
-			}
-			
-			// Refresh the flip finder panel when any new order is submitted
-			// This ensures sell orders show up immediately in active flips
-			if (previousOffer == null && flipFinderPanel != null)
-			{
-				javax.swing.SwingUtilities.invokeLater(() -> {
-					flipFinderPanel.updatePendingOrders(getPendingBuyOrders());
-					// Also refresh active flips to pick up new sell orders
-					flipFinderPanel.refreshActiveFlips();
-				});
-			}
-		}
-	}
-	
-	/**
-	 * Clear the Flip Assist focus if the submitted order matches the focused item
-	 */
-	private void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
-	{
-		// When auto-recommend is active, it manages focus transitions itself
-		if (autoRecommendService != null && autoRecommendService.isActive())
-		{
-			return;
-		}
-
-		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
-		if (focusedFlip == null)
-		{
-			return;
-		}
-
-		// Clear focus if the item matches and the order type matches the step
-		if (focusedFlip.getItemId() == itemId)
-		{
-			boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
-			if (stepMatches)
-			{
-				log.info("Clearing Flip Assist focus - order submitted for {} ({})",
-					focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
-				flipAssistOverlay.clearFocus();
-
-				// Also update the panel's visual state
-				if (flipFinderPanel != null)
-				{
-					javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
-				}
-			}
-		}
+		grandExchangeTracker.handleOfferChanged(slot, itemId, itemName, quantitySold, totalQuantity, price, spent, state);
 	}
 
 	/**
