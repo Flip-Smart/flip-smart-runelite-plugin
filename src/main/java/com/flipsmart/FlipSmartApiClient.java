@@ -11,6 +11,8 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -27,6 +29,8 @@ public class FlipSmartApiClient
 	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
 	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
+	private static final String HEADER_AUTHORIZATION = "Authorization";
+	private static final String BEARER_PREFIX = "Bearer ";
 	
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -36,24 +40,54 @@ public class FlipSmartApiClient
 	private final Map<Integer, CachedAnalysis> analysisCache = new ConcurrentHashMap<>();
 	private static final long CACHE_DURATION_MS = 180_000; // 3 minute cache
 	
-	// JWT token management
-	private volatile String jwtToken = null;
-	private volatile long tokenExpiry = 0;
+	// JWT token management — all access guarded by authLock
+	private String jwtToken = null;
+	private long tokenExpiry = 0;
 
 	// Refresh token for persistent login (stored via config, but kept in memory for use)
-	private volatile String refreshToken = null;
+	private String refreshToken = null;
 
 	// Premium status (updated on login)
-	private volatile boolean isPremium = false;
+	private boolean isPremium = false;
 
 	// RSN-level blocked status (updated on entitlements fetch)
-	private volatile boolean isRsnBlocked = false;
+	private boolean isRsnBlocked = false;
 
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
 	// Callback when authentication permanently fails (both refresh token and password fail)
 	private volatile Runnable onAuthFailure = null;
+
+	/**
+	 * Thread-safe read of the JWT token.
+	 */
+	private String getJwtToken()
+	{
+		synchronized (authLock)
+		{
+			return jwtToken;
+		}
+	}
+
+	/**
+	 * Thread-safe compound check: token exists and is not expired.
+	 */
+	private boolean isTokenValid()
+	{
+		synchronized (authLock)
+		{
+			return jwtToken != null && System.currentTimeMillis() < tokenExpiry;
+		}
+	}
+
+	/**
+	 * Add Authorization header with Bearer token to a request builder.
+	 */
+	private Request.Builder withAuthHeader(Request.Builder builder)
+	{
+		return builder.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken());
+	}
 
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
@@ -132,15 +166,17 @@ public class FlipSmartApiClient
 					{
 						// Token might have expired, try to re-authenticate
 						log.debug("Received 401, attempting to re-authenticate");
-						jwtToken = null;
-						
+						synchronized (authLock)
+						{
+							jwtToken = null;
+						}
+
 						authenticateAsync().thenAccept(authSuccess ->
 						{
 							if (authSuccess)
 							{
 								// Rebuild request with new token
-								Request retryRequest = request.newBuilder()
-									.header("Authorization", "Bearer " + jwtToken)
+								Request retryRequest = withAuthHeader(request.newBuilder())
 									.build();
 
 								// Retry without auth retry to prevent infinite loop
@@ -197,11 +233,10 @@ public class FlipSmartApiClient
 				log.debug("Failed to authenticate");
 				return CompletableFuture.completedFuture(null);
 			}
-			
-			Request request = requestBuilder
-				.header("Authorization", "Bearer " + jwtToken)
+
+			Request request = withAuthHeader(requestBuilder)
 				.build();
-			
+
 			return executeAsync(request, responseHandler, null, true);
 		});
 	}
@@ -213,7 +248,13 @@ public class FlipSmartApiClient
 	private CompletableFuture<Boolean> authenticateAsync()
 	{
 		// Try refresh token first if we have one
-		if (refreshToken != null && !refreshToken.isEmpty())
+		String currentRefreshToken;
+		synchronized (authLock)
+		{
+			currentRefreshToken = refreshToken;
+		}
+
+		if (currentRefreshToken != null && !currentRefreshToken.isEmpty())
 		{
 			return refreshAccessTokenAsync()
 				.thenCompose(success -> {
@@ -222,7 +263,10 @@ public class FlipSmartApiClient
 						return CompletableFuture.completedFuture(true);
 					}
 					// Refresh failed, clear it and fall back to password auth
-					refreshToken = null;
+					synchronized (authLock)
+					{
+						refreshToken = null;
+					}
 					return loginWithPasswordAsync();
 				});
 		}
@@ -324,7 +368,7 @@ public class FlipSmartApiClient
 			}
 
 			processSuccessfulLogin(response);
-			log.info("Successfully authenticated with API (premium: {})", isPremium);
+			log.info("Successfully authenticated with API (premium: {})", isPremium());
 			return new AuthResult(true, "Login successful!");
 		}
 		catch (Exception e)
@@ -414,7 +458,13 @@ public class FlipSmartApiClient
 	{
 		CompletableFuture<Boolean> future = new CompletableFuture<>();
 
-		if (refreshToken == null || refreshToken.isEmpty())
+		String currentRefreshToken;
+		synchronized (authLock)
+		{
+			currentRefreshToken = refreshToken;
+		}
+
+		if (currentRefreshToken == null || currentRefreshToken.isEmpty())
 		{
 			future.complete(false);
 			return future;
@@ -423,7 +473,7 @@ public class FlipSmartApiClient
 		String url = String.format("%s/auth/refresh?device_info=%s", getApiUrl(), DEVICE_INFO);
 
 		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty(REFRESH_TOKEN_KEY, refreshToken);
+		jsonBody.addProperty(REFRESH_TOKEN_KEY, currentRefreshToken);
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 
 		Request request = new Request.Builder()
@@ -463,7 +513,7 @@ public class FlipSmartApiClient
 
 					processTokenResponse(tokenResponse);
 
-					log.info("Successfully refreshed access token (premium: {})", isPremium);
+					log.info("Successfully refreshed access token (premium: {})", isPremium());
 					future.complete(true);
 				}
 				catch (Exception e)
@@ -495,7 +545,10 @@ public class FlipSmartApiClient
 	 */
 	public String getRefreshToken()
 	{
-		return refreshToken;
+		synchronized (authLock)
+		{
+			return refreshToken;
+		}
 	}
 	
 	/**
@@ -612,7 +665,7 @@ public class FlipSmartApiClient
 	 */
 	public boolean isAuthenticated()
 	{
-		return jwtToken != null && System.currentTimeMillis() < tokenExpiry;
+		return isTokenValid();
 	}
 
 	/**
@@ -620,7 +673,10 @@ public class FlipSmartApiClient
 	 */
 	public boolean isPremium()
 	{
-		return isPremium;
+		synchronized (authLock)
+		{
+			return isPremium;
+		}
 	}
 
 	/**
@@ -628,7 +684,10 @@ public class FlipSmartApiClient
 	 */
 	public void setPremium(boolean premium)
 	{
-		this.isPremium = premium;
+		synchronized (authLock)
+		{
+			this.isPremium = premium;
+		}
 	}
 
 	/**
@@ -636,7 +695,10 @@ public class FlipSmartApiClient
 	 */
 	public boolean isRsnBlocked()
 	{
-		return isRsnBlocked;
+		synchronized (authLock)
+		{
+			return isRsnBlocked;
+		}
 	}
 
 	/**
@@ -685,7 +747,7 @@ public class FlipSmartApiClient
 	 */
 	public CompletableFuture<Boolean> fetchEntitlementsAsync(String rsn)
 	{
-		if (!isAuthenticated())
+		if (!isTokenValid())
 		{
 			return CompletableFuture.completedFuture(false);
 		}
@@ -696,9 +758,8 @@ public class FlipSmartApiClient
 			url += "?rsn=" + rsn;
 		}
 
-		Request request = new Request.Builder()
-			.url(url)
-			.header("Authorization", "Bearer " + jwtToken)
+		Request request = withAuthHeader(new Request.Builder()
+			.url(url))
 			.get()
 			.build();
 
@@ -706,37 +767,44 @@ public class FlipSmartApiClient
 			try
 			{
 				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+
+				boolean premium;
 				if (json.has(JSON_KEY_IS_PREMIUM) && json.get(JSON_KEY_IS_PREMIUM).isJsonPrimitive())
 				{
-					isPremium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
+					premium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
 				}
 				else
 				{
-					// Explicitly set to false when field is missing or malformed
-					isPremium = false;
+					premium = false;
 				}
 
-				// Check RSN-level entitlement status
+				boolean rsnBlocked;
 				if (json.has(JSON_KEY_RSN_ENTITLEMENT) && !json.get(JSON_KEY_RSN_ENTITLEMENT).isJsonNull())
 				{
 					JsonObject rsnEntitlement = json.getAsJsonObject(JSON_KEY_RSN_ENTITLEMENT);
 					if (rsnEntitlement.has(JSON_KEY_STATUS))
 					{
 						String status = rsnEntitlement.get(JSON_KEY_STATUS).getAsString();
-						isRsnBlocked = "blocked".equals(status);
+						rsnBlocked = "blocked".equals(status);
 					}
 					else
 					{
-						isRsnBlocked = false;
+						rsnBlocked = false;
 					}
 				}
 				else
 				{
-					isRsnBlocked = false;
+					rsnBlocked = false;
 				}
 
-				log.info("Fetched entitlements - premium: {}, rsnBlocked: {}", isPremium, isRsnBlocked);
-				return isPremium;
+				synchronized (authLock)
+				{
+					isPremium = premium;
+					isRsnBlocked = rsnBlocked;
+				}
+
+				log.info("Fetched entitlements - premium: {}, rsnBlocked: {}", premium, rsnBlocked);
+				return premium;
 			}
 			catch (Exception e)
 			{
@@ -998,7 +1066,7 @@ public class FlipSmartApiClient
 	private CompletableFuture<Boolean> ensureAuthenticatedAsync()
 	{
 		// Check if we have a token and it's not expired
-		if (jwtToken != null && System.currentTimeMillis() < tokenExpiry)
+		if (isTokenValid())
 		{
 			return CompletableFuture.completedFuture(true);
 		}
@@ -1551,9 +1619,8 @@ public class FlipSmartApiClient
 				urlBuilder.addQueryParameter("limit", String.valueOf(limit));
 			}
 
-			Request request = new Request.Builder()
-				.url(urlBuilder.build())
-				.header("Authorization", "Bearer " + jwtToken)
+			Request request = withAuthHeader(new Request.Builder()
+				.url(urlBuilder.build()))
 				.get()
 				.build();
 
@@ -1723,8 +1790,8 @@ public class FlipSmartApiClient
 
 	// Cache for wiki prices: itemId -> WikiPrice
 	private final Map<Integer, WikiPrice> wikiPriceCache = new ConcurrentHashMap<>();
-	private volatile long lastWikiPriceFetch = 0;
-	private volatile boolean wikiPriceFetchInProgress = false;
+	private final AtomicLong lastWikiPriceFetch = new AtomicLong(0);
+	private final AtomicBoolean wikiPriceFetchInProgress = new AtomicBoolean(false);
 
 	/**
 	 * Real-time price data from the wiki API
@@ -1769,12 +1836,15 @@ public class FlipSmartApiClient
 	public void fetchWikiPrices()
 	{
 		long now = System.currentTimeMillis();
-		if (now - lastWikiPriceFetch < WIKI_PRICE_CACHE_DURATION_MS || wikiPriceFetchInProgress)
+		if (now - lastWikiPriceFetch.get() < WIKI_PRICE_CACHE_DURATION_MS)
 		{
 			return;
 		}
 
-		wikiPriceFetchInProgress = true;
+		if (!wikiPriceFetchInProgress.compareAndSet(false, true))
+		{
+			return;
+		}
 
 		Request request = new Request.Builder()
 			.url(WIKI_PRICES_URL)
@@ -1788,7 +1858,7 @@ public class FlipSmartApiClient
 			public void onFailure(Call call, IOException e)
 			{
 				log.warn("Failed to fetch wiki prices: {}", e.getMessage());
-				wikiPriceFetchInProgress = false;
+				wikiPriceFetchInProgress.set(false);
 			}
 
 			@Override
@@ -1804,11 +1874,11 @@ public class FlipSmartApiClient
 
 					String json = responseBody.string();
 					parseWikiPriceResponse(json);
-					lastWikiPriceFetch = System.currentTimeMillis();
+					lastWikiPriceFetch.set(System.currentTimeMillis());
 				}
 				finally
 				{
-					wikiPriceFetchInProgress = false;
+					wikiPriceFetchInProgress.set(false);
 				}
 			}
 		});
@@ -1884,7 +1954,7 @@ public class FlipSmartApiClient
 	 */
 	public boolean needsWikiPriceRefresh()
 	{
-		return System.currentTimeMillis() - lastWikiPriceFetch > WIKI_PRICE_CACHE_DURATION_MS;
+		return System.currentTimeMillis() - lastWikiPriceFetch.get() > WIKI_PRICE_CACHE_DURATION_MS;
 	}
 
 	// =========================================================================
