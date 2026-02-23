@@ -421,10 +421,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private boolean isOfferBuyType(GrandExchangeOffer offer)
 	{
-		GrandExchangeOfferState state = offer.getState();
-		return state == GrandExchangeOfferState.BUYING ||
-			   state == GrandExchangeOfferState.BOUGHT ||
-			   state == GrandExchangeOfferState.CANCELLED_BUY;
+		return TrackedOffer.isBuyState(offer.getState());
 	}
 
 	/**
