@@ -37,6 +37,7 @@ public class OfflineSyncService
 	private final ConfigManager configManager;
 	private final Gson gson;
 	private final Client client;
+	private final ActiveFlipTracker activeFlipTracker;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
 	private Runnable onSyncComplete;
@@ -47,13 +48,15 @@ public class OfflineSyncService
 		FlipSmartApiClient apiClient,
 		ConfigManager configManager,
 		Gson gson,
-		Client client)
+		Client client,
+		ActiveFlipTracker activeFlipTracker)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
 		this.configManager = configManager;
 		this.gson = gson;
 		this.client = client;
+		this.activeFlipTracker = activeFlipTracker;
 	}
 
 	public void setOnSyncComplete(Runnable onSyncComplete)
@@ -292,6 +295,13 @@ public class OfflineSyncService
 		else
 		{
 			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
+		}
+
+		int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
+		if (inventoryCount == 0)
+		{
+			log.info("No {} in inventory after offline sell - dismissing active flip", persistedOffer.getItemName());
+			activeFlipTracker.dismissFlip(persistedOffer.getItemId());
 		}
 	}
 

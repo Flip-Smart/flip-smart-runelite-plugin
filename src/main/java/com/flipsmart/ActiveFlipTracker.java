@@ -9,7 +9,6 @@ import net.runelite.client.callback.ClientThread;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -75,6 +74,25 @@ public class ActiveFlipTracker
 		}
 
 		tryAutoCloseFlip(itemId);
+	}
+
+	/**
+	 * Dismiss an active flip on the backend.
+	 * Used by other services when they determine a flip is complete.
+	 */
+	public void dismissFlip(int itemId)
+	{
+		apiClient.dismissActiveFlipAsync(itemId, getRsnSafe().orElse(null)).thenAccept(success ->
+		{
+			if (Boolean.TRUE.equals(success))
+			{
+				log.info("Dismissed active flip for item {}", itemId);
+				if (onPanelRefreshNeeded != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(onPanelRefreshNeeded);
+				}
+			}
+		});
 	}
 
 	/**
@@ -148,26 +166,7 @@ public class ActiveFlipTracker
 
 	private Set<Integer> collectAllActiveItemIds()
 	{
-		Set<Integer> activeItemIds = session.getActiveFlipItemIds();
-		addInventoryItemIds(activeItemIds);
-		return activeItemIds;
-	}
-
-	private void addInventoryItemIds(Set<Integer> itemIds)
-	{
-		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
-		if (inventory == null)
-		{
-			return;
-		}
-
-		for (Item item : inventory.getItems())
-		{
-			if (item.getId() > 0)
-			{
-				itemIds.add(item.getId());
-			}
-		}
+		return session.getActiveFlipItemIds();
 	}
 
 	private void handleCleanupResult(Boolean success)
@@ -231,7 +230,8 @@ public class ActiveFlipTracker
 
 		if (actualQty == 0)
 		{
-			log.debug("Skipping validation for {} - no items in inventory/sell slots", flip.getItemName());
+			log.info("No items found for {} during validation - dismissing active flip", flip.getItemName());
+			dismissFlip(itemId);
 			return;
 		}
 

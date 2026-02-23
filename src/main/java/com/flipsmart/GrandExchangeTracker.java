@@ -293,8 +293,9 @@ public class GrandExchangeTracker
 		}
 		else
 		{
-			log.info("Sell offer for {} went empty with no items in inventory - order may have fully sold",
+			log.info("Sell offer for {} went empty with no items in inventory - dismissing active flip",
 				collectedOffer.getItemName());
+			activeFlipTracker.dismissFlip(collectedOffer.getItemId());
 		}
 	}
 
