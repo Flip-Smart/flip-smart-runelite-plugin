@@ -43,7 +43,9 @@ public class GrandExchangeTracker
 
 	/**
 	 * Bundles GE offer data passed from the plugin event handler.
+	 * Constructed by the plugin and passed to {@link #handleOfferChanged(OfferContext)}.
 	 */
+	@lombok.Builder
 	static class OfferContext
 	{
 		final int slot;
@@ -55,20 +57,6 @@ public class GrandExchangeTracker
 		final int spent;
 		final boolean isBuy;
 		final GrandExchangeOfferState state;
-
-		OfferContext(int slot, int itemId, String itemName, int quantitySold,
-			int totalQuantity, int price, int spent, GrandExchangeOfferState state)
-		{
-			this.slot = slot;
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.quantitySold = quantitySold;
-			this.totalQuantity = totalQuantity;
-			this.price = price;
-			this.spent = spent;
-			this.isBuy = TrackedOffer.isBuyState(state);
-			this.state = state;
-		}
 	}
 
 	@Inject
@@ -140,19 +128,15 @@ public class GrandExchangeTracker
 	/**
 	 * Handle a GE offer change event. Called by the plugin AFTER login burst detection.
 	 */
-	public void handleOfferChanged(int slot, int itemId, String itemName, int quantitySold,
-		int totalQuantity, int price, int spent, GrandExchangeOfferState state)
+	public void handleOfferChanged(OfferContext ctx)
 	{
-		OfferContext ctx = new OfferContext(slot, itemId, itemName, quantitySold,
-			totalQuantity, price, spent, state);
-
-		if (state == GrandExchangeOfferState.CANCELLED_BUY || state == GrandExchangeOfferState.CANCELLED_SELL)
+		if (ctx.state == GrandExchangeOfferState.CANCELLED_BUY || ctx.state == GrandExchangeOfferState.CANCELLED_SELL)
 		{
 			handleCancelledOffer(ctx);
 			return;
 		}
 
-		if (state == GrandExchangeOfferState.EMPTY)
+		if (ctx.state == GrandExchangeOfferState.EMPTY)
 		{
 			handleEmptyOffer(ctx.slot);
 			return;

@@ -827,7 +827,17 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
-		grandExchangeTracker.handleOfferChanged(slot, itemId, itemName, quantitySold, totalQuantity, price, spent, state);
+		grandExchangeTracker.handleOfferChanged(GrandExchangeTracker.OfferContext.builder()
+			.slot(slot)
+			.itemId(itemId)
+			.itemName(itemName)
+			.quantitySold(quantitySold)
+			.totalQuantity(totalQuantity)
+			.price(price)
+			.spent(spent)
+			.isBuy(TrackedOffer.isBuyState(state))
+			.state(state)
+			.build());
 	}
 
 	/**
