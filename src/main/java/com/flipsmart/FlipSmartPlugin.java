@@ -2414,6 +2414,12 @@ public class FlipSmartPlugin extends Plugin
 			{
 				return session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null;
 			}
+
+			@Override
+			protected Integer getFilledSlots()
+			{
+				return session.getTrackedOffers().size();
+			}
 		};
 		
 		// Connect Flip Assist focus callback

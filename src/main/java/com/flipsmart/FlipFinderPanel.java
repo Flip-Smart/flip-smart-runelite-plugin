@@ -1329,8 +1329,11 @@ public class FlipFinderPanel extends PluginPanel
 		// Pass RSN for RSN-level access enforcement
 		String rsn = plugin.getCurrentRsnSafe().orElse(null);
 
+		// Pass filled GE slots for strategy tier inference
+		Integer filledSlots = getFilledSlots();
+
 		// Use unified /flip-finder endpoint with all parameters
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn).thenAccept(response ->
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots).thenAccept(response ->
 		{
 			handleRecommendationsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
@@ -1741,6 +1744,16 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		// This will be overridden by the plugin
 		// For now, return null to get all recommendations
+		return null;
+	}
+
+	/**
+	 * Get the number of currently filled GE slots.
+	 * Returns null if not available.
+	 * Can be overridden by subclasses to provide actual filled slot count.
+	 */
+	protected Integer getFilledSlots()
+	{
 		return null;
 	}
 
