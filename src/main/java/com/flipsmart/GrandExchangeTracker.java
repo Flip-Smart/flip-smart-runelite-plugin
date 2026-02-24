@@ -41,6 +41,36 @@ public class GrandExchangeTracker
 	private IntFunction<Integer> displayedSellPriceProvider;
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 
+	/**
+	 * Bundles GE offer data passed from the plugin event handler.
+	 */
+	static class OfferContext
+	{
+		final int slot;
+		final int itemId;
+		final String itemName;
+		final int quantitySold;
+		final int totalQuantity;
+		final int price;
+		final int spent;
+		final boolean isBuy;
+		final GrandExchangeOfferState state;
+
+		OfferContext(int slot, int itemId, String itemName, int quantitySold,
+			int totalQuantity, int price, int spent, GrandExchangeOfferState state)
+		{
+			this.slot = slot;
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.quantitySold = quantitySold;
+			this.totalQuantity = totalQuantity;
+			this.price = price;
+			this.spent = spent;
+			this.isBuy = TrackedOffer.isBuyState(state);
+			this.state = state;
+		}
+	}
+
 	@Inject
 	public GrandExchangeTracker(
 		PlayerSession session,
@@ -113,107 +143,121 @@ public class GrandExchangeTracker
 	public void handleOfferChanged(int slot, int itemId, String itemName, int quantitySold,
 		int totalQuantity, int price, int spent, GrandExchangeOfferState state)
 	{
-		boolean isBuy = TrackedOffer.isBuyState(state);
+		OfferContext ctx = new OfferContext(slot, itemId, itemName, quantitySold,
+			totalQuantity, price, spent, state);
 
 		if (state == GrandExchangeOfferState.CANCELLED_BUY || state == GrandExchangeOfferState.CANCELLED_SELL)
 		{
-			handleCancelledOffer(slot, itemId, itemName, quantitySold, totalQuantity, price, spent, isBuy, state);
+			handleCancelledOffer(ctx);
 			return;
 		}
 
 		if (state == GrandExchangeOfferState.EMPTY)
 		{
-			handleEmptyOffer(slot);
+			handleEmptyOffer(ctx.slot);
 			return;
 		}
 
-		handleActiveOffer(slot, itemId, itemName, quantitySold, totalQuantity, price, spent, isBuy, state);
+		handleActiveOffer(ctx);
 	}
 
 	// =====================
 	// Cancelled Offers
 	// =====================
 
-	private void handleCancelledOffer(int slot, int itemId, String itemName, int quantitySold,
-		int totalQuantity, int price, int spent, boolean isBuy, GrandExchangeOfferState state)
+	private void handleCancelledOffer(OfferContext ctx)
 	{
-		if (quantitySold > 0)
+		if (ctx.quantitySold > 0)
 		{
-			TrackedOffer previousOffer = session.getTrackedOffer(slot);
-
-			if (previousOffer != null && quantitySold > previousOffer.getPreviousQuantitySold())
-			{
-				int newQuantity = quantitySold - previousOffer.getPreviousQuantitySold();
-				int pricePerItem = spent / quantitySold;
-
-				log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
-					isBuy ? "BUY" : "SELL",
-					previousOffer.getItemName(),
-					newQuantity,
-					previousOffer.getTotalQuantity(),
-					pricePerItem);
-
-				Integer recommendedSellPrice = isBuy ? session.getRecommendedPrice(itemId) : null;
-
-				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(itemId, previousOffer.getItemName(), isBuy, newQuantity, pricePerItem)
-					.geSlot(slot)
-					.recommendedSellPrice(recommendedSellPrice)
-					.rsn(getRsn().orElse(null))
-					.totalQuantity(previousOffer.getTotalQuantity())
-					.build());
-			}
-
-			log.info("Order cancelled: {} {} - {} items filled out of {}",
-				isBuy ? "BUY" : "SELL",
-				previousOffer != null ? previousOffer.getItemName() : itemName,
-				quantitySold,
-				totalQuantity);
+			recordFinalCancellationFill(ctx);
 		}
 		else
 		{
-			TrackedOffer previousOffer = session.getTrackedOffer(slot);
-			log.info("Order cancelled with no fills: {} {}",
-				isBuy ? "BUY" : "SELL",
-				previousOffer != null ? previousOffer.getItemName() : itemName);
-
-			if (isBuy)
-			{
-				log.info("Dismissing active flip for {} - buy order cancelled with 0 fills", itemName);
-				apiClient.dismissActiveFlipAsync(itemId, getRsn().orElse(null));
-				fireActiveFlipsRefresh();
-			}
+			handleZeroFillCancellation(ctx);
 		}
 
-		// For cancelled BUY orders with partial fills, track the items as collected
-		if (isBuy && quantitySold > 0)
+		if (ctx.isBuy && ctx.quantitySold > 0)
 		{
-			TrackedOffer cancelledOffer = session.getTrackedOffer(slot);
-			log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
-				quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
-			session.addCollectedItem(itemId);
+			syncCancelledPartialBuy(ctx);
+		}
 
-			String rsn = getRsn().orElse(null);
-			if (rsn != null && cancelledOffer != null)
-			{
-				int pricePerItem = spent / quantitySold;
-				log.info("Syncing cancelled order quantity to backend: {} x{} (was {})",
-					cancelledOffer.getItemName(), quantitySold, cancelledOffer.getTotalQuantity());
-				apiClient.syncActiveFlipAsync(
-					itemId,
-					cancelledOffer.getItemName(),
-					quantitySold,
-					quantitySold,
-					pricePerItem,
-					rsn
-				);
-			}
+		session.removeTrackedOffer(ctx.slot);
+		session.removeRecommendedPrice(ctx.itemId);
+	}
 
+	private void recordFinalCancellationFill(OfferContext ctx)
+	{
+		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
+
+		if (previousOffer != null && ctx.quantitySold > previousOffer.getPreviousQuantitySold())
+		{
+			int newQuantity = ctx.quantitySold - previousOffer.getPreviousQuantitySold();
+			int pricePerItem = ctx.spent / ctx.quantitySold;
+
+			log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
+				ctx.isBuy ? "BUY" : "SELL",
+				previousOffer.getItemName(),
+				newQuantity,
+				previousOffer.getTotalQuantity(),
+				pricePerItem);
+
+			Integer recommendedSellPrice = ctx.isBuy ? session.getRecommendedPrice(ctx.itemId) : null;
+
+			apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+				.builder(ctx.itemId, previousOffer.getItemName(), ctx.isBuy, newQuantity, pricePerItem)
+				.geSlot(ctx.slot)
+				.recommendedSellPrice(recommendedSellPrice)
+				.rsn(getRsn().orElse(null))
+				.totalQuantity(previousOffer.getTotalQuantity())
+				.build());
+		}
+
+		log.info("Order cancelled: {} {} - {} items filled out of {}",
+			ctx.isBuy ? "BUY" : "SELL",
+			previousOffer != null ? previousOffer.getItemName() : ctx.itemName,
+			ctx.quantitySold,
+			ctx.totalQuantity);
+	}
+
+	private void handleZeroFillCancellation(OfferContext ctx)
+	{
+		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
+		log.info("Order cancelled with no fills: {} {}",
+			ctx.isBuy ? "BUY" : "SELL",
+			previousOffer != null ? previousOffer.getItemName() : ctx.itemName);
+
+		if (ctx.isBuy)
+		{
+			log.info("Dismissing active flip for {} - buy order cancelled with 0 fills", ctx.itemName);
+			apiClient.dismissActiveFlipAsync(ctx.itemId, getRsn().orElse(null));
 			fireActiveFlipsRefresh();
 		}
+	}
 
-		session.removeTrackedOffer(slot);
-		session.removeRecommendedPrice(itemId);
+	private void syncCancelledPartialBuy(OfferContext ctx)
+	{
+		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
+		log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
+			ctx.quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
+		session.addCollectedItem(ctx.itemId);
+
+		String rsn = getRsn().orElse(null);
+		if (rsn != null && cancelledOffer != null)
+		{
+			int pricePerItem = ctx.spent / ctx.quantitySold;
+			log.info("Syncing cancelled order quantity to backend: {} x{} (was {})",
+				cancelledOffer.getItemName(), ctx.quantitySold, cancelledOffer.getTotalQuantity());
+			apiClient.syncActiveFlipAsync(
+				ctx.itemId,
+				cancelledOffer.getItemName(),
+				ctx.quantitySold,
+				ctx.quantitySold,
+				pricePerItem,
+				rsn
+			);
+		}
+
+		fireActiveFlipsRefresh();
 	}
 
 	// =====================
@@ -244,12 +288,7 @@ public class GrandExchangeTracker
 
 		ensureFallbackSellPrice(collectedOffer);
 		notifyAutoRecommendCollection(collectedOffer);
-
-		if (onPanelRefresh != null && oneShotScheduler != null)
-		{
-			oneShotScheduler.accept(TRANSACTION_REFRESH_DELAY_MS, () ->
-				javax.swing.SwingUtilities.invokeLater(onPanelRefresh));
-		}
+		schedulePanelRefresh();
 	}
 
 	private void handleCollectedBuyOffer(TrackedOffer collectedOffer)
@@ -325,7 +364,7 @@ public class GrandExchangeTracker
 
 	private void notifyAutoRecommendCollection(TrackedOffer collectedOffer)
 	{
-		if (autoRecommendService != null && autoRecommendService.isActive())
+		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onOfferCollected(
 				collectedOffer.getItemId(),
@@ -340,176 +379,198 @@ public class GrandExchangeTracker
 	// Active Offers (fills, new orders)
 	// =====================
 
-	private void handleActiveOffer(int slot, int itemId, String itemName, int quantitySold,
-		int totalQuantity, int price, int spent, boolean isBuy, GrandExchangeOfferState state)
+	private void handleActiveOffer(OfferContext ctx)
 	{
-		TrackedOffer previousOffer = session.getTrackedOffer(slot);
+		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
 
-		if (quantitySold > 0)
+		if (ctx.quantitySold > 0)
 		{
-			handleOfferWithFills(slot, itemId, itemName, quantitySold, totalQuantity, price, spent,
-				isBuy, state, previousOffer);
+			handleOfferWithFills(ctx, previousOffer);
 		}
 		else
 		{
-			handleNewOfferNoFills(slot, itemId, itemName, totalQuantity, price, isBuy, previousOffer);
+			handleNewOfferNoFills(ctx, previousOffer);
 		}
 	}
 
-	private void handleOfferWithFills(int slot, int itemId, String itemName, int quantitySold,
-		int totalQuantity, int price, int spent, boolean isBuy, GrandExchangeOfferState state,
-		TrackedOffer previousOffer)
+	private void handleOfferWithFills(OfferContext ctx, TrackedOffer previousOffer)
 	{
-		int newQuantity = 0;
-
-		if (previousOffer != null)
-		{
-			newQuantity = quantitySold - previousOffer.getPreviousQuantitySold();
-		}
-		else
-		{
-			newQuantity = quantitySold;
-
-			if (isBuy && totalQuantity > 0 && autoRecommendService != null && autoRecommendService.isActive())
-			{
-				FlipRecommendation currentRec = autoRecommendService.getCurrentRecommendation();
-				if (currentRec != null && currentRec.getItemId() == itemId && currentRec.getRecommendedSellPrice() > 0)
-				{
-					log.info("Immediate-fill buy for {} - pre-storing recommended sell price {}", itemName, currentRec.getRecommendedSellPrice());
-					session.setRecommendedPrice(itemId, currentRec.getRecommendedSellPrice());
-				}
-			}
-		}
+		int newQuantity = calculateNewFillQuantity(ctx, previousOffer);
 
 		if (newQuantity > 0)
 		{
-			int pricePerItem = spent / quantitySold;
-
-			log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
-				isBuy ? "BUY" : "SELL",
-				itemName,
-				newQuantity,
-				pricePerItem,
-				slot,
-				quantitySold,
-				totalQuantity);
-
-			Integer recommendedSellPrice = isBuy ? session.getRecommendedPrice(itemId) : null;
-
-			apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-				.builder(itemId, itemName, isBuy, newQuantity, pricePerItem)
-				.geSlot(slot)
-				.recommendedSellPrice(recommendedSellPrice)
-				.rsn(getRsn().orElse(null))
-				.totalQuantity(totalQuantity)
-				.build());
-
-			if (!isBuy)
-			{
-				activeFlipTracker.markItemSold(itemId);
-			}
-
-			if (onPanelRefresh != null && oneShotScheduler != null)
-			{
-				oneShotScheduler.accept(TRANSACTION_REFRESH_DELAY_MS, () ->
-					javax.swing.SwingUtilities.invokeLater(onPanelRefresh));
-			}
+			recordFillTransaction(ctx, newQuantity);
 		}
 
-		if (state == GrandExchangeOfferState.BOUGHT
-			&& isBuy && autoRecommendService != null && autoRecommendService.isActive())
+		notifyAutoRecommendOnCompletion(ctx);
+
+		session.putTrackedOffer(ctx.slot, TrackedOffer.createWithPreservedTimestamps(
+			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state));
+
+		if (previousOffer == null && ctx.totalQuantity > 0)
 		{
-			autoRecommendService.onBuyOrderCompleted(itemId, itemName);
+			handleImmediateFillTransitions(ctx.itemId, ctx.itemName, ctx.isBuy);
 		}
-		if (state == GrandExchangeOfferState.SOLD
-			&& !isBuy && autoRecommendService != null && autoRecommendService.isActive())
+	}
+
+	private int calculateNewFillQuantity(OfferContext ctx, TrackedOffer previousOffer)
+	{
+		if (previousOffer != null)
 		{
-			autoRecommendService.onSellOrderCompleted(itemId);
+			return ctx.quantitySold - previousOffer.getPreviousQuantitySold();
 		}
 
-		session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
-			itemId, itemName, totalQuantity, price, quantitySold, previousOffer, state));
+		// First time seeing this offer with fills — immediate fill on placement
+		preStoreImmediateFillSellPrice(ctx);
+		return ctx.quantitySold;
+	}
 
-		if (previousOffer == null && totalQuantity > 0)
+	private void preStoreImmediateFillSellPrice(OfferContext ctx)
+	{
+		if (!ctx.isBuy || ctx.totalQuantity <= 0 || !isAutoRecommendActive())
 		{
-			handleImmediateFillTransitions(itemId, itemName, isBuy);
+			return;
+		}
+
+		FlipRecommendation currentRec = autoRecommendService.getCurrentRecommendation();
+		if (currentRec != null && currentRec.getItemId() == ctx.itemId && currentRec.getRecommendedSellPrice() > 0)
+		{
+			log.info("Immediate-fill buy for {} - pre-storing recommended sell price {}", ctx.itemName, currentRec.getRecommendedSellPrice());
+			session.setRecommendedPrice(ctx.itemId, currentRec.getRecommendedSellPrice());
+		}
+	}
+
+	private void recordFillTransaction(OfferContext ctx, int newQuantity)
+	{
+		int pricePerItem = ctx.spent / ctx.quantitySold;
+
+		log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
+			ctx.isBuy ? "BUY" : "SELL",
+			ctx.itemName,
+			newQuantity,
+			pricePerItem,
+			ctx.slot,
+			ctx.quantitySold,
+			ctx.totalQuantity);
+
+		Integer recommendedSellPrice = ctx.isBuy ? session.getRecommendedPrice(ctx.itemId) : null;
+
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity, pricePerItem)
+			.geSlot(ctx.slot)
+			.recommendedSellPrice(recommendedSellPrice)
+			.rsn(getRsn().orElse(null))
+			.totalQuantity(ctx.totalQuantity)
+			.build());
+
+		if (!ctx.isBuy)
+		{
+			activeFlipTracker.markItemSold(ctx.itemId);
+		}
+
+		schedulePanelRefresh();
+	}
+
+	private void notifyAutoRecommendOnCompletion(OfferContext ctx)
+	{
+		if (!isAutoRecommendActive())
+		{
+			return;
+		}
+
+		if (ctx.state == GrandExchangeOfferState.BOUGHT && ctx.isBuy)
+		{
+			autoRecommendService.onBuyOrderCompleted(ctx.itemId, ctx.itemName);
+		}
+		if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
+		{
+			autoRecommendService.onSellOrderCompleted(ctx.itemId);
 		}
 	}
 
 	private void handleImmediateFillTransitions(int itemId, String itemName, boolean isBuy)
 	{
-		if (isBuy && autoRecommendService != null && autoRecommendService.isActive())
+		if (isBuy && isAutoRecommendActive())
 		{
 			log.info("Immediate-fill buy for {} - advancing auto-recommend queue", itemName);
 			autoRecommendService.onBuyOrderPlaced(itemId);
 		}
 		else if (!isBuy)
 		{
-			log.info("Immediate-fill sell for {} - performing sell bookkeeping", itemName);
-			String rsn = getRsn().orElse(null);
-			if (rsn != null)
-			{
-				apiClient.markActiveFlipSellingAsync(itemId, rsn);
-			}
-			session.removeRecommendedPrice(itemId);
-			if (autoRecommendService != null && autoRecommendService.isActive())
-			{
-				autoRecommendService.onSellOrderPlaced(itemId);
-			}
+			handleImmediateFillSell(itemId, itemName);
 		}
 	}
 
-	private void handleNewOfferNoFills(int slot, int itemId, String itemName,
-		int totalQuantity, int price, boolean isBuy, TrackedOffer previousOffer)
+	private void handleImmediateFillSell(int itemId, String itemName)
 	{
-		session.putTrackedOffer(slot, new TrackedOffer(itemId, itemName, isBuy, totalQuantity, price, 0));
-
-		clearFlipAssistFocusIfMatches(itemId, isBuy);
-
-		if (isBuy && totalQuantity > 0 && previousOffer == null)
+		log.info("Immediate-fill sell for {} - performing sell bookkeeping", itemName);
+		String rsn = getRsn().orElse(null);
+		if (rsn != null)
 		{
-			log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
-				itemName, 0, price, slot, totalQuantity);
+			apiClient.markActiveFlipSellingAsync(itemId, rsn);
+		}
+		session.removeRecommendedPrice(itemId);
+		if (isAutoRecommendActive())
+		{
+			autoRecommendService.onSellOrderPlaced(itemId);
+		}
+	}
 
-			if (autoRecommendService != null && autoRecommendService.isActive())
+	private void handleNewOfferNoFills(OfferContext ctx, TrackedOffer previousOffer)
+	{
+		session.putTrackedOffer(ctx.slot, new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy, ctx.totalQuantity, ctx.price, 0));
+
+		clearFlipAssistFocusIfMatches(ctx.itemId, ctx.isBuy);
+
+		if (previousOffer == null && ctx.totalQuantity > 0)
+		{
+			if (ctx.isBuy)
 			{
-				autoRecommendService.onBuyOrderPlaced(itemId);
+				recordNewBuyOrder(ctx);
 			}
+			else
+			{
+				recordNewSellOrder(ctx);
+			}
+			firePendingOrdersAndActiveFlipsRefresh();
+		}
+	}
 
-			Integer recommendedSellPrice = session.getRecommendedPrice(itemId);
+	private void recordNewBuyOrder(OfferContext ctx)
+	{
+		log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
+			ctx.itemName, 0, ctx.price, ctx.slot, ctx.totalQuantity);
 
-			apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-				.builder(itemId, itemName, true, 0, price)
-				.geSlot(slot)
-				.recommendedSellPrice(recommendedSellPrice)
-				.rsn(getRsn().orElse(null))
-				.totalQuantity(totalQuantity)
-				.build());
+		if (isAutoRecommendActive())
+		{
+			autoRecommendService.onBuyOrderPlaced(ctx.itemId);
 		}
 
-		if (!isBuy && totalQuantity > 0 && previousOffer == null)
+		Integer recommendedSellPrice = session.getRecommendedPrice(ctx.itemId);
+
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(ctx.itemId, ctx.itemName, true, 0, ctx.price)
+			.geSlot(ctx.slot)
+			.recommendedSellPrice(recommendedSellPrice)
+			.rsn(getRsn().orElse(null))
+			.totalQuantity(ctx.totalQuantity)
+			.build());
+	}
+
+	private void recordNewSellOrder(OfferContext ctx)
+	{
+		log.info("Sell order placed for {} x{} - marking active flip as selling", ctx.itemName, ctx.totalQuantity);
+		String rsn = getRsn().orElse(null);
+		if (rsn != null)
 		{
-			log.info("Sell order placed for {} x{} - marking active flip as selling", itemName, totalQuantity);
-			String rsn = getRsn().orElse(null);
-			if (rsn != null)
-			{
-				apiClient.markActiveFlipSellingAsync(itemId, rsn);
-			}
-
-			session.removeRecommendedPrice(itemId);
-
-			if (autoRecommendService != null && autoRecommendService.isActive())
-			{
-				autoRecommendService.onSellOrderPlaced(itemId);
-			}
+			apiClient.markActiveFlipSellingAsync(ctx.itemId, rsn);
 		}
 
-		if (previousOffer == null && onPendingOrdersUpdate != null && onActiveFlipsRefresh != null)
+		session.removeRecommendedPrice(ctx.itemId);
+
+		if (isAutoRecommendActive())
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> {
-				if (onPendingOrdersUpdate != null) onPendingOrdersUpdate.accept(null);
-				if (onActiveFlipsRefresh != null) onActiveFlipsRefresh.run();
-			});
+			autoRecommendService.onSellOrderPlaced(ctx.itemId);
 		}
 	}
 
@@ -522,7 +583,7 @@ public class GrandExchangeTracker
 	 */
 	public void autoFocusOnActiveFlip(int itemId)
 	{
-		if (autoRecommendService != null && autoRecommendService.isActive())
+		if (isAutoRecommendActive())
 		{
 			return;
 		}
@@ -602,7 +663,7 @@ public class GrandExchangeTracker
 	 */
 	public void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
-		if (autoRecommendService != null && autoRecommendService.isActive())
+		if (isAutoRecommendActive())
 		{
 			return;
 		}
@@ -619,6 +680,11 @@ public class GrandExchangeTracker
 	// Utility
 	// =====================
 
+	private boolean isAutoRecommendActive()
+	{
+		return autoRecommendService != null && autoRecommendService.isActive();
+	}
+
 	private Optional<String> getRsn()
 	{
 		if (rsnSupplier != null)
@@ -633,6 +699,26 @@ public class GrandExchangeTracker
 		if (onActiveFlipsRefresh != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(onActiveFlipsRefresh);
+		}
+	}
+
+	private void schedulePanelRefresh()
+	{
+		if (onPanelRefresh != null && oneShotScheduler != null)
+		{
+			oneShotScheduler.accept(TRANSACTION_REFRESH_DELAY_MS, () ->
+				javax.swing.SwingUtilities.invokeLater(onPanelRefresh));
+		}
+	}
+
+	private void firePendingOrdersAndActiveFlipsRefresh()
+	{
+		if (onPendingOrdersUpdate != null && onActiveFlipsRefresh != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> {
+				onPendingOrdersUpdate.accept(null);
+				onActiveFlipsRefresh.run();
+			});
 		}
 	}
 }

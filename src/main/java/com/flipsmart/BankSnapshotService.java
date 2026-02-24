@@ -273,33 +273,38 @@ public class BankSnapshotService
 
 		for (Item item : inventory.getItems())
 		{
-			int itemId = item.getId();
-			int quantity = item.getQuantity();
-
-			if (itemId <= 0 || quantity <= 0)
-			{
-				continue;
-			}
-
-			if (itemId == COINS_ITEM_ID)
-			{
-				totalValue += quantity;
-				continue;
-			}
-
-			if (!ItemUtils.isTradeable(itemManager, itemId))
-			{
-				continue;
-			}
-
-			int gePrice = itemManager.getItemPrice(itemId);
-			if (gePrice > 0)
-			{
-				totalValue += (long) quantity * gePrice;
-			}
+			totalValue += getInventoryItemValue(item);
 		}
 
 		return totalValue;
+	}
+
+	/**
+	 * Get the GP value of a single inventory item.
+	 * Returns coin quantity directly, tradeable item value at GE price, or 0.
+	 */
+	private long getInventoryItemValue(Item item)
+	{
+		int itemId = item.getId();
+		int quantity = item.getQuantity();
+
+		if (itemId <= 0 || quantity <= 0)
+		{
+			return 0;
+		}
+
+		if (itemId == COINS_ITEM_ID)
+		{
+			return quantity;
+		}
+
+		if (!ItemUtils.isTradeable(itemManager, itemId))
+		{
+			return 0;
+		}
+
+		int gePrice = itemManager.getItemPrice(itemId);
+		return gePrice > 0 ? (long) quantity * gePrice : 0;
 	}
 
 	/**
@@ -317,43 +322,41 @@ public class BankSnapshotService
 
 		for (GrandExchangeOffer offer : offers)
 		{
-			if (offer == null)
-			{
-				continue;
-			}
-
-			GrandExchangeOfferState state = offer.getState();
-			if (state == GrandExchangeOfferState.EMPTY)
-			{
-				continue;
-			}
-
-			int itemId = offer.getItemId();
-			int price = offer.getPrice();
-			int totalQty = offer.getTotalQuantity();
-			int filledQty = offer.getQuantitySold();
-			int remainingQty = totalQty - filledQty;
-
-			int itemPrice = itemManager.getItemPrice(itemId);
-			if (itemPrice <= 0)
-			{
-				itemPrice = price;
-			}
-
-			if (TrackedOffer.isBuyState(state))
-			{
-				long remainingBudget = (long) remainingQty * price;
-				long filledItemsValue = (long) filledQty * itemPrice;
-				totalValue += remainingBudget + filledItemsValue;
-			}
-			else
-			{
-				long remainingItemsValue = (long) remainingQty * itemPrice;
-				long filledGP = (long) filledQty * price;
-				totalValue += remainingItemsValue + filledGP;
-			}
+			totalValue += getGEOfferValue(offer);
 		}
 
 		return totalValue;
+	}
+
+	/**
+	 * Get the GP value locked in a single GE offer (budget + items).
+	 * Returns 0 for null or empty offers.
+	 */
+	private long getGEOfferValue(GrandExchangeOffer offer)
+	{
+		if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
+		{
+			return 0;
+		}
+
+		int price = offer.getPrice();
+		int totalQty = offer.getTotalQuantity();
+		int filledQty = offer.getQuantitySold();
+		int remainingQty = totalQty - filledQty;
+
+		int itemPrice = itemManager.getItemPrice(offer.getItemId());
+		if (itemPrice <= 0)
+		{
+			itemPrice = price;
+		}
+
+		if (TrackedOffer.isBuyState(offer.getState()))
+		{
+			return (long) remainingQty * price + (long) filledQty * itemPrice;
+		}
+		else
+		{
+			return (long) remainingQty * itemPrice + (long) filledQty * price;
+		}
 	}
 }

@@ -405,11 +405,11 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.add(geSlotOverlay);
 		overlayManager.add(flipAssistOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
-		
+
 		// Initialize Flip Assist input listener for hotkey support
 		flipAssistInputListener = new FlipAssistInputListener(client, clientThread, config, flipAssistOverlay);
 		keyManager.registerKeyListener(flipAssistInputListener);
-		
+
 		// Initialize Flip Finder panel
 		if (config.showFlipFinder())
 		{
@@ -419,12 +419,10 @@ public class FlipSmartPlugin extends Plugin
 		// Start auto-refresh timer for flip finder
 		startFlipFinderRefreshTimer();
 
-		// Wire offline sync callback
-		offlineSyncService.setOnSyncComplete(this::schedulePostSyncTasks);
-
-		// Wire active flip tracker callbacks
-		activeFlipTracker.setOnPanelRefreshNeeded(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
-		activeFlipTracker.setOnActiveFlipsRefreshNeeded(() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
+		// Wire service callbacks and initialize auto-recommend
+		wireServiceCallbacks();
+		initializeAutoRecommendService();
+		wireGrandExchangeTrackerCallbacks();
 
 		// Start dump alert service
 		dumpAlertService.start();
@@ -432,58 +430,87 @@ public class FlipSmartPlugin extends Plugin
 		// Sync webhook config to backend if configured
 		webhookSyncService.syncIfChanged();
 
-		// Initialize auto-recommend service
-		autoRecommendService = new AutoRecommendService(config, this);
-		autoRecommendService.setOnFocusChanged(focus -> {
-			flipAssistOverlay.setFocusedFlip(focus);
-			if (focus != null)
-			{
-				log.info("Auto-recommend focus set: {} {} @ {} gp",
-					focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
-			}
-			else
-			{
-				flipAssistOverlay.clearFocus();
-			}
-		});
-		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
+		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
+		// Don't access client data during startup - must be on client thread
+	}
 
-		// Wire GrandExchangeTracker callbacks
+	/**
+	 * Wire callbacks for offline sync and active flip tracker services.
+	 */
+	private void wireServiceCallbacks()
+	{
+		offlineSyncService.setOnSyncComplete(this::schedulePostSyncTasks);
+		activeFlipTracker.setOnPanelRefreshNeeded(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
+		activeFlipTracker.setOnActiveFlipsRefreshNeeded(() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
+	}
+
+	/**
+	 * Initialize auto-recommend service and wire its callbacks.
+	 */
+	private void initializeAutoRecommendService()
+	{
+		autoRecommendService = new AutoRecommendService(config, this);
+		autoRecommendService.setOnFocusChanged(this::handleAutoRecommendFocusChanged);
+		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
+	}
+
+	private void handleAutoRecommendFocusChanged(FocusedFlip focus)
+	{
+		flipAssistOverlay.setFocusedFlip(focus);
+		if (focus != null)
+		{
+			log.info("Auto-recommend focus set: {} {} @ {} gp",
+				focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
+		}
+		else
+		{
+			flipAssistOverlay.clearFocus();
+		}
+	}
+
+	/**
+	 * Wire all GrandExchangeTracker callbacks.
+	 */
+	private void wireGrandExchangeTrackerCallbacks()
+	{
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setRsnSupplier(this::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
 		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
 		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (flipFinderPanel != null) flipFinderPanel.updatePendingOrders(getPendingBuyOrders()); });
-		grandExchangeTracker.setOnFocusChanged(focus -> {
-			flipAssistOverlay.setFocusedFlip(focus);
-			if (flipFinderPanel != null)
-			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
-			}
-		});
-		grandExchangeTracker.setOnFocusClear((itemId, isBuy) -> {
-			FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
-			if (focusedFlip == null) return;
-			if (focusedFlip.getItemId() == itemId)
-			{
-				boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
-				if (stepMatches)
-				{
-					log.info("Clearing Flip Assist focus - order submitted for {} ({})",
-						focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
-					flipAssistOverlay.clearFocus();
-					if (flipFinderPanel != null)
-					{
-						javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
-					}
-				}
-			}
-		});
+		grandExchangeTracker.setOnFocusChanged(this::handleGETrackerFocusChanged);
+		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(this::scheduleOneShot);
+	}
 
-		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
-		// Don't access client data during startup - must be on client thread
+	private void handleGETrackerFocusChanged(FocusedFlip focus)
+	{
+		flipAssistOverlay.setFocusedFlip(focus);
+		if (flipFinderPanel != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
+		}
+	}
+
+	private void handleGETrackerFocusClear(int itemId, boolean isBuy)
+	{
+		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
+		if (focusedFlip == null || focusedFlip.getItemId() != itemId)
+		{
+			return;
+		}
+		boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
+		if (stepMatches)
+		{
+			log.info("Clearing Flip Assist focus - order submitted for {} ({})",
+				focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
+			flipAssistOverlay.clearFocus();
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+			}
+		}
 	}
 
 	@Override
