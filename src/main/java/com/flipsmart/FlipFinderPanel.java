@@ -1496,7 +1496,7 @@ public class FlipFinderPanel extends PluginPanel
 				}
 
 				// Get pending orders from plugin
-				java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
+				java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
 
 				if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
 				{
@@ -1551,7 +1551,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * @param pendingOrders the list of pending orders (used to trigger refresh)
 	 */
 	@SuppressWarnings("unused")
-	public void updatePendingOrders(java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders)
+	public void updatePendingOrders(java.util.List<PendingOrder> pendingOrders)
 	{
 		// Only update if we're on the Active Flips tab
 		if (tabbedPane.getSelectedIndex() == 1)
@@ -1667,15 +1667,15 @@ public class FlipFinderPanel extends PluginPanel
 	 * Pending orders (items still in GE buy slots) take priority over active flips
 	 * to avoid showing duplicates when an item is partially filled.
 	 */
-	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders)
+	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<PendingOrder> pendingOrders)
 	{
 		activeFlipsListContainer.removeAll();
 		
 		// Build a map of pending orders by itemId for smart deduplication
-		java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId = buildPendingOrdersMap(pendingOrders);
+		java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId = buildPendingOrdersMap(pendingOrders);
 		
 		// First show pending orders (items currently in GE buy slots)
-		for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
+		for (PendingOrder pending : pendingOrders)
 		{
 			activeFlipsListContainer.add(createPendingOrderPanel(pending));
 			activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
@@ -1699,11 +1699,11 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Build a map of pending orders grouped by item ID
 	 */
-	private java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> buildPendingOrdersMap(
-			java.util.List<FlipSmartPlugin.PendingOrder> pendingOrders)
+	private java.util.Map<Integer, java.util.List<PendingOrder>> buildPendingOrdersMap(
+			java.util.List<PendingOrder> pendingOrders)
 	{
-		java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId = new java.util.HashMap<>();
-		for (FlipSmartPlugin.PendingOrder pending : pendingOrders)
+		java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId = new java.util.HashMap<>();
+		for (PendingOrder pending : pendingOrders)
 		{
 			pendingByItemId.computeIfAbsent(pending.itemId, k -> new java.util.ArrayList<>()).add(pending);
 		}
@@ -1718,9 +1718,9 @@ public class FlipFinderPanel extends PluginPanel
 	 * Active flips should only show for COLLECTED items (no longer in GE, waiting to sell).
 	 */
 	private boolean shouldShowActiveFlip(ActiveFlip flip, 
-			java.util.Map<Integer, java.util.List<FlipSmartPlugin.PendingOrder>> pendingByItemId)
+			java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId)
 	{
-		java.util.List<FlipSmartPlugin.PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
+		java.util.List<PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
 		
 		if (matchingPending == null || matchingPending.isEmpty())
 		{
@@ -2921,7 +2921,7 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Set a pending order as the current focus for Flip Assist (selling step)
 	 */
-	private void setFocus(FlipSmartPlugin.PendingOrder pending, JPanel panel)
+	private void setFocus(PendingOrder pending, JPanel panel)
 	{
 		// Pending orders that are filled should show sell step
 		int sellPrice = pending.recommendedSellPrice != null 
@@ -3370,7 +3370,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * Create a panel for a pending order (not yet filled)
 	 * Uses same detailed layout as active flips with Liquidity/Risk data
 	 */
-	private JPanel createPendingOrderPanel(FlipSmartPlugin.PendingOrder pending)
+	private JPanel createPendingOrderPanel(PendingOrder pending)
 	{
 		Color bgColor = new Color(55, 55, 65); // Slightly different color for pending
 		JPanel panel = createBaseItemPanel(bgColor, 180, false);
