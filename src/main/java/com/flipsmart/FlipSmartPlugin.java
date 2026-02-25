@@ -151,6 +151,8 @@ public class FlipSmartPlugin extends Plugin
 	private static final int STALE_FLIP_CLEANUP_DELAY_MS = 15000;
 	/** Delay before validating inventory quantities */
 	private static final int INVENTORY_VALIDATION_DELAY_MS = 2000;
+	/** Delay before re-evaluating auto-recommend after login sync */
+	private static final int AUTO_RECOMMEND_REEVALUATE_DELAY_MS = 3000;
 
 	// Threshold constants
 	/** Minimum interval between auto-refreshes (30 seconds) */
@@ -701,6 +703,13 @@ public class FlipSmartPlugin extends Plugin
 				log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
 			}
 		});
+
+		// Re-evaluate auto-recommend after sync — collected items may need selling
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, () ->
+				autoRecommendService.reevaluateAfterLogin());
+		}
 	}
 
 	

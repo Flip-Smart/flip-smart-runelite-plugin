@@ -193,6 +193,26 @@ public class AutoRecommendService
 	}
 
 	// =====================
+	// Login Re-evaluation
+	// =====================
+
+	/**
+	 * Re-evaluate the current state after login + offline sync.
+	 * If auto-recommend was restored, check if collected items need selling
+	 * or if GE slots opened up for new buys.
+	 */
+	public synchronized void reevaluateAfterLogin()
+	{
+		if (!active)
+		{
+			return;
+		}
+
+		log.info("Auto-recommend: Re-evaluating after login");
+		focusNextAvailableAction();
+	}
+
+	// =====================
 	// GE Event Handlers
 	// =====================
 
@@ -252,6 +272,55 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * Override the current auto-recommend focus to show a sell overlay for a collected item.
+	 * Called when the user selects an inventory item to sell during auto-recommend.
+	 * This is a temporary override — after the sell is placed, focusNextAvailableAction()
+	 * resumes normal queue processing.
+	 */
+	public synchronized void overrideFocusForSell(int itemId, String itemName)
+	{
+		if (!active)
+		{
+			return;
+		}
+
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		Integer sellPrice = session.getRecommendedPrice(itemId);
+		if (sellPrice == null || sellPrice <= 0)
+		{
+			log.warn("Auto-recommend: Cannot override focus for {} - no sell price available", itemName);
+			return;
+		}
+
+		int collectedQty = session.getCollectedQuantity(itemId);
+		// Fall back to recommendation quantity if collected qty not tracked
+		if (collectedQty <= 0)
+		{
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			collectedQty = rec != null ? rec.getRecommendedQuantity() : 0;
+		}
+
+		if (collectedQty <= 0)
+		{
+			log.warn("Auto-recommend: Cannot override focus for {} - no quantity available", itemName);
+			return;
+		}
+
+		int priceOffset = config.priceOffset();
+		FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, sellPrice, collectedQty, priceOffset);
+
+		invokeFocusCallback(focus);
+		updateStatus(String.format("Auto: Sell %s @ %s gp", itemName, GpUtils.formatGPWithSuffix(sellPrice)));
+
+		log.info("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
+	}
+
+	/**
 	 * Called when a sell order is placed for an item.
 	 */
 	public synchronized void onSellOrderPlaced(int itemId)
@@ -299,6 +368,37 @@ public class AutoRecommendService
 
 		log.info("Auto-recommend: Sell completed for item {} - collect profit", itemId);
 		updateStatus("Auto: Collect profit from GE");
+	}
+
+	/**
+	 * Called when any GE offer is cancelled. Routes to the appropriate handler
+	 * based on offer type and fill state.
+	 *
+	 * @param itemId        the cancelled item
+	 * @param wasBuy        true if the cancelled offer was a buy
+	 * @param filledQuantity how many items were filled before cancellation
+	 * @param totalQuantity  the original order quantity
+	 */
+	public synchronized void onOfferCancelled(int itemId, boolean wasBuy, int filledQuantity, int totalQuantity)
+	{
+		if (!active)
+		{
+			return;
+		}
+
+		if (wasBuy && filledQuantity > 0)
+		{
+			// Partial-fill buy cancel — delegate to re-buy flow
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			String itemName = rec != null ? rec.getItemName() : "Item " + itemId;
+			onBuyOrderCancelled(itemId, itemName, filledQuantity, totalQuantity);
+		}
+		else
+		{
+			// Zero-fill buy cancel or any sell cancel — slot freed, serve next recommendation
+			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}) - re-evaluating", wasBuy, filledQuantity);
+			focusNextAvailableAction();
+		}
 	}
 
 	/**

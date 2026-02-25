@@ -151,6 +151,13 @@ public class GrandExchangeTracker
 
 	private void handleCancelledOffer(OfferContext ctx)
 	{
+		// Duplicate cancellation guard (RuneLite bug #12037)
+		if (session.getTrackedOffer(ctx.slot) == null)
+		{
+			log.debug("Ignoring duplicate cancellation event for slot {}", ctx.slot);
+			return;
+		}
+
 		if (ctx.quantitySold > 0)
 		{
 			recordFinalCancellationFill(ctx);
@@ -163,7 +170,14 @@ public class GrandExchangeTracker
 		if (ctx.isBuy && ctx.quantitySold > 0)
 		{
 			syncCancelledPartialBuy(ctx);
-			notifyAutoRecommendCancellation(ctx);
+		}
+
+		// Notify auto-recommend for ALL cancellation types (buy and sell, any fill count)
+		if (isAutoRecommendActive())
+		{
+			TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
+			int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
+			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.isBuy, ctx.quantitySold, totalQuantity);
 		}
 
 		session.removeTrackedOffer(ctx.slot);
@@ -469,20 +483,6 @@ public class GrandExchangeTracker
 		schedulePanelRefresh();
 	}
 
-	private void notifyAutoRecommendCancellation(OfferContext ctx)
-	{
-		if (!isAutoRecommendActive())
-		{
-			return;
-		}
-
-		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
-		String itemName = cancelledOffer != null ? cancelledOffer.getItemName() : ctx.itemName;
-		int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
-
-		autoRecommendService.onBuyOrderCancelled(ctx.itemId, itemName, ctx.quantitySold, totalQuantity);
-	}
-
 	private void notifyAutoRecommendOnCompletion(OfferContext ctx)
 	{
 		if (!isAutoRecommendActive())
@@ -592,11 +592,19 @@ public class GrandExchangeTracker
 
 	/**
 	 * Auto-focus on an active flip when the player sets up a sell offer for that item.
+	 * During auto-recommend, overrides focus if the item is a collected item with a sell price.
 	 */
 	public void autoFocusOnActiveFlip(int itemId)
 	{
 		if (isAutoRecommendActive())
 		{
+			// During auto-recommend: override focus if item is a collected item ready to sell
+			if (session.getCollectedItemIds().contains(itemId)
+				&& session.getRecommendedPrice(itemId) != null)
+			{
+				String itemName = ItemUtils.getItemName(itemManager, itemId);
+				autoRecommendService.overrideFocusForSell(itemId, itemName);
+			}
 			return;
 		}
 
