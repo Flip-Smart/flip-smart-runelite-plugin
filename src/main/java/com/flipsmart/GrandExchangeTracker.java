@@ -163,6 +163,7 @@ public class GrandExchangeTracker
 		if (ctx.isBuy && ctx.quantitySold > 0)
 		{
 			syncCancelledPartialBuy(ctx);
+			notifyAutoRecommendCancellation(ctx);
 		}
 
 		session.removeTrackedOffer(ctx.slot);
@@ -223,7 +224,7 @@ public class GrandExchangeTracker
 		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
 		log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
 			ctx.quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
-		session.addCollectedItem(ctx.itemId);
+		session.addCollectedItem(ctx.itemId, ctx.quantitySold);
 
 		String rsn = getRsn().orElse(null);
 		if (rsn != null && cancelledOffer != null)
@@ -277,32 +278,33 @@ public class GrandExchangeTracker
 
 	private void handleCollectedBuyOffer(TrackedOffer collectedOffer)
 	{
-		log.info("Buy offer collected from GE: {} x{} - tracking until sold",
-			collectedOffer.getItemName(), collectedOffer.getPreviousQuantitySold());
-		session.addCollectedItem(collectedOffer.getItemId());
-
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
 		int trackedFills = collectedOffer.getPreviousQuantitySold();
+		int collectedQty = trackedFills;
 
 		if (inventoryCount > trackedFills)
 		{
-			log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
-				collectedOffer.getItemName(), trackedFills, inventoryCount);
+			collectedQty = Math.min(inventoryCount, collectedOffer.getTotalQuantity());
+			log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Using {} as collected quantity.",
+				collectedOffer.getItemName(), trackedFills, inventoryCount, collectedQty);
 
 			String rsn = getRsn().orElse(null);
 			if (rsn != null)
 			{
-				int actualFills = Math.min(inventoryCount, collectedOffer.getTotalQuantity());
 				apiClient.syncActiveFlipAsync(
 					collectedOffer.getItemId(),
 					collectedOffer.getItemName(),
-					actualFills,
+					collectedQty,
 					collectedOffer.getTotalQuantity(),
 					collectedOffer.getPrice(),
 					rsn
 				);
 			}
 		}
+
+		log.info("Buy offer collected from GE: {} x{} - tracking until sold",
+			collectedOffer.getItemName(), collectedQty);
+		session.addCollectedItem(collectedOffer.getItemId(), collectedQty);
 	}
 
 	private void handleCollectedSellOffer(TrackedOffer collectedOffer)
@@ -312,7 +314,7 @@ public class GrandExchangeTracker
 		{
 			log.info("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking",
 				collectedOffer.getItemName(), inventoryCount);
-			session.addCollectedItem(collectedOffer.getItemId());
+			session.addCollectedItem(collectedOffer.getItemId(), inventoryCount);
 		}
 		else
 		{
@@ -329,7 +331,7 @@ public class GrandExchangeTracker
 		{
 			log.info("Buy order for {} went empty but found {} items in inventory - may have filled offline",
 				collectedOffer.getItemName(), inventoryCount);
-			session.addCollectedItem(collectedOffer.getItemId());
+			session.addCollectedItem(collectedOffer.getItemId(), inventoryCount);
 		}
 	}
 
@@ -350,11 +352,23 @@ public class GrandExchangeTracker
 	{
 		if (isAutoRecommendActive())
 		{
+			// Use the session's collected quantity (which accounts for offline fills)
+			// rather than the tracked offer's stale previousQuantitySold
+			int quantity = collectedOffer.getPreviousQuantitySold();
+			if (collectedOffer.isBuy())
+			{
+				int sessionQty = session.getCollectedQuantity(collectedOffer.getItemId());
+				if (sessionQty > 0)
+				{
+					quantity = sessionQty;
+				}
+			}
+
 			autoRecommendService.onOfferCollected(
 				collectedOffer.getItemId(),
 				collectedOffer.isBuy(),
 				collectedOffer.getItemName(),
-				collectedOffer.getPreviousQuantitySold()
+				quantity
 			);
 		}
 	}
@@ -453,6 +467,20 @@ public class GrandExchangeTracker
 		}
 
 		schedulePanelRefresh();
+	}
+
+	private void notifyAutoRecommendCancellation(OfferContext ctx)
+	{
+		if (!isAutoRecommendActive())
+		{
+			return;
+		}
+
+		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
+		String itemName = cancelledOffer != null ? cancelledOffer.getItemName() : ctx.itemName;
+		int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
+
+		autoRecommendService.onBuyOrderCancelled(ctx.itemId, itemName, ctx.quantitySold, totalQuantity);
 	}
 
 	private void notifyAutoRecommendOnCompletion(OfferContext ctx)
