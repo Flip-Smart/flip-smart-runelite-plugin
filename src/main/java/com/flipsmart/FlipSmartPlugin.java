@@ -106,9 +106,6 @@ public class FlipSmartPlugin extends Plugin
 	private ChatMessageManager chatMessageManager;
 
 	@Inject
-	private WebhookNotificationService webhookNotificationService;
-
-	@Inject
 	private WebhookSyncService webhookSyncService;
 
 	// Flip Finder panel
@@ -618,9 +615,6 @@ public class FlipSmartPlugin extends Plugin
 		// Stop dump alert service
 		dumpAlertService.stop();
 
-		// Shutdown webhook notification service
-		webhookNotificationService.shutdown();
-
 		// Stop auto-recommend service and timer
 		stopAutoRecommendRefreshTimer();
 		if (autoRecommendService != null)
@@ -716,12 +710,6 @@ public class FlipSmartPlugin extends Plugin
 
 			// Pull webhook config after auth is confirmed
 			webhookSyncService.pullFromBackend();
-
-			// Send heartbeat so API knows plugin is online (only if webhook configured)
-			if (config.discordWebhookUrl() != null && !config.discordWebhookUrl().trim().isEmpty())
-			{
-				apiClient.webhookHeartbeatAsync();
-			}
 		});
 
 		// Restore collected items from config (items bought but not yet sold)
@@ -2595,8 +2583,8 @@ public class FlipSmartPlugin extends Plugin
 					return;
 				}
 				
-				// Webhook sync — heartbeat handled inside pullFromBackend callback
-				webhookSyncService.pullAndHeartbeat();
+				// Webhook sync — pull latest config from backend
+				webhookSyncService.pullAndSync();
 
 				if (flipFinderPanel != null && config.showFlipFinder())
 				{

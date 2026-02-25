@@ -2146,20 +2146,6 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Send a webhook heartbeat to let the API know the plugin is active.
-	 * When the plugin is active, the API skips sending webhooks (plugin handles them directly).
-	 */
-	public void webhookHeartbeatAsync()
-	{
-		Request request = new Request.Builder()
-			.url(String.format("%s%s/heartbeat", getApiUrl(), WEBHOOK_BASE_PATH))
-			.post(RequestBody.create(JSON, "{}"))
-			.build();
-
-		executeWebhookCall(request, "heartbeat", null, null);
-	}
-
-	/**
 	 * Delete user's webhook configuration asynchronously.
 	 *
 	 * @param onSuccess Callback on success
