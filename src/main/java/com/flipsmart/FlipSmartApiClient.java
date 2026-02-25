@@ -2037,4 +2037,134 @@ public class FlipSmartApiClient
 	{
 		return addItemToBlocklistAsync(blocklistId, itemId, null);
 	}
+
+	// =========================================================================
+	// Webhook API Methods
+	// =========================================================================
+
+	private static final String WEBHOOK_BASE_PATH = "/profile/webhook";
+
+	/**
+	 * Execute a simple webhook API call with standard success/error callback wiring.
+	 */
+	private void executeWebhookCall(Request request, String action, Runnable onSuccess, Consumer<String> onError)
+	{
+		executeAsync(
+			request,
+			jsonData -> {
+				log.debug("Webhook {} succeeded", action);
+				if (onSuccess != null)
+				{
+					onSuccess.run();
+				}
+				return null;
+			},
+			error -> {
+				log.debug("Webhook {} failed: {}", action, error);
+				if (onError != null)
+				{
+					onError.accept(error);
+				}
+			},
+			true
+		);
+	}
+
+	/**
+	 * Update (or create) user's webhook configuration asynchronously.
+	 *
+	 * @param webhookUrl Discord webhook URL
+	 * @param notifySale Whether to notify on sale completion
+	 * @param notifySuggestion Whether to notify on flip suggestions
+	 * @param onSuccess Callback on success
+	 * @param onError Callback on error
+	 */
+	public void updateWebhookAsync(
+		String webhookUrl,
+		boolean notifySale,
+		boolean notifySuggestion,
+		Runnable onSuccess,
+		Consumer<String> onError
+	)
+	{
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty("webhook_url", webhookUrl);
+		jsonBody.addProperty("notify_sale_completed", notifySale);
+		jsonBody.addProperty("notify_flip_suggestion", notifySuggestion);
+		jsonBody.addProperty("enabled", true);
+
+		Request request = new Request.Builder()
+			.url(String.format("%s%s", getApiUrl(), WEBHOOK_BASE_PATH))
+			.put(RequestBody.create(JSON, jsonBody.toString()))
+			.build();
+
+		executeWebhookCall(request, "update", onSuccess, onError);
+	}
+
+	/**
+	 * Fetch user's full webhook configuration (including unmasked URL) from the backend.
+	 *
+	 * @param onSuccess Callback with webhook config JSON
+	 * @param onNotFound Callback when no webhook is configured (404)
+	 * @param onError Callback on error
+	 */
+	public void fetchWebhookConfigAsync(
+		Consumer<JsonObject> onSuccess,
+		Runnable onNotFound,
+		Consumer<String> onError
+	)
+	{
+		Request request = new Request.Builder()
+			.url(String.format("%s%s/url", getApiUrl(), WEBHOOK_BASE_PATH))
+			.get()
+			.build();
+
+		executeAsync(
+			request,
+			jsonData -> {
+				log.debug("Webhook fetch succeeded");
+				JsonObject webhookConfig = gson.fromJson(jsonData, JsonObject.class);
+				if (onSuccess != null)
+				{
+					onSuccess.accept(webhookConfig);
+				}
+				return null;
+			},
+			error -> {
+				if (error != null && error.contains("404"))
+				{
+					log.debug("No webhook configured on backend");
+					if (onNotFound != null)
+					{
+						onNotFound.run();
+					}
+				}
+				else
+				{
+					log.debug("Webhook fetch failed: {}", error);
+					if (onError != null)
+					{
+						onError.accept(error);
+					}
+				}
+			},
+			true
+		);
+	}
+
+	/**
+	 * Delete user's webhook configuration asynchronously.
+	 *
+	 * @param onSuccess Callback on success
+	 * @param onError Callback on error
+	 */
+	public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
+	{
+		Request request = new Request.Builder()
+			.url(String.format("%s%s", getApiUrl(), WEBHOOK_BASE_PATH))
+			.delete()
+			.build();
+
+		executeWebhookCall(request, "delete", onSuccess, onError);
+	}
 }

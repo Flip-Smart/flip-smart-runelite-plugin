@@ -105,6 +105,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private ChatMessageManager chatMessageManager;
 
+	@Inject
+	private WebhookSyncService webhookSyncService;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -543,6 +546,9 @@ public class FlipSmartPlugin extends Plugin
 		// Start dump alert service
 		dumpAlertService.start();
 
+		// Sync webhook config to backend if configured
+		webhookSyncService.syncIfChanged();
+
 		// Initialize auto-recommend service
 		autoRecommendService = new AutoRecommendService(config, this);
 		autoRecommendService.setOnFocusChanged(focus -> {
@@ -633,6 +639,13 @@ public class FlipSmartPlugin extends Plugin
 		{
 			flipFinderPanel.setAutoRecommendVisible(config.enableAutoRecommend());
 		}
+
+		// Sync webhook config changes to backend
+		String key = configChanged.getKey();
+		if ("discordWebhookUrl".equals(key) || "notifySaleCompleted".equals(key))
+		{
+			webhookSyncService.syncIfChanged();
+		}
 	}
 
 	@Subscribe
@@ -694,6 +707,9 @@ public class FlipSmartPlugin extends Plugin
 			{
 				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
 			}
+
+			// Pull webhook config after auth is confirmed
+			webhookSyncService.pullFromBackend();
 		});
 
 		// Restore collected items from config (items bought but not yet sold)
@@ -2249,6 +2265,9 @@ public class FlipSmartPlugin extends Plugin
 				if (!isBuy)
 				{
 					markItemSold(itemId);
+
+					// Note: Sale completion webhooks are sent by the backend when a flip is
+					// detected (with full profit/ROI data). No plugin-side notification needed.
 				}
 
 				// Refresh active flips panel if it exists
@@ -2570,6 +2589,9 @@ public class FlipSmartPlugin extends Plugin
 					return;
 				}
 				
+				// Webhook sync — pull latest config from backend
+				webhookSyncService.pullAndSync();
+
 				if (flipFinderPanel != null && config.showFlipFinder())
 				{
 					javax.swing.SwingUtilities.invokeLater(() ->
