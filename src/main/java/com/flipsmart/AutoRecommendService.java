@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,9 +31,14 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
+	/** Price threshold for high-value adjustment timer delays */
+	private static final int HIGH_VALUE_THRESHOLD = 5_000_000;
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
+
+	// Adjustment timer deadlines: itemId → System.currentTimeMillis() when timer expires
+	private final Map<Integer, Long> adjustmentDeadlines = new HashMap<>();
 
 	// Queue state - guarded by synchronized(this)
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
@@ -178,6 +185,7 @@ public class AutoRecommendService
 	{
 		active = false;
 		recommendationQueue.clear();
+		adjustmentDeadlines.clear();
 		pendingReBuyItemId = -1;
 		pendingReBuyRemainingQty = 0;
 		PlayerSession session = plugin.getSession();
@@ -210,6 +218,9 @@ public class AutoRecommendService
 
 		log.info("Auto-recommend: Re-evaluating after login");
 		focusNextAvailableAction();
+
+		// Reschedule adjustment timers for any active zero-fill buy offers
+		rescheduleAdjustmentTimersAfterLogin();
 	}
 
 	// =====================
@@ -242,6 +253,8 @@ public class AutoRecommendService
 
 		plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
 
+		scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
+
 		log.info("Auto-recommend: Buy order placed for {} - advancing to next", current.getItemName());
 		advanceToNext();
 	}
@@ -258,6 +271,7 @@ public class AutoRecommendService
 			return;
 		}
 
+		clearAdjustmentTimer(itemId);
 		log.info("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
 		updateStatus("Auto: Collect " + itemName + " from GE");
 
@@ -386,6 +400,8 @@ public class AutoRecommendService
 			return;
 		}
 
+		clearAdjustmentTimer(itemId);
+
 		if (wasBuy && filledQuantity > 0)
 		{
 			// Partial-fill buy cancel — delegate to re-buy flow
@@ -468,6 +484,7 @@ public class AutoRecommendService
 
 		if (wasBuy)
 		{
+			clearAdjustmentTimer(itemId);
 			handleBuyCollected(itemId, itemName, quantity);
 		}
 		else
@@ -584,7 +601,7 @@ public class AutoRecommendService
 	}
 
 	// =====================
-	// Queue Refresh (AC4)
+	// Queue Refresh
 	// =====================
 
 	/**
@@ -719,7 +736,223 @@ public class AutoRecommendService
 	}
 
 	// =====================
-	// Persistence (AC7)
+	// Adjustment Timers
+	// =====================
+
+	/**
+	 * Get the adjustment delay in milliseconds based on the configured timeframe and item price.
+	 * High-value items (>= 5M GP) get longer delays since their prices change more slowly.
+	 */
+	long getAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
+	{
+		boolean highValue = itemPrice >= HIGH_VALUE_THRESHOLD;
+		switch (timeframe)
+		{
+			case ACTIVE:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+			case THIRTY_MINS:
+				return (highValue ? 15 : 10) * 60 * 1000L;
+			case TWO_HOURS:
+				return (highValue ? 30 : 15) * 60 * 1000L;
+			case FOUR_HOURS:
+				return (highValue ? 60 : 30) * 60 * 1000L;
+			case TWELVE_HOURS:
+				return (highValue ? 240 : 60) * 60 * 1000L;
+			default:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+		}
+	}
+
+	/**
+	 * Schedule an adjustment timer for a buy offer.
+	 * When the timer expires, checkAdjustmentTimers() will prompt the user
+	 * to adjust the price if the recommendation has changed.
+	 */
+	private void scheduleAdjustmentTimer(int itemId, int itemPrice)
+	{
+		long delay = getAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long deadline = System.currentTimeMillis() + delay;
+		adjustmentDeadlines.put(itemId, deadline);
+		log.info("Auto-recommend: Adjustment timer scheduled for item {} in {}m", itemId, delay / 60000);
+	}
+
+	/**
+	 * Reset the adjustment timer for an item (e.g., after a partial fill).
+	 */
+	public synchronized void resetAdjustmentTimer(int itemId, int itemPrice)
+	{
+		if (!active || !adjustmentDeadlines.containsKey(itemId))
+		{
+			return;
+		}
+
+		long delay = getAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long deadline = System.currentTimeMillis() + delay;
+		adjustmentDeadlines.put(itemId, deadline);
+		log.info("Auto-recommend: Adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
+	}
+
+	/**
+	 * Clear the adjustment timer for an item.
+	 */
+	private void clearAdjustmentTimer(int itemId)
+	{
+		if (adjustmentDeadlines.remove(itemId) != null)
+		{
+			log.debug("Auto-recommend: Adjustment timer cleared for item {}", itemId);
+		}
+	}
+
+	/**
+	 * Check all adjustment timers and prompt the user to adjust unfilled buy offers
+	 * when the recommended price has changed.
+	 *
+	 * Called periodically from the auto-recommend refresh timer (2-minute interval).
+	 */
+	public synchronized void checkAdjustmentTimers(
+		Map<Integer, TrackedOffer> trackedOffers,
+		List<FlipRecommendation> currentRecommendations)
+	{
+		if (!active || adjustmentDeadlines.isEmpty() || trackedOffers == null)
+		{
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		Iterator<Map.Entry<Integer, Long>> iter = adjustmentDeadlines.entrySet().iterator();
+
+		while (iter.hasNext())
+		{
+			Map.Entry<Integer, Long> entry = iter.next();
+			int itemId = entry.getKey();
+			long deadline = entry.getValue();
+
+			if (now < deadline)
+			{
+				continue;
+			}
+
+			// Timer expired — find the tracked offer
+			TrackedOffer offer = findTrackedBuyOffer(trackedOffers, itemId);
+			if (offer == null || offer.isCompleted() || offer.getPreviousQuantitySold() > 0)
+			{
+				// Offer gone, completed, or has fills — no adjustment needed
+				iter.remove();
+				continue;
+			}
+
+			// Find matching recommendation
+			FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
+
+			if (rec == null)
+			{
+				// No longer recommended — suggest cancelling
+				updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
+					offer.getItemName()));
+				iter.remove();
+				continue;
+			}
+
+			if (rec.getRecommendedBuyPrice() == offer.getPrice())
+			{
+				// Price unchanged — silently reschedule another check
+				long delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+				entry.setValue(now + delay);
+				log.debug("Auto-recommend: Price unchanged for {} - rescheduling timer ({}m)",
+					offer.getItemName(), delay / 60000);
+				continue;
+			}
+
+			// Price changed — show adjustment prompt
+			log.info("Auto-recommend: Price changed for {} ({} -> {}) - prompting adjustment",
+				offer.getItemName(), offer.getPrice(), rec.getRecommendedBuyPrice());
+
+			int priceOffset = config.priceOffset();
+			FocusedFlip focus = FocusedFlip.forBuy(
+				itemId,
+				offer.getItemName(),
+				rec.getRecommendedBuyPrice(),
+				offer.getTotalQuantity(),
+				rec.getRecommendedSellPrice(),
+				priceOffset
+			);
+			invokeFocusCallback(focus);
+			updateStatus(String.format("Auto: Adjust %s buy price %s → %s gp",
+				offer.getItemName(),
+				GpUtils.formatGPWithSuffix(offer.getPrice()),
+				GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
+
+			iter.remove();
+		}
+	}
+
+	/**
+	 * Reschedule adjustment timers after login for any active zero-fill buy offers
+	 * that don't already have a timer.
+	 */
+	private void rescheduleAdjustmentTimersAfterLogin()
+	{
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		for (TrackedOffer offer : session.getTrackedOffers().values())
+		{
+			if (!offer.isBuy() || offer.isCompleted() || offer.getPreviousQuantitySold() > 0)
+			{
+				continue;
+			}
+
+			if (adjustmentDeadlines.containsKey(offer.getItemId()))
+			{
+				continue;
+			}
+
+			// Schedule a timer — use a short delay since the offer may have been sitting
+			// unfilled while offline
+			scheduleAdjustmentTimer(offer.getItemId(), offer.getPrice());
+			log.info("Auto-recommend: Rescheduled adjustment timer for {} after login", offer.getItemName());
+		}
+	}
+
+	/**
+	 * Find a tracked buy offer for the given item ID.
+	 */
+	private TrackedOffer findTrackedBuyOffer(Map<Integer, TrackedOffer> trackedOffers, int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == itemId && offer.isBuy())
+			{
+				return offer;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Find a recommendation matching the given item ID from a list.
+	 */
+	private FlipRecommendation findRecommendationInList(List<FlipRecommendation> recommendations, int itemId)
+	{
+		if (recommendations == null)
+		{
+			return null;
+		}
+		for (FlipRecommendation rec : recommendations)
+		{
+			if (rec.getItemId() == itemId)
+			{
+				return rec;
+			}
+		}
+		return null;
+	}
+
+	// =====================
+	// Persistence
 	// =====================
 
 	/**

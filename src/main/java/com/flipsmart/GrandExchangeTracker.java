@@ -414,6 +414,12 @@ public class GrandExchangeTracker
 			recordFillTransaction(ctx, newQuantity);
 		}
 
+		// Reset adjustment timer on partial buy fills (not yet fully bought)
+		if (ctx.isBuy && newQuantity > 0 && ctx.state != GrandExchangeOfferState.BOUGHT && isAutoRecommendActive())
+		{
+			autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
+		}
+
 		notifyAutoRecommendOnCompletion(ctx);
 
 		session.putTrackedOffer(ctx.slot, TrackedOffer.createWithPreservedTimestamps(

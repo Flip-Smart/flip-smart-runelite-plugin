@@ -1122,6 +1122,12 @@ public class FlipSmartPlugin extends Plugin
 						flipFinderPanel.refresh();
 					});
 				}
+
+				// Check adjustment timers for unfilled buy offers
+				autoRecommendService.checkAdjustmentTimers(
+					session.getTrackedOffers(),
+					flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
+				);
 			}
 		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
 
