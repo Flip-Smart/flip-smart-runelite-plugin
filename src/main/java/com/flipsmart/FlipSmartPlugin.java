@@ -222,6 +222,14 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
+	 */
+	public int getInventoryCountForItem(int itemId)
+	{
+		return activeFlipTracker.getInventoryCountForItem(itemId);
+	}
+
+	/**
 	 * Store recommended sell price when user views/acts on a flip recommendation
 	 */
 	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)

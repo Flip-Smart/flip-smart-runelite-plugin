@@ -5,6 +5,7 @@ import net.runelite.api.Client;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.game.ItemManager;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -27,6 +28,7 @@ public class ActiveFlipTracker
 	private final FlipSmartApiClient apiClient;
 	private final Client client;
 	private final ClientThread clientThread;
+	private final ItemManager itemManager;
 
 	private Runnable onPanelRefreshNeeded;
 	private Runnable onActiveFlipsRefreshNeeded;
@@ -36,12 +38,14 @@ public class ActiveFlipTracker
 		PlayerSession session,
 		FlipSmartApiClient apiClient,
 		Client client,
-		ClientThread clientThread)
+		ClientThread clientThread,
+		ItemManager itemManager)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
 		this.client = client;
 		this.clientThread = clientThread;
+		this.itemManager = itemManager;
 	}
 
 	public void setOnPanelRefreshNeeded(Runnable callback)
@@ -122,6 +126,7 @@ public class ActiveFlipTracker
 
 	/**
 	 * Get the count of a specific item in the player's inventory.
+	 * Uses canonicalize to match noted/placeholder variants of the same item.
 	 */
 	public int getInventoryCountForItem(int itemId)
 	{
@@ -131,11 +136,12 @@ public class ActiveFlipTracker
 			return 0;
 		}
 
+		int canonicalId = itemManager.canonicalize(itemId);
 		int count = 0;
 		Item[] items = inventory.getItems();
 		for (Item item : items)
 		{
-			if (item.getId() == itemId)
+			if (item.getId() > 0 && itemManager.canonicalize(item.getId()) == canonicalId)
 			{
 				count += item.getQuantity();
 			}
@@ -282,7 +288,8 @@ public class ActiveFlipTracker
 			{
 				if (item.getId() > 0)
 				{
-					counts.merge(item.getId(), item.getQuantity(), Integer::sum);
+					int canonicalId = itemManager.canonicalize(item.getId());
+					counts.merge(canonicalId, item.getQuantity(), Integer::sum);
 				}
 			}
 		}

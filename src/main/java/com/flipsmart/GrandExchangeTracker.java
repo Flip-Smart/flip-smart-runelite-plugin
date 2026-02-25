@@ -604,17 +604,18 @@ public class GrandExchangeTracker
 	{
 		if (isAutoRecommendActive())
 		{
-			// During auto-recommend: override focus if item is a collected item ready to sell
-			if (session.getCollectedItemIds().contains(itemId)
-				&& session.getRecommendedPrice(itemId) != null)
-			{
-				String itemName = ItemUtils.getItemName(itemManager, itemId);
-				autoRecommendService.overrideFocusForSell(itemId, itemName);
-			}
+			// overrideFocusForSell handles sell price recovery, quantity resolution
+			// (including inventory fallback and auto-correction of session state)
+			String itemName = ItemUtils.getItemName(itemManager, itemId);
+			autoRecommendService.overrideFocusForSell(itemId, itemName);
 			return;
 		}
 
 		String rsn = getRsn().orElse(null);
+
+		// Capture inventory count on client thread before async API call
+		// (client.getItemContainer only works on the client thread)
+		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
 
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 		{
@@ -626,7 +627,24 @@ public class GrandExchangeTracker
 			ActiveFlip matchingFlip = findActiveFlipForItem(response.getActiveFlips(), itemId);
 			if (matchingFlip != null)
 			{
-				setFocusForSell(matchingFlip);
+				setFocusForSell(matchingFlip, inventoryCount);
+
+				// Sync inventory-corrected quantity to API if inventory has more
+				if (inventoryCount > matchingFlip.getTotalQuantity() && inventoryCount > 0 && rsn != null)
+				{
+					int orderQty = matchingFlip.getOrderQuantity() > 0
+						? matchingFlip.getOrderQuantity() : inventoryCount;
+					log.info("Syncing inventory-corrected quantity for {} to API: {} items",
+						matchingFlip.getItemName(), inventoryCount);
+					apiClient.syncActiveFlipAsync(
+						matchingFlip.getItemId(),
+						matchingFlip.getItemName(),
+						inventoryCount,
+						orderQty,
+						matchingFlip.getAverageBuyPrice(),
+						rsn
+					);
+				}
 			}
 			else
 			{
@@ -647,7 +665,7 @@ public class GrandExchangeTracker
 		return null;
 	}
 
-	private void setFocusForSell(ActiveFlip flip)
+	private void setFocusForSell(ActiveFlip flip, int inventoryFallbackCount)
 	{
 		int sellPrice;
 
@@ -670,18 +688,24 @@ public class GrandExchangeTracker
 			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
 
+		// Use the higher of API quantity vs actual inventory count
+		// (inventory is the source of truth — player may have more than API tracked)
+		int apiQuantity = flip.getTotalQuantity();
+		int sellQuantity = Math.max(apiQuantity, inventoryFallbackCount);
+
 		FocusedFlip focus = FocusedFlip.forSell(
 			flip.getItemId(),
 			flip.getItemName(),
 			sellPrice,
-			flip.getTotalQuantity()
+			sellQuantity
 		);
 
 		if (onFocusChanged != null)
 		{
 			onFocusChanged.accept(focus);
 		}
-		log.info("Auto-focused on active flip for sell: {} @ {} gp", flip.getItemName(), sellPrice);
+		log.info("Auto-focused on active flip for sell: {} @ {} gp (qty: api={}, inv={}, using={})",
+			flip.getItemName(), sellPrice, apiQuantity, inventoryFallbackCount, sellQuantity);
 	}
 
 	/**

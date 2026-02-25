@@ -307,17 +307,22 @@ public class AutoRecommendService
 		Integer sellPrice = session.getRecommendedPrice(itemId);
 		if (sellPrice == null || sellPrice <= 0)
 		{
-			log.warn("Auto-recommend: Cannot override focus for {} - no sell price available", itemName);
-			return;
+			// Try to recover sell price from recommendation queue
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			if (rec != null && rec.getRecommendedSellPrice() > 0)
+			{
+				sellPrice = rec.getRecommendedSellPrice();
+				plugin.setRecommendedSellPrice(itemId, sellPrice);
+				log.info("Auto-recommend: Recovered sell price for {} from queue ({})", itemName, sellPrice);
+			}
+			else
+			{
+				log.warn("Auto-recommend: Cannot override focus for {} - no sell price available", itemName);
+				return;
+			}
 		}
 
-		int collectedQty = session.getCollectedQuantity(itemId);
-		// Fall back to recommendation quantity if collected qty not tracked
-		if (collectedQty <= 0)
-		{
-			FlipRecommendation rec = findRecommendationForItem(itemId);
-			collectedQty = rec != null ? rec.getRecommendedQuantity() : 0;
-		}
+		int collectedQty = resolveSellQuantity(itemId);
 
 		if (collectedQty <= 0)
 		{
@@ -1103,12 +1108,19 @@ public class AutoRecommendService
 			return;
 		}
 
+		// Auto-correct quantity from inventory if the passed-in value is 0
+		int sellQuantity = quantity;
+		if (sellQuantity <= 0)
+		{
+			sellQuantity = resolveSellQuantity(itemId);
+		}
+
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forSell(
 			itemId,
 			itemName,
 			sellPrice,
-			quantity,
+			sellQuantity,
 			priceOffset
 		);
 
@@ -1160,10 +1172,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		// Use actual collected quantity if available, fall back to recommendation
-		PlayerSession session = plugin.getSession();
-		int collectedQty = session.getCollectedQuantity(sellableItemId);
-		int sellQuantity = collectedQty > 0 ? collectedQty : rec.getRecommendedQuantity();
+		int sellQuantity = resolveSellQuantity(sellableItemId);
 
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forSell(
@@ -1200,6 +1209,35 @@ public class AutoRecommendService
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Resolve the sell quantity for an item, with inventory fallback.
+	 * Tries session collected quantity first, then actual inventory count.
+	 * Auto-corrects the session if inventory has items but session doesn't.
+	 */
+	private int resolveSellQuantity(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		int qty = session.getCollectedQuantity(itemId);
+		if (qty > 0)
+		{
+			return qty;
+		}
+
+		// Fallback: check actual inventory
+		int inventoryCount = plugin.getInventoryCountForItem(itemId);
+		if (inventoryCount > 0)
+		{
+			session.addCollectedItem(itemId, inventoryCount);
+			log.info("Auto-recommend: Corrected collected quantity for item {} from inventory ({})",
+				itemId, inventoryCount);
+			return inventoryCount;
+		}
+
+		// Last resort: check recommendation quantity
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		return rec != null ? rec.getRecommendedQuantity() : 0;
 	}
 
 	/**
