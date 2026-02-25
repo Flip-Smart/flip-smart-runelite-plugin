@@ -1112,10 +1112,12 @@ public class FlipSmartApiClient
 	 * @param randomSeed Random seed for variety in suggestions (optional)
 	 * @param timeframe Target flip timeframe (30m, 2h, 4h, 12h) or null for Active mode
 	 * @param rsn Player's RuneScape Name (optional, for RSN-level access enforcement)
+	 * @param filledSlots Number of GE slots currently filled (optional, for strategy tier inference)
 	 * @return CompletableFuture with flip recommendations
 	 */
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
-		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn)
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
+		Integer filledSlots)
 	{
 		String apiUrl = getApiUrl();
 
@@ -1143,6 +1145,11 @@ public class FlipSmartApiClient
 			urlBuilder.append(String.format("&rsn=%s", rsn));
 		}
 
+		if (filledSlots != null)
+		{
+			urlBuilder.append(String.format("&filled_slots=%d", filledSlots));
+		}
+
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -1153,7 +1160,7 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String, String)} instead.
+	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String, String, Integer)} instead.
 	 * This method uses the deprecated /flip-finder/timeframe endpoint.
 	 *
 	 * Fetch timeframe-based flip recommendations from the API asynchronously.
