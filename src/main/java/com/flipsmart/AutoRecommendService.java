@@ -31,6 +31,7 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
+	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s gp";
 	/** Price threshold for high-value adjustment timer delays */
 	private static final int HIGH_VALUE_THRESHOLD = 5_000_000;
 
@@ -331,7 +332,7 @@ public class AutoRecommendService
 		FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, sellPrice, collectedQty, priceOffset);
 
 		invokeFocusCallback(focus);
-		updateStatus(String.format("Auto: Sell %s @ %s gp", itemName, GpUtils.formatGPWithSuffix(sellPrice)));
+		updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 
 		log.info("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
 	}
@@ -804,58 +805,63 @@ public class AutoRecommendService
 		while (iter.hasNext())
 		{
 			Map.Entry<Integer, Long> entry = iter.next();
-			int itemId = entry.getKey();
-			long deadline = entry.getValue();
-
-			if (now < deadline)
+			if (now >= entry.getValue())
 			{
-				continue;
+				processExpiredAdjustmentTimer(entry, trackedOffers, currentRecommendations, iter, now);
 			}
-
-			// Timer expired — find the tracked offer
-			TrackedOffer offer = findTrackedBuyOffer(trackedOffers, itemId);
-			if (offer == null || offer.isCompleted() || offer.getPreviousQuantitySold() > 0)
-			{
-				// Offer gone, completed, or has fills — no adjustment needed
-				iter.remove();
-				continue;
-			}
-
-			// Find matching recommendation
-			FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
-
-			if (rec == null)
-			{
-				// No longer recommended — suggest cancelling
-				updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
-					offer.getItemName()));
-				iter.remove();
-				continue;
-			}
-
-			if (rec.getRecommendedBuyPrice() == offer.getPrice())
-			{
-				// Price unchanged — silently reschedule another check
-				long delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
-				entry.setValue(now + delay);
-				log.debug("Auto-recommend: Price unchanged for {} - rescheduling timer ({}m)",
-					offer.getItemName(), delay / 60000);
-				continue;
-			}
-
-			// Price changed — show adjustment prompt
-			log.info("Auto-recommend: Price changed for {} ({} -> {}) - prompting adjustment",
-				offer.getItemName(), offer.getPrice(), rec.getRecommendedBuyPrice());
-
-			focusBuyOverlay(itemId, offer.getItemName(),
-				rec.getRecommendedBuyPrice(), offer.getTotalQuantity(), rec.getRecommendedSellPrice(),
-				String.format("Auto: Adjust %s buy price %s → %s gp",
-					offer.getItemName(),
-					GpUtils.formatGPWithSuffix(offer.getPrice()),
-					GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
-
-			iter.remove();
 		}
+	}
+
+	/**
+	 * Process a single expired adjustment timer entry.
+	 * Removes the entry if the offer is gone/filled/adjusted, or reschedules if price unchanged.
+	 */
+	private void processExpiredAdjustmentTimer(
+		Map.Entry<Integer, Long> entry,
+		Map<Integer, TrackedOffer> trackedOffers,
+		List<FlipRecommendation> currentRecommendations,
+		Iterator<Map.Entry<Integer, Long>> iter,
+		long now)
+	{
+		int itemId = entry.getKey();
+
+		TrackedOffer offer = findTrackedBuyOffer(trackedOffers, itemId);
+		if (offer == null || offer.isCompleted() || offer.getPreviousQuantitySold() > 0)
+		{
+			iter.remove();
+			return;
+		}
+
+		FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
+
+		if (rec == null)
+		{
+			updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
+				offer.getItemName()));
+			iter.remove();
+			return;
+		}
+
+		if (rec.getRecommendedBuyPrice() == offer.getPrice())
+		{
+			long delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			entry.setValue(now + delay);
+			log.debug("Auto-recommend: Price unchanged for {} - rescheduling timer ({}m)",
+				offer.getItemName(), delay / 60000);
+			return;
+		}
+
+		log.info("Auto-recommend: Price changed for {} ({} -> {}) - prompting adjustment",
+			offer.getItemName(), offer.getPrice(), rec.getRecommendedBuyPrice());
+
+		focusBuyOverlay(itemId, offer.getItemName(),
+			rec.getRecommendedBuyPrice(), offer.getTotalQuantity(), rec.getRecommendedSellPrice(),
+			String.format("Auto: Adjust %s buy price %s → %s gp",
+				offer.getItemName(),
+				GpUtils.formatGPWithSuffix(offer.getPrice()),
+				GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
+
+		iter.remove();
 	}
 
 	/**
@@ -872,12 +878,8 @@ public class AutoRecommendService
 
 		for (TrackedOffer offer : session.getTrackedOffers().values())
 		{
-			if (!offer.isBuy() || offer.isCompleted() || offer.getPreviousQuantitySold() > 0)
-			{
-				continue;
-			}
-
-			if (adjustmentDeadlines.containsKey(offer.getItemId()))
+			if (!offer.isBuy() || offer.isCompleted() || offer.getPreviousQuantitySold() > 0
+				|| adjustmentDeadlines.containsKey(offer.getItemId()))
 			{
 				continue;
 			}
@@ -1083,7 +1085,7 @@ public class AutoRecommendService
 		invokeFocusCallback(focus);
 		invokeQueueAdvancedCallback();
 
-		updateStatus(String.format("Auto: Sell %s @ %s gp",
+		updateStatus(String.format(MSG_SELL_FORMAT,
 			itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 	}
 
@@ -1142,7 +1144,7 @@ public class AutoRecommendService
 		invokeFocusCallback(focus);
 		invokeQueueAdvancedCallback();
 
-		updateStatus(String.format("Auto: Sell %s @ %s gp",
+		updateStatus(String.format(MSG_SELL_FORMAT,
 			rec.getItemName(), GpUtils.formatGPWithSuffix(sellPrice)));
 	}
 
