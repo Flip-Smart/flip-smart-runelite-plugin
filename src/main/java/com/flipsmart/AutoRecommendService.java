@@ -61,9 +61,9 @@ public class AutoRecommendService
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
-	// Pending re-buy state: when a partially-filled buy is cancelled, track remaining qty
-	private int pendingReBuyItemId = -1;
-	private int pendingReBuyRemainingQty;
+	// Pending re-buys: itemId → remaining quantity when a partially-filled buy is cancelled.
+	// Supports multiple concurrent partial cancellations.
+	private final Map<Integer, Integer> pendingReBuys = new HashMap<>();
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -186,8 +186,7 @@ public class AutoRecommendService
 		active = false;
 		recommendationQueue.clear();
 		adjustmentDeadlines.clear();
-		pendingReBuyItemId = -1;
-		pendingReBuyRemainingQty = 0;
+		pendingReBuys.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -238,11 +237,9 @@ public class AutoRecommendService
 		}
 
 		// Clear pending re-buy if this buy matches
-		if (pendingReBuyItemId == itemId)
+		if (pendingReBuys.remove(itemId) != null)
 		{
 			log.info("Auto-recommend: Re-buy placed for item {} - clearing pending re-buy state", itemId);
-			pendingReBuyItemId = -1;
-			pendingReBuyRemainingQty = 0;
 		}
 
 		FlipRecommendation current = getCurrentRecommendation();
@@ -440,30 +437,18 @@ public class AutoRecommendService
 			return;
 		}
 
-		pendingReBuyItemId = itemId;
-		pendingReBuyRemainingQty = remaining;
+		pendingReBuys.put(itemId, remaining);
 
 		log.info("Auto-recommend: Buy cancelled for {} - {} filled, {} remaining. Prompting re-buy.",
 			itemName, filledQuantity, remaining);
 
-		// Find the recommendation for this item to get the buy price
 		FlipRecommendation rec = findRecommendationForItem(itemId);
-		int buyPrice = rec != null ? rec.getRecommendedBuyPrice() : 0;
-
-		if (buyPrice > 0)
+		if (rec != null && rec.getRecommendedBuyPrice() > 0)
 		{
-			int priceOffset = config.priceOffset();
-			FocusedFlip focus = FocusedFlip.forBuy(
-				itemId,
-				itemName,
-				buyPrice,
-				remaining,
-				rec.getRecommendedSellPrice(),
-				priceOffset
-			);
-			invokeFocusCallback(focus);
-			updateStatus(String.format("Auto: Re-buy %s x%s @ %s gp",
-				itemName, GpUtils.formatGPWithSuffix(remaining), GpUtils.formatGPWithSuffix(buyPrice)));
+			focusBuyOverlay(itemId, itemName, rec.getRecommendedBuyPrice(), remaining, rec.getRecommendedSellPrice(),
+				String.format("Auto: Re-buy %s x%s @ %s gp",
+					itemName, GpUtils.formatGPWithSuffix(remaining),
+					GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
 		}
 		else
 		{
@@ -509,34 +494,24 @@ public class AutoRecommendService
 		log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
 
 		// If this item has a pending re-buy, focus re-buy instead of sell
-		if (pendingReBuyItemId == itemId && pendingReBuyRemainingQty > 0)
+		Integer pendingQty = pendingReBuys.get(itemId);
+		if (pendingQty != null && pendingQty > 0)
 		{
 			log.info("Auto-recommend: Pending re-buy for {} x{} - showing re-buy overlay instead of sell",
-				itemName, pendingReBuyRemainingQty);
+				itemName, pendingQty);
 
 			FlipRecommendation rec = findRecommendationForItem(itemId);
-			int buyPrice = rec != null ? rec.getRecommendedBuyPrice() : 0;
-
-			if (buyPrice > 0)
+			if (rec != null && rec.getRecommendedBuyPrice() > 0)
 			{
-				int priceOffset = config.priceOffset();
-				FocusedFlip focus = FocusedFlip.forBuy(
-					itemId,
-					itemName,
-					buyPrice,
-					pendingReBuyRemainingQty,
-					rec.getRecommendedSellPrice(),
-					priceOffset
-				);
-				invokeFocusCallback(focus);
-				updateStatus(String.format("Auto: Re-buy %s x%s @ %s gp",
-					itemName, GpUtils.formatGPWithSuffix(pendingReBuyRemainingQty),
-					GpUtils.formatGPWithSuffix(buyPrice)));
+				focusBuyOverlay(itemId, itemName, rec.getRecommendedBuyPrice(), pendingQty, rec.getRecommendedSellPrice(),
+					String.format("Auto: Re-buy %s x%s @ %s gp",
+						itemName, GpUtils.formatGPWithSuffix(pendingQty),
+						GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
 			}
 			else
 			{
 				updateStatus(String.format("Auto: Re-buy %s x%s",
-					itemName, GpUtils.formatGPWithSuffix(pendingReBuyRemainingQty)));
+					itemName, GpUtils.formatGPWithSuffix(pendingQty)));
 			}
 			return;
 		}
@@ -872,20 +847,12 @@ public class AutoRecommendService
 			log.info("Auto-recommend: Price changed for {} ({} -> {}) - prompting adjustment",
 				offer.getItemName(), offer.getPrice(), rec.getRecommendedBuyPrice());
 
-			int priceOffset = config.priceOffset();
-			FocusedFlip focus = FocusedFlip.forBuy(
-				itemId,
-				offer.getItemName(),
-				rec.getRecommendedBuyPrice(),
-				offer.getTotalQuantity(),
-				rec.getRecommendedSellPrice(),
-				priceOffset
-			);
-			invokeFocusCallback(focus);
-			updateStatus(String.format("Auto: Adjust %s buy price %s → %s gp",
-				offer.getItemName(),
-				GpUtils.formatGPWithSuffix(offer.getPrice()),
-				GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
+			focusBuyOverlay(itemId, offer.getItemName(),
+				rec.getRecommendedBuyPrice(), offer.getTotalQuantity(), rec.getRecommendedSellPrice(),
+				String.format("Auto: Adjust %s buy price %s → %s gp",
+					offer.getItemName(),
+					GpUtils.formatGPWithSuffix(offer.getPrice()),
+					GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
 
 			iter.remove();
 		}
@@ -1075,21 +1042,10 @@ public class AutoRecommendService
 			return;
 		}
 
-		int priceOffset = config.priceOffset();
-		FocusedFlip focus = FocusedFlip.forBuy(
-			rec.getItemId(),
-			rec.getItemName(),
-			rec.getRecommendedBuyPrice(),
-			rec.getRecommendedQuantity(),
-			rec.getRecommendedSellPrice(),
-			priceOffset
-		);
-
-		invokeFocusCallback(focus);
+		focusBuyOverlay(rec.getItemId(), rec.getItemName(),
+			rec.getRecommendedBuyPrice(), rec.getRecommendedQuantity(), rec.getRecommendedSellPrice(),
+			String.format("Auto: %d/%d - %s", currentIndex + 1, recommendationQueue.size(), rec.getItemName()));
 		invokeQueueAdvancedCallback();
-
-		updateStatus(String.format("Auto: %d/%d - %s",
-			currentIndex + 1, recommendationQueue.size(), rec.getItemName()));
 	}
 
 	/**
@@ -1292,6 +1248,22 @@ public class AutoRecommendService
 			updateStatus("Auto: Waiting for flips");
 			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
 		}
+	}
+
+	// =====================
+	// Focus Helpers
+	// =====================
+
+	/**
+	 * Create a buy FocusedFlip, invoke the focus callback, and update status text.
+	 * Centralizes the repeated pattern of showing a buy overlay with a status message.
+	 */
+	private void focusBuyOverlay(int itemId, String itemName, int buyPrice, int quantity, int sellPrice, String statusMsg)
+	{
+		int priceOffset = config.priceOffset();
+		FocusedFlip focus = FocusedFlip.forBuy(itemId, itemName, buyPrice, quantity, sellPrice, priceOffset);
+		invokeFocusCallback(focus);
+		updateStatus(statusMsg);
 	}
 
 	// =====================
