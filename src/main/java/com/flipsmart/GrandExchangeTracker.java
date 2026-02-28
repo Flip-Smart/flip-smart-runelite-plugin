@@ -22,6 +22,8 @@ import java.util.function.Supplier;
 public class GrandExchangeTracker
 {
 	private static final int TRANSACTION_REFRESH_DELAY_MS = 500;
+	/** Minimum interval between autoFocusOnActiveFlip calls for the same item */
+	private static final long AUTO_FOCUS_DEBOUNCE_MS = 2000;
 
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
@@ -40,6 +42,10 @@ public class GrandExchangeTracker
 	private BiConsumer<Integer, Boolean> onFocusClear;
 	private IntFunction<Integer> displayedSellPriceProvider;
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
+
+	// Debounce: prevent duplicate autoFocusOnActiveFlip calls for the same item
+	private volatile int lastAutoFocusItemId;
+	private volatile long lastAutoFocusTimeMs;
 
 	/**
 	 * Bundles GE offer data passed from the plugin event handler.
@@ -625,6 +631,15 @@ public class GrandExchangeTracker
 	 */
 	public void autoFocusOnActiveFlip(int itemId)
 	{
+		// Debounce: GE_OFFERS_SETUP_BUILD fires multiple times per interaction
+		long now = System.currentTimeMillis();
+		if (itemId == lastAutoFocusItemId && (now - lastAutoFocusTimeMs) < AUTO_FOCUS_DEBOUNCE_MS)
+		{
+			return;
+		}
+		lastAutoFocusItemId = itemId;
+		lastAutoFocusTimeMs = now;
+
 		if (isAutoRecommendActive())
 		{
 			// overrideFocusForSell handles sell price recovery, quantity resolution
@@ -653,6 +668,14 @@ public class GrandExchangeTracker
 			ActiveFlip matchingFlip = findActiveFlipForItem(response.getActiveFlips(), itemId);
 			if (matchingFlip != null)
 			{
+				// Guard against race condition: sell may have been placed between
+				// API request and response — don't override the cleared focus
+				if (session.hasActiveSellSlotForItem(itemId))
+				{
+					log.debug("Sell already placed for {} - not overriding focus", matchingFlip.getItemName());
+					return;
+				}
+
 				setFocusForSell(matchingFlip, inventoryCount);
 
 				// Sync inventory-corrected quantity to API if inventory has more
