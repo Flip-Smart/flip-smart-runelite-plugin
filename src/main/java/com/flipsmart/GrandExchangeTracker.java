@@ -172,16 +172,39 @@ public class GrandExchangeTracker
 			syncCancelledPartialBuy(ctx);
 		}
 
-		// Notify auto-recommend for ALL cancellation types (buy and sell, any fill count)
-		if (isAutoRecommendActive())
+		// For sell cancels: re-add unsold items to collected so they can be re-listed
+		if (!ctx.isBuy)
 		{
-			TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
-			int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
-			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.isBuy, ctx.quantitySold, totalQuantity);
+			TrackedOffer sellOffer = session.getTrackedOffer(ctx.slot);
+			int orderTotal = sellOffer != null ? sellOffer.getTotalQuantity() : ctx.totalQuantity;
+			int remaining = orderTotal - ctx.quantitySold;
+			if (remaining > 0)
+			{
+				session.addCollectedItem(ctx.itemId, remaining);
+				log.info("Sell cancelled for {} - re-added {} unsold items to collected",
+					sellOffer != null ? sellOffer.getItemName() : ctx.itemName, remaining);
+			}
 		}
 
+		// Capture total quantity before removing tracked offer
+		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
+		int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
+
+		// Remove tracked offer BEFORE notifying auto-recommend so hasActiveSellSlotForItem
+		// returns false and findNextSellableCollectedItem can find the re-added items
 		session.removeTrackedOffer(ctx.slot);
-		session.removeRecommendedPrice(ctx.itemId);
+
+		// Only remove recommended price for buy cancels — sell cancels preserve it for re-listing
+		if (ctx.isBuy)
+		{
+			session.removeRecommendedPrice(ctx.itemId);
+		}
+
+		// Notify auto-recommend AFTER tracked offer removal
+		if (isAutoRecommendActive())
+		{
+			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.isBuy, ctx.quantitySold, totalQuantity);
+		}
 	}
 
 	private void recordFinalCancellationFill(OfferContext ctx)
@@ -607,8 +630,11 @@ public class GrandExchangeTracker
 			// overrideFocusForSell handles sell price recovery, quantity resolution
 			// (including inventory fallback and auto-correction of session state)
 			String itemName = ItemUtils.getItemName(itemManager, itemId);
-			autoRecommendService.overrideFocusForSell(itemId, itemName);
-			return;
+			if (autoRecommendService.overrideFocusForSell(itemId, itemName))
+			{
+				return;
+			}
+			// Fall through to API path for items not in the auto-recommend queue
 		}
 
 		String rsn = getRsn().orElse(null);

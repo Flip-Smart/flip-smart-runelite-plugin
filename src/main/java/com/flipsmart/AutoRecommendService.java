@@ -246,6 +246,15 @@ public class AutoRecommendService
 		FlipRecommendation current = getCurrentRecommendation();
 		if (current == null || current.getItemId() != itemId)
 		{
+			// Non-focused buy: store sell price from queue but don't advance
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			if (rec != null && rec.getRecommendedSellPrice() > 0)
+			{
+				plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
+				scheduleAdjustmentTimer(itemId, rec.getRecommendedBuyPrice());
+				log.info("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
+					itemId, rec.getRecommendedSellPrice());
+			}
 			return;
 		}
 
@@ -289,17 +298,28 @@ public class AutoRecommendService
 	 * This is a temporary override — after the sell is placed, focusNextAvailableAction()
 	 * resumes normal queue processing.
 	 */
-	public synchronized void overrideFocusForSell(int itemId, String itemName)
+	/**
+	 * @return true if focus was successfully overridden, false if no sell price could be found
+	 *         (caller should fall through to API-based price lookup)
+	 */
+	public synchronized boolean overrideFocusForSell(int itemId, String itemName)
 	{
 		if (!active)
 		{
-			return;
+			return false;
 		}
 
 		PlayerSession session = plugin.getSession();
 		if (session == null)
 		{
-			return;
+			return false;
+		}
+
+		// Don't re-show sell overlay if this item already has an active sell order
+		if (session.hasActiveSellSlotForItem(itemId))
+		{
+			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
+			return true;
 		}
 
 		Integer sellPrice = session.getRecommendedPrice(itemId);
@@ -315,8 +335,8 @@ public class AutoRecommendService
 			}
 			else
 			{
-				log.warn("Auto-recommend: Cannot override focus for {} - no sell price available", itemName);
-				return;
+				log.info("Auto-recommend: No local sell price for {} - falling through to API lookup", itemName);
+				return false;
 			}
 		}
 
@@ -325,7 +345,7 @@ public class AutoRecommendService
 		if (collectedQty <= 0)
 		{
 			log.warn("Auto-recommend: Cannot override focus for {} - no quantity available", itemName);
-			return;
+			return false;
 		}
 
 		int priceOffset = config.priceOffset();
@@ -335,6 +355,7 @@ public class AutoRecommendService
 		updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 
 		log.info("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
+		return true;
 	}
 
 	/**
@@ -1098,54 +1119,48 @@ public class AutoRecommendService
 	private void focusNextCollectedItemSell()
 	{
 		int sellableItemId = findNextSellableCollectedItem();
-		if (sellableItemId < 0)
+		if (sellableItemId >= 0)
 		{
-			// No collected items need selling - check buy queue
-			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+			FlipRecommendation rec = findRecommendationForItem(sellableItemId);
+			Integer sellPrice = rec != null ? plugin.getSession().getRecommendedPrice(sellableItemId) : null;
+
+			if (rec != null && sellPrice != null && sellPrice > 0)
 			{
-				focusCurrent();
+				int sellQuantity = resolveSellQuantity(sellableItemId);
+
+				int priceOffset = config.priceOffset();
+				FocusedFlip focus = FocusedFlip.forSell(
+					sellableItemId,
+					rec.getItemName(),
+					sellPrice,
+					sellQuantity,
+					priceOffset
+				);
+
+				invokeFocusCallback(focus);
+				invokeQueueAdvancedCallback();
+
+				updateStatus(String.format(MSG_SELL_FORMAT,
+					rec.getItemName(), GpUtils.formatGPWithSuffix(sellPrice)));
+				return;
 			}
-			else
-			{
-				// Clear any stale focus so the hint box can show
-				invokeFocusCallback(null);
-				promptCollection();
-			}
-			return;
+
+			// Collected item can't be displayed (no rec or no price) - fall through to buy/wait
+			log.warn("Auto-recommend: Cannot focus sell for collected item {} (rec={}, price={})",
+				sellableItemId, rec != null ? rec.getItemName() : "null", sellPrice);
 		}
 
-		FlipRecommendation rec = findRecommendationForItem(sellableItemId);
-		if (rec == null)
+		// No sellable items can be properly displayed - check buy queue
+		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 		{
-			log.warn("Auto-recommend: Cannot find item name for collected item {}", sellableItemId);
-			updateStatus("Auto: Collected item no longer in queue - sell manually");
-			return;
+			focusCurrent();
 		}
-
-		Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
-		if (sellPrice == null || sellPrice <= 0)
+		else
 		{
-			log.warn("Auto-recommend: No recommended sell price for collected item {} ({})", rec.getItemName(), sellableItemId);
-			updateStatus(String.format("Auto: No sell price for %s - sell manually", rec.getItemName()));
-			return;
+			// Clear any stale focus so the hint box can show
+			invokeFocusCallback(null);
+			promptCollection();
 		}
-
-		int sellQuantity = resolveSellQuantity(sellableItemId);
-
-		int priceOffset = config.priceOffset();
-		FocusedFlip focus = FocusedFlip.forSell(
-			sellableItemId,
-			rec.getItemName(),
-			sellPrice,
-			sellQuantity,
-			priceOffset
-		);
-
-		invokeFocusCallback(focus);
-		invokeQueueAdvancedCallback();
-
-		updateStatus(String.format(MSG_SELL_FORMAT,
-			rec.getItemName(), GpUtils.formatGPWithSuffix(sellPrice)));
 	}
 
 	/**
