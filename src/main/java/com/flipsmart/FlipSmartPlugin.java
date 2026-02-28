@@ -527,7 +527,15 @@ public class FlipSmartPlugin extends Plugin
 	protected void shutDown() throws Exception
 	{
 		log.info("Flip Smart stopped!");
-		
+
+		// Persist refresh token on shutdown to prevent session loss
+		String currentRefreshToken = apiClient.getRefreshToken();
+		if (currentRefreshToken != null && !currentRefreshToken.isEmpty())
+		{
+			configManager.setConfiguration(CONFIG_GROUP, "refreshToken", currentRefreshToken);
+			log.debug("Persisted refresh token on shutdown");
+		}
+
 		// Persist offer state before shutting down (handles cases where client is closed without logout)
 		// Only persist if we have a valid RSN to avoid overwriting good data
 		if (session.getRsn() != null && !session.getRsn().isEmpty())

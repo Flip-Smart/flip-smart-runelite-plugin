@@ -241,6 +241,10 @@ public class FlipFinderPanel extends PluginPanel
 			showLoginPanel();
 		}));
 
+		// Persist refresh token whenever it changes (rotation, new login, etc.)
+		// This prevents token loss from mid-session rotations via the 401 retry path
+		apiClient.setOnRefreshTokenChanged(this::saveRefreshToken);
+
 		// Check if already authenticated and switch to main panel if so
 		checkAuthenticationAndShow();
 	}
