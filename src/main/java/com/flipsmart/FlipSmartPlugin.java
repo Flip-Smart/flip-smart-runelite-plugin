@@ -474,8 +474,12 @@ public class FlipSmartPlugin extends Plugin
 		}
 		else
 		{
-			flipAssistOverlay.clearFocus();
-			// Also clear panel focus to prevent the active flip refresh cycle
+			// Don't call flipAssistOverlay.clearFocus() here — setFocusedFlip(null) above
+			// already clears the focused flip, and clearFocus() would also clear
+			// autoStatusMessage which destroys the "Waiting for flips" overlay message
+			// set by promptCollection() via invokeOverlayMessageCallback.
+
+			// Clear panel focus to prevent the active flip refresh cycle
 			// from re-creating the sell overlay after a sell order was placed
 			if (flipFinderPanel != null)
 			{

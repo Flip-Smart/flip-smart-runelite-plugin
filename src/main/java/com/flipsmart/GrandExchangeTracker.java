@@ -178,18 +178,9 @@ public class GrandExchangeTracker
 			syncCancelledPartialBuy(ctx);
 		}
 
-		// For sell cancels: re-add unsold items to collected so they can be re-listed
 		if (!ctx.isBuy)
 		{
-			TrackedOffer sellOffer = session.getTrackedOffer(ctx.slot);
-			int orderTotal = sellOffer != null ? sellOffer.getTotalQuantity() : ctx.totalQuantity;
-			int remaining = orderTotal - ctx.quantitySold;
-			if (remaining > 0)
-			{
-				session.addCollectedItem(ctx.itemId, remaining);
-				log.info("Sell cancelled for {} - re-added {} unsold items to collected",
-					sellOffer != null ? sellOffer.getItemName() : ctx.itemName, remaining);
-			}
+			reAddUnsoldItemsOnSellCancel(ctx);
 		}
 
 		// Capture total quantity before removing tracked offer
@@ -210,6 +201,19 @@ public class GrandExchangeTracker
 		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.isBuy, ctx.quantitySold, totalQuantity);
+		}
+	}
+
+	private void reAddUnsoldItemsOnSellCancel(OfferContext ctx)
+	{
+		TrackedOffer sellOffer = session.getTrackedOffer(ctx.slot);
+		int orderTotal = sellOffer != null ? sellOffer.getTotalQuantity() : ctx.totalQuantity;
+		int remaining = orderTotal - ctx.quantitySold;
+		if (remaining > 0)
+		{
+			session.addCollectedItem(ctx.itemId, remaining);
+			log.info("Sell cancelled for {} - re-added {} unsold items to collected",
+				sellOffer != null ? sellOffer.getItemName() : ctx.itemName, remaining);
 		}
 	}
 
@@ -449,10 +453,12 @@ public class GrandExchangeTracker
 			autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
 		}
 
-		notifyAutoRecommendOnCompletion(ctx);
-
+		// Update tracked offer BEFORE notifying auto-recommend so getCompletedOffers()
+		// sees the BOUGHT/SOLD state when promptCollection() is called
 		session.putTrackedOffer(ctx.slot, TrackedOffer.createWithPreservedTimestamps(
 			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state));
+
+		notifyAutoRecommendOnCompletion(ctx);
 
 		if (previousOffer == null && ctx.totalQuantity > 0)
 		{
@@ -556,7 +562,7 @@ public class GrandExchangeTracker
 		{
 			apiClient.markActiveFlipSellingAsync(itemId, rsn);
 		}
-		session.removeRecommendedPrice(itemId);
+		// Don't remove recommended price — preserve for cancel recovery
 		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onSellOrderPlaced(itemId);
@@ -613,7 +619,9 @@ public class GrandExchangeTracker
 			apiClient.markActiveFlipSellingAsync(ctx.itemId, rsn);
 		}
 
-		session.removeRecommendedPrice(ctx.itemId);
+		// Don't remove recommended price here — if the sell is cancelled, we need it
+		// to re-show the sell overlay with the correct price. Price is cleaned up when
+		// the buy is cancelled or the flip is dismissed.
 
 		if (isAutoRecommendActive())
 		{
@@ -659,47 +667,50 @@ public class GrandExchangeTracker
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
 
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
+			handleActiveFlipResponse(response, itemId, inventoryCount, rsn));
+	}
+
+	private void handleActiveFlipResponse(
+		ActiveFlipsResponse response, int itemId, int inventoryCount, String rsn)
+	{
+		if (response == null || response.getActiveFlips() == null)
 		{
-			if (response == null || response.getActiveFlips() == null)
-			{
-				return;
-			}
+			return;
+		}
 
-			ActiveFlip matchingFlip = findActiveFlipForItem(response.getActiveFlips(), itemId);
-			if (matchingFlip != null)
-			{
-				// Guard against race condition: sell may have been placed between
-				// API request and response — don't override the cleared focus
-				if (session.hasActiveSellSlotForItem(itemId))
-				{
-					log.debug("Sell already placed for {} - not overriding focus", matchingFlip.getItemName());
-					return;
-				}
+		ActiveFlip matchingFlip = findActiveFlipForItem(response.getActiveFlips(), itemId);
+		if (matchingFlip == null)
+		{
+			log.debug("No active flip found for item {} when setting up sell offer", itemId);
+			return;
+		}
 
-				setFocusForSell(matchingFlip, inventoryCount);
+		// Guard against race condition: sell may have been placed between
+		// API request and response — don't override the cleared focus
+		if (session.hasActiveSellSlotForItem(itemId))
+		{
+			log.debug("Sell already placed for {} - not overriding focus", matchingFlip.getItemName());
+			return;
+		}
 
-				// Sync inventory-corrected quantity to API if inventory has more
-				if (inventoryCount > matchingFlip.getTotalQuantity() && inventoryCount > 0 && rsn != null)
-				{
-					int orderQty = matchingFlip.getOrderQuantity() > 0
-						? matchingFlip.getOrderQuantity() : inventoryCount;
-					log.info("Syncing inventory-corrected quantity for {} to API: {} items",
-						matchingFlip.getItemName(), inventoryCount);
-					apiClient.syncActiveFlipAsync(
-						matchingFlip.getItemId(),
-						matchingFlip.getItemName(),
-						inventoryCount,
-						orderQty,
-						matchingFlip.getAverageBuyPrice(),
-						rsn
-					);
-				}
-			}
-			else
-			{
-				log.debug("No active flip found for item {} when setting up sell offer", itemId);
-			}
-		});
+		setFocusForSell(matchingFlip, inventoryCount);
+
+		// Sync inventory-corrected quantity to API if inventory has more
+		if (inventoryCount > matchingFlip.getTotalQuantity() && inventoryCount > 0 && rsn != null)
+		{
+			int orderQty = matchingFlip.getOrderQuantity() > 0
+				? matchingFlip.getOrderQuantity() : inventoryCount;
+			log.info("Syncing inventory-corrected quantity for {} to API: {} items",
+				matchingFlip.getItemName(), inventoryCount);
+			apiClient.syncActiveFlipAsync(
+				matchingFlip.getItemId(),
+				matchingFlip.getItemName(),
+				inventoryCount,
+				orderQty,
+				matchingFlip.getAverageBuyPrice(),
+				rsn
+			);
+		}
 	}
 
 	private ActiveFlip findActiveFlipForItem(List<ActiveFlip> flips, int itemId)

@@ -404,8 +404,8 @@ public class AutoRecommendService
 			return;
 		}
 
-		log.info("Auto-recommend: Sell completed for item {} - collect profit", itemId);
-		updateStatus("Auto: Collect profit from GE");
+		log.info("Auto-recommend: Sell completed for item {} - prompting collection", itemId);
+		promptCollection();
 	}
 
 	/**
