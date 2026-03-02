@@ -913,7 +913,7 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			protected Integer getFilledSlots()
 			{
-				return session.getTrackedOffers().size();
+				return getFilledGESlotCount();
 			}
 		};
 		
