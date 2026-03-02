@@ -307,8 +307,7 @@ public class AutoRecommendService
 	 * Called when the user selects an inventory item to sell during auto-recommend.
 	 * This is a temporary override — after the sell is placed, focusNextAvailableAction()
 	 * resumes normal queue processing.
-	 */
-	/**
+	 *
 	 * @return true if focus was successfully overridden, false if no sell price could be found
 	 *         (caller should fall through to API-based price lookup)
 	 */
@@ -474,18 +473,7 @@ public class AutoRecommendService
 		log.info("Auto-recommend: Buy cancelled for {} - {} filled, {} remaining. Prompting re-buy.",
 			itemName, filledQuantity, remaining);
 
-		FlipRecommendation rec = findRecommendationForItem(itemId);
-		if (rec != null && rec.getRecommendedBuyPrice() > 0)
-		{
-			focusBuyOverlay(itemId, itemName, rec.getRecommendedBuyPrice(), remaining, rec.getRecommendedSellPrice(),
-				String.format("Auto: Re-buy %s x%s @ %s gp",
-					itemName, GpUtils.formatGPWithSuffix(remaining),
-					GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
-		}
-		else
-		{
-			updateStatus(String.format("Auto: Re-buy %s x%s", itemName, GpUtils.formatGPWithSuffix(remaining)));
-		}
+		focusReBuyOverlay(itemId, itemName, remaining);
 	}
 
 	/**
@@ -532,19 +520,7 @@ public class AutoRecommendService
 			log.info("Auto-recommend: Pending re-buy for {} x{} - showing re-buy overlay instead of sell",
 				itemName, pendingQty);
 
-			FlipRecommendation rec = findRecommendationForItem(itemId);
-			if (rec != null && rec.getRecommendedBuyPrice() > 0)
-			{
-				focusBuyOverlay(itemId, itemName, rec.getRecommendedBuyPrice(), pendingQty, rec.getRecommendedSellPrice(),
-					String.format("Auto: Re-buy %s x%s @ %s gp",
-						itemName, GpUtils.formatGPWithSuffix(pendingQty),
-						GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
-			}
-			else
-			{
-				updateStatus(String.format("Auto: Re-buy %s x%s",
-					itemName, GpUtils.formatGPWithSuffix(pendingQty)));
-			}
+			focusReBuyOverlay(itemId, itemName, pendingQty);
 			return;
 		}
 
@@ -1291,6 +1267,22 @@ public class AutoRecommendService
 		FocusedFlip focus = FocusedFlip.forBuy(itemId, itemName, buyPrice, quantity, sellPrice, priceOffset);
 		invokeFocusCallback(focus);
 		updateStatus(statusMsg);
+	}
+
+	private void focusReBuyOverlay(int itemId, String itemName, int quantity)
+	{
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		if (rec != null && rec.getRecommendedBuyPrice() > 0)
+		{
+			focusBuyOverlay(itemId, itemName, rec.getRecommendedBuyPrice(), quantity, rec.getRecommendedSellPrice(),
+				String.format("Auto: Re-buy %s x%s @ %s gp",
+					itemName, GpUtils.formatGPWithSuffix(quantity),
+					GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
+		}
+		else
+		{
+			updateStatus(String.format("Auto: Re-buy %s x%s", itemName, GpUtils.formatGPWithSuffix(quantity)));
+		}
 	}
 
 	// =====================

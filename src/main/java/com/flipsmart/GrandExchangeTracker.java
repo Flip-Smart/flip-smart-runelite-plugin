@@ -762,7 +762,7 @@ public class GrandExchangeTracker
 
 		if (onFocusChanged != null)
 		{
-			onFocusChanged.accept(focus);
+			javax.swing.SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
 		}
 		log.info("Auto-focused on active flip for sell: {} @ {} gp (qty: api={}, inv={}, using={})",
 			flip.getItemName(), sellPrice, apiQuantity, inventoryFallbackCount, sellQuantity);

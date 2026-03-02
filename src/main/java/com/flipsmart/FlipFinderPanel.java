@@ -757,47 +757,31 @@ public class FlipFinderPanel extends PluginPanel
 			// Load refresh token into API client and try to authenticate
 			apiClient.setRefreshToken(refreshToken);
 
-			java.util.concurrent.CompletableFuture.runAsync(() -> {
-				// Try refresh token authentication
-				try
-				{
-					Boolean success = apiClient.refreshAccessTokenAsync().get();
-					SwingUtilities.invokeLater(() -> {
-						if (Boolean.TRUE.equals(success))
+			apiClient.refreshAccessTokenAsync().thenAccept(success ->
+				SwingUtilities.invokeLater(() -> {
+					if (Boolean.TRUE.equals(success))
+					{
+						saveRefreshToken(apiClient.getRefreshToken());
+						onAuthenticationSuccess(null, false);
+					}
+					else
+					{
+						// Only clear persisted token if explicitly rejected (401)
+						if (apiClient.getRefreshToken() == null)
 						{
-							// Save new refresh token (token rotation)
-							saveRefreshToken(apiClient.getRefreshToken());
-							onAuthenticationSuccess(null, false);
+							clearRefreshToken();
 						}
 						else
 						{
-							// Only clear persisted token if the API client cleared it
-							// (meaning it was explicitly rejected with 401, not a transient error)
-							if (apiClient.getRefreshToken() == null)
-							{
-								clearRefreshToken();
-							}
-							else
-							{
-								log.info("Refresh token auth failed (transient) - keeping token for next attempt");
-							}
-							// Fall back to legacy password auth
-							tryLegacyPasswordAuth();
+							log.info("Refresh token auth failed (transient) - keeping token for next attempt");
 						}
-					});
-				}
-				catch (InterruptedException e)
-				{
-					log.info("Refresh token auth interrupted: {}", e.getMessage());
-					// Don't clear token — transient failure
-					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
-				}
-				catch (Exception e)
-				{
-					log.info("Refresh token auth failed: {}", e.getMessage());
-					// Don't clear token — transient failure
-					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
-				}
+						tryLegacyPasswordAuth();
+					}
+				})
+			).exceptionally(e -> {
+				log.info("Refresh token auth failed: {}", e.getMessage());
+				SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				return null;
 			});
 		}
 		else
