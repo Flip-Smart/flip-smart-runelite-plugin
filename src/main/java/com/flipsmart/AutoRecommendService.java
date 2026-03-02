@@ -690,13 +690,19 @@ public class AutoRecommendService
 
 		if (stillRecommended)
 		{
-			updateStatus(String.format("Auto: %s slow fill - consider relisting at updated price",
-				staleOffer.getItemName()));
+			String msg = String.format("%s slow fill - consider relisting at updated price",
+				staleOffer.getItemName());
+			updateStatus("Auto: " + msg);
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback(msg, itemId);
 		}
 		else
 		{
-			updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
-				staleOffer.getItemName()));
+			String msg = String.format("%s no longer recommended - consider cancelling",
+				staleOffer.getItemName());
+			updateStatus("Auto: " + msg);
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback(msg, itemId);
 		}
 
 		long age = now - staleOffer.getCreatedAtMillis();
