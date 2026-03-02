@@ -1354,7 +1354,6 @@ public class AutoRecommendService
 
 	private boolean hasAvailableGESlots()
 	{
-		PlayerSession session = plugin.getSession();
-		return session != null && session.hasAvailableGESlots(plugin.getFlipSlotLimit());
+		return plugin.getFilledGESlotCount() < plugin.getFlipSlotLimit();
 	}
 }

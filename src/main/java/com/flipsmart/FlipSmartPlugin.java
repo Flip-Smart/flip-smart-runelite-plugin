@@ -222,6 +222,28 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Count the number of GE slots that are currently occupied (non-EMPTY) in the game.
+	 * Returns the flip slot limit if GE offers are not yet available (conservative).
+	 */
+	public int getFilledGESlotCount()
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return getFlipSlotLimit();
+		}
+		int count = 0;
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer.getState() != GrandExchangeOfferState.EMPTY)
+			{
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/**
 	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
 	 */
 	public int getInventoryCountForItem(int itemId)
