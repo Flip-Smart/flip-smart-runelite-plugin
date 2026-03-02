@@ -645,9 +645,14 @@ public class AutoRecommendService
 		plugin.getSession().clearStaleNotifications();
 
 		log.info("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
-		updateStatus(String.format("Auto: %d/%d - %s",
-			currentIndex + 1, recommendationQueue.size(),
-			currentRec != null ? currentRec.getItemName() : "Refreshed"));
+
+		// Don't overwrite re-buy status messages during queue refresh
+		if (pendingReBuys.isEmpty())
+		{
+			updateStatus(String.format("Auto: %d/%d - %s",
+				currentIndex + 1, recommendationQueue.size(),
+				currentRec != null ? currentRec.getItemName() : "Refreshed"));
+		}
 	}
 
 	// =====================

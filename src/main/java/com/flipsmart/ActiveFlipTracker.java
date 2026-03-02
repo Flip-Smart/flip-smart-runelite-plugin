@@ -229,6 +229,15 @@ public class ActiveFlipTracker
 			return;
 		}
 
+		// Items in collectedItemIds are known to exist (e.g. in GE collect state after
+		// a partial buy cancel) but haven't been counted by getTotalItemCounts which
+		// only looks at inventory + sell slots. Don't dismiss or sync these.
+		if (session.getCollectedItemIds().contains(itemId))
+		{
+			log.debug("Skipping validation for {} - item is in collected state", flip.getItemName());
+			return;
+		}
+
 		if (actualQty == activeFlipQty)
 		{
 			return;
