@@ -238,6 +238,13 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return renderHintBox(graphics, autoStatusMessage);
 			}
+			// When auto-recommend is active with no available slots, show waiting message
+			// even if autoStatusMessage was cleared by a race condition
+			if (flipSmartPlugin.isAutoRecommendActive()
+				&& flipSmartPlugin.getFilledGESlotCount() >= flipSmartPlugin.getFlipSlotLimit())
+			{
+				return renderHintBox(graphics, "Waiting for flips");
+			}
 			if (isGrandExchangeOpen())
 			{
 				PlayerSession session = flipSmartPlugin.getSession();

@@ -221,6 +221,11 @@ public class FlipSmartPlugin extends Plugin
 		return isPremium() ? 8 : 2;
 	}
 
+	public boolean isAutoRecommendActive()
+	{
+		return autoRecommendService != null && autoRecommendService.isActive();
+	}
+
 	/**
 	 * Count the number of GE slots that are currently occupied (non-EMPTY) in the game.
 	 * Returns the flip slot limit if GE offers are not yet available (conservative).
