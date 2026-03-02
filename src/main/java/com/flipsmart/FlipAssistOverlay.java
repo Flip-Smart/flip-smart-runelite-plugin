@@ -238,12 +238,15 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return renderHintBox(graphics, autoStatusMessage);
 			}
-			// When auto-recommend is active with no available slots, show waiting message
-			// even if autoStatusMessage was cleared by a race condition
-			if (flipSmartPlugin.isAutoRecommendActive()
-				&& flipSmartPlugin.getFilledGESlotCount() >= flipSmartPlugin.getFlipSlotLimit())
+			// Fallback: read the last overlay message directly from auto-recommend
+			// in case the async callback result was lost due to race conditions
+			if (flipSmartPlugin.isAutoRecommendActive())
 			{
-				return renderHintBox(graphics, "Waiting for flips");
+				String fallbackMessage = flipSmartPlugin.getAutoRecommendOverlayMessage();
+				if (fallbackMessage != null)
+				{
+					return renderHintBox(graphics, fallbackMessage);
+				}
 			}
 			if (isGrandExchangeOpen())
 			{

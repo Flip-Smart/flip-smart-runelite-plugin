@@ -62,6 +62,10 @@ public class AutoRecommendService
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
+	// Last overlay message sent — readable by the overlay as a fallback when the
+	// async callback result gets lost due to race conditions
+	private volatile String lastOverlayMessage;
+
 	// Pending re-buys: itemId → remaining quantity when a partially-filled buy is cancelled.
 	// Supports multiple concurrent partial cancellations.
 	private final Map<Integer, Integer> pendingReBuys = new HashMap<>();
@@ -107,6 +111,11 @@ public class AutoRecommendService
 	public boolean isActive()
 	{
 		return active;
+	}
+
+	public String getLastOverlayMessage()
+	{
+		return lastOverlayMessage;
 	}
 
 	public long getLastQueueRefreshMillis()
@@ -185,6 +194,7 @@ public class AutoRecommendService
 	public synchronized void stop()
 	{
 		active = false;
+		lastOverlayMessage = null;
 		recommendationQueue.clear();
 		adjustmentDeadlines.clear();
 		pendingReBuys.clear();
@@ -1312,6 +1322,7 @@ public class AutoRecommendService
 
 	private void invokeOverlayMessageCallback(String message, int itemId)
 	{
+		lastOverlayMessage = message;
 		ObjIntConsumer<String> callback = onOverlayMessageChanged;
 		if (callback != null)
 		{
