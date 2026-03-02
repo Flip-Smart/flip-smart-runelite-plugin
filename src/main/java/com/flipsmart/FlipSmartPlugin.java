@@ -475,6 +475,12 @@ public class FlipSmartPlugin extends Plugin
 		else
 		{
 			flipAssistOverlay.clearFocus();
+			// Also clear panel focus to prevent the active flip refresh cycle
+			// from re-creating the sell overlay after a sell order was placed
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+			}
 		}
 	}
 
