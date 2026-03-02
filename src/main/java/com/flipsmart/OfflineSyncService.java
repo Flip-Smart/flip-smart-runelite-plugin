@@ -31,6 +31,7 @@ public class OfflineSyncService
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
+	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
@@ -76,8 +77,10 @@ public class OfflineSyncService
 		Set<Integer> persisted = loadPersistedCollectedItems();
 		if (!persisted.isEmpty())
 		{
-			session.restoreCollectedItems(persisted);
-			log.info("Restored {} collected items from previous session: {}", persisted.size(), persisted);
+			Map<Integer, Integer> quantities = loadPersistedCollectedQuantities();
+			session.restoreCollectedItems(persisted, quantities);
+			log.info("Restored {} collected items from previous session: {} (with {} quantities)",
+				persisted.size(), persisted, quantities.size());
 		}
 		else
 		{
@@ -94,6 +97,7 @@ public class OfflineSyncService
 	{
 		String offersKey = getPersistedOffersKey();
 		String collectedKey = getCollectedItemsKey();
+		String quantitiesKey = getCollectedQuantitiesKey();
 
 		// Persist tracked offers
 		if (session.getTrackedOffers().isEmpty())
@@ -120,6 +124,7 @@ public class OfflineSyncService
 		if (session.getCollectedItemIds().isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
+			configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
 			log.debug("No collected items to persist for {}", session.getRsn());
 		}
 		else
@@ -128,6 +133,18 @@ public class OfflineSyncService
 			{
 				String json = gson.toJson(new java.util.ArrayList<>(session.getCollectedItemsForPersistence()));
 				configManager.setConfiguration(CONFIG_GROUP, collectedKey, json);
+
+				Map<Integer, Integer> quantities = session.getCollectedQuantitiesForPersistence();
+				if (!quantities.isEmpty())
+				{
+					String qtyJson = gson.toJson(quantities);
+					configManager.setConfiguration(CONFIG_GROUP, quantitiesKey, qtyJson);
+				}
+				else
+				{
+					configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
+				}
+
 				log.info("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
 			}
 			catch (Exception e)
@@ -216,7 +233,7 @@ public class OfflineSyncService
 				// For buy orders with fills, add to collected tracking
 				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
 				{
-					session.addCollectedItem(currentOffer.getItemId());
+					session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
 				}
 			}
 		}
@@ -351,9 +368,8 @@ public class OfflineSyncService
 	 */
 	private void handleBuyOrderWithInventory(TrackedOffer persistedOffer, int inventoryCount, int trackedFills)
 	{
-		session.addCollectedItem(persistedOffer.getItemId());
-
 		int actualFills = calculateActualFills(persistedOffer, inventoryCount, trackedFills);
+		session.addCollectedItem(persistedOffer.getItemId(), actualFills);
 
 		if (actualFills > trackedFills)
 		{
@@ -427,6 +443,15 @@ public class OfflineSyncService
 		return COLLECTED_ITEMS_KEY_PREFIX + session.getRsn();
 	}
 
+	public String getCollectedQuantitiesKey()
+	{
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			return COLLECTED_QUANTITIES_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
+		}
+		return COLLECTED_QUANTITIES_KEY_PREFIX + session.getRsn();
+	}
+
 	/**
 	 * Load previously persisted collected item IDs from config.
 	 */
@@ -451,6 +476,33 @@ public class OfflineSyncService
 		{
 			log.error("Failed to load persisted collected items for {}: {}", session.getRsn(), e.getMessage());
 			return new HashSet<>();
+		}
+	}
+
+	/**
+	 * Load previously persisted collected quantities from config.
+	 */
+	private Map<Integer, Integer> loadPersistedCollectedQuantities()
+	{
+		String key = getCollectedQuantitiesKey();
+
+		try
+		{
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				return new HashMap<>();
+			}
+
+			Type type = new TypeToken<Map<Integer, Integer>>(){}.getType();
+			Map<Integer, Integer> quantities = gson.fromJson(json, type);
+			log.debug("Loaded {} persisted collected quantities for {}", quantities != null ? quantities.size() : 0, session.getRsn());
+			return quantities != null ? quantities : new HashMap<>();
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load persisted collected quantities for {}: {}", session.getRsn(), e.getMessage());
+			return new HashMap<>();
 		}
 	}
 

@@ -151,6 +151,8 @@ public class FlipSmartPlugin extends Plugin
 	private static final int STALE_FLIP_CLEANUP_DELAY_MS = 15000;
 	/** Delay before validating inventory quantities */
 	private static final int INVENTORY_VALIDATION_DELAY_MS = 2000;
+	/** Delay before re-evaluating auto-recommend after login sync */
+	private static final int AUTO_RECOMMEND_REEVALUATE_DELAY_MS = 3000;
 
 	// Threshold constants
 	/** Minimum interval between auto-refreshes (30 seconds) */
@@ -217,6 +219,41 @@ public class FlipSmartPlugin extends Plugin
 	public int getFlipSlotLimit()
 	{
 		return isPremium() ? 8 : 2;
+	}
+
+	public boolean isAutoRecommendActive()
+	{
+		return autoRecommendService != null && autoRecommendService.isActive();
+	}
+
+	/**
+	 * Count the number of GE slots that are currently occupied (non-EMPTY) in the game.
+	 * Returns the flip slot limit if GE offers are not yet available (conservative).
+	 */
+	public int getFilledGESlotCount()
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return getFlipSlotLimit();
+		}
+		int count = 0;
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer.getState() != GrandExchangeOfferState.EMPTY)
+			{
+				count++;
+			}
+		}
+		return count;
+	}
+
+	/**
+	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
+	 */
+	public int getInventoryCountForItem(int itemId)
+	{
+		return activeFlipTracker.getInventoryCountForItem(itemId);
 	}
 
 	/**
@@ -464,7 +501,17 @@ public class FlipSmartPlugin extends Plugin
 		}
 		else
 		{
-			flipAssistOverlay.clearFocus();
+			// Don't call flipAssistOverlay.clearFocus() here — setFocusedFlip(null) above
+			// already clears the focused flip, and clearFocus() would also clear
+			// autoStatusMessage which destroys the "Waiting for flips" overlay message
+			// set by promptCollection() via invokeOverlayMessageCallback.
+
+			// Clear panel focus to prevent the active flip refresh cycle
+			// from re-creating the sell overlay after a sell order was placed
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+			}
 		}
 	}
 
@@ -517,7 +564,15 @@ public class FlipSmartPlugin extends Plugin
 	protected void shutDown() throws Exception
 	{
 		log.info("Flip Smart stopped!");
-		
+
+		// Persist refresh token on shutdown to prevent session loss
+		String currentRefreshToken = apiClient.getRefreshToken();
+		if (currentRefreshToken != null && !currentRefreshToken.isEmpty())
+		{
+			configManager.setConfiguration(CONFIG_GROUP, "refreshToken", currentRefreshToken);
+			log.debug("Persisted refresh token on shutdown");
+		}
+
 		// Persist offer state before shutting down (handles cases where client is closed without logout)
 		// Only persist if we have a valid RSN to avoid overwriting good data
 		if (session.getRsn() != null && !session.getRsn().isEmpty())
@@ -701,6 +756,13 @@ public class FlipSmartPlugin extends Plugin
 				log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
 			}
 		});
+
+		// Re-evaluate auto-recommend after sync — collected items may need selling
+		if (autoRecommendService != null && autoRecommendService.isActive())
+		{
+			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, () ->
+				autoRecommendService.reevaluateAfterLogin());
+		}
 	}
 
 	
@@ -856,7 +918,7 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			protected Integer getFilledSlots()
 			{
-				return session.getTrackedOffers().size();
+				return getFilledGESlotCount();
 			}
 		};
 		
@@ -1113,6 +1175,12 @@ public class FlipSmartPlugin extends Plugin
 						flipFinderPanel.refresh();
 					});
 				}
+
+				// Check adjustment timers for unfilled buy offers
+				autoRecommendService.checkAdjustmentTimers(
+					session.getTrackedOffers(),
+					flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
+				);
 			}
 		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
 

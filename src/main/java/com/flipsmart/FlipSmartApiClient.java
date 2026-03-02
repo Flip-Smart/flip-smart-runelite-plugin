@@ -59,6 +59,12 @@ public class FlipSmartApiClient
 	// Callback when authentication permanently fails (both refresh token and password fail)
 	private volatile Runnable onAuthFailure = null;
 
+	// Callback when refresh token changes (for persistence to config)
+	private volatile java.util.function.Consumer<String> onRefreshTokenChanged = null;
+
+	// Coalesce concurrent authenticateAsync() calls into a single attempt
+	private volatile CompletableFuture<Boolean> pendingAuthFuture = null;
+
 	/**
 	 * Thread-safe read of the JWT token.
 	 */
@@ -244,15 +250,41 @@ public class FlipSmartApiClient
 	/**
 	 * Authenticate with the API and obtain a JWT token.
 	 * Tries refresh token first (if available), falls back to email/password.
+	 * Coalesces concurrent calls — if auth is already in progress, returns the pending future.
 	 */
 	private CompletableFuture<Boolean> authenticateAsync()
 	{
-		// Try refresh token first if we have one
-		String currentRefreshToken;
 		synchronized (authLock)
 		{
-			currentRefreshToken = refreshToken;
+			// Coalesce concurrent auth attempts — return pending future if auth is in progress
+			if (pendingAuthFuture != null && !pendingAuthFuture.isDone())
+			{
+				return pendingAuthFuture;
+			}
+
+			CompletableFuture<Boolean> future = doAuthenticateAsync();
+			pendingAuthFuture = future;
+			// Clear reference when done to allow future auth attempts
+			future.whenComplete((result, ex) -> {
+				synchronized (authLock)
+				{
+					if (pendingAuthFuture == future)
+					{
+						pendingAuthFuture = null;
+					}
+				}
+			});
+			return future;
 		}
+	}
+
+	/**
+	 * Internal authentication logic. Called by authenticateAsync() which handles coalescing.
+	 */
+	private CompletableFuture<Boolean> doAuthenticateAsync()
+	{
+		// Try refresh token first if we have one
+		String currentRefreshToken = refreshToken;
 
 		if (currentRefreshToken != null && !currentRefreshToken.isEmpty())
 		{
@@ -413,6 +445,7 @@ public class FlipSmartApiClient
 	 */
 	private void processTokenResponse(JsonObject tokenResponse)
 	{
+		String newRefreshToken = null;
 		synchronized (authLock)
 		{
 			jwtToken = tokenResponse.get(ACCESS_TOKEN_KEY).getAsString();
@@ -421,13 +454,20 @@ public class FlipSmartApiClient
 			// Store refresh token if provided (for persistent login / token rotation)
 			if (tokenResponse.has(REFRESH_TOKEN_KEY) && !tokenResponse.get(REFRESH_TOKEN_KEY).isJsonNull())
 			{
-				refreshToken = tokenResponse.get(REFRESH_TOKEN_KEY).getAsString();
+				newRefreshToken = tokenResponse.get(REFRESH_TOKEN_KEY).getAsString();
+				refreshToken = newRefreshToken;
 			}
 
 			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
 			{
 				setPremium(tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean());
 			}
+		}
+
+		// Notify outside of lock to avoid potential deadlocks
+		if (newRefreshToken != null && onRefreshTokenChanged != null)
+		{
+			onRefreshTokenChanged.accept(newRefreshToken);
 		}
 	}
 	
@@ -726,6 +766,16 @@ public class FlipSmartApiClient
 	public void setOnAuthFailure(Runnable callback)
 	{
 		this.onAuthFailure = callback;
+	}
+
+	/**
+	 * Set callback for when the refresh token changes (rotation or new login).
+	 * This allows the caller to persist the new token to config immediately,
+	 * preventing token loss if the plugin is closed before the panel saves it.
+	 */
+	public void setOnRefreshTokenChanged(java.util.function.Consumer<String> callback)
+	{
+		this.onRefreshTokenChanged = callback;
 	}
 
 	/**
