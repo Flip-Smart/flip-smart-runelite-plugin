@@ -771,8 +771,16 @@ public class FlipFinderPanel extends PluginPanel
 						}
 						else
 						{
-							// Refresh token invalid/expired, clear it
-							clearRefreshToken();
+							// Only clear persisted token if the API client cleared it
+							// (meaning it was explicitly rejected with 401, not a transient error)
+							if (apiClient.getRefreshToken() == null)
+							{
+								clearRefreshToken();
+							}
+							else
+							{
+								log.info("Refresh token auth failed (transient) - keeping token for next attempt");
+							}
 							// Fall back to legacy password auth
 							tryLegacyPasswordAuth();
 						}
@@ -780,12 +788,14 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				catch (InterruptedException e)
 				{
-					log.debug("Refresh token auth interrupted: {}", e.getMessage());
+					log.info("Refresh token auth interrupted: {}", e.getMessage());
+					// Don't clear token — transient failure
 					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
 				}
 				catch (Exception e)
 				{
-					log.debug("Refresh token auth failed: {}", e.getMessage());
+					log.info("Refresh token auth failed: {}", e.getMessage());
+					// Don't clear token — transient failure
 					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
 				}
 			});

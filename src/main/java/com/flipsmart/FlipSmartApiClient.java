@@ -294,11 +294,8 @@ public class FlipSmartApiClient
 					{
 						return CompletableFuture.completedFuture(true);
 					}
-					// Refresh failed, clear it and fall back to password auth
-					synchronized (authLock)
-					{
-						refreshToken = null;
-					}
+					// refreshAccessTokenAsync already clears refreshToken on 401.
+					// Fall back to password auth.
 					return loginWithPasswordAsync();
 				});
 		}
@@ -538,10 +535,14 @@ public class FlipSmartApiClient
 					if (!response.isSuccessful())
 					{
 						log.debug("Refresh token rejected (status {})", response.code());
-						// Clear invalid refresh token
-						synchronized (authLock)
+						// Only clear the refresh token on 401 (explicitly rejected).
+						// Server errors (5xx) are transient — the token may still be valid.
+						if (response.code() == 401)
 						{
-							refreshToken = null;
+							synchronized (authLock)
+							{
+								refreshToken = null;
+							}
 						}
 						future.complete(false);
 						return;
