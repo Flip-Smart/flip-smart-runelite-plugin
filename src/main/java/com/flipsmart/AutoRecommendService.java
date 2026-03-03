@@ -404,7 +404,7 @@ public class AutoRecommendService
 
 	/**
 	 * Called when a sell order fully completes (SOLD state).
-	 * Prompts user to collect profit.
+	 * Advances to next action — buy if slots available, otherwise prompts collection.
 	 */
 	public synchronized void onSellOrderCompleted(int itemId)
 	{
@@ -413,8 +413,8 @@ public class AutoRecommendService
 			return;
 		}
 
-		log.info("Auto-recommend: Sell completed for item {} - prompting collection", itemId);
-		promptCollection();
+		log.info("Auto-recommend: Sell completed for item {} - checking next action", itemId);
+		focusNextAvailableAction();
 	}
 
 	/**
@@ -562,8 +562,9 @@ public class AutoRecommendService
 		}
 		else
 		{
-			invokeFocusCallback(null);
-			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
+			// Slots full or queue exhausted — prompt collection if there are
+			// completed offers, otherwise show "Waiting for flips"
+			promptCollection();
 		}
 	}
 
