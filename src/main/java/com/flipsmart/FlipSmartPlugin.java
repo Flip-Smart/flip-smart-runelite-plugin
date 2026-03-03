@@ -503,6 +503,12 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.info("Auto-recommend focus set: {} {} @ {} gp",
 				focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
+			// Keep panel focus in sync so the active flip refresh cycle doesn't
+			// re-create a stale sell overlay for a previously focused item
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
+			}
 		}
 		else
 		{
