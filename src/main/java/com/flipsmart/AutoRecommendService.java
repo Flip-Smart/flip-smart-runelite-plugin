@@ -58,6 +58,9 @@ public class AutoRecommendService
 	// Callback when the queue advances (for panel highlight updates)
 	private volatile Runnable onQueueAdvanced;
 
+	// Callback when skip exhausts the queue (to trigger a refresh)
+	private volatile Runnable onQueueExhausted;
+
 	// Callback to update the Flip Assist overlay message (when no flip is focused)
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
@@ -101,6 +104,11 @@ public class AutoRecommendService
 	public void setOnQueueAdvanced(Runnable callback)
 	{
 		this.onQueueAdvanced = callback;
+	}
+
+	public void setOnQueueExhausted(Runnable callback)
+	{
+		this.onQueueExhausted = callback;
 	}
 
 	public void setOnOverlayMessageChanged(ObjIntConsumer<String> callback)
@@ -1008,6 +1016,20 @@ public class AutoRecommendService
 	// Internal Navigation
 	// =====================
 
+	/**
+	 * Skip the current recommendation and advance to the next one.
+	 * Called when the user clicks the Skip button during auto-recommend.
+	 */
+	public synchronized void skip()
+	{
+		if (!active)
+		{
+			return;
+		}
+		log.info("Auto-recommend: User skipped current recommendation");
+		advanceToNext();
+	}
+
 	private void advanceToNext()
 	{
 		currentIndex++;
@@ -1034,6 +1056,12 @@ public class AutoRecommendService
 				invokeFocusCallback(null);
 				updateStatus("Auto: All recommendations listed");
 				invokeOverlayMessageCallback("All flips listed - waiting for sells");
+
+				Runnable exhaustedCallback = onQueueExhausted;
+				if (exhaustedCallback != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(exhaustedCallback);
+				}
 			}
 			return;
 		}
