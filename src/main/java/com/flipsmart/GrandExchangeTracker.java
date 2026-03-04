@@ -224,6 +224,7 @@ public class GrandExchangeTracker
 		log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
 			ctx.quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
 		session.addCollectedItem(ctx.itemId);
+		session.setCollectedQuantity(ctx.itemId, ctx.quantitySold);
 
 		String rsn = getRsn().orElse(null);
 		if (rsn != null && cancelledOffer != null)
@@ -284,6 +285,12 @@ public class GrandExchangeTracker
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
 		int trackedFills = collectedOffer.getPreviousQuantitySold();
 
+		// Store actual collected quantity for sell recommendations
+		int actualQuantity = inventoryCount > trackedFills
+			? Math.min(inventoryCount, collectedOffer.getTotalQuantity())
+			: trackedFills;
+		session.setCollectedQuantity(collectedOffer.getItemId(), actualQuantity);
+
 		if (inventoryCount > trackedFills)
 		{
 			log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Syncing.",
@@ -313,6 +320,7 @@ public class GrandExchangeTracker
 			log.info("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking",
 				collectedOffer.getItemName(), inventoryCount);
 			session.addCollectedItem(collectedOffer.getItemId());
+			session.setCollectedQuantity(collectedOffer.getItemId(), inventoryCount);
 		}
 		else
 		{
@@ -330,6 +338,7 @@ public class GrandExchangeTracker
 			log.info("Buy order for {} went empty but found {} items in inventory - may have filled offline",
 				collectedOffer.getItemName(), inventoryCount);
 			session.addCollectedItem(collectedOffer.getItemId());
+			session.setCollectedQuantity(collectedOffer.getItemId(), inventoryCount);
 		}
 	}
 

@@ -729,12 +729,19 @@ public class AutoRecommendService
 			return;
 		}
 
+		// Use the actual collected quantity rather than the original recommendation quantity,
+		// since the user may have bought a different amount than was recommended.
+		Integer collectedQuantity = plugin.getSession().getCollectedQuantity(sellableItemId);
+		int sellQuantity = (collectedQuantity != null && collectedQuantity > 0)
+			? collectedQuantity
+			: rec.getRecommendedQuantity();
+
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forSell(
 			sellableItemId,
 			rec.getItemName(),
 			sellPrice,
-			rec.getRecommendedQuantity(),
+			sellQuantity,
 			priceOffset
 		);
 

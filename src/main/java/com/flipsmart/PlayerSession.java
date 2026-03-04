@@ -42,6 +42,7 @@ public class PlayerSession
 	private volatile int currentCashStack;
 
 	private final Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
+	private final Map<Integer, Integer> collectedQuantities = new ConcurrentHashMap<>();
 
 	// =====================
 	// GE State
@@ -125,14 +126,26 @@ public class PlayerSession
 		collectedItemIds.add(itemId);
 	}
 
+	public void setCollectedQuantity(int itemId, int quantity)
+	{
+		collectedQuantities.put(itemId, quantity);
+	}
+
+	public Integer getCollectedQuantity(int itemId)
+	{
+		return collectedQuantities.get(itemId);
+	}
+
 	public boolean removeCollectedItem(int itemId)
 	{
+		collectedQuantities.remove(itemId);
 		return collectedItemIds.remove(itemId);
 	}
 
 	public void clearCollectedItems()
 	{
 		collectedItemIds.clear();
+		collectedQuantities.clear();
 	}
 
 	public void restoreCollectedItems(Set<Integer> items)
@@ -289,6 +302,7 @@ public class PlayerSession
 		this.lastBankSnapshotAttempt = 0;
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
+		collectedQuantities.clear();
 		trackedOffers.clear();
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
