@@ -4,6 +4,8 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -29,12 +31,20 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
+	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s gp";
+	/** Price threshold for high-value adjustment timer delays */
+	private static final int HIGH_VALUE_THRESHOLD = 5_000_000;
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
 
+	// Adjustment timer deadlines: itemId → System.currentTimeMillis() when timer expires
+	private final Map<Integer, Long> adjustmentDeadlines = new HashMap<>();
+
 	// Queue state - guarded by synchronized(this)
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
+	// Cached item names from recommendations - survives queue refreshes
+	private final Map<Integer, String> itemNames = new HashMap<>();
 	private int currentIndex;
 	private volatile boolean active;
 
@@ -50,9 +60,17 @@ public class AutoRecommendService
 	// Callback when the queue advances (for panel highlight updates)
 	private volatile Runnable onQueueAdvanced;
 
+	// Callback when skip exhausts the queue (to trigger a refresh)
+	private volatile Runnable onQueueExhausted;
+
 	// Callback to update the Flip Assist overlay message (when no flip is focused)
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
+
+	// Last overlay message sent — readable by the overlay as a fallback when the
+	// async callback result gets lost due to race conditions
+	private volatile String lastOverlayMessage;
+
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -87,6 +105,11 @@ public class AutoRecommendService
 		this.onQueueAdvanced = callback;
 	}
 
+	public void setOnQueueExhausted(Runnable callback)
+	{
+		this.onQueueExhausted = callback;
+	}
+
 	public void setOnOverlayMessageChanged(ObjIntConsumer<String> callback)
 	{
 		this.onOverlayMessageChanged = callback;
@@ -95,6 +118,11 @@ public class AutoRecommendService
 	public boolean isActive()
 	{
 		return active;
+	}
+
+	public String getLastOverlayMessage()
+	{
+		return lastOverlayMessage;
 	}
 
 	public long getLastQueueRefreshMillis()
@@ -150,6 +178,7 @@ public class AutoRecommendService
 			{
 				recommendationQueue.add(rec);
 			}
+			itemNames.put(rec.getItemId(), rec.getItemName());
 		}
 
 		if (recommendationQueue.isEmpty())
@@ -173,7 +202,10 @@ public class AutoRecommendService
 	public synchronized void stop()
 	{
 		active = false;
+		lastOverlayMessage = null;
 		recommendationQueue.clear();
+		itemNames.clear();
+		adjustmentDeadlines.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -184,6 +216,29 @@ public class AutoRecommendService
 		invokeFocusCallback(null);
 
 		log.info("Auto-recommend stopped");
+	}
+
+	// =====================
+	// Login Re-evaluation
+	// =====================
+
+	/**
+	 * Re-evaluate the current state after login + offline sync.
+	 * If auto-recommend was restored, check if collected items need selling
+	 * or if GE slots opened up for new buys.
+	 */
+	public synchronized void reevaluateAfterLogin()
+	{
+		if (!active)
+		{
+			return;
+		}
+
+		log.info("Auto-recommend: Re-evaluating after login");
+		focusNextAvailableAction();
+
+		// Reschedule adjustment timers for any active zero-fill buy offers
+		rescheduleAdjustmentTimersAfterLogin();
 	}
 
 	// =====================
@@ -203,10 +258,21 @@ public class AutoRecommendService
 		FlipRecommendation current = getCurrentRecommendation();
 		if (current == null || current.getItemId() != itemId)
 		{
+			// Non-focused buy: store sell price from queue but don't advance
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			if (rec != null && rec.getRecommendedSellPrice() > 0)
+			{
+				plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
+				scheduleAdjustmentTimer(itemId, rec.getRecommendedBuyPrice());
+				log.info("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
+					itemId, rec.getRecommendedSellPrice());
+			}
 			return;
 		}
 
 		plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
+
+		scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
 
 		log.info("Auto-recommend: Buy order placed for {} - advancing to next", current.getItemName());
 		advanceToNext();
@@ -224,6 +290,7 @@ public class AutoRecommendService
 			return;
 		}
 
+		clearAdjustmentTimer(itemId);
 		log.info("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
 		updateStatus("Auto: Collect " + itemName + " from GE");
 
@@ -235,6 +302,71 @@ public class AutoRecommendService
 			invokeFocusCallback(null);
 			invokeOverlayMessageCallback(itemName, itemId);
 		}
+	}
+
+	/**
+	 * Override the current auto-recommend focus to show a sell overlay for a collected item.
+	 * Called when the user selects an inventory item to sell during auto-recommend.
+	 * This is a temporary override — after the sell is placed, focusNextAvailableAction()
+	 * resumes normal queue processing.
+	 *
+	 * @return true if focus was successfully overridden, false if no sell price could be found
+	 *         (caller should fall through to API-based price lookup)
+	 */
+	public synchronized boolean overrideFocusForSell(int itemId, String itemName)
+	{
+		if (!active)
+		{
+			return false;
+		}
+
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return false;
+		}
+
+		// Don't re-show sell overlay if this item already has an active sell order
+		if (session.hasActiveSellSlotForItem(itemId))
+		{
+			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
+			return true;
+		}
+
+		Integer sellPrice = session.getRecommendedPrice(itemId);
+		if (sellPrice == null || sellPrice <= 0)
+		{
+			// Try to recover sell price from recommendation queue
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			if (rec != null && rec.getRecommendedSellPrice() > 0)
+			{
+				sellPrice = rec.getRecommendedSellPrice();
+				plugin.setRecommendedSellPrice(itemId, sellPrice);
+				log.info("Auto-recommend: Recovered sell price for {} from queue ({})", itemName, sellPrice);
+			}
+			else
+			{
+				log.info("Auto-recommend: No local sell price for {} - falling through to API lookup", itemName);
+				return false;
+			}
+		}
+
+		int collectedQty = resolveSellQuantity(itemId);
+
+		if (collectedQty <= 0)
+		{
+			log.warn("Auto-recommend: Cannot override focus for {} - no quantity available", itemName);
+			return false;
+		}
+
+		int priceOffset = config.priceOffset();
+		FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, sellPrice, collectedQty, priceOffset);
+
+		invokeFocusCallback(focus);
+		updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(sellPrice)));
+
+		log.info("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
+		return true;
 	}
 
 	/**
@@ -274,7 +406,7 @@ public class AutoRecommendService
 
 	/**
 	 * Called when a sell order fully completes (SOLD state).
-	 * Prompts user to collect profit.
+	 * Advances to next action — buy if slots available, otherwise prompts collection.
 	 */
 	public synchronized void onSellOrderCompleted(int itemId)
 	{
@@ -283,9 +415,51 @@ public class AutoRecommendService
 			return;
 		}
 
-		log.info("Auto-recommend: Sell completed for item {} - collect profit", itemId);
-		updateStatus("Auto: Collect profit from GE");
+		log.info("Auto-recommend: Sell completed for item {} - checking next action", itemId);
+		focusNextAvailableAction();
 	}
+
+	/**
+	 * Called when any GE offer is cancelled. Routes to the appropriate handler
+	 * based on offer type and fill state.
+	 *
+	 * @param itemId        the cancelled item
+	 * @param wasBuy        true if the cancelled offer was a buy
+	 * @param filledQuantity how many items were filled before cancellation
+	 * @param totalQuantity  the original order quantity
+	 */
+	public synchronized void onOfferCancelled(int itemId, boolean wasBuy, int filledQuantity, int totalQuantity)
+	{
+		if (!active)
+		{
+			return;
+		}
+
+		clearAdjustmentTimer(itemId);
+
+		// For partial buy cancels, proactively track the filled items as collected
+		// so focusNextAvailableAction() can prompt a sell immediately.
+		// onOfferCollected may not fire reliably for cancelled offers.
+		if (wasBuy && filledQuantity > 0)
+		{
+			PlayerSession session = plugin.getSession();
+			if (session != null)
+			{
+				session.addCollectedItem(itemId, filledQuantity);
+				ensureSellPriceAvailable(itemId);
+				log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
+					itemId, filledQuantity, totalQuantity);
+			}
+		}
+		else
+		{
+			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}/{}) - re-evaluating",
+				wasBuy, filledQuantity, totalQuantity);
+		}
+
+		focusNextAvailableAction();
+	}
+
 
 	/**
 	 * Called when a GE slot becomes empty (user collected items or GP).
@@ -305,6 +479,7 @@ public class AutoRecommendService
 
 		if (wasBuy)
 		{
+			clearAdjustmentTimer(itemId);
 			handleBuyCollected(itemId, itemName, quantity);
 		}
 		else
@@ -360,8 +535,9 @@ public class AutoRecommendService
 		}
 		else
 		{
-			invokeFocusCallback(null);
-			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
+			// Slots full or queue exhausted — prompt collection if there are
+			// completed offers, otherwise show "Waiting for flips"
+			promptCollection();
 		}
 	}
 
@@ -387,7 +563,7 @@ public class AutoRecommendService
 	}
 
 	// =====================
-	// Queue Refresh (AC4)
+	// Queue Refresh
 	// =====================
 
 	/**
@@ -413,6 +589,7 @@ public class AutoRecommendService
 			{
 				filtered.add(rec);
 			}
+			itemNames.put(rec.getItemId(), rec.getItemName());
 		}
 
 		// Sort by volume ascending
@@ -443,6 +620,7 @@ public class AutoRecommendService
 		plugin.getSession().clearStaleNotifications();
 
 		log.info("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
+
 		updateStatus(String.format("Auto: %d/%d - %s",
 			currentIndex + 1, recommendationQueue.size(),
 			currentRec != null ? currentRec.getItemName() : "Refreshed"));
@@ -483,13 +661,19 @@ public class AutoRecommendService
 
 		if (stillRecommended)
 		{
-			updateStatus(String.format("Auto: %s slow fill - consider relisting at updated price",
-				staleOffer.getItemName()));
+			String msg = String.format("%s slow fill - consider relisting at updated price",
+				staleOffer.getItemName());
+			updateStatus("Auto: " + msg);
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback(msg, itemId);
 		}
 		else
 		{
-			updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
-				staleOffer.getItemName()));
+			String msg = String.format("%s no longer recommended - consider cancelling",
+				staleOffer.getItemName());
+			updateStatus("Auto: " + msg);
+			invokeFocusCallback(null);
+			invokeOverlayMessageCallback(msg, itemId);
 		}
 
 		long age = now - staleOffer.getCreatedAtMillis();
@@ -522,7 +706,216 @@ public class AutoRecommendService
 	}
 
 	// =====================
-	// Persistence (AC7)
+	// Adjustment Timers
+	// =====================
+
+	/**
+	 * Get the adjustment delay in milliseconds based on the configured timeframe and item price.
+	 * High-value items (>= 5M GP) get longer delays since their prices change more slowly.
+	 */
+	long getAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
+	{
+		boolean highValue = itemPrice >= HIGH_VALUE_THRESHOLD;
+		switch (timeframe)
+		{
+			case ACTIVE:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+			case THIRTY_MINS:
+				return (highValue ? 15 : 10) * 60 * 1000L;
+			case TWO_HOURS:
+				return (highValue ? 30 : 15) * 60 * 1000L;
+			case FOUR_HOURS:
+				return (highValue ? 60 : 30) * 60 * 1000L;
+			case TWELVE_HOURS:
+				return (highValue ? 240 : 60) * 60 * 1000L;
+			default:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+		}
+	}
+
+	/**
+	 * Schedule an adjustment timer for a buy offer.
+	 * When the timer expires, checkAdjustmentTimers() will prompt the user
+	 * to adjust the price if the recommendation has changed.
+	 */
+	private void scheduleAdjustmentTimer(int itemId, int itemPrice)
+	{
+		long delay = getAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long deadline = System.currentTimeMillis() + delay;
+		adjustmentDeadlines.put(itemId, deadline);
+		log.info("Auto-recommend: Adjustment timer scheduled for item {} in {}m", itemId, delay / 60000);
+	}
+
+	/**
+	 * Reset the adjustment timer for an item (e.g., after a partial fill).
+	 */
+	public synchronized void resetAdjustmentTimer(int itemId, int itemPrice)
+	{
+		if (!active || !adjustmentDeadlines.containsKey(itemId))
+		{
+			return;
+		}
+
+		long delay = getAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long deadline = System.currentTimeMillis() + delay;
+		adjustmentDeadlines.put(itemId, deadline);
+		log.info("Auto-recommend: Adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
+	}
+
+	/**
+	 * Clear the adjustment timer for an item.
+	 */
+	private void clearAdjustmentTimer(int itemId)
+	{
+		if (adjustmentDeadlines.remove(itemId) != null)
+		{
+			log.debug("Auto-recommend: Adjustment timer cleared for item {}", itemId);
+		}
+	}
+
+	/**
+	 * Check all adjustment timers and prompt the user to adjust unfilled buy offers
+	 * when the recommended price has changed.
+	 *
+	 * Called periodically from the auto-recommend refresh timer (2-minute interval).
+	 */
+	public synchronized void checkAdjustmentTimers(
+		Map<Integer, TrackedOffer> trackedOffers,
+		List<FlipRecommendation> currentRecommendations)
+	{
+		if (!active || adjustmentDeadlines.isEmpty() || trackedOffers == null)
+		{
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		Iterator<Map.Entry<Integer, Long>> iter = adjustmentDeadlines.entrySet().iterator();
+
+		while (iter.hasNext())
+		{
+			Map.Entry<Integer, Long> entry = iter.next();
+			if (now >= entry.getValue())
+			{
+				processExpiredAdjustmentTimer(entry, trackedOffers, currentRecommendations, iter, now);
+			}
+		}
+	}
+
+	/**
+	 * Process a single expired adjustment timer entry.
+	 * Removes the entry if the offer is gone/filled/adjusted, or reschedules if price unchanged.
+	 */
+	private void processExpiredAdjustmentTimer(
+		Map.Entry<Integer, Long> entry,
+		Map<Integer, TrackedOffer> trackedOffers,
+		List<FlipRecommendation> currentRecommendations,
+		Iterator<Map.Entry<Integer, Long>> iter,
+		long now)
+	{
+		int itemId = entry.getKey();
+
+		TrackedOffer offer = findTrackedBuyOffer(trackedOffers, itemId);
+		if (offer == null || offer.isCompleted() || offer.getPreviousQuantitySold() > 0)
+		{
+			iter.remove();
+			return;
+		}
+
+		FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
+
+		if (rec == null)
+		{
+			updateStatus(String.format("Auto: %s no longer recommended - consider cancelling",
+				offer.getItemName()));
+			iter.remove();
+			return;
+		}
+
+		if (rec.getRecommendedBuyPrice() == offer.getPrice())
+		{
+			long delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			entry.setValue(now + delay);
+			log.debug("Auto-recommend: Price unchanged for {} - rescheduling timer ({}m)",
+				offer.getItemName(), delay / 60000);
+			return;
+		}
+
+		log.info("Auto-recommend: Price changed for {} ({} -> {}) - prompting adjustment",
+			offer.getItemName(), offer.getPrice(), rec.getRecommendedBuyPrice());
+
+		focusBuyOverlay(itemId, offer.getItemName(),
+			rec.getRecommendedBuyPrice(), offer.getTotalQuantity(), rec.getRecommendedSellPrice(),
+			String.format("Auto: Adjust %s buy price %s → %s gp",
+				offer.getItemName(),
+				GpUtils.formatGPWithSuffix(offer.getPrice()),
+				GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
+
+		iter.remove();
+	}
+
+	/**
+	 * Reschedule adjustment timers after login for any active zero-fill buy offers
+	 * that don't already have a timer.
+	 */
+	private void rescheduleAdjustmentTimersAfterLogin()
+	{
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		for (TrackedOffer offer : session.getTrackedOffers().values())
+		{
+			if (!offer.isBuy() || offer.isCompleted() || offer.getPreviousQuantitySold() > 0
+				|| adjustmentDeadlines.containsKey(offer.getItemId()))
+			{
+				continue;
+			}
+
+			// Schedule a timer — use a short delay since the offer may have been sitting
+			// unfilled while offline
+			scheduleAdjustmentTimer(offer.getItemId(), offer.getPrice());
+			log.info("Auto-recommend: Rescheduled adjustment timer for {} after login", offer.getItemName());
+		}
+	}
+
+	/**
+	 * Find a tracked buy offer for the given item ID.
+	 */
+	private TrackedOffer findTrackedBuyOffer(Map<Integer, TrackedOffer> trackedOffers, int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == itemId && offer.isBuy())
+			{
+				return offer;
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Find a recommendation matching the given item ID from a list.
+	 */
+	private FlipRecommendation findRecommendationInList(List<FlipRecommendation> recommendations, int itemId)
+	{
+		if (recommendations == null)
+		{
+			return null;
+		}
+		for (FlipRecommendation rec : recommendations)
+		{
+			if (rec.getItemId() == itemId)
+			{
+				return rec;
+			}
+		}
+		return null;
+	}
+
+	// =====================
+	// Persistence
 	// =====================
 
 	/**
@@ -567,6 +960,10 @@ public class AutoRecommendService
 
 		recommendationQueue.clear();
 		recommendationQueue.addAll(state.queue);
+		for (FlipRecommendation rec : state.queue)
+		{
+			itemNames.put(rec.getItemId(), rec.getItemName());
+		}
 		currentIndex = Math.min(state.currentIndex, recommendationQueue.size() - 1);
 		currentIndex = Math.max(0, currentIndex);
 
@@ -584,6 +981,20 @@ public class AutoRecommendService
 	// =====================
 	// Internal Navigation
 	// =====================
+
+	/**
+	 * Skip the current recommendation and advance to the next one.
+	 * Called when the user clicks the Skip button during auto-recommend.
+	 */
+	public synchronized void skip()
+	{
+		if (!active)
+		{
+			return;
+		}
+		log.info("Auto-recommend: User skipped current recommendation");
+		advanceToNext();
+	}
 
 	private void advanceToNext()
 	{
@@ -611,6 +1022,12 @@ public class AutoRecommendService
 				invokeFocusCallback(null);
 				updateStatus("Auto: All recommendations listed");
 				invokeOverlayMessageCallback("All flips listed - waiting for sells");
+
+				Runnable exhaustedCallback = onQueueExhausted;
+				if (exhaustedCallback != null)
+				{
+					javax.swing.SwingUtilities.invokeLater(exhaustedCallback);
+				}
 			}
 			return;
 		}
@@ -640,21 +1057,10 @@ public class AutoRecommendService
 			return;
 		}
 
-		int priceOffset = config.priceOffset();
-		FocusedFlip focus = FocusedFlip.forBuy(
-			rec.getItemId(),
-			rec.getItemName(),
-			rec.getRecommendedBuyPrice(),
-			rec.getRecommendedQuantity(),
-			rec.getRecommendedSellPrice(),
-			priceOffset
-		);
-
-		invokeFocusCallback(focus);
+		focusBuyOverlay(rec.getItemId(), rec.getItemName(),
+			rec.getRecommendedBuyPrice(), rec.getRecommendedQuantity(), rec.getRecommendedSellPrice(),
+			String.format("Auto: %d/%d - %s", currentIndex + 1, recommendationQueue.size(), rec.getItemName()));
 		invokeQueueAdvancedCallback();
-
-		updateStatus(String.format("Auto: %d/%d - %s",
-			currentIndex + 1, recommendationQueue.size(), rec.getItemName()));
 	}
 
 	/**
@@ -673,76 +1079,79 @@ public class AutoRecommendService
 			return;
 		}
 
+		// Always prefer inventory count (source of truth) over passed-in quantity
+		int sellQuantity = resolveSellQuantity(itemId);
+		if (sellQuantity <= 0)
+		{
+			sellQuantity = quantity;
+		}
+
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forSell(
 			itemId,
 			itemName,
 			sellPrice,
-			quantity,
+			sellQuantity,
 			priceOffset
 		);
 
 		invokeFocusCallback(focus);
 		invokeQueueAdvancedCallback();
 
-		updateStatus(String.format("Auto: Sell %s @ %s gp",
+		updateStatus(String.format(MSG_SELL_FORMAT,
 			itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 	}
 
 	/**
 	 * Focus the sell side for the next collected item that needs selling.
-	 * Uses session state to find items and falls back to recommendation queue
-	 * for item name/quantity since TrackedOffer may have been removed.
+	 * Uses session state for sell price (independent of recommendation queue).
+	 * Uses cached itemNames map for item name (survives queue refreshes).
 	 */
 	private void focusNextCollectedItemSell()
 	{
 		int sellableItemId = findNextSellableCollectedItem();
-		if (sellableItemId < 0)
+		if (sellableItemId >= 0)
 		{
-			// No collected items need selling - check buy queue
-			if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+			Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
+
+			if (sellPrice != null && sellPrice > 0)
 			{
-				focusCurrent();
+				String itemName = itemNames.getOrDefault(sellableItemId, "Item " + sellableItemId);
+				int sellQuantity = resolveSellQuantity(sellableItemId);
+
+				int priceOffset = config.priceOffset();
+				FocusedFlip focus = FocusedFlip.forSell(
+					sellableItemId,
+					itemName,
+					sellPrice,
+					sellQuantity,
+					priceOffset
+				);
+
+				invokeFocusCallback(focus);
+				invokeQueueAdvancedCallback();
+
+				updateStatus(String.format(MSG_SELL_FORMAT,
+					itemName, GpUtils.formatGPWithSuffix(sellPrice)));
+				return;
 			}
-			else
-			{
-				// Clear any stale focus so the hint box can show
-				invokeFocusCallback(null);
-				promptCollection();
-			}
-			return;
+
+			// Collected item has no sell price - fall through to buy/wait
+			log.warn("Auto-recommend: Cannot focus sell for collected item {} (price={})",
+				sellableItemId, sellPrice);
 		}
 
-		FlipRecommendation rec = findRecommendationForItem(sellableItemId);
-		if (rec == null)
+		// No sellable items can be properly displayed - check buy queue
+		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
 		{
-			log.warn("Auto-recommend: Cannot find item name for collected item {}", sellableItemId);
-			updateStatus("Auto: Collected item no longer in queue - sell manually");
-			return;
+			focusCurrent();
 		}
-
-		Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
-		if (sellPrice == null || sellPrice <= 0)
+		else
 		{
-			log.warn("Auto-recommend: No recommended sell price for collected item {} ({})", rec.getItemName(), sellableItemId);
-			updateStatus(String.format("Auto: No sell price for %s - sell manually", rec.getItemName()));
-			return;
+			// Clear any stale focus so the hint box can show
+			invokeFocusCallback(null);
+			promptCollection();
 		}
-
-		int priceOffset = config.priceOffset();
-		FocusedFlip focus = FocusedFlip.forSell(
-			sellableItemId,
-			rec.getItemName(),
-			sellPrice,
-			rec.getRecommendedQuantity(),
-			priceOffset
-		);
-
-		invokeFocusCallback(focus);
-		invokeQueueAdvancedCallback();
-
-		updateStatus(String.format("Auto: Sell %s @ %s gp",
-			rec.getItemName(), GpUtils.formatGPWithSuffix(sellPrice)));
 	}
 
 	/**
@@ -764,6 +1173,33 @@ public class AutoRecommendService
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Resolve the sell quantity for an item, with inventory fallback.
+	 * Tries session collected quantity first, then actual inventory count.
+	 * Auto-corrects the session if inventory has items but session doesn't.
+	 */
+	private int resolveSellQuantity(int itemId)
+	{
+		// Inventory is the source of truth for sell quantity
+		int inventoryCount = plugin.getInventoryCountForItem(itemId);
+		if (inventoryCount > 0)
+		{
+			return inventoryCount;
+		}
+
+		// Fallback: session tracked quantity (items may not be in inventory yet)
+		PlayerSession session = plugin.getSession();
+		int qty = session.getCollectedQuantity(itemId);
+		if (qty > 0)
+		{
+			return qty;
+		}
+
+		// Last resort: check recommendation quantity
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		return rec != null ? rec.getRecommendedQuantity() : 0;
 	}
 
 	/**
@@ -821,6 +1257,22 @@ public class AutoRecommendService
 	}
 
 	// =====================
+	// Focus Helpers
+	// =====================
+
+	/**
+	 * Create a buy FocusedFlip, invoke the focus callback, and update status text.
+	 * Centralizes the repeated pattern of showing a buy overlay with a status message.
+	 */
+	private void focusBuyOverlay(int itemId, String itemName, int buyPrice, int quantity, int sellPrice, String statusMsg)
+	{
+		int priceOffset = config.priceOffset();
+		FocusedFlip focus = FocusedFlip.forBuy(itemId, itemName, buyPrice, quantity, sellPrice, priceOffset);
+		invokeFocusCallback(focus);
+		updateStatus(statusMsg);
+	}
+
+	// =====================
 	// Callbacks
 	// =====================
 
@@ -849,6 +1301,7 @@ public class AutoRecommendService
 
 	private void invokeOverlayMessageCallback(String message, int itemId)
 	{
+		lastOverlayMessage = message;
 		ObjIntConsumer<String> callback = onOverlayMessageChanged;
 		if (callback != null)
 		{
@@ -891,7 +1344,6 @@ public class AutoRecommendService
 
 	private boolean hasAvailableGESlots()
 	{
-		PlayerSession session = plugin.getSession();
-		return session != null && session.hasAvailableGESlots(plugin.getFlipSlotLimit());
+		return plugin.getFilledGESlotCount() < plugin.getFlipSlotLimit();
 	}
 }

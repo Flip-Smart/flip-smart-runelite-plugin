@@ -160,6 +160,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	// Auto-recommend UI
 	private JToggleButton autoRecommendButton;
+	private JButton skipButton;
 	private JLabel autoRecommendStatusLabel;
 
 	// Cache blocklists for quick access when blocking items
@@ -240,6 +241,10 @@ public class FlipFinderPanel extends PluginPanel
 			loginStatusLabel.setForeground(new Color(255, 200, 100)); // Orange warning color
 			showLoginPanel();
 		}));
+
+		// Persist refresh token whenever it changes (rotation, new login, etc.)
+		// This prevents token loss from mid-session rotations via the 401 retry path
+		apiClient.setOnRefreshTokenChanged(this::saveRefreshToken);
 
 		// Check if already authenticated and switch to main panel if so
 		checkAuthenticationAndShow();
@@ -470,11 +475,14 @@ public class FlipFinderPanel extends PluginPanel
 		flipTimeframeLabel.setForeground(Color.LIGHT_GRAY);
 		flipTimeframeLabel.setFont(FONT_PLAIN_12);
 
-		// Row 1: Style dropdown
-		JPanel styleRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		// Row 1: Style dropdown (left) + Auto button (right)
+		JPanel styleRow = new JPanel(new BorderLayout());
 		styleRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		styleRow.add(flipStyleLabel);
-		styleRow.add(flipStyleDropdown);
+
+		JPanel styleLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+		styleLeft.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		styleLeft.add(flipStyleLabel);
+		styleLeft.add(flipStyleDropdown);
 
 		// Auto-recommend toggle button
 		autoRecommendButton = new JToggleButton("Auto") {
@@ -519,7 +527,29 @@ public class FlipFinderPanel extends PluginPanel
 		autoRecommendButton.addActionListener(e -> toggleAutoRecommend());
 		autoRecommendButton.setVisible(config.enableAutoRecommend());
 
-		// Row 2: Timeframe dropdown (left) + Auto button (right)
+		// Skip button — visible only when auto-recommend is active
+		skipButton = new JButton("Skip");
+		skipButton.setFocusable(false);
+		skipButton.setMargin(new Insets(2, 6, 2, 6));
+		skipButton.setForeground(Color.WHITE);
+		skipButton.setToolTipText("Skip the current recommendation");
+		skipButton.addActionListener(e -> {
+			AutoRecommendService service = plugin.getAutoRecommendService();
+			if (service != null)
+			{
+				service.skip();
+			}
+		});
+		skipButton.setVisible(false);
+
+		JPanel styleRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
+		styleRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		styleRight.add(autoRecommendButton);
+
+		styleRow.add(styleLeft, BorderLayout.WEST);
+		styleRow.add(styleRight, BorderLayout.EAST);
+
+		// Row 2: Timeframe dropdown (left) + Skip button (right)
 		JPanel timeframeRow = new JPanel(new BorderLayout());
 		timeframeRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
@@ -530,7 +560,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		JPanel timeframeRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
 		timeframeRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		timeframeRight.add(autoRecommendButton);
+		timeframeRight.add(skipButton);
 
 		timeframeRow.add(timeframeLeft, BorderLayout.WEST);
 		timeframeRow.add(timeframeRight, BorderLayout.EAST);
@@ -753,37 +783,31 @@ public class FlipFinderPanel extends PluginPanel
 			// Load refresh token into API client and try to authenticate
 			apiClient.setRefreshToken(refreshToken);
 
-			java.util.concurrent.CompletableFuture.runAsync(() -> {
-				// Try refresh token authentication
-				try
-				{
-					Boolean success = apiClient.refreshAccessTokenAsync().get();
-					SwingUtilities.invokeLater(() -> {
-						if (Boolean.TRUE.equals(success))
+			apiClient.refreshAccessTokenAsync().thenAccept(success ->
+				SwingUtilities.invokeLater(() -> {
+					if (Boolean.TRUE.equals(success))
+					{
+						saveRefreshToken(apiClient.getRefreshToken());
+						onAuthenticationSuccess(null, false);
+					}
+					else
+					{
+						// Only clear persisted token if explicitly rejected (401)
+						if (apiClient.getRefreshToken() == null)
 						{
-							// Save new refresh token (token rotation)
-							saveRefreshToken(apiClient.getRefreshToken());
-							onAuthenticationSuccess(null, false);
+							clearRefreshToken();
 						}
 						else
 						{
-							// Refresh token invalid/expired, clear it
-							clearRefreshToken();
-							// Fall back to legacy password auth
-							tryLegacyPasswordAuth();
+							log.info("Refresh token auth failed (transient) - keeping token for next attempt");
 						}
-					});
-				}
-				catch (InterruptedException e)
-				{
-					log.debug("Refresh token auth interrupted: {}", e.getMessage());
-					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
-				}
-				catch (Exception e)
-				{
-					log.debug("Refresh token auth failed: {}", e.getMessage());
-					SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
-				}
+						tryLegacyPasswordAuth();
+					}
+				})
+			).exceptionally(e -> {
+				log.info("Refresh token auth failed: {}", e.getMessage());
+				SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				return null;
 			});
 		}
 		else
@@ -2802,7 +2826,14 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			return;
 		}
-		
+
+		// Don't clear focus when auto-recommend is active — it manages its own focus
+		AutoRecommendService service = plugin.getAutoRecommendService();
+		if (service != null && service.isActive())
+		{
+			return;
+		}
+
 		// Check if the focused item still exists in recommendations or active flips
 		if (!hasFlipForItem(currentFocusedItemId))
 		{
@@ -3882,6 +3913,9 @@ public class FlipFinderPanel extends PluginPanel
 			service.setOnQueueAdvanced(() ->
 				populateRecommendations(new ArrayList<>(currentRecommendations)));
 
+			// Wire skip-exhausted callback to fetch fresh recommendations
+			service.setOnQueueExhausted(() -> refreshRecommendations(true));
+
 			service.start(new ArrayList<>(currentRecommendations));
 
 			// Check if start() actually activated the service (it may bail if all items are filtered)
@@ -3900,6 +3934,7 @@ public class FlipFinderPanel extends PluginPanel
 			autoRecommendButton.setBackground(COLOR_AUTO_RECOMMEND_ACTIVE);
 			autoRecommendButton.setForeground(Color.WHITE);
 			autoRecommendButton.setText("Auto");
+			skipButton.setVisible(true);
 			log.info("Auto-recommend enabled with {} recommendations", currentRecommendations.size());
 		}
 		else
@@ -3911,6 +3946,7 @@ public class FlipFinderPanel extends PluginPanel
 			autoRecommendButton.setBackground(null);
 			autoRecommendButton.setForeground(Color.WHITE);
 			autoRecommendButton.setText("Auto");
+			skipButton.setVisible(false);
 			autoRecommendStatusLabel.setVisible(false);
 
 			// Repaint recommendations to remove highlight
@@ -3936,6 +3972,7 @@ public class FlipFinderPanel extends PluginPanel
 					service.stop();
 					plugin.stopAutoRecommendRefreshTimer();
 				}
+				skipButton.setVisible(false);
 				autoRecommendStatusLabel.setVisible(false);
 			}
 		});
@@ -3948,6 +3985,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() -> {
 			autoRecommendButton.setSelected(active);
+			skipButton.setVisible(active);
 			if (active)
 			{
 				autoRecommendButton.setBackground(COLOR_AUTO_RECOMMEND_ACTIVE);

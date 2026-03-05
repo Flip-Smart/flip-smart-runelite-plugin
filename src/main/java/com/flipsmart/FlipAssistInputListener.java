@@ -103,10 +103,14 @@ public class FlipAssistInputListener implements KeyListener
 		{
 			return;
 		}
-		
-		// Use synchronous invoke to check conditions BEFORE consuming the event
+
+		// Consume the event eagerly on the EDT to prevent the hotkey character
+		// from being typed into the GE search/input. clientThread.invoke() is
+		// asynchronous from the EDT, so consuming inside the callback is too late.
+		handledKeyPressedEvent.set(e);
+		e.consume();
+
 		clientThread.invoke(() -> {
-			// Check if GE is open (must be on client thread)
 			if (!isGrandExchangeOpen())
 			{
 				return;
@@ -127,19 +131,15 @@ public class FlipAssistInputListener implements KeyListener
 
 				if (hasSearchResults())
 				{
-					handledKeyPressedEvent.set(e);
-					e.consume();
 					selectFirstSearchResult();
 					flipAssistOverlay.updateStep();
 				}
 				return;
 			}
-			
+
 			// Handle numeric input (price/quantity)
 			if (inputType == INPUT_TYPE_NUMERIC)
 			{
-				handledKeyPressedEvent.set(e);
-				e.consume();
 				handleFlipAssistAction(focusedFlip);
 				flipAssistOverlay.updateStep();
 			}

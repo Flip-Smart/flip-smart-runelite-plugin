@@ -42,6 +42,7 @@ public class PlayerSession
 	private volatile int currentCashStack;
 
 	private final Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
+	private final Map<Integer, Integer> collectedQuantities = new ConcurrentHashMap<>();
 
 	// =====================
 	// GE State
@@ -125,22 +126,54 @@ public class PlayerSession
 		collectedItemIds.add(itemId);
 	}
 
+	public void addCollectedItem(int itemId, int quantity)
+	{
+		collectedItemIds.add(itemId);
+		if (quantity > 0)
+		{
+			collectedQuantities.put(itemId, quantity);
+		}
+	}
+
+	public int getCollectedQuantity(int itemId)
+	{
+		Integer qty = collectedQuantities.get(itemId);
+		return qty != null ? qty : 0;
+	}
+
 	public boolean removeCollectedItem(int itemId)
 	{
+		collectedQuantities.remove(itemId);
 		return collectedItemIds.remove(itemId);
 	}
 
 	public void clearCollectedItems()
 	{
 		collectedItemIds.clear();
+		collectedQuantities.clear();
 	}
 
 	public void restoreCollectedItems(Set<Integer> items)
 	{
 		collectedItemIds.clear();
+		collectedQuantities.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
+		}
+	}
+
+	public void restoreCollectedItems(Set<Integer> items, Map<Integer, Integer> quantities)
+	{
+		collectedItemIds.clear();
+		collectedQuantities.clear();
+		if (items != null)
+		{
+			collectedItemIds.addAll(items);
+		}
+		if (quantities != null)
+		{
+			collectedQuantities.putAll(quantities);
 		}
 	}
 
@@ -289,6 +322,7 @@ public class PlayerSession
 		this.lastBankSnapshotAttempt = 0;
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
+		collectedQuantities.clear();
 		trackedOffers.clear();
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
@@ -400,6 +434,15 @@ public class PlayerSession
 	public Set<Integer> getCollectedItemsForPersistence()
 	{
 		return new HashSet<>(collectedItemIds);
+	}
+
+	/**
+	 * Get a snapshot of collected quantities for persistence.
+	 * Returns a new HashMap to avoid concurrent modification during serialization.
+	 */
+	public Map<Integer, Integer> getCollectedQuantitiesForPersistence()
+	{
+		return new HashMap<>(collectedQuantities);
 	}
 
 	// =====================
