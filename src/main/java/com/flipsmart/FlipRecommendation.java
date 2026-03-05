@@ -42,14 +42,20 @@ public class FlipRecommendation
 	@SerializedName("ge_tax")
 	private int geTax;
 
-	@SerializedName("liquidity_score")
-	private double liquidityScore;
-
-	@SerializedName("liquidity_rating")
-	private String liquidityRating;
-
 	@SerializedName("volume_per_hour")
 	private double volumePerHour;
+
+	@SerializedName("daily_volume")
+	private int dailyVolume;
+
+	@SerializedName("buy_limit_cycles")
+	private int buyLimitCycles;
+
+	@SerializedName("breakeven_sell_price")
+	private int breakevenSellPrice;
+
+	@SerializedName("breakeven_is_estimate")
+	private boolean breakevenIsEstimate;
 
 	@SerializedName("risk_score")
 	private double riskScore;

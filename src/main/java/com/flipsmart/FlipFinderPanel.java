@@ -47,10 +47,12 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String FORMAT_MARGIN_ROI = "Margin: %s (%.1f%% ROI)";
 	private static final String FORMAT_MARGIN_ROI_LOSS = "Margin: %s (%.1f%% ROI) - Loss";
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
+	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
 	private static final String ERROR_DIALOG_TITLE = "Error";
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
+	private static final String VOLUME_NA = "Volume: N/A";
 	private static final String RISK_NA = "Risk: N/A";
 	private static final String MSG_LOGIN_TO_RUNESCAPE = "Log in to RuneScape";
 	private static final String MSG_LOGIN_INSTRUCTION = "<html><center>Log in to the game to get<br>flip suggestions and track your flips</center></html>";
@@ -2030,19 +2032,18 @@ public class FlipFinderPanel extends PluginPanel
 		profitLabel.setForeground(new Color(255, 215, 0));
 		profitLabel.setFont(FONT_PLAIN_12);
 
-		// Liquidity info
-		JLabel liquidityLabel = new JLabel(formatLiquidityText(
-			rec.getLiquidityScore(), rec.getLiquidityRating(), rec.getVolumePerHour()));
-		liquidityLabel.setForeground(Color.CYAN);
-		liquidityLabel.setFont(FONT_PLAIN_12);
+		// Volume info
+		JLabel volumeLabel = new JLabel(formatVolumeText(rec.getDailyVolume()));
+		volumeLabel.setForeground(Color.CYAN);
+		volumeLabel.setFont(FONT_PLAIN_12);
 
 		// Risk info
 		JLabel riskLabel = new JLabel(formatRiskText(rec.getRiskScore(), rec.getRiskRating()));
 		riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
 		riskLabel.setFont(FONT_PLAIN_12);
 
-		addLabelsWithSpacing(detailsPanel, priceLabel, quantityLabel, marginLabel, 
-			profitLabel, liquidityLabel, riskLabel);
+		addLabelsWithSpacing(detailsPanel, priceLabel, quantityLabel, marginLabel,
+			profitLabel, volumeLabel, riskLabel);
 
 		return detailsPanel;
 	}
@@ -2550,6 +2551,18 @@ public class FlipFinderPanel extends PluginPanel
 		String displayRating = rating != null ? rating : UNKNOWN_RATING;
 		String volText = volumePerHour != null ? formatGP(volumePerHour.intValue()) + "/hr" : "";
 		return String.format(FORMAT_LIQUIDITY, score, displayRating, volText);
+	}
+
+	/**
+	 * Format daily volume text for display
+	 */
+	private String formatVolumeText(int dailyVolume)
+	{
+		if (dailyVolume <= 0)
+		{
+			return VOLUME_NA;
+		}
+		return String.format(FORMAT_VOLUME, formatGP(dailyVolume));
 	}
 
 	/**
