@@ -191,8 +191,9 @@ public class GrandExchangeTracker
 		// returns false and findNextSellableCollectedItem can find the re-added items
 		session.removeTrackedOffer(ctx.slot);
 
-		// Only remove recommended price for buy cancels — sell cancels preserve it for re-listing
-		if (ctx.isBuy)
+		// Only remove recommended price for zero-fill buy cancels — partial fills need the
+		// sell price preserved so the user can be prompted to sell the collected items
+		if (ctx.isBuy && ctx.quantitySold == 0)
 		{
 			session.removeRecommendedPrice(ctx.itemId);
 		}

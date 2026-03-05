@@ -43,6 +43,8 @@ public class AutoRecommendService
 
 	// Queue state - guarded by synchronized(this)
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
+	// Cached item names from recommendations - survives queue refreshes
+	private final Map<Integer, String> itemNames = new HashMap<>();
 	private int currentIndex;
 	private volatile boolean active;
 
@@ -69,9 +71,6 @@ public class AutoRecommendService
 	// async callback result gets lost due to race conditions
 	private volatile String lastOverlayMessage;
 
-	// Pending re-buys: itemId → remaining quantity when a partially-filled buy is cancelled.
-	// Supports multiple concurrent partial cancellations.
-	private final Map<Integer, Integer> pendingReBuys = new HashMap<>();
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -179,6 +178,7 @@ public class AutoRecommendService
 			{
 				recommendationQueue.add(rec);
 			}
+			itemNames.put(rec.getItemId(), rec.getItemName());
 		}
 
 		if (recommendationQueue.isEmpty())
@@ -204,8 +204,8 @@ public class AutoRecommendService
 		active = false;
 		lastOverlayMessage = null;
 		recommendationQueue.clear();
+		itemNames.clear();
 		adjustmentDeadlines.clear();
-		pendingReBuys.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -253,12 +253,6 @@ public class AutoRecommendService
 		if (!active)
 		{
 			return;
-		}
-
-		// Clear pending re-buy if this buy matches
-		if (pendingReBuys.remove(itemId) != null)
-		{
-			log.info("Auto-recommend: Re-buy placed for item {} - clearing pending re-buy state", itemId);
 		}
 
 		FlipRecommendation current = getCurrentRecommendation();
@@ -443,46 +437,29 @@ public class AutoRecommendService
 
 		clearAdjustmentTimer(itemId);
 
+		// For partial buy cancels, proactively track the filled items as collected
+		// so focusNextAvailableAction() can prompt a sell immediately.
+		// onOfferCollected may not fire reliably for cancelled offers.
 		if (wasBuy && filledQuantity > 0)
 		{
-			// Partial-fill buy cancel — delegate to re-buy flow
-			FlipRecommendation rec = findRecommendationForItem(itemId);
-			String itemName = rec != null ? rec.getItemName() : "Item " + itemId;
-			onBuyOrderCancelled(itemId, itemName, filledQuantity, totalQuantity);
+			PlayerSession session = plugin.getSession();
+			if (session != null)
+			{
+				session.addCollectedItem(itemId, filledQuantity);
+				ensureSellPriceAvailable(itemId);
+				log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
+					itemId, filledQuantity, totalQuantity);
+			}
 		}
 		else
 		{
-			// Zero-fill buy cancel or any sell cancel — slot freed, serve next recommendation
-			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}) - re-evaluating", wasBuy, filledQuantity);
-			focusNextAvailableAction();
+			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}/{}) - re-evaluating",
+				wasBuy, filledQuantity, totalQuantity);
 		}
+
+		focusNextAvailableAction();
 	}
 
-	/**
-	 * Called when a buy order is cancelled with partial fills.
-	 * Stores pending re-buy state so the user can re-list for the remaining quantity.
-	 */
-	public synchronized void onBuyOrderCancelled(int itemId, String itemName, int filledQuantity, int totalQuantity)
-	{
-		if (!active)
-		{
-			return;
-		}
-
-		int remaining = totalQuantity - filledQuantity;
-		if (remaining <= 0)
-		{
-			log.info("Auto-recommend: Buy cancelled for {} but fully filled - no re-buy needed", itemName);
-			return;
-		}
-
-		pendingReBuys.put(itemId, remaining);
-
-		log.info("Auto-recommend: Buy cancelled for {} - {} filled, {} remaining. Prompting re-buy.",
-			itemName, filledQuantity, remaining);
-
-		focusReBuyOverlay(itemId, itemName, remaining);
-	}
 
 	/**
 	 * Called when a GE slot becomes empty (user collected items or GP).
@@ -514,23 +491,11 @@ public class AutoRecommendService
 
 	/**
 	 * Handle collection of a completed buy offer.
-	 * If there's a pending re-buy for this item, focus re-buy instead of sell.
-	 * Priority: re-buy (if pending) > sell THIS item > sell OTHER collected items > buy next > wait.
+	 * Priority: sell THIS item > sell OTHER collected items > buy next > wait.
 	 */
 	private void handleBuyCollected(int itemId, String itemName, int quantity)
 	{
 		log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
-
-		// If this item has a pending re-buy, focus re-buy instead of sell
-		Integer pendingQty = pendingReBuys.get(itemId);
-		if (pendingQty != null && pendingQty > 0)
-		{
-			log.info("Auto-recommend: Pending re-buy for {} x{} - showing re-buy overlay instead of sell",
-				itemName, pendingQty);
-
-			focusReBuyOverlay(itemId, itemName, pendingQty);
-			return;
-		}
 
 		PlayerSession session = plugin.getSession();
 		if (session == null)
@@ -624,6 +589,7 @@ public class AutoRecommendService
 			{
 				filtered.add(rec);
 			}
+			itemNames.put(rec.getItemId(), rec.getItemName());
 		}
 
 		// Sort by volume ascending
@@ -655,13 +621,9 @@ public class AutoRecommendService
 
 		log.info("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
 
-		// Don't overwrite re-buy status messages during queue refresh
-		if (pendingReBuys.isEmpty())
-		{
-			updateStatus(String.format("Auto: %d/%d - %s",
-				currentIndex + 1, recommendationQueue.size(),
-				currentRec != null ? currentRec.getItemName() : "Refreshed"));
-		}
+		updateStatus(String.format("Auto: %d/%d - %s",
+			currentIndex + 1, recommendationQueue.size(),
+			currentRec != null ? currentRec.getItemName() : "Refreshed"));
 	}
 
 	// =====================
@@ -998,6 +960,10 @@ public class AutoRecommendService
 
 		recommendationQueue.clear();
 		recommendationQueue.addAll(state.queue);
+		for (FlipRecommendation rec : state.queue)
+		{
+			itemNames.put(rec.getItemId(), rec.getItemName());
+		}
 		currentIndex = Math.min(state.currentIndex, recommendationQueue.size() - 1);
 		currentIndex = Math.max(0, currentIndex);
 
@@ -1113,11 +1079,11 @@ public class AutoRecommendService
 			return;
 		}
 
-		// Auto-correct quantity from inventory if the passed-in value is 0
-		int sellQuantity = quantity;
+		// Always prefer inventory count (source of truth) over passed-in quantity
+		int sellQuantity = resolveSellQuantity(itemId);
 		if (sellQuantity <= 0)
 		{
-			sellQuantity = resolveSellQuantity(itemId);
+			sellQuantity = quantity;
 		}
 
 		int priceOffset = config.priceOffset();
@@ -1138,26 +1104,25 @@ public class AutoRecommendService
 
 	/**
 	 * Focus the sell side for the next collected item that needs selling.
-	 * Uses session state to find items and falls back to recommendation queue
-	 * for item name since TrackedOffer may have been removed.
-	 * Uses actual collected quantity when available, falling back to recommendation quantity.
+	 * Uses session state for sell price (independent of recommendation queue).
+	 * Uses cached itemNames map for item name (survives queue refreshes).
 	 */
 	private void focusNextCollectedItemSell()
 	{
 		int sellableItemId = findNextSellableCollectedItem();
 		if (sellableItemId >= 0)
 		{
-			FlipRecommendation rec = findRecommendationForItem(sellableItemId);
-			Integer sellPrice = rec != null ? plugin.getSession().getRecommendedPrice(sellableItemId) : null;
+			Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
 
-			if (rec != null && sellPrice != null && sellPrice > 0)
+			if (sellPrice != null && sellPrice > 0)
 			{
+				String itemName = itemNames.getOrDefault(sellableItemId, "Item " + sellableItemId);
 				int sellQuantity = resolveSellQuantity(sellableItemId);
 
 				int priceOffset = config.priceOffset();
 				FocusedFlip focus = FocusedFlip.forSell(
 					sellableItemId,
-					rec.getItemName(),
+					itemName,
 					sellPrice,
 					sellQuantity,
 					priceOffset
@@ -1167,13 +1132,13 @@ public class AutoRecommendService
 				invokeQueueAdvancedCallback();
 
 				updateStatus(String.format(MSG_SELL_FORMAT,
-					rec.getItemName(), GpUtils.formatGPWithSuffix(sellPrice)));
+					itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 				return;
 			}
 
-			// Collected item can't be displayed (no rec or no price) - fall through to buy/wait
-			log.warn("Auto-recommend: Cannot focus sell for collected item {} (rec={}, price={})",
-				sellableItemId, rec != null ? rec.getItemName() : "null", sellPrice);
+			// Collected item has no sell price - fall through to buy/wait
+			log.warn("Auto-recommend: Cannot focus sell for collected item {} (price={})",
+				sellableItemId, sellPrice);
 		}
 
 		// No sellable items can be properly displayed - check buy queue
@@ -1217,21 +1182,19 @@ public class AutoRecommendService
 	 */
 	private int resolveSellQuantity(int itemId)
 	{
+		// Inventory is the source of truth for sell quantity
+		int inventoryCount = plugin.getInventoryCountForItem(itemId);
+		if (inventoryCount > 0)
+		{
+			return inventoryCount;
+		}
+
+		// Fallback: session tracked quantity (items may not be in inventory yet)
 		PlayerSession session = plugin.getSession();
 		int qty = session.getCollectedQuantity(itemId);
 		if (qty > 0)
 		{
 			return qty;
-		}
-
-		// Fallback: check actual inventory
-		int inventoryCount = plugin.getInventoryCountForItem(itemId);
-		if (inventoryCount > 0)
-		{
-			session.addCollectedItem(itemId, inventoryCount);
-			log.info("Auto-recommend: Corrected collected quantity for item {} from inventory ({})",
-				itemId, inventoryCount);
-			return inventoryCount;
 		}
 
 		// Last resort: check recommendation quantity
@@ -1307,22 +1270,6 @@ public class AutoRecommendService
 		FocusedFlip focus = FocusedFlip.forBuy(itemId, itemName, buyPrice, quantity, sellPrice, priceOffset);
 		invokeFocusCallback(focus);
 		updateStatus(statusMsg);
-	}
-
-	private void focusReBuyOverlay(int itemId, String itemName, int quantity)
-	{
-		FlipRecommendation rec = findRecommendationForItem(itemId);
-		if (rec != null && rec.getRecommendedBuyPrice() > 0)
-		{
-			focusBuyOverlay(itemId, itemName, rec.getRecommendedBuyPrice(), quantity, rec.getRecommendedSellPrice(),
-				String.format("Auto: Re-buy %s x%s @ %s gp",
-					itemName, GpUtils.formatGPWithSuffix(quantity),
-					GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
-		}
-		else
-		{
-			updateStatus(String.format("Auto: Re-buy %s x%s", itemName, GpUtils.formatGPWithSuffix(quantity)));
-		}
 	}
 
 	// =====================

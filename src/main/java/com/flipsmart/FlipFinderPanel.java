@@ -2826,7 +2826,14 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			return;
 		}
-		
+
+		// Don't clear focus when auto-recommend is active — it manages its own focus
+		AutoRecommendService service = plugin.getAutoRecommendService();
+		if (service != null && service.isActive())
+		{
+			return;
+		}
+
 		// Check if the focused item still exists in recommendations or active flips
 		if (!hasFlipForItem(currentFocusedItemId))
 		{
@@ -3907,7 +3914,7 @@ public class FlipFinderPanel extends PluginPanel
 				populateRecommendations(new ArrayList<>(currentRecommendations)));
 
 			// Wire skip-exhausted callback to fetch fresh recommendations
-			service.setOnQueueExhausted(() -> refreshRecommendations(false));
+			service.setOnQueueExhausted(() -> refreshRecommendations(true));
 
 			service.start(new ArrayList<>(currentRecommendations));
 

@@ -329,11 +329,31 @@ public class FlipAssistOverlay extends Overlay
 		int itemId = autoStatusItemId;
 		boolean hasIcon = itemId > 0;
 		int hintIconSize = 20;
-		int panelHeight = hasIcon ? HINT_PANEL_HEIGHT + 18 : HINT_PANEL_HEIGHT;
 
 		// Enable anti-aliasing
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+		// Pre-compute wrapped lines for text-only messages to determine panel height
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics smallMetrics = graphics.getFontMetrics();
+		int textPadding = 10;
+		int maxTextWidth = HINT_PANEL_WIDTH - textPadding * 2;
+		java.util.List<String> wrappedLines = null;
+
+		int panelHeight;
+		if (hasIcon)
+		{
+			panelHeight = HINT_PANEL_HEIGHT + 18;
+		}
+		else
+		{
+			wrappedLines = wrapText(message, smallMetrics, maxTextWidth);
+			int lineHeight = smallMetrics.getHeight();
+			// Title (20px) + gap (8px) + wrapped lines + bottom padding (8px)
+			panelHeight = 20 + 8 + lineHeight * wrappedLines.size() + 8;
+			panelHeight = Math.max(panelHeight, HINT_PANEL_HEIGHT);
+		}
 
 		// Calculate pulse animation
 		long elapsed = System.currentTimeMillis() - animationStartTime;
@@ -376,7 +396,6 @@ public class FlipAssistOverlay extends Overlay
 		{
 			// Two-line layout: subtitle + icon with item name
 			graphics.setFont(FontManager.getRunescapeSmallFont());
-			FontMetrics smallMetrics = graphics.getFontMetrics();
 
 			// Line 1: "Collect items from GE" subtitle
 			graphics.setColor(COLOR_TEXT_DIM);
@@ -400,15 +419,54 @@ public class FlipAssistOverlay extends Overlay
 		}
 		else
 		{
-			// Single-line layout: just the message
+			// Wrapped text layout
 			graphics.setFont(FontManager.getRunescapeSmallFont());
 			graphics.setColor(COLOR_TEXT);
-			FontMetrics smallMetrics = graphics.getFontMetrics();
-			int msgWidth = smallMetrics.stringWidth(message);
-			graphics.drawString(message, (HINT_PANEL_WIDTH - msgWidth) / 2, 38);
+			int lineHeight = smallMetrics.getHeight();
+			int y = 28 + lineHeight;
+			for (String line : wrappedLines)
+			{
+				int lineWidth = smallMetrics.stringWidth(line);
+				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
+				y += lineHeight;
+			}
 		}
 
 		return new Dimension(HINT_PANEL_WIDTH, panelHeight);
+	}
+
+	private java.util.List<String> wrapText(String text, FontMetrics fm, int maxWidth)
+	{
+		java.util.List<String> lines = new java.util.ArrayList<>();
+		if (fm.stringWidth(text) <= maxWidth)
+		{
+			lines.add(text);
+			return lines;
+		}
+
+		String[] words = text.split(" ");
+		StringBuilder currentLine = new StringBuilder();
+		for (String word : words)
+		{
+			String candidate = currentLine.length() == 0 ? word : currentLine + " " + word;
+			if (fm.stringWidth(candidate) <= maxWidth)
+			{
+				currentLine = new StringBuilder(candidate);
+			}
+			else
+			{
+				if (currentLine.length() > 0)
+				{
+					lines.add(currentLine.toString());
+				}
+				currentLine = new StringBuilder(word);
+			}
+		}
+		if (currentLine.length() > 0)
+		{
+			lines.add(currentLine.toString());
+		}
+		return lines;
 	}
 	
 	private int renderHeader(Graphics2D graphics, int y)
