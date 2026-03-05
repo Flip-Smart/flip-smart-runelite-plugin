@@ -72,10 +72,6 @@ public class TimeframeFlipFinderResponse
 	@ToString(callSuper = true)
 	public static class TimeframeRecommendation extends FlipRecommendation
 	{
-		// Additional timeframe-specific fields
-		@SerializedName("daily_volume")
-		private int dailyVolume;
-
 		@SerializedName("factor_scores")
 		private FactorScores factorScores;
 
@@ -103,8 +99,10 @@ public class TimeframeFlipFinderResponse
 			rec.setRoiPercent(getRoiPercent());
 			rec.setGeTax(getGeTax());
 			rec.setVolumePerHour(getVolumePerHour());
-			rec.setLiquidityScore(getLiquidityScore());
-			rec.setLiquidityRating(getLiquidityRating());
+			rec.setDailyVolume(getDailyVolume());
+			rec.setBuyLimitCycles(getBuyLimitCycles());
+			rec.setBreakevenSellPrice(getBreakevenSellPrice());
+			rec.setBreakevenIsEstimate(isBreakevenIsEstimate());
 			rec.setRiskScore(getRiskScore());
 			rec.setRiskRating(getRiskRating());
 			rec.setEfficiencyScore(getEfficiencyScore());
