@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.IntFunction;
 import java.util.function.ObjIntConsumer;
 
 /**
@@ -31,7 +32,7 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
-	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s gp";
+	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	/** Price threshold for high-value adjustment timer delays */
 	private static final int HIGH_VALUE_THRESHOLD = 5_000_000;
 
@@ -66,6 +67,9 @@ public class AutoRecommendService
 	// Callback to update the Flip Assist overlay message (when no flip is focused)
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
+
+	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
+	private volatile IntFunction<Integer> displayedSellPriceProvider;
 
 	// Last overlay message sent — readable by the overlay as a fallback when the
 	// async callback result gets lost due to race conditions
@@ -113,6 +117,11 @@ public class AutoRecommendService
 	public void setOnOverlayMessageChanged(ObjIntConsumer<String> callback)
 	{
 		this.onOverlayMessageChanged = callback;
+	}
+
+	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
+	{
+		this.displayedSellPriceProvider = provider;
 	}
 
 	public boolean isActive()
@@ -333,7 +342,7 @@ public class AutoRecommendService
 			return true;
 		}
 
-		Integer sellPrice = session.getRecommendedPrice(itemId);
+		Integer sellPrice = resolveBestSellPrice(itemId);
 		if (sellPrice == null || sellPrice <= 0)
 		{
 			// Try to recover sell price from recommendation queue
@@ -1069,8 +1078,7 @@ public class AutoRecommendService
 	 */
 	private void focusSellForItem(int itemId, String itemName, int quantity)
 	{
-		PlayerSession session = plugin.getSession();
-		Integer sellPrice = session.getRecommendedPrice(itemId);
+		Integer sellPrice = resolveBestSellPrice(itemId);
 
 		if (sellPrice == null || sellPrice <= 0)
 		{
@@ -1112,7 +1120,7 @@ public class AutoRecommendService
 		int sellableItemId = findNextSellableCollectedItem();
 		if (sellableItemId >= 0)
 		{
-			Integer sellPrice = plugin.getSession().getRecommendedPrice(sellableItemId);
+			Integer sellPrice = resolveBestSellPrice(sellableItemId);
 
 			if (sellPrice != null && sellPrice > 0)
 			{
@@ -1157,19 +1165,43 @@ public class AutoRecommendService
 	/**
 	 * Find the next collected item that needs selling.
 	 * Returns the item ID, or -1 if none found.
+	 * Cleans up stale entries where the item is no longer in inventory or GE.
 	 */
 	private int findNextSellableCollectedItem()
 	{
 		PlayerSession session = plugin.getSession();
+		List<Integer> staleItems = new ArrayList<>();
 
 		for (int itemId : session.getCollectedItemIds())
 		{
-			Integer sellPrice = session.getRecommendedPrice(itemId);
-			boolean hasSellPrice = sellPrice != null && sellPrice > 0;
-			if (hasSellPrice && !session.hasActiveSellSlotForItem(itemId))
+			// Skip items that already have an active sell slot
+			if (session.hasActiveSellSlotForItem(itemId))
+			{
+				continue;
+			}
+
+			// Verify the item is actually in inventory or has a tracked buy offer.
+			// If neither, the flip already completed — clean it up.
+			boolean inInventory = plugin.getInventoryCountForItem(itemId) > 0;
+			boolean hasBuyOffer = session.hasActiveBuySlotForItem(itemId);
+			if (!inInventory && !hasBuyOffer)
+			{
+				staleItems.add(itemId);
+				continue;
+			}
+
+			Integer sellPrice = resolveBestSellPrice(itemId);
+			if (sellPrice != null && sellPrice > 0)
 			{
 				return itemId;
 			}
+		}
+
+		// Clean up stale collected items that are no longer anywhere
+		for (int staleId : staleItems)
+		{
+			log.info("Auto-recommend: Cleaning up stale collected item {} (not in inventory or GE)", staleId);
+			session.removeCollectedItem(staleId);
 		}
 
 		return -1;
@@ -1215,6 +1247,25 @@ public class AutoRecommendService
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * Resolve the best sell price for an item.
+	 * Prefers the panel's displayed (smart) sell price over the session's stored price,
+	 * since the panel's price reflects current market conditions and time thresholds.
+	 */
+	private Integer resolveBestSellPrice(int itemId)
+	{
+		IntFunction<Integer> provider = displayedSellPriceProvider;
+		if (provider != null)
+		{
+			Integer smartPrice = provider.apply(itemId);
+			if (smartPrice != null && smartPrice > 0)
+			{
+				return smartPrice;
+			}
+		}
+		return plugin.getSession().getRecommendedPrice(itemId);
 	}
 
 	/**
