@@ -263,11 +263,23 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showAdjustmentPrompts",
+		name = "Show Adjustment Prompts",
+		description = "Prompt to adjust stale GE offers when prices have moved",
+		section = displaySection,
+		position = 8
+	)
+	default boolean showAdjustmentPrompts()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "colorblindMode",
 		name = "Colorblind Mode",
 		description = "Use blue/orange colors instead of green/red for better accessibility",
 		section = displaySection,
-		position = 8
+		position = 9
 	)
 	default boolean colorblindMode()
 	{

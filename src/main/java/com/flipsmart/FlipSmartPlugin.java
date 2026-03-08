@@ -115,6 +115,9 @@ public class FlipSmartPlugin extends Plugin
 	@Getter
 	private AutoRecommendService autoRecommendService;
 
+	// Manual flip adjustment tracker (API-based staleness detection)
+	private ManualAdjustmentTracker manualAdjustmentTracker;
+
 	// Centralized session state management (provided via @Provides @Singleton)
 	@Inject
 	private PlayerSession session;
@@ -464,6 +467,7 @@ public class FlipSmartPlugin extends Plugin
 		// Wire service callbacks and initialize auto-recommend
 		wireServiceCallbacks();
 		initializeAutoRecommendService();
+		initializeManualAdjustmentTracker();
 		wireGrandExchangeTrackerCallbacks();
 
 		// Start dump alert service
@@ -495,6 +499,32 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService.setOnFocusChanged(this::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
+	}
+
+	/**
+	 * Initialize manual adjustment tracker for staleness detection on manual flips.
+	 */
+	private void initializeManualAdjustmentTracker()
+	{
+		manualAdjustmentTracker = new ManualAdjustmentTracker(apiClient, config);
+
+		// Wire callback: show adjustment prompts in FlipAssistOverlay
+		manualAdjustmentTracker.setOnAdjustmentPrompt(flipAssistOverlay::setAutoStatusMessage);
+
+		// Wire callback: focus a buy overlay when adjustment recommends a new price
+		manualAdjustmentTracker.setOnFocusFlip((focus, statusMsg) ->
+		{
+			flipAssistOverlay.setFocusedFlip(focus);
+			flipAssistOverlay.setAutoStatusMessage(statusMsg, focus.getItemId());
+		});
+
+		// Wire callback: highlight GE slot for adjustment
+		manualAdjustmentTracker.setOnHighlightSlot((slot, recommendedPrice) ->
+			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
+		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
+
+		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
+		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
 	}
 
 	private void handleAutoRecommendFocusChanged(FocusedFlip focus)
@@ -698,6 +728,12 @@ public class FlipSmartPlugin extends Plugin
 		}
 		stopAutoRecommendRefreshTimer();
 
+		// Clear manual adjustment timers on logout
+		if (manualAdjustmentTracker != null)
+		{
+			manualAdjustmentTracker.clearAll();
+		}
+
 		if (flipFinderPanel != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
@@ -728,6 +764,12 @@ public class FlipSmartPlugin extends Plugin
 		// Must be after syncRSN() so we have the correct RSN for the config key
 		offlineSyncService.restoreCollectedItems();
 		restoreAutoRecommendState();
+
+		// Start the refresh timer if not already running (needed for manual adjustment checks)
+		if (autoRecommendRefreshTimer == null)
+		{
+			startAutoRecommendRefreshTimer();
+		}
 
 		// Schedule offline sync after a delay to ensure all GE events have been processed
 		if (!session.isOfflineSyncCompleted())
@@ -1161,6 +1203,7 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Start the auto-recommend refresh timer (2-minute interval).
 	 * Fetches fresh recommendations and feeds them to the auto-recommend queue.
+	 * Also checks manual adjustment timers when auto-recommend is inactive.
 	 */
 	void startAutoRecommendRefreshTimer()
 	{
@@ -1172,27 +1215,36 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			public void run()
 			{
-				if (!session.isLoggedIntoRunescape()
-					|| autoRecommendService == null
-					|| !autoRecommendService.isActive())
+				if (!session.isLoggedIntoRunescape())
 				{
 					return;
 				}
 
-				if (flipFinderPanel != null)
+				boolean autoActive = autoRecommendService != null && autoRecommendService.isActive();
+
+				if (autoActive)
 				{
-					javax.swing.SwingUtilities.invokeLater(() ->
+					if (flipFinderPanel != null)
 					{
-						log.debug("Auto-recommend refresh cycle");
-						flipFinderPanel.refresh();
-					});
+						javax.swing.SwingUtilities.invokeLater(() ->
+						{
+							log.debug("Auto-recommend refresh cycle");
+							flipFinderPanel.refresh();
+						});
+					}
+
+					// Check adjustment timers for unfilled buy offers (auto mode)
+					autoRecommendService.checkAdjustmentTimers(
+						session.getTrackedOffers(),
+						flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
+					);
 				}
 
-				// Check adjustment timers for unfilled buy offers
-				autoRecommendService.checkAdjustmentTimers(
-					session.getTrackedOffers(),
-					flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
-				);
+				// Check manual adjustment timers (runs regardless of auto-recommend state)
+				if (manualAdjustmentTracker != null)
+				{
+					manualAdjustmentTracker.checkTimers(session.getTrackedOffers());
+				}
 			}
 		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
 

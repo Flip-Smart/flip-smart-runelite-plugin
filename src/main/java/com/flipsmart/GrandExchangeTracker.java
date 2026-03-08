@@ -32,6 +32,8 @@ public class GrandExchangeTracker
 
 	// Set after construction (created in plugin startUp)
 	private AutoRecommendService autoRecommendService;
+	private ManualAdjustmentTracker manualAdjustmentTracker;
+	private java.util.function.BooleanSupplier adjustmentPromptsEnabled;
 
 	// Callbacks wired by the plugin
 	private Supplier<Optional<String>> rsnSupplier;
@@ -85,6 +87,16 @@ public class GrandExchangeTracker
 	public void setAutoRecommendService(AutoRecommendService service)
 	{
 		this.autoRecommendService = service;
+	}
+
+	public void setManualAdjustmentTracker(ManualAdjustmentTracker tracker)
+	{
+		this.manualAdjustmentTracker = tracker;
+	}
+
+	public void setAdjustmentPromptsEnabled(java.util.function.BooleanSupplier supplier)
+	{
+		this.adjustmentPromptsEnabled = supplier;
 	}
 
 	public void setRsnSupplier(Supplier<Optional<String>> rsnSupplier)
@@ -162,6 +174,12 @@ public class GrandExchangeTracker
 		{
 			log.debug("Ignoring duplicate cancellation event for slot {}", ctx.slot);
 			return;
+		}
+
+		// Clear manual adjustment timer on cancellation
+		if (manualAdjustmentTracker != null)
+		{
+			manualAdjustmentTracker.clearTimer(ctx.slot);
 		}
 
 		if (ctx.quantitySold > 0)
@@ -449,9 +467,23 @@ public class GrandExchangeTracker
 		}
 
 		// Reset adjustment timer on partial buy fills (not yet fully bought)
-		if (ctx.isBuy && newQuantity > 0 && ctx.state != GrandExchangeOfferState.BOUGHT && isAutoRecommendActive())
+		if (ctx.isBuy && newQuantity > 0 && ctx.state != GrandExchangeOfferState.BOUGHT)
 		{
-			autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
+			if (isAutoRecommendActive())
+			{
+				autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
+			}
+			else if (manualAdjustmentTracker != null)
+			{
+				manualAdjustmentTracker.resetTimer(ctx.slot, ctx.price);
+			}
+		}
+
+		// Clear manual adjustment timer on completion
+		if ((ctx.state == GrandExchangeOfferState.BOUGHT || ctx.state == GrandExchangeOfferState.SOLD)
+			&& manualAdjustmentTracker != null)
+		{
+			manualAdjustmentTracker.clearTimer(ctx.slot);
 		}
 
 		// Update tracked offer BEFORE notifying auto-recommend so getCompletedOffers()
@@ -598,6 +630,11 @@ public class GrandExchangeTracker
 		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onBuyOrderPlaced(ctx.itemId);
+		}
+		else if (manualAdjustmentTracker != null && isAdjustmentPromptsEnabled())
+		{
+			manualAdjustmentTracker.scheduleBuyAdjustment(
+				ctx.itemId, ctx.itemName, ctx.slot, ctx.price);
 		}
 
 		Integer recommendedSellPrice = session.getRecommendedPrice(ctx.itemId);
@@ -794,6 +831,11 @@ public class GrandExchangeTracker
 	private boolean isAutoRecommendActive()
 	{
 		return autoRecommendService != null && autoRecommendService.isActive();
+	}
+
+	private boolean isAdjustmentPromptsEnabled()
+	{
+		return adjustmentPromptsEnabled != null && adjustmentPromptsEnabled.getAsBoolean();
 	}
 
 	private Optional<String> getRsn()

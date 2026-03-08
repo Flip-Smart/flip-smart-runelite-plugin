@@ -54,7 +54,13 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final Color COLOR_COMPETITIVE_CB = new Color(0, 102, 204);           // Blue
 	private static final Color COLOR_UNCOMPETITIVE_CB = new Color(255, 140, 0);         // Orange
 
+	// Adjustment highlight color — amber pulse to draw attention without conflicting with red/green
+	private static final Color COLOR_ADJUSTMENT_HIGHLIGHT = new Color(255, 185, 50, 200);
+
 	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance();
+
+	// Slots with pending adjustment recommendations (slot -> recommended price)
+	private final java.util.Map<Integer, Integer> adjustmentHighlights = new java.util.concurrent.ConcurrentHashMap<>();
 
 	private final Client client;
 	private final FlipSmartConfig config;
@@ -70,6 +76,33 @@ public class GrandExchangeSlotOverlay extends Overlay
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
 		setPriority(OverlayPriority.LOW);
+	}
+
+	/**
+	 * Set an adjustment highlight on a GE slot to draw attention to a stale offer.
+	 *
+	 * @param slot GE slot index
+	 * @param recommendedPrice The recommended adjustment price
+	 */
+	public void setAdjustmentHighlight(int slot, int recommendedPrice)
+	{
+		adjustmentHighlights.put(slot, recommendedPrice);
+	}
+
+	/**
+	 * Clear the adjustment highlight for a GE slot.
+	 */
+	public void clearAdjustmentHighlight(int slot)
+	{
+		adjustmentHighlights.remove(slot);
+	}
+
+	/**
+	 * Clear all adjustment highlights (e.g., on logout).
+	 */
+	public void clearAllAdjustmentHighlights()
+	{
+		adjustmentHighlights.clear();
 	}
 
 	/**
@@ -230,7 +263,17 @@ public class GrandExchangeSlotOverlay extends Overlay
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
 		// Draw colored border around the entire slot
-		if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
+		boolean hasAdjustment = adjustmentHighlights.containsKey(slot);
+		if (hasAdjustment)
+		{
+			// Amber pulsing border for slots with pending adjustment recommendations
+			Stroke originalStroke = graphics.getStroke();
+			graphics.setColor(COLOR_ADJUSTMENT_HIGHLIGHT);
+			graphics.setStroke(new BasicStroke(3));
+			graphics.drawRoundRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, 4, 4);
+			graphics.setStroke(originalStroke);
+		}
+		else if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
 		{
 			Color borderColor = (competitiveness == FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE)
 				? getBorderCompetitiveColor()
