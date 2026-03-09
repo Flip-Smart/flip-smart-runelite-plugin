@@ -523,6 +523,12 @@ public class FlipSmartPlugin extends Plugin
 			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
 		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
 
+		// Wire suppliers for ditch logic (replacement recommendations)
+		manualAdjustmentTracker.setCashStackSupplier(() ->
+			session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null);
+		manualAdjustmentTracker.setRsnSupplier(() -> getCurrentRsnSafe().orElse(null));
+		manualAdjustmentTracker.setFilledSlotsSupplier(this::getFilledGESlotCount);
+
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
 		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
 	}

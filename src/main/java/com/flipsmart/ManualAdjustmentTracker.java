@@ -62,6 +62,11 @@ public class ManualAdjustmentTracker
 	// Callback to clear a GE slot highlight
 	private volatile java.util.function.IntConsumer onClearHighlight;
 
+	// Suppliers for ditch logic — needed to fetch replacement recommendations
+	private volatile java.util.function.Supplier<Integer> cashStackSupplier;
+	private volatile java.util.function.Supplier<String> rsnSupplier;
+	private volatile java.util.function.Supplier<Integer> filledSlotsSupplier;
+
 	public ManualAdjustmentTracker(FlipSmartApiClient apiClient, FlipSmartConfig config)
 	{
 		this.apiClient = apiClient;
@@ -86,6 +91,21 @@ public class ManualAdjustmentTracker
 	public void setOnClearHighlight(java.util.function.IntConsumer callback)
 	{
 		this.onClearHighlight = callback;
+	}
+
+	public void setCashStackSupplier(java.util.function.Supplier<Integer> supplier)
+	{
+		this.cashStackSupplier = supplier;
+	}
+
+	public void setRsnSupplier(java.util.function.Supplier<String> supplier)
+	{
+		this.rsnSupplier = supplier;
+	}
+
+	public void setFilledSlotsSupplier(java.util.function.Supplier<Integer> supplier)
+	{
+		this.filledSlotsSupplier = supplier;
 	}
 
 	/**
@@ -347,22 +367,120 @@ public class ManualAdjustmentTracker
 		}
 		else if (response.isCancelAndSell())
 		{
-			String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
-			log.info("Manual adjustment: {}", msg);
-
-			BiConsumer<String, Integer> promptCallback = onAdjustmentPrompt;
-			if (promptCallback != null)
-			{
-				promptCallback.accept(msg, state.itemId);
-			}
+			log.info("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
+			fetchReplacementRecommendation(state);
 		}
 	}
 
 	/**
-	 * Get the adjustment delay based on timeframe and item price.
+	 * Fetch a replacement flip recommendation when the current flip's margin has evaporated.
+	 * Shows a prompt like "Margin gone on [item] — switch to [new item] instead?"
+	 */
+	private void fetchReplacementRecommendation(OfferAdjustmentState state)
+	{
+		Integer cashStack = cashStackSupplier != null ? cashStackSupplier.get() : null;
+		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
+		Integer filledSlots = filledSlotsSupplier != null ? filledSlotsSupplier.get() : null;
+		String timeframe = config.flipTimeframe().getApiValue();
+		String flipStyle = config.flipStyle().getApiValue();
+
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots)
+			.thenAccept(response ->
+			{
+				if (response == null || response.getRecommendations() == null
+					|| response.getRecommendations().isEmpty())
+				{
+					// No replacement available — show simple cancel message
+					String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
+					BiConsumer<String, Integer> cb = onAdjustmentPrompt;
+					if (cb != null)
+					{
+						cb.accept(msg, state.itemId);
+					}
+					return;
+				}
+
+				FlipRecommendation replacement = response.getRecommendations().get(0);
+
+				// Don't suggest the same item as a replacement
+				if (replacement.getItemId() == state.itemId)
+				{
+					String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
+					BiConsumer<String, Integer> cb = onAdjustmentPrompt;
+					if (cb != null)
+					{
+						cb.accept(msg, state.itemId);
+					}
+					return;
+				}
+
+				String msg = String.format("Margin gone on %s — switch to %s instead? (%s profit)",
+					state.itemName,
+					replacement.getItemName(),
+					GpUtils.formatGPWithSuffix(replacement.getPotentialProfit()));
+
+				log.info("Ditch recommendation: {}", msg);
+
+				// Focus the replacement item in the overlay
+				BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
+				if (focusCallback != null)
+				{
+					FocusedFlip focus = FocusedFlip.forBuy(
+						replacement.getItemId(),
+						replacement.getItemName(),
+						replacement.getRecommendedBuyPrice(),
+						replacement.getRecommendedQuantity(),
+						replacement.getRecommendedSellPrice(),
+						config.priceOffset());
+					focusCallback.accept(focus, msg);
+				}
+
+				// Highlight the stale slot
+				BiConsumer<Integer, Integer> highlightCallback = onHighlightSlot;
+				if (highlightCallback != null)
+				{
+					highlightCallback.accept(state.geSlot, 0);
+				}
+			})
+			.exceptionally(e ->
+			{
+				log.debug("Failed to fetch replacement recommendation: {}", e.getMessage());
+				// Fall back to simple cancel message
+				String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
+				BiConsumer<String, Integer> cb = onAdjustmentPrompt;
+				if (cb != null)
+				{
+					cb.accept(msg, state.itemId);
+				}
+				return null;
+			});
+	}
+
+	/**
+	 * Get the adjustment delay based on timeframe, item price, and risk preference.
+	 * Aggressive style prompts sooner (0.7x), conservative waits longer (1.5x).
+	 */
+	long getAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
+	{
+		long baseDelay = getBaseDelayMs(timeframe, itemPrice);
+
+		// Apply risk preference multiplier
+		switch (config.flipStyle())
+		{
+			case AGGRESSIVE:
+				return (long) (baseDelay * 0.7);
+			case CONSERVATIVE:
+				return (long) (baseDelay * 1.5);
+			default:
+				return baseDelay;
+		}
+	}
+
+	/**
+	 * Get the base adjustment delay based on timeframe and item price.
 	 * Mirrors AutoRecommendService.getAdjustmentDelayMs() for consistency.
 	 */
-	static long getAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
+	static long getBaseDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
 	{
 		boolean highValue = itemPrice >= 5_000_000;
 		switch (timeframe)

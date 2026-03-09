@@ -466,10 +466,11 @@ public class GrandExchangeTracker
 			recordFillTransaction(ctx, newQuantity);
 		}
 
-		// Reset adjustment timer on partial buy fills (not yet fully bought)
-		if (ctx.isBuy && newQuantity > 0 && ctx.state != GrandExchangeOfferState.BOUGHT)
+		// Reset adjustment timer on partial fills (not yet fully completed)
+		if (newQuantity > 0 && ctx.state != GrandExchangeOfferState.BOUGHT
+			&& ctx.state != GrandExchangeOfferState.SOLD)
 		{
-			if (isAutoRecommendActive())
+			if (ctx.isBuy && isAutoRecommendActive())
 			{
 				autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
 			}
@@ -664,6 +665,16 @@ public class GrandExchangeTracker
 		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onSellOrderPlaced(ctx.itemId);
+		}
+
+		// Schedule sell-side adjustment timer for manual mode
+		if (!isAutoRecommendActive() && manualAdjustmentTracker != null && isAdjustmentPromptsEnabled())
+		{
+			// Use the buy price as cost basis — fall back to sell price if unavailable
+			Integer buyPrice = session.getRecommendedPrice(ctx.itemId);
+			int averageBuyPrice = (buyPrice != null && buyPrice > 0) ? buyPrice : ctx.price;
+			manualAdjustmentTracker.scheduleSellAdjustment(
+				ctx.itemId, ctx.itemName, ctx.slot, ctx.price, averageBuyPrice);
 		}
 	}
 
