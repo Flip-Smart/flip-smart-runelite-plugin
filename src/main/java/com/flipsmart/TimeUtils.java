@@ -1,5 +1,8 @@
 package com.flipsmart;
 
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
+
 /**
  * Utility class for time formatting operations shared across overlays.
  */
@@ -64,6 +67,26 @@ public final class TimeUtils
 	 * @param createdAtMillis The timestamp in milliseconds when the event started
 	 * @return Short formatted elapsed time string
 	 */
+	/**
+	 * Parse an ISO-8601 timestamp string to epoch millis.
+	 * Returns 0 if the string is null, empty, or unparseable.
+	 */
+	public static long parseIsoToMillis(String isoTimestamp)
+	{
+		if (isoTimestamp == null || isoTimestamp.isEmpty())
+		{
+			return 0;
+		}
+		try
+		{
+			return Instant.parse(isoTimestamp).toEpochMilli();
+		}
+		catch (DateTimeParseException e)
+		{
+			return 0;
+		}
+	}
+
 	public static String formatElapsedTimeShort(long createdAtMillis)
 	{
 		long elapsed = Math.max(0, System.currentTimeMillis() - createdAtMillis);

@@ -33,6 +33,7 @@ import javax.inject.Inject;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -807,6 +808,9 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void schedulePostSyncTasks()
 	{
+		// Backfill any missing timestamps from backend before panel refresh
+		backfillMissingTimestamps();
+
 		if (flipFinderPanel != null)
 		{
 			scheduleOneShot(PANEL_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
@@ -818,6 +822,97 @@ public class FlipSmartPlugin extends Plugin
 		{
 			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, this::reevaluateAutoRecommendAfterLogin);
 		}
+	}
+
+	/**
+	 * Backfill createdAtMillis for tracked offers that lost their local timestamp.
+	 * Uses backend active flips (last_buy_time / sell_placed_time) as fallback.
+	 * This handles cases like profile switches or plugin rebuilds where local
+	 * persistence was lost but the backend still has the transaction timestamps.
+	 */
+	private void backfillMissingTimestamps()
+	{
+		Map<Integer, TrackedOffer> tracked = session.getTrackedOffers();
+		if (tracked.isEmpty())
+		{
+			return;
+		}
+
+		// Find offers missing timestamps
+		boolean hasMissing = false;
+		for (TrackedOffer offer : tracked.values())
+		{
+			if (offer.getCreatedAtMillis() <= 0)
+			{
+				hasMissing = true;
+				break;
+			}
+		}
+
+		if (!hasMissing)
+		{
+			return;
+		}
+
+		log.info("Found tracked offers with missing timestamps — fetching from backend");
+		String rsn = getCurrentRsnSafe().orElse(null);
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
+		{
+			if (response == null || response.getActiveFlips() == null)
+			{
+				return;
+			}
+
+			// Build lookup: itemId → ActiveFlip
+			Map<Integer, ActiveFlip> flipsByItem = new java.util.HashMap<>();
+			for (ActiveFlip flip : response.getActiveFlips())
+			{
+				flipsByItem.put(flip.getItemId(), flip);
+			}
+
+			int backfilled = 0;
+			for (TrackedOffer offer : tracked.values())
+			{
+				if (offer.getCreatedAtMillis() > 0)
+				{
+					continue;
+				}
+
+				ActiveFlip flip = flipsByItem.get(offer.getItemId());
+				if (flip == null)
+				{
+					continue;
+				}
+
+				// For sells, prefer sell_placed_time; for buys, use last_buy_time
+				long backfilledMs;
+				if (!offer.isBuy() && flip.getSellPlacedTime() != null)
+				{
+					backfilledMs = TimeUtils.parseIsoToMillis(flip.getSellPlacedTime());
+				}
+				else
+				{
+					backfilledMs = TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
+				}
+
+				if (backfilledMs > 0)
+				{
+					offer.setCreatedAtMillis(backfilledMs);
+					backfilled++;
+					log.info("Backfilled timestamp for {} from backend: {}",
+						offer.getItemName(), offer.isBuy() ? flip.getLastBuyTime() : flip.getSellPlacedTime());
+				}
+			}
+
+			if (backfilled > 0)
+			{
+				log.info("Backfilled {} offer timestamps from backend active flips", backfilled);
+			}
+		}).exceptionally(e ->
+		{
+			log.debug("Failed to backfill timestamps from backend: {}", e.getMessage());
+			return null;
+		});
 	}
 
 	private void performStaleFlipCleanup()
