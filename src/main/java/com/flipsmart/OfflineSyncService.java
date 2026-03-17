@@ -206,7 +206,10 @@ public class OfflineSyncService
 			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
 			{
 				// Restore the original timestamp from persisted offer for timer continuity
-				currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
+				if (persistedOffer.getCreatedAtMillis() > 0)
+				{
+					currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
+				}
 
 				// Have persisted state - check for offline fills
 				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
