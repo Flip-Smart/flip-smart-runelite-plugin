@@ -286,20 +286,23 @@ public class GrandExchangeSlotOverlay extends Overlay
 			graphics.setStroke(originalStroke);
 		}
 
-		// Draw timer in top-right corner
+		// Draw timer in top-right corner — uses locally persisted timestamps
+		// that survive plugin restarts via OfflineSyncService
 		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.getCreatedAtMillis() > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
 								 offer.getState() == GrandExchangeOfferState.SOLD;
 
+			long realStartTime = trackedOffer.getCreatedAtMillis();
+
 			String timerText;
 			if (isComplete && trackedOffer.getCompletedAtMillis() > 0)
 			{
-				timerText = TimeUtils.formatFrozenElapsedTime(trackedOffer.getCreatedAtMillis(), trackedOffer.getCompletedAtMillis());
+				timerText = TimeUtils.formatFrozenElapsedTime(realStartTime, trackedOffer.getCompletedAtMillis());
 			}
 			else
 			{
-				timerText = TimeUtils.formatElapsedTime(trackedOffer.getCreatedAtMillis());
+				timerText = TimeUtils.formatElapsedTime(realStartTime);
 			}
 
 			Font originalFont = graphics.getFont();

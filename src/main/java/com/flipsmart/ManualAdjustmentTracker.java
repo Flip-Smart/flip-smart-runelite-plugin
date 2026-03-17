@@ -139,7 +139,7 @@ public class ManualAdjustmentTracker
 	public void scheduleSellAdjustment(int itemId, String itemName, int geSlot,
 		int offerPrice, int averageBuyPrice)
 	{
-		long delay = getAdjustmentDelayMs(config.flipTimeframe(), offerPrice);
+		long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), offerPrice);
 		long deadline = System.currentTimeMillis() + delay;
 		OfferAdjustmentState state = new OfferAdjustmentState(
 			itemId, itemName, false, geSlot, deadline, averageBuyPrice);
@@ -158,7 +158,9 @@ public class ManualAdjustmentTracker
 		{
 			return;
 		}
-		long delay = getAdjustmentDelayMs(config.flipTimeframe(), offerPrice);
+		long delay = state.isBuy
+			? getAdjustmentDelayMs(config.flipTimeframe(), offerPrice)
+			: getSellAdjustmentDelayMs(config.flipTimeframe(), offerPrice);
 		state.deadlineMs = System.currentTimeMillis() + delay;
 		log.debug("Manual adjustment timer reset for slot {} ({}m)", geSlot, delay / 60000);
 	}
@@ -290,7 +292,9 @@ public class ManualAdjustmentTracker
 			}
 			else
 			{
-				delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+				delay = state.isBuy
+					? getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice())
+					: getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
 			}
 			state.deadlineMs = System.currentTimeMillis() + delay;
 
@@ -299,7 +303,9 @@ public class ManualAdjustmentTracker
 			log.debug("Failed to get adjustment recommendation for {}: {}",
 				state.itemName, e.getMessage());
 			// Reschedule with default delay on error
-			long delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delay = state.isBuy
+				? getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice())
+				: getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
 			state.deadlineMs = System.currentTimeMillis() + delay;
 			return null;
 		});
@@ -497,6 +503,48 @@ public class ManualAdjustmentTracker
 				return (highValue ? 240 : 60) * 60 * 1000L;
 			default:
 				return (highValue ? 10 : 5) * 60 * 1000L;
+		}
+	}
+
+	/**
+	 * Get the sell-side base delay — shorter than buy-side because overpriced
+	 * sells won't fill regardless of timeframe.
+	 */
+	static long getSellBaseDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
+	{
+		boolean highValue = itemPrice >= 5_000_000;
+		switch (timeframe)
+		{
+			case ACTIVE:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+			case THIRTY_MINS:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+			case TWO_HOURS:
+				return (highValue ? 15 : 10) * 60 * 1000L;
+			case FOUR_HOURS:
+				return (highValue ? 20 : 10) * 60 * 1000L;
+			case TWELVE_HOURS:
+				return (highValue ? 30 : 15) * 60 * 1000L;
+			default:
+				return (highValue ? 10 : 5) * 60 * 1000L;
+		}
+	}
+
+	/**
+	 * Get the sell adjustment delay with risk preference applied.
+	 */
+	long getSellAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
+	{
+		long baseDelay = getSellBaseDelayMs(timeframe, itemPrice);
+
+		switch (config.flipStyle())
+		{
+			case AGGRESSIVE:
+				return (long) (baseDelay * 0.7);
+			case CONSERVATIVE:
+				return (long) (baseDelay * 1.5);
+			default:
+				return baseDelay;
 		}
 	}
 }

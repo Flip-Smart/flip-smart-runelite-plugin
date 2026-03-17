@@ -64,6 +64,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String HINT_TITLE = "Flip Assist";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
+	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -250,6 +251,10 @@ public class FlipAssistOverlay extends Overlay
 			}
 			if (isGrandExchangeOpen())
 			{
+				if (!flipSmartPlugin.getApiClient().isAuthenticated())
+				{
+					return renderHintBox(graphics, LOGIN_MESSAGE);
+				}
 				PlayerSession session = flipSmartPlugin.getSession();
 				if (session != null && !flipSmartPlugin.isPremium()
 					&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))

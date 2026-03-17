@@ -470,9 +470,16 @@ public class GrandExchangeTracker
 		if (newQuantity > 0 && ctx.state != GrandExchangeOfferState.BOUGHT
 			&& ctx.state != GrandExchangeOfferState.SOLD)
 		{
-			if (ctx.isBuy && isAutoRecommendActive())
+			if (isAutoRecommendActive())
 			{
-				autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
+				if (ctx.isBuy)
+				{
+					autoRecommendService.resetAdjustmentTimer(ctx.itemId, ctx.price);
+				}
+				else
+				{
+					autoRecommendService.resetSellAdjustmentTimer(ctx.itemId, ctx.price);
+				}
 			}
 			else if (manualAdjustmentTracker != null)
 			{

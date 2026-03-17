@@ -131,6 +131,10 @@ public class FlipSmartPlugin extends Plugin
 	// Track all active one-shot Swing timers for cleanup on shutdown
 	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
 
+	// Last known RSN — saved when we learn it, used as fallback for persistence on shutdown
+	// when session.getRsn() may already be null
+	private volatile String lastKnownRsn;
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -222,6 +226,11 @@ public class FlipSmartPlugin extends Plugin
 	public int getFlipSlotLimit()
 	{
 		return isPremium() ? 8 : 2;
+	}
+
+	public List<ActiveFlip> getCurrentActiveFlips()
+	{
+		return flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null;
 	}
 
 	public boolean isAutoRecommendActive()
@@ -622,11 +631,17 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Persist offer state before shutting down (handles cases where client is closed without logout)
-		// Only persist if we have a valid RSN to avoid overwriting good data
-		if (session.getRsn() != null && !session.getRsn().isEmpty())
+		// Use lastKnownRsn as fallback since session.getRsn() may be null at shutdown
+		String rsnForPersistence = session.getRsn();
+		if ((rsnForPersistence == null || rsnForPersistence.isEmpty()) && lastKnownRsn != null)
+		{
+			session.setRsn(lastKnownRsn);
+			rsnForPersistence = lastKnownRsn;
+		}
+		if (rsnForPersistence != null && !rsnForPersistence.isEmpty())
 		{
 			offlineSyncService.persistOfferState();
-			log.info("Persisted offer state on shutdown for {}", session.getRsn());
+			log.info("Persisted offer state on shutdown for {}", rsnForPersistence);
 		}
 		
 		overlayManager.remove(geOverlay);
@@ -821,7 +836,31 @@ public class FlipSmartPlugin extends Plugin
 		if (autoRecommendService != null && autoRecommendService.isActive())
 		{
 			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, () ->
-				autoRecommendService.reevaluateAfterLogin());
+			{
+				boolean hasStaleOffers = autoRecommendService.reevaluateAfterLogin();
+
+				// If there are stale buy offers, schedule an early adjustment check
+				// (10s to let the panel refresh and load recommendations first)
+				if (hasStaleOffers)
+				{
+					// Schedule an early adjustment check (10s to let the panel
+					// refresh and load recommendations first)
+					scheduleOneShot(10_000, () ->
+					{
+						PlayerSession sess = getSession();
+						if (sess != null)
+						{
+							autoRecommendService.checkAdjustmentTimers(
+								sess.getTrackedOffers(),
+								flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
+							);
+							autoRecommendService.checkSellAdjustmentTimers(
+								sess.getTrackedOffers()
+							);
+						}
+					});
+				}
+			});
 		}
 	}
 
@@ -841,6 +880,7 @@ public class FlipSmartPlugin extends Plugin
 		if (rsn != null && !rsn.isEmpty())
 		{
 			session.setRsn(rsn);
+			lastKnownRsn = rsn;
 			log.info("RSN synced: {}", rsn);
 			apiClient.updateRSN(rsn);
 		}
@@ -1244,6 +1284,15 @@ public class FlipSmartPlugin extends Plugin
 						session.getTrackedOffers(),
 						flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
 					);
+
+					// Check sell adjustment timers (auto mode)
+					autoRecommendService.checkSellAdjustmentTimers(session.getTrackedOffers());
+
+					// Robust fallback: scan all offers for staleness + uncompetitiveness
+					autoRecommendService.scanForStaleOffers(
+						session.getTrackedOffers(),
+						flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null
+					);
 				}
 
 				// Check manual adjustment timers (runs regardless of auto-recommend state)
@@ -1272,11 +1321,16 @@ public class FlipSmartPlugin extends Plugin
 
 	private String getAutoRecommendStateKey()
 	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
+		String rsn = session.getRsn();
+		if (rsn == null || rsn.isEmpty())
+		{
+			rsn = lastKnownRsn;
+		}
+		if (rsn == null || rsn.isEmpty())
 		{
 			return AUTO_RECOMMEND_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
-		return AUTO_RECOMMEND_STATE_KEY_PREFIX + session.getRsn();
+		return AUTO_RECOMMEND_STATE_KEY_PREFIX + rsn;
 	}
 
 	/**
