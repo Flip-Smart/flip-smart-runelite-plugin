@@ -2094,46 +2094,43 @@ public class FlipSmartApiClient
 	// =========================================================================
 
 	/**
+	 * Request parameters for the flip adjustment API.
+	 */
+	@lombok.Builder
+	public static class FlipAdjustmentRequest
+	{
+		final int itemId;
+		final boolean isBuyOffer;
+		final int offerPrice;
+		final int averageBuyPrice;
+		final int minutesSinceOffer;
+		final int adjustmentCount;
+		final int quantityFilled;
+		final int totalQuantity;
+		final String timeframe;
+	}
+
+	/**
 	 * Get a flip adjustment recommendation from the backend.
 	 * Checks whether a stale offer should be adjusted based on volume, timeframe, and market conditions.
-	 *
-	 * @param itemId Item ID
-	 * @param isBuyOffer Whether this is a buy or sell offer
-	 * @param offerPrice Current offer price
-	 * @param averageBuyPrice Average buy price (cost basis)
-	 * @param minutesSinceOffer Minutes since the offer was placed
-	 * @param adjustmentCount Number of previous adjustments
-	 * @param quantityFilled Quantity filled so far
-	 * @param totalQuantity Total order quantity
-	 * @param timeframe User's flip timeframe (e.g., "active", "30m", "2h", "4h", "12h")
-	 * @return CompletableFuture with the adjustment recommendation
 	 */
-	public CompletableFuture<FlipAdjustmentResponse> getFlipAdjustmentAsync(
-		int itemId,
-		boolean isBuyOffer,
-		int offerPrice,
-		int averageBuyPrice,
-		int minutesSinceOffer,
-		int adjustmentCount,
-		int quantityFilled,
-		int totalQuantity,
-		String timeframe)
+	public CompletableFuture<FlipAdjustmentResponse> getFlipAdjustmentAsync(FlipAdjustmentRequest req)
 	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/flips/adjustment", apiUrl);
 
 		JsonObject jsonBody = new JsonObject();
-		jsonBody.addProperty(JSON_KEY_ITEM_ID, itemId);
-		jsonBody.addProperty("is_buy_offer", isBuyOffer);
-		jsonBody.addProperty("offer_price", offerPrice);
-		jsonBody.addProperty("average_buy_price", averageBuyPrice);
-		jsonBody.addProperty("minutes_since_offer", minutesSinceOffer);
-		jsonBody.addProperty("adjustment_count", adjustmentCount);
-		jsonBody.addProperty("quantity_filled", quantityFilled);
-		jsonBody.addProperty("total_quantity", totalQuantity);
-		if (timeframe != null)
+		jsonBody.addProperty(JSON_KEY_ITEM_ID, req.itemId);
+		jsonBody.addProperty("is_buy_offer", req.isBuyOffer);
+		jsonBody.addProperty("offer_price", req.offerPrice);
+		jsonBody.addProperty("average_buy_price", req.averageBuyPrice);
+		jsonBody.addProperty("minutes_since_offer", req.minutesSinceOffer);
+		jsonBody.addProperty("adjustment_count", req.adjustmentCount);
+		jsonBody.addProperty("quantity_filled", req.quantityFilled);
+		jsonBody.addProperty("total_quantity", req.totalQuantity);
+		if (req.timeframe != null)
 		{
-			jsonBody.addProperty("timeframe", timeframe);
+			jsonBody.addProperty("timeframe", req.timeframe);
 		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());

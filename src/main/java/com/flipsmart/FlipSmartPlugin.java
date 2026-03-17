@@ -810,57 +810,52 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void schedulePostSyncTasks()
 	{
-		// Refresh the panel after a short delay
 		if (flipFinderPanel != null)
 		{
 			scheduleOneShot(PANEL_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
 		}
 
-		// Schedule stale flip cleanup after GE state is stable
-		scheduleOneShot(STALE_FLIP_CLEANUP_DELAY_MS, () ->
-		{
-			if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
-			{
-				activeFlipTracker.cleanupStaleActiveFlips();
-				// After cleanup, validate inventory quantities against active flips
-				scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () ->
-					clientThread.invokeLater(activeFlipTracker::validateInventoryQuantities));
-			}
-			else
-			{
-				log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
-			}
-		});
+		scheduleOneShot(STALE_FLIP_CLEANUP_DELAY_MS, this::performStaleFlipCleanup);
 
-		// Re-evaluate auto-recommend after sync — collected items may need selling
 		if (autoRecommendService != null && autoRecommendService.isActive())
 		{
-			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, () ->
-			{
-				boolean hasStaleOffers = autoRecommendService.reevaluateAfterLogin();
+			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, this::reevaluateAutoRecommendAfterLogin);
+		}
+	}
 
-				// If there are stale buy offers, schedule an early adjustment check
-				// (10s to let the panel refresh and load recommendations first)
-				if (hasStaleOffers)
-				{
-					// Schedule an early adjustment check (10s to let the panel
-					// refresh and load recommendations first)
-					scheduleOneShot(10_000, () ->
-					{
-						PlayerSession sess = getSession();
-						if (sess != null)
-						{
-							autoRecommendService.checkAdjustmentTimers(
-								sess.getTrackedOffers(),
-								flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
-							);
-							autoRecommendService.checkSellAdjustmentTimers(
-								sess.getTrackedOffers()
-							);
-						}
-					});
-				}
-			});
+	private void performStaleFlipCleanup()
+	{
+		if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
+		{
+			activeFlipTracker.cleanupStaleActiveFlips();
+			scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () ->
+				clientThread.invokeLater(activeFlipTracker::validateInventoryQuantities));
+		}
+		else
+		{
+			log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
+		}
+	}
+
+	private void reevaluateAutoRecommendAfterLogin()
+	{
+		boolean hasStaleOffers = autoRecommendService.reevaluateAfterLogin();
+		if (hasStaleOffers)
+		{
+			scheduleOneShot(10_000, this::runEarlyAdjustmentCheck);
+		}
+	}
+
+	private void runEarlyAdjustmentCheck()
+	{
+		PlayerSession sess = getSession();
+		if (sess != null)
+		{
+			autoRecommendService.checkAdjustmentTimers(
+				sess.getTrackedOffers(),
+				flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
+			);
+			autoRecommendService.checkSellAdjustmentTimers(sess.getTrackedOffers());
 		}
 	}
 
@@ -1261,49 +1256,42 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			public void run()
 			{
-				if (!session.isLoggedIntoRunescape())
+				if (session.isLoggedIntoRunescape())
 				{
-					return;
-				}
-
-				boolean autoActive = autoRecommendService != null && autoRecommendService.isActive();
-
-				if (autoActive)
-				{
-					if (flipFinderPanel != null)
-					{
-						javax.swing.SwingUtilities.invokeLater(() ->
-						{
-							log.debug("Auto-recommend refresh cycle");
-							flipFinderPanel.refresh();
-						});
-					}
-
-					// Check adjustment timers for unfilled buy offers (auto mode)
-					autoRecommendService.checkAdjustmentTimers(
-						session.getTrackedOffers(),
-						flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
-					);
-
-					// Check sell adjustment timers (auto mode)
-					autoRecommendService.checkSellAdjustmentTimers(session.getTrackedOffers());
-
-					// Robust fallback: scan all offers for staleness + uncompetitiveness
-					autoRecommendService.scanForStaleOffers(
-						session.getTrackedOffers(),
-						flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null
-					);
-				}
-
-				// Check manual adjustment timers (runs regardless of auto-recommend state)
-				if (manualAdjustmentTracker != null)
-				{
-					manualAdjustmentTracker.checkTimers(session.getTrackedOffers());
+					runRefreshCycle();
 				}
 			}
 		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
 
 		log.info("Auto-recommend refresh timer started (every 2 minutes)");
+	}
+
+	private void runRefreshCycle()
+	{
+		boolean autoActive = autoRecommendService != null && autoRecommendService.isActive();
+
+		if (autoActive)
+		{
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() ->
+				{
+					log.debug("Auto-recommend refresh cycle");
+					flipFinderPanel.refresh();
+				});
+			}
+
+			java.util.Map<Integer, TrackedOffer> offers = session.getTrackedOffers();
+			autoRecommendService.checkAdjustmentTimers(
+				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
+			autoRecommendService.checkSellAdjustmentTimers(offers);
+			autoRecommendService.scanForStaleOffers(offers);
+		}
+
+		if (manualAdjustmentTracker != null)
+		{
+			manualAdjustmentTracker.checkTimers(session.getTrackedOffers());
+		}
 	}
 
 	void stopAutoRecommendRefreshTimer()

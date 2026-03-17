@@ -6,6 +6,7 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.ObjIntConsumer;
 
 /**
  * Tracks adjustment timers for manual (non-auto-recommend) flip offers.
@@ -48,10 +49,12 @@ public class ManualAdjustmentTracker
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartConfig config;
 
+	private static final String MARGIN_GONE_MSG = "Margin gone on %s — consider cancelling";
+
 	private final Map<Integer, OfferAdjustmentState> trackedOffers = new ConcurrentHashMap<>();
 
 	// Callback to show adjustment prompts in FlipAssistOverlay
-	private volatile BiConsumer<String, Integer> onAdjustmentPrompt;
+	private volatile ObjIntConsumer<String> onAdjustmentPrompt;
 
 	// Callback to set a FocusedFlip for buy adjustments
 	private volatile BiConsumer<FocusedFlip, String> onFocusFlip;
@@ -73,7 +76,7 @@ public class ManualAdjustmentTracker
 		this.config = config;
 	}
 
-	public void setOnAdjustmentPrompt(BiConsumer<String, Integer> callback)
+	public void setOnAdjustmentPrompt(ObjIntConsumer<String> callback)
 	{
 		this.onAdjustmentPrompt = callback;
 	}
@@ -225,51 +228,41 @@ public class ManualAdjustmentTracker
 		while (iter.hasNext())
 		{
 			Map.Entry<Integer, OfferAdjustmentState> entry = iter.next();
-			int geSlot = entry.getKey();
+			TrackedOffer offer = sessionOffers.get(entry.getKey());
 			OfferAdjustmentState state = entry.getValue();
 
-			// Verify the offer still exists and matches
-			TrackedOffer offer = sessionOffers.get(geSlot);
-			if (offer == null || offer.isCompleted())
+			if (shouldRemoveTimer(offer))
 			{
 				iter.remove();
-				continue;
 			}
-
-			// Skip if offer has filled (partial fills reset the timer, full fills clear it)
-			if (offer.getPreviousQuantitySold() > 0)
+			else if (now >= state.deadlineMs)
 			{
-				iter.remove();
-				continue;
+				processExpiredTimer(state, offer);
 			}
-
-			// Check if timer has expired
-			if (now < state.deadlineMs)
-			{
-				continue;
-			}
-
-			// Timer expired — call the API
-			processExpiredTimer(state, offer, iter);
 		}
 	}
 
-	private void processExpiredTimer(OfferAdjustmentState state, TrackedOffer offer,
-		Iterator<Map.Entry<Integer, OfferAdjustmentState>> iter)
+	private boolean shouldRemoveTimer(TrackedOffer offer)
+	{
+		return offer == null || offer.isCompleted() || offer.getPreviousQuantitySold() > 0;
+	}
+
+	private void processExpiredTimer(OfferAdjustmentState state, TrackedOffer offer)
 	{
 		long minutesSinceOffer = (System.currentTimeMillis() - offer.getCreatedAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
 
-		apiClient.getFlipAdjustmentAsync(
-			state.itemId,
-			state.isBuy,
-			offer.getPrice(),
-			state.averageBuyPrice,
-			(int) minutesSinceOffer,
-			state.adjustmentCount,
-			offer.getPreviousQuantitySold(),
-			offer.getTotalQuantity(),
-			timeframe
+		apiClient.getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
+			.itemId(state.itemId)
+			.isBuyOffer(state.isBuy)
+			.offerPrice(offer.getPrice())
+			.averageBuyPrice(state.averageBuyPrice)
+			.minutesSinceOffer((int) minutesSinceOffer)
+			.adjustmentCount(state.adjustmentCount)
+			.quantityFilled(offer.getPreviousQuantitySold())
+			.totalQuantity(offer.getTotalQuantity())
+			.timeframe(timeframe)
+			.build()
 		).thenAccept(response ->
 		{
 			if (response == null)
@@ -318,63 +311,77 @@ public class ManualAdjustmentTracker
 	{
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
 		{
-			String msg = String.format("Adjust %s buy price %s → %s gp",
-				state.itemName,
-				GpUtils.formatGPWithSuffix(offer.getPrice()),
-				GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
-
-			log.info("Manual adjustment: {}", msg);
-
-			// Focus the buy overlay with the new recommended price
-			BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
-			if (focusCallback != null)
-			{
-				int sellPrice = response.getBreakevenPrice() + 1;
-				if (response.getCurrentMargin() != null && response.getCurrentMargin() > 0)
-				{
-					sellPrice = response.getRecommendedPrice() + response.getCurrentMargin();
-				}
-				FocusedFlip focus = FocusedFlip.forBuy(
-					state.itemId, state.itemName,
-					response.getRecommendedPrice(),
-					offer.getTotalQuantity(),
-					sellPrice,
-					config.priceOffset());
-				focusCallback.accept(focus, msg);
-			}
-
-			// Highlight the GE slot
-			BiConsumer<Integer, Integer> highlightCallback = onHighlightSlot;
-			if (highlightCallback != null)
-			{
-				highlightCallback.accept(state.geSlot, response.getRecommendedPrice());
-			}
+			handleBuyAdjustment(state, offer, response);
 		}
 		else if (response.isReadjustSell() && response.getRecommendedPrice() != null)
 		{
-			String msg = String.format("Adjust %s sell price %s → %s gp",
-				state.itemName,
-				GpUtils.formatGPWithSuffix(offer.getPrice()),
-				GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
-
-			log.info("Manual adjustment: {}", msg);
-
-			BiConsumer<String, Integer> promptCallback = onAdjustmentPrompt;
-			if (promptCallback != null)
-			{
-				promptCallback.accept(msg, state.itemId);
-			}
-
-			BiConsumer<Integer, Integer> highlightCallback = onHighlightSlot;
-			if (highlightCallback != null)
-			{
-				highlightCallback.accept(state.geSlot, response.getRecommendedPrice());
-			}
+			handleSellAdjustment(state, offer, response);
 		}
 		else if (response.isCancelAndSell())
 		{
 			log.info("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
 			fetchReplacementRecommendation(state);
+		}
+	}
+
+	private void handleBuyAdjustment(OfferAdjustmentState state, TrackedOffer offer,
+		FlipAdjustmentResponse response)
+	{
+		String msg = String.format("Adjust %s buy price %s → %s gp",
+			state.itemName,
+			GpUtils.formatGPWithSuffix(offer.getPrice()),
+			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
+
+		log.info("Manual adjustment: {}", msg);
+
+		BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
+		if (focusCallback != null)
+		{
+			int sellPrice = response.getBreakevenPrice() + 1;
+			if (response.getCurrentMargin() != null && response.getCurrentMargin() > 0)
+			{
+				sellPrice = response.getRecommendedPrice() + response.getCurrentMargin();
+			}
+			FocusedFlip focus = FocusedFlip.forBuy(
+				state.itemId, state.itemName,
+				response.getRecommendedPrice(),
+				offer.getTotalQuantity(),
+				sellPrice,
+				config.priceOffset());
+			focusCallback.accept(focus, msg);
+		}
+
+		notifyHighlight(state.geSlot, response.getRecommendedPrice());
+	}
+
+	private void handleSellAdjustment(OfferAdjustmentState state, TrackedOffer offer,
+		FlipAdjustmentResponse response)
+	{
+		String msg = String.format("Adjust %s sell price %s → %s gp",
+			state.itemName,
+			GpUtils.formatGPWithSuffix(offer.getPrice()),
+			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
+
+		log.info("Manual adjustment: {}", msg);
+		notifyPrompt(msg, state.itemId);
+		notifyHighlight(state.geSlot, response.getRecommendedPrice());
+	}
+
+	private void notifyPrompt(String msg, int itemId)
+	{
+		ObjIntConsumer<String> cb = onAdjustmentPrompt;
+		if (cb != null)
+		{
+			cb.accept(msg, itemId);
+		}
+	}
+
+	private void notifyHighlight(int geSlot, int price)
+	{
+		BiConsumer<Integer, Integer> cb = onHighlightSlot;
+		if (cb != null)
+		{
+			cb.accept(geSlot, price);
 		}
 	}
 
@@ -391,75 +398,58 @@ public class ManualAdjustmentTracker
 		String flipStyle = config.flipStyle().getApiValue();
 
 		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots)
-			.thenAccept(response ->
-			{
-				if (response == null || response.getRecommendations() == null
-					|| response.getRecommendations().isEmpty())
-				{
-					// No replacement available — show simple cancel message
-					String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
-					BiConsumer<String, Integer> cb = onAdjustmentPrompt;
-					if (cb != null)
-					{
-						cb.accept(msg, state.itemId);
-					}
-					return;
-				}
-
-				FlipRecommendation replacement = response.getRecommendations().get(0);
-
-				// Don't suggest the same item as a replacement
-				if (replacement.getItemId() == state.itemId)
-				{
-					String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
-					BiConsumer<String, Integer> cb = onAdjustmentPrompt;
-					if (cb != null)
-					{
-						cb.accept(msg, state.itemId);
-					}
-					return;
-				}
-
-				String msg = String.format("Margin gone on %s — switch to %s instead? (%s profit)",
-					state.itemName,
-					replacement.getItemName(),
-					GpUtils.formatGPWithSuffix(replacement.getPotentialProfit()));
-
-				log.info("Ditch recommendation: {}", msg);
-
-				// Focus the replacement item in the overlay
-				BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
-				if (focusCallback != null)
-				{
-					FocusedFlip focus = FocusedFlip.forBuy(
-						replacement.getItemId(),
-						replacement.getItemName(),
-						replacement.getRecommendedBuyPrice(),
-						replacement.getRecommendedQuantity(),
-						replacement.getRecommendedSellPrice(),
-						config.priceOffset());
-					focusCallback.accept(focus, msg);
-				}
-
-				// Highlight the stale slot
-				BiConsumer<Integer, Integer> highlightCallback = onHighlightSlot;
-				if (highlightCallback != null)
-				{
-					highlightCallback.accept(state.geSlot, 0);
-				}
-			})
+			.thenAccept(response -> handleReplacementResponse(response, state))
 			.exceptionally(e ->
 			{
 				log.debug("Failed to fetch replacement recommendation: {}", e.getMessage());
-				// Fall back to simple cancel message
-				String msg = String.format("Margin gone on %s — consider cancelling", state.itemName);
-				BiConsumer<String, Integer> cb = onAdjustmentPrompt;
-				if (cb != null)
-				{
-					cb.accept(msg, state.itemId);
-				}
+				notifyMarginGone(state);
 				return null;
 			});
+	}
+
+	private void handleReplacementResponse(FlipFinderResponse response,
+		OfferAdjustmentState state)
+	{
+		if (response == null || response.getRecommendations() == null
+			|| response.getRecommendations().isEmpty())
+		{
+			notifyMarginGone(state);
+			return;
+		}
+
+		FlipRecommendation replacement = response.getRecommendations().get(0);
+		if (replacement.getItemId() == state.itemId)
+		{
+			notifyMarginGone(state);
+			return;
+		}
+
+		String msg = String.format("Margin gone on %s — switch to %s instead? (%s profit)",
+			state.itemName,
+			replacement.getItemName(),
+			GpUtils.formatGPWithSuffix(replacement.getPotentialProfit()));
+
+		log.info("Ditch recommendation: {}", msg);
+
+		BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
+		if (focusCallback != null)
+		{
+			FocusedFlip focus = FocusedFlip.forBuy(
+				replacement.getItemId(),
+				replacement.getItemName(),
+				replacement.getRecommendedBuyPrice(),
+				replacement.getRecommendedQuantity(),
+				replacement.getRecommendedSellPrice(),
+				config.priceOffset());
+			focusCallback.accept(focus, msg);
+		}
+
+		notifyHighlight(state.geSlot, 0);
+	}
+
+	private void notifyMarginGone(OfferAdjustmentState state)
+	{
+		notifyPrompt(String.format(MARGIN_GONE_MSG, state.itemName), state.itemId);
 	}
 
 	/**
