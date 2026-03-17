@@ -61,9 +61,10 @@ public class TrackedOffer
 
 	/**
 	 * Create a TrackedOffer preserving timestamps from an existing offer when available.
-	 * Sets createdAtMillis to 0 ("unknown") when no existing offer is present,
-	 * signalling that the timestamp should be backfilled from persisted state
-	 * (via OfflineSyncService) or from the backend (via backfillMissingTimestamps).
+	 * Falls back to the current time if no existing offer is present (genuinely new offer).
+	 *
+	 * To ensure correct timestamps during login burst, callers should preload persisted
+	 * offers into the session BEFORE this method is called. See OfflineSyncService.preloadPersistedOffers().
 	 */
 	public static TrackedOffer createWithPreservedTimestamps(
 		int itemId, String itemName, int totalQuantity,
@@ -72,7 +73,7 @@ public class TrackedOffer
 	{
 		long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
 			? existing.getCreatedAtMillis()
-			: 0;
+			: System.currentTimeMillis();
 		long completedTimestamp = 0;
 
 		if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)

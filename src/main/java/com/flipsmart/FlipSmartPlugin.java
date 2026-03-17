@@ -782,6 +782,12 @@ public class FlipSmartPlugin extends Plugin
 		// Restore collected items from config (items bought but not yet sold)
 		// Must be after syncRSN() so we have the correct RSN for the config key
 		offlineSyncService.restoreCollectedItems();
+
+		// Preload persisted offers into the session BEFORE login burst fires.
+		// This ensures createWithPreservedTimestamps() finds the existing offer
+		// with its original timestamp, giving us accurate timers from the start.
+		offlineSyncService.preloadPersistedOffers();
+
 		restoreAutoRecommendState();
 
 		// Start the refresh timer if not already running (needed for manual adjustment checks)

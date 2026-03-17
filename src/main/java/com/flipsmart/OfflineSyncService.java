@@ -155,6 +155,35 @@ public class OfflineSyncService
 	}
 
 	/**
+	 * Preload persisted offer state into the session so that timestamps
+	 * are available during the login burst (before syncOfflineFills runs).
+	 *
+	 * This mirrors the Flipping Utilities approach: load persisted data
+	 * into memory BEFORE game events fire, so createWithPreservedTimestamps
+	 * can find the existing offer with its original timestamp.
+	 */
+	public void preloadPersistedOffers()
+	{
+		Map<Integer, TrackedOffer> persisted = loadPersistedOffers();
+		if (persisted.isEmpty())
+		{
+			return;
+		}
+
+		for (Map.Entry<Integer, TrackedOffer> entry : persisted.entrySet())
+		{
+			TrackedOffer offer = entry.getValue();
+			if (offer.getCreatedAtMillis() > 0)
+			{
+				session.putTrackedOffer(entry.getKey(), offer);
+			}
+		}
+
+		log.info("Preloaded {} persisted offers into session for timestamp preservation",
+			persisted.size());
+	}
+
+	/**
 	 * Sync fills that occurred while offline.
 	 * Records current GE state to the backend.
 	 */
@@ -206,7 +235,8 @@ public class OfflineSyncService
 			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
 			{
 				// Restore the original timestamp from persisted offer for timer continuity
-				if (persistedOffer.getCreatedAtMillis() > 0)
+				if (persistedOffer.getCreatedAtMillis() > 0
+					&& persistedOffer.getCreatedAtMillis() < currentOffer.getCreatedAtMillis())
 				{
 					currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
 				}
