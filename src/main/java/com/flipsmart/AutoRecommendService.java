@@ -34,8 +34,7 @@ public class AutoRecommendService
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
-	/** Price threshold for high-value adjustment timer delays */
-	private static final int HIGH_VALUE_THRESHOLD = 5_000_000;
+
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
@@ -801,62 +800,13 @@ public class AutoRecommendService
 	// =====================
 
 	/**
-	 * Get the buy-side adjustment delay in milliseconds based on the configured timeframe and item price.
-	 * High-value items (>= 5M GP) get longer delays since their prices change more slowly.
-	 */
-	long getAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
-	{
-		boolean highValue = itemPrice >= HIGH_VALUE_THRESHOLD;
-		switch (timeframe)
-		{
-			case ACTIVE:
-				return (highValue ? 10 : 5) * 60 * 1000L;
-			case THIRTY_MINS:
-				return (highValue ? 15 : 10) * 60 * 1000L;
-			case TWO_HOURS:
-				return (highValue ? 30 : 15) * 60 * 1000L;
-			case FOUR_HOURS:
-				return (highValue ? 60 : 30) * 60 * 1000L;
-			case TWELVE_HOURS:
-				return (highValue ? 240 : 60) * 60 * 1000L;
-			default:
-				return (highValue ? 10 : 5) * 60 * 1000L;
-		}
-	}
-
-	/**
-	 * Get the sell-side adjustment delay in milliseconds.
-	 * Uses shorter delays than buy-side because overpriced sells won't fill
-	 * regardless of timeframe — capital is locked up unproductively.
-	 */
-	long getSellAdjustmentDelayMs(FlipSmartConfig.FlipTimeframe timeframe, int itemPrice)
-	{
-		boolean highValue = itemPrice >= HIGH_VALUE_THRESHOLD;
-		switch (timeframe)
-		{
-			case ACTIVE:
-				return (highValue ? 10 : 5) * 60 * 1000L;
-			case THIRTY_MINS:
-				return (highValue ? 10 : 5) * 60 * 1000L;
-			case TWO_HOURS:
-				return (highValue ? 15 : 10) * 60 * 1000L;
-			case FOUR_HOURS:
-				return (highValue ? 20 : 10) * 60 * 1000L;
-			case TWELVE_HOURS:
-				return (highValue ? 30 : 15) * 60 * 1000L;
-			default:
-				return (highValue ? 10 : 5) * 60 * 1000L;
-		}
-	}
-
-	/**
 	 * Schedule an adjustment timer for a buy offer.
 	 * When the timer expires, checkAdjustmentTimers() will prompt the user
 	 * to adjust the price if the recommendation has changed.
 	 */
 	private void scheduleAdjustmentTimer(int itemId, int itemPrice)
 	{
-		long delay = getAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long delay = AdjustmentTimerUtils.getBuyBaseDelayMs(config.flipTimeframe(), itemPrice);
 		long deadline = System.currentTimeMillis() + delay;
 		adjustmentDeadlines.put(itemId, deadline);
 		log.info("Auto-recommend: Adjustment timer scheduled for item {} in {}m", itemId, delay / 60000);
@@ -872,7 +822,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		long delay = getAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long delay = AdjustmentTimerUtils.getBuyBaseDelayMs(config.flipTimeframe(), itemPrice);
 		long deadline = System.currentTimeMillis() + delay;
 		adjustmentDeadlines.put(itemId, deadline);
 		log.info("Auto-recommend: Adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
@@ -975,7 +925,7 @@ public class AutoRecommendService
 		if (rec.getRecommendedBuyPrice() == offer.getPrice() && !isUncompetitive)
 		{
 			// Price unchanged and offer is still competitive — reschedule
-			long delay = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delay = AdjustmentTimerUtils.getBuyBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 			entry.setValue(now + delay);
 			log.debug("Auto-recommend: Price unchanged for {} and still competitive - rescheduling timer ({}m)",
 				offer.getItemName(), delay / 60000);
@@ -1033,7 +983,7 @@ public class AutoRecommendService
 				continue;
 			}
 
-			long delayMs = getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delayMs = AdjustmentTimerUtils.getBuyBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 			long offerAgeMs = now - offer.getCreatedAtMillis();
 			long remainingMs = delayMs - offerAgeMs;
 
@@ -1109,8 +1059,8 @@ public class AutoRecommendService
 
 		long offerAgeMs = now - offer.getCreatedAtMillis();
 		long thresholdMs = offer.isBuy()
-			? getAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice())
-			: getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			? AdjustmentTimerUtils.getBuyBaseDelayMs(config.flipTimeframe(), offer.getPrice())
+			: AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 
 		if (offerAgeMs < thresholdMs)
 		{
@@ -1230,7 +1180,7 @@ public class AutoRecommendService
 			buyPrice = sellOffer.getPrice();
 		}
 
-		long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), sellOffer.getPrice());
+		long delay = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), sellOffer.getPrice());
 		long deadline = System.currentTimeMillis() + delay;
 
 		SellAdjustmentState state = new SellAdjustmentState(
@@ -1268,7 +1218,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), itemPrice);
+		long delay = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), itemPrice);
 		state.deadline = System.currentTimeMillis() + delay;
 		log.info("Auto-recommend: Sell adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
 	}
@@ -1349,7 +1299,7 @@ public class AutoRecommendService
 		{
 			log.warn("Auto-recommend: Sell adjustment API error for {}: {}", state.itemName, ex.getMessage());
 			// Reschedule for retry
-			long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delay = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 			state.deadline = System.currentTimeMillis() + delay;
 			return null;
 		});
@@ -1368,7 +1318,7 @@ public class AutoRecommendService
 		if (!response.isActionRequired())
 		{
 			// Hold — reschedule timer
-			long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delay = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 			state.deadline = System.currentTimeMillis() + delay;
 			log.debug("Auto-recommend: Sell hold for {} - rescheduling ({}m)", state.itemName, delay / 60000);
 			return;
@@ -1397,7 +1347,7 @@ public class AutoRecommendService
 			updateStatus(statusMsg);
 
 			// Don't remove the timer — reschedule in case user doesn't act
-			long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), newPrice);
+			long delay = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), newPrice);
 			state.deadline = System.currentTimeMillis() + delay;
 		}
 		else
@@ -1405,7 +1355,7 @@ public class AutoRecommendService
 			// Unexpected action — log and reschedule
 			log.info("Auto-recommend: Sell adjustment response for {}: action={}, message={}",
 				state.itemName, response.getAction(), response.getMessage());
-			long delay = getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delay = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 			state.deadline = System.currentTimeMillis() + delay;
 		}
 	}
@@ -1439,7 +1389,7 @@ public class AutoRecommendService
 				buyPrice = offer.getPrice();
 			}
 
-			long delayMs = getSellAdjustmentDelayMs(config.flipTimeframe(), offer.getPrice());
+			long delayMs = AdjustmentTimerUtils.getSellBaseDelayMs(config.flipTimeframe(), offer.getPrice());
 			long offerAgeMs = now - offer.getCreatedAtMillis();
 			long remainingMs = delayMs - offerAgeMs;
 
