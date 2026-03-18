@@ -705,7 +705,15 @@ public class AutoRecommendService
 	{
 		if (!hasAvailableGESlots() && !hasCollectedItemsToSell())
 		{
-			promptCollection();
+			// Don't overwrite stale offer prompts with "Monitoring active offers"
+			if (!staleOfferQueue.isEmpty())
+			{
+				focusNextStaleOffer();
+			}
+			else
+			{
+				promptCollection();
+			}
 		}
 		else
 		{
@@ -949,31 +957,12 @@ public class AutoRecommendService
 
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
 		{
-			int newPrice = response.getRecommendedPrice();
 			log.info("Auto-recommend: API recommends adjust {} buy {} → {} gp",
-				offer.getItemName(), offer.getPrice(), newPrice);
+				offer.getItemName(), offer.getPrice(), response.getRecommendedPrice());
 
-			// Find sell price from recommendations or API response
-			int sellPrice = response.getBreakevenPrice() + 1;
-			FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
-			if (rec != null && rec.getRecommendedSellPrice() > 0)
-			{
-				sellPrice = rec.getRecommendedSellPrice();
-			}
-			else if (response.getCurrentMargin() != null && response.getCurrentMargin() > 0)
-			{
-				sellPrice = newPrice + response.getCurrentMargin();
-			}
-
-			focusBuyOverlay(itemId, offer.getItemName(),
-				newPrice, offer.getTotalQuantity(), sellPrice,
-				String.format("Auto: Adjust %s buy price %s → %s gp",
-					offer.getItemName(),
-					GpUtils.formatGPWithSuffix(offer.getPrice()),
-					GpUtils.formatGPWithSuffix(newPrice)));
-
-			// Reschedule in case user doesn't act
-			adjustmentDeadlines.put(itemId, System.currentTimeMillis() + nextDelay);
+			// Queue through stale offer system so prompt survives refresh cycles
+			addToStaleQueue(offer);
+			adjustmentDeadlines.remove(itemId);
 		}
 		else if (response.isCancelAndSell())
 		{
@@ -1918,6 +1907,13 @@ public class AutoRecommendService
 	 */
 	private void promptCollection()
 	{
+		// Show stale offer prompts before falling through to "Monitoring"
+		if (!staleOfferQueue.isEmpty())
+		{
+			focusNextStaleOffer();
+			return;
+		}
+
 		// Clear the buy overlay so it doesn't show a buy instruction when slots are full
 		invokeFocusCallback(null);
 
