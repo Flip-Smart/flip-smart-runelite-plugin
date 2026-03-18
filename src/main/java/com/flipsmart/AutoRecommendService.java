@@ -1168,9 +1168,7 @@ public class AutoRecommendService
 		}
 
 		TrackedOffer next = staleOfferQueue.get(0);
-		int total = staleOfferQueue.size();
-		String prefix = total > 1 ? String.format("(%d stale) ", total) : "";
-		String overlayMsg = String.format("%sConsider cancelling %s", prefix, next.getItemName());
+		String overlayMsg = String.format("Consider cancelling %s", next.getItemName());
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
