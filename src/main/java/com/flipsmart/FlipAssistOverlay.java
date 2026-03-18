@@ -349,7 +349,13 @@ public class FlipAssistOverlay extends Overlay
 		int panelHeight;
 		if (hasIcon)
 		{
-			panelHeight = HINT_PANEL_HEIGHT + 18;
+			int iconSpace = 20 + 6; // hintIconSize + gap
+			java.util.List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
+			int lineHeight = smallMetrics.getHeight();
+			int textHeight = lineHeight * iconLines.size();
+			// Title (20px) + gap (12px) + max(icon height, text height) + bottom padding (8px)
+			panelHeight = 20 + 12 + Math.max(20, textHeight) + 8;
+			panelHeight = Math.max(panelHeight, HINT_PANEL_HEIGHT);
 		}
 		else
 		{
@@ -399,28 +405,32 @@ public class FlipAssistOverlay extends Overlay
 
 		if (hasIcon)
 		{
-			// Two-line layout: subtitle + icon with item name
+			// Layout: [icon] + message text (centered together)
 			graphics.setFont(FontManager.getRunescapeSmallFont());
-
-			// Line 1: "Collect items from GE" subtitle
-			graphics.setColor(COLOR_TEXT_DIM);
-			String subtitle = "Collect items from GE";
-			int subtitleWidth = smallMetrics.stringWidth(subtitle);
-			graphics.drawString(subtitle, (HINT_PANEL_WIDTH - subtitleWidth) / 2, 36);
-
-			// Line 2: [icon] + item name
 			graphics.setColor(COLOR_TEXT);
+
 			AsyncBufferedImage itemImage = itemManager.getImage(itemId);
-			int msgWidth = smallMetrics.stringWidth(message);
-			int totalWidth = hintIconSize + 4 + msgWidth;
-			int startX = (HINT_PANEL_WIDTH - totalWidth) / 2;
-			int iconLineY = 54;
+
+			// Wrap message to fit alongside icon
+			int iconSpace = hintIconSize + 6;
+			java.util.List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
+
+			int lineHeight = smallMetrics.getHeight();
+			int textBlockHeight = lineHeight * iconLines.size();
+			int iconY = 32 + (textBlockHeight - hintIconSize) / 2;
+			int textStartX = textPadding + iconSpace;
 
 			if (itemImage != null)
 			{
-				graphics.drawImage(itemImage, startX, iconLineY - hintIconSize + 4, hintIconSize, hintIconSize, null);
+				graphics.drawImage(itemImage, textPadding, iconY, hintIconSize, hintIconSize, null);
 			}
-			graphics.drawString(message, startX + hintIconSize + 4, iconLineY);
+
+			int y = 32 + lineHeight;
+			for (String line : iconLines)
+			{
+				graphics.drawString(line, textStartX, y);
+				y += lineHeight;
+			}
 		}
 		else
 		{
