@@ -1852,7 +1852,7 @@ public class AutoRecommendService
 		}
 		catch (AssertionError e)
 		{
-			return true; // Not on client thread — assume present
+			return false; // Not on client thread — caller handles missing inventory gracefully
 		}
 	}
 

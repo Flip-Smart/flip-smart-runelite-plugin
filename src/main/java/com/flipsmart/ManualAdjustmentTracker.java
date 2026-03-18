@@ -234,7 +234,9 @@ public class ManualAdjustmentTracker
 
 	private boolean shouldRemoveTimer(TrackedOffer offer)
 	{
-		return offer == null || offer.isCompleted() || offer.getPreviousQuantitySold() > 0;
+		// Only remove if offer is gone or fully completed.
+		// Partial fills don't remove the timer — the API decides whether to hold or adjust.
+		return offer == null || offer.isCompleted();
 	}
 
 	private void processExpiredTimer(OfferAdjustmentState state, TrackedOffer offer)
