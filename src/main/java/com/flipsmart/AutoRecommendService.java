@@ -465,27 +465,8 @@ public class AutoRecommendService
 		// Schedule sell adjustment timer
 		scheduleSellAdjustmentTimer(itemId);
 
-		// Priority: sell collected items first, then buy new ones
-		if (hasCollectedItemsToSell())
-		{
-			focusNextCollectedItemSell();
-		}
-		else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
-		{
-			focusCurrent();
-		}
-		else if (currentIndex >= recommendationQueue.size())
-		{
-			// Clear sell focus so the old sell overlay doesn't persist
-			invokeFocusCallback(null);
-			updateStatus("Auto: Queue complete");
-			invokeOverlayMessageCallback("All flips listed - waiting for sells");
-		}
-		else
-		{
-			// Slots full after placing sell, wait for something to complete
-			promptCollection();
-		}
+		// Route through focusNextAvailableAction to check stale queue
+		focusNextAvailableAction();
 	}
 
 	/**
