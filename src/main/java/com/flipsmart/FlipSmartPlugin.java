@@ -717,6 +717,13 @@ public class FlipSmartPlugin extends Plugin
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
 			session.onLoginStateChange(client.getTickCount());
+
+			// Persist offer state before hop/reconnect so timestamps survive.
+			// handleLogoutState only runs on LOGIN_SCREEN, not hops.
+			if (!session.getTrackedOffers().isEmpty())
+			{
+				offlineSyncService.persistOfferState();
+			}
 		}
 
 		if (gameState == GameState.LOGIN_SCREEN)
@@ -831,10 +838,10 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Backfill createdAtMillis for tracked offers that lost their local timestamp.
-	 * Uses backend active flips (last_buy_time / sell_placed_time) as fallback.
-	 * This handles cases like profile switches or plugin rebuilds where local
-	 * persistence was lost but the backend still has the transaction timestamps.
+	 * Correct offer timestamps using backend active flips as source of truth.
+	 * Always runs — if the backend has an OLDER timestamp than the local one,
+	 * the local one was likely reset (login burst, rebuild, hop) and should
+	 * be replaced with the backend's more accurate value.
 	 */
 	private void backfillMissingTimestamps()
 	{
@@ -844,23 +851,7 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
-		// Find offers missing timestamps
-		boolean hasMissing = false;
-		for (TrackedOffer offer : tracked.values())
-		{
-			if (offer.getCreatedAtMillis() <= 0)
-			{
-				hasMissing = true;
-				break;
-			}
-		}
-
-		if (!hasMissing)
-		{
-			return;
-		}
-
-		log.info("Found tracked offers with missing timestamps — fetching from backend");
+		log.debug("Checking offer timestamps against backend active flips");
 		String rsn = getCurrentRsnSafe().orElse(null);
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 		{
@@ -876,14 +867,9 @@ public class FlipSmartPlugin extends Plugin
 				flipsByItem.put(flip.getItemId(), flip);
 			}
 
-			int backfilled = 0;
+			int corrected = 0;
 			for (TrackedOffer offer : tracked.values())
 			{
-				if (offer.getCreatedAtMillis() > 0)
-				{
-					continue;
-				}
-
 				ActiveFlip flip = flipsByItem.get(offer.getItemId());
 				if (flip == null)
 				{
@@ -891,32 +877,43 @@ public class FlipSmartPlugin extends Plugin
 				}
 
 				// For sells, prefer sell_placed_time; for buys, use last_buy_time
-				long backfilledMs;
+				long backendMs;
 				if (!offer.isBuy() && flip.getSellPlacedTime() != null)
 				{
-					backfilledMs = TimeUtils.parseIsoToMillis(flip.getSellPlacedTime());
+					backendMs = TimeUtils.parseIsoToMillis(flip.getSellPlacedTime());
 				}
 				else
 				{
-					backfilledMs = TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
+					backendMs = TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
 				}
 
-				if (backfilledMs > 0)
+				if (backendMs <= 0)
 				{
-					offer.setCreatedAtMillis(backfilledMs);
-					backfilled++;
-					log.info("Backfilled timestamp for {} from backend: {}",
-						offer.getItemName(), offer.isBuy() ? flip.getLastBuyTime() : flip.getSellPlacedTime());
+					continue;
+				}
+
+				// Replace local timestamp if:
+				// 1. Local is missing (0), OR
+				// 2. Backend is older (local was reset to "now" by login burst)
+				if (offer.getCreatedAtMillis() <= 0 || backendMs < offer.getCreatedAtMillis())
+				{
+					log.info("Corrected timestamp for {} — local={}m ago, backend={}m ago",
+						offer.getItemName(),
+						offer.getCreatedAtMillis() > 0
+							? (System.currentTimeMillis() - offer.getCreatedAtMillis()) / 60000 : "missing",
+						(System.currentTimeMillis() - backendMs) / 60000);
+					offer.setCreatedAtMillis(backendMs);
+					corrected++;
 				}
 			}
 
-			if (backfilled > 0)
+			if (corrected > 0)
 			{
-				log.info("Backfilled {} offer timestamps from backend active flips", backfilled);
+				log.info("Corrected {} offer timestamps from backend active flips", corrected);
 			}
 		}).exceptionally(e ->
 		{
-			log.debug("Failed to backfill timestamps from backend: {}", e.getMessage());
+			log.debug("Failed to check timestamps against backend: {}", e.getMessage());
 			return null;
 		});
 	}
