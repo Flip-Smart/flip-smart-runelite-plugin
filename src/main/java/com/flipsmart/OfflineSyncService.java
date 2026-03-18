@@ -234,41 +234,47 @@ public class OfflineSyncService
 
 			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
 			{
-				// Restore the original timestamp from persisted offer for timer continuity
-				if (persistedOffer.getCreatedAtMillis() > 0
-					&& persistedOffer.getCreatedAtMillis() < currentOffer.getCreatedAtMillis())
-				{
-					currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
-				}
-
-				// Have persisted state - check for offline fills
+				restoreTimestampIfOlder(currentOffer, persistedOffer);
 				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
 			}
 			else if (currentOffer.getTotalQuantity() > 0)
 			{
-				// No persisted state but there's an active order - record it
-				log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
-					currentOffer.isBuy() ? "BUY" : "SELL",
-					currentOffer.getItemName(), slot, currentOffer.getPreviousQuantitySold(),
-					currentOffer.getTotalQuantity(), currentOffer.getPrice());
-
-				Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
-
-				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
-						currentOffer.getPreviousQuantitySold(), currentOffer.getPrice())
-					.geSlot(slot)
-					.recommendedSellPrice(recommendedSellPrice)
-					.rsn(getRsnSafe().orElse(null))
-					.totalQuantity(currentOffer.getTotalQuantity())
-					.build());
-
-				// For buy orders with fills, add to collected tracking
-				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
-				{
-					session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
-				}
+				recordNewOfferFromSync(slot, currentOffer);
 			}
+		}
+	}
+
+	private void restoreTimestampIfOlder(TrackedOffer current, TrackedOffer persisted)
+	{
+		if (persisted.getCreatedAtMillis() > 0
+			&& persisted.getCreatedAtMillis() < current.getCreatedAtMillis())
+		{
+			current.setCreatedAtMillis(persisted.getCreatedAtMillis());
+		}
+	}
+
+	private void recordNewOfferFromSync(int slot, TrackedOffer offer)
+	{
+		log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
+			offer.isBuy() ? "BUY" : "SELL",
+			offer.getItemName(), slot, offer.getPreviousQuantitySold(),
+			offer.getTotalQuantity(), offer.getPrice());
+
+		Integer recommendedSellPrice = offer.isBuy()
+			? session.getRecommendedPrice(offer.getItemId()) : null;
+
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(offer.getItemId(), offer.getItemName(), offer.isBuy(),
+				offer.getPreviousQuantitySold(), offer.getPrice())
+			.geSlot(slot)
+			.recommendedSellPrice(recommendedSellPrice)
+			.rsn(getRsnSafe().orElse(null))
+			.totalQuantity(offer.getTotalQuantity())
+			.build());
+
+		if (offer.isBuy() && offer.getPreviousQuantitySold() > 0)
+		{
+			session.addCollectedItem(offer.getItemId(), offer.getPreviousQuantitySold());
 		}
 	}
 

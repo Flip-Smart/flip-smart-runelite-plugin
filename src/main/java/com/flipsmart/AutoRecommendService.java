@@ -919,7 +919,7 @@ public class AutoRecommendService
 		{
 			synchronized (this)
 			{
-				handleBuyAdjustmentResponse(itemId, offer, response, currentRecommendations);
+				handleBuyAdjustmentResponse(itemId, offer, response);
 			}
 		}).exceptionally(ex ->
 		{
@@ -937,7 +937,7 @@ public class AutoRecommendService
 	 * Handle the response from the buy adjustment API.
 	 */
 	private void handleBuyAdjustmentResponse(int itemId, TrackedOffer offer,
-		FlipAdjustmentResponse response, List<FlipRecommendation> currentRecommendations)
+		FlipAdjustmentResponse response)
 	{
 		if (response == null)
 		{
@@ -1044,28 +1044,36 @@ public class AutoRecommendService
 
 			if (offer.isBuy() && !adjustmentDeadlines.containsKey(offer.getItemId()))
 			{
-				long offerAgeMs = now - offer.getCreatedAtMillis();
-				long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
-					? now - 1  // Already past initial delay — check immediately
-					: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
-				adjustmentDeadlines.put(offer.getItemId(), deadline);
-				log.info("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
-					offer.getItemName(), offerAgeMs / 60000);
+				scheduleMissingBuyTimer(offer, now);
 			}
 			else if (!offer.isBuy() && !sellAdjustmentStates.containsKey(offer.getItemId()))
 			{
-				Integer buyPrice = buyPrices.getOrDefault(offer.getItemId(), offer.getPrice());
-				long offerAgeMs = now - offer.getCreatedAtMillis();
-				long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
-					? now - 1
-					: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
-				SellAdjustmentState state = new SellAdjustmentState(
-					offer.getItemId(), offer.getItemName(), buyPrice, deadline);
-				sellAdjustmentStates.put(offer.getItemId(), state);
-				log.info("Auto-recommend: Scheduled missing sell timer for {} (age={}m)",
-					offer.getItemName(), offerAgeMs / 60000);
+				scheduleMissingSellTimer(offer, now);
 			}
 		}
+	}
+
+	private void scheduleMissingBuyTimer(TrackedOffer offer, long now)
+	{
+		long offerAgeMs = now - offer.getCreatedAtMillis();
+		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+		adjustmentDeadlines.put(offer.getItemId(), deadline);
+		log.info("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
+			offer.getItemName(), offerAgeMs / 60000);
+	}
+
+	private void scheduleMissingSellTimer(TrackedOffer offer, long now)
+	{
+		Integer buyPrice = buyPrices.getOrDefault(offer.getItemId(), offer.getPrice());
+		long offerAgeMs = now - offer.getCreatedAtMillis();
+		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+		SellAdjustmentState state = new SellAdjustmentState(
+			offer.getItemId(), offer.getItemName(), buyPrice, deadline);
+		sellAdjustmentStates.put(offer.getItemId(), state);
+		log.info("Auto-recommend: Scheduled missing sell timer for {} (age={}m)",
+			offer.getItemName(), offerAgeMs / 60000);
 	}
 
 	// =====================
@@ -1266,7 +1274,7 @@ public class AutoRecommendService
 	/**
 	 * Reset the sell adjustment timer for an item (e.g., after a partial fill).
 	 */
-	public synchronized void resetSellAdjustmentTimer(int itemId, int itemPrice)
+	public synchronized void resetSellAdjustmentTimer(int itemId)
 	{
 		if (!active)
 		{
@@ -1788,58 +1796,18 @@ public class AutoRecommendService
 
 		for (int itemId : session.getCollectedItemIds())
 		{
-			// Skip items that already have an active sell slot
 			if (session.hasActiveSellSlotForItem(itemId))
 			{
 				continue;
 			}
 
-			// Verify the item is actually in inventory or has a tracked buy offer.
-			// If neither, the flip already completed — clean it up.
-			// Note: getInventoryCountForItem requires client thread — if called from
-			// Swing EDT (e.g., refreshQueue), skip the check to avoid AssertionError.
-			boolean inInventory;
-			try
+			int result = evaluateCollectedItem(itemId, session, staleItems);
+			if (result >= 0)
 			{
-				inInventory = plugin.getInventoryCountForItem(itemId) > 0;
+				return result;
 			}
-			catch (AssertionError e)
-			{
-				// Not on client thread — assume item is present (conservative)
-				inInventory = true;
-			}
-			boolean hasBuyOffer = session.hasActiveBuySlotForItem(itemId);
-
-			// Item is in inventory or still has an active buy — check if we have a sell price
-			if (inInventory || hasBuyOffer)
-			{
-				Integer sellPrice = resolveBestSellPrice(itemId);
-				if (sellPrice != null && sellPrice > 0)
-				{
-					return itemId;
-				}
-				continue;
-			}
-
-			// Item not in inventory and no buy offer — might be waiting in GE for collection
-			// (e.g., cancelled partial buy). Keep it if we have a tracked quantity.
-			int trackedQty = session.getCollectedQuantity(itemId);
-			if (trackedQty > 0)
-			{
-				// Items are in GE slot waiting for collection — still sellable
-				Integer sellPrice = resolveBestSellPrice(itemId);
-				if (sellPrice != null && sellPrice > 0)
-				{
-					return itemId;
-				}
-				continue;
-			}
-
-			// Truly stale — no inventory, no buy offer, no tracked quantity
-			staleItems.add(itemId);
 		}
 
-		// Clean up stale collected items that are no longer anywhere
 		for (int staleId : staleItems)
 		{
 			log.info("Auto-recommend: Cleaning up stale collected item {} (not in inventory or GE)", staleId);
@@ -1847,6 +1815,51 @@ public class AutoRecommendService
 		}
 
 		return -1;
+	}
+
+	/**
+	 * Evaluate whether a collected item is sellable, stale, or waiting for collection.
+	 * Returns the item ID if sellable, or -1 to continue searching.
+	 */
+	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
+	{
+		boolean inInventory = isItemInInventory(itemId);
+		boolean hasBuyOffer = session.hasActiveBuySlotForItem(itemId);
+
+		if (inInventory || hasBuyOffer)
+		{
+			return hasSellPrice(itemId) ? itemId : -1;
+		}
+
+		// Not in inventory, no buy offer — might be waiting in GE for collection
+		if (session.getCollectedQuantity(itemId) > 0 && hasSellPrice(itemId))
+		{
+			return itemId;
+		}
+
+		if (session.getCollectedQuantity(itemId) <= 0)
+		{
+			staleItems.add(itemId);
+		}
+		return -1;
+	}
+
+	private boolean isItemInInventory(int itemId)
+	{
+		try
+		{
+			return plugin.getInventoryCountForItem(itemId) > 0;
+		}
+		catch (AssertionError e)
+		{
+			return true; // Not on client thread — assume present
+		}
+	}
+
+	private boolean hasSellPrice(int itemId)
+	{
+		Integer price = resolveBestSellPrice(itemId);
+		return price != null && price > 0;
 	}
 
 	/**

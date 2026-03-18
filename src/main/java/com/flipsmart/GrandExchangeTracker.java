@@ -478,12 +478,12 @@ public class GrandExchangeTracker
 				}
 				else
 				{
-					autoRecommendService.resetSellAdjustmentTimer(ctx.itemId, ctx.price);
+					autoRecommendService.resetSellAdjustmentTimer(ctx.itemId);
 				}
 			}
 			else if (manualAdjustmentTracker != null)
 			{
-				manualAdjustmentTracker.resetTimer(ctx.slot, ctx.price);
+				manualAdjustmentTracker.resetTimer(ctx.slot);
 			}
 		}
 

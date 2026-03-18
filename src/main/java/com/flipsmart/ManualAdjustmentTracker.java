@@ -154,7 +154,7 @@ public class ManualAdjustmentTracker
 	/**
 	 * Reset the adjustment timer for a GE slot (e.g., after a partial fill).
 	 */
-	public void resetTimer(int geSlot, int offerPrice)
+	public void resetTimer(int geSlot)
 	{
 		OfferAdjustmentState state = trackedOffers.get(geSlot);
 		if (state == null)

@@ -860,7 +860,6 @@ public class FlipSmartPlugin extends Plugin
 				return;
 			}
 
-			// Build lookup: itemId → ActiveFlip
 			Map<Integer, ActiveFlip> flipsByItem = new java.util.HashMap<>();
 			for (ActiveFlip flip : response.getActiveFlips())
 			{
@@ -870,39 +869,8 @@ public class FlipSmartPlugin extends Plugin
 			int corrected = 0;
 			for (TrackedOffer offer : tracked.values())
 			{
-				ActiveFlip flip = flipsByItem.get(offer.getItemId());
-				if (flip == null)
+				if (correctOfferTimestamp(offer, flipsByItem))
 				{
-					continue;
-				}
-
-				// For sells, prefer sell_placed_time; for buys, use last_buy_time
-				long backendMs;
-				if (!offer.isBuy() && flip.getSellPlacedTime() != null)
-				{
-					backendMs = TimeUtils.parseIsoToMillis(flip.getSellPlacedTime());
-				}
-				else
-				{
-					backendMs = TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
-				}
-
-				if (backendMs <= 0)
-				{
-					continue;
-				}
-
-				// Replace local timestamp if:
-				// 1. Local is missing (0), OR
-				// 2. Backend is older (local was reset to "now" by login burst)
-				if (offer.getCreatedAtMillis() <= 0 || backendMs < offer.getCreatedAtMillis())
-				{
-					log.info("Corrected timestamp for {} — local={}m ago, backend={}m ago",
-						offer.getItemName(),
-						offer.getCreatedAtMillis() > 0
-							? (System.currentTimeMillis() - offer.getCreatedAtMillis()) / 60000 : "missing",
-						(System.currentTimeMillis() - backendMs) / 60000);
-					offer.setCreatedAtMillis(backendMs);
 					corrected++;
 				}
 			}
@@ -916,6 +884,40 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Failed to check timestamps against backend: {}", e.getMessage());
 			return null;
 		});
+	}
+
+	/**
+	 * Correct a single offer's timestamp if the backend has an older (more accurate) value.
+	 * Returns true if the timestamp was corrected.
+	 */
+	private boolean correctOfferTimestamp(TrackedOffer offer, Map<Integer, ActiveFlip> flipsByItem)
+	{
+		ActiveFlip flip = flipsByItem.get(offer.getItemId());
+		if (flip == null)
+		{
+			return false;
+		}
+
+		long backendMs = (!offer.isBuy() && flip.getSellPlacedTime() != null)
+			? TimeUtils.parseIsoToMillis(flip.getSellPlacedTime())
+			: TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
+
+		if (backendMs <= 0)
+		{
+			return false;
+		}
+
+		if (offer.getCreatedAtMillis() <= 0 || backendMs < offer.getCreatedAtMillis())
+		{
+			log.info("Corrected timestamp for {} — local={}m ago, backend={}m ago",
+				offer.getItemName(),
+				offer.getCreatedAtMillis() > 0
+					? (System.currentTimeMillis() - offer.getCreatedAtMillis()) / 60000 : "missing",
+				(System.currentTimeMillis() - backendMs) / 60000);
+			offer.setCreatedAtMillis(backendMs);
+			return true;
+		}
+		return false;
 	}
 
 	private void performStaleFlipCleanup()
