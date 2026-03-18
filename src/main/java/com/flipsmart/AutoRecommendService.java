@@ -1153,8 +1153,10 @@ public class AutoRecommendService
 		{
 			Map<Integer, TrackedOffer> currentOffers = session.getTrackedOffers();
 			staleOfferQueue.removeIf(o -> {
-				TrackedOffer current = currentOffers.get(o.getItemId());
-				return current == null || current.isCompleted();
+				// TrackedOffers are keyed by slot, so search by item ID across all slots
+				boolean stillActive = currentOffers.values().stream()
+					.anyMatch(t -> t.getItemId() == o.getItemId() && !t.isCompleted());
+				return !stillActive;
 			});
 		}
 
