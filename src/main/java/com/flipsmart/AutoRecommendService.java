@@ -883,7 +883,8 @@ public class AutoRecommendService
 
 	/**
 	 * Process a single expired adjustment timer entry.
-	 * Removes the entry if the offer is gone/filled/adjusted, or reschedules if price unchanged.
+	 * Calls the backend /flips/adjustment API for the authoritative decision,
+	 * then acts on the response (adjust, cancel, or reschedule).
 	 */
 	private void processExpiredAdjustmentTimer(
 		Map.Entry<Integer, Long> entry,
@@ -897,62 +898,108 @@ public class AutoRecommendService
 		TrackedOffer offer = findTrackedBuyOffer(trackedOffers, itemId);
 		if (offer == null || offer.isCompleted())
 		{
-			log.info("Auto-recommend: Timer for item {} — offer {} (completed={})",
-				itemId, offer == null ? "not found" : offer.getItemName(),
-				offer != null && offer.isCompleted());
 			iter.remove();
 			return;
 		}
 
-		FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
-		log.info("Auto-recommend: Processing {} — offerPrice={}, rec={}, recPrice={}",
-			offer.getItemName(), offer.getPrice(),
-			rec != null ? "found" : "NOT FOUND",
-			rec != null ? rec.getRecommendedBuyPrice() : "N/A");
+		// Set a temporary long deadline to prevent duplicate calls while API responds
+		entry.setValue(now + 5 * 60 * 1000L);
 
-		if (rec == null)
+		int minutesSince = (int) ((now - offer.getCreatedAtMillis()) / 60000);
+		String timeframe = config.flipTimeframe().getApiValue();
+		String itemName = offer.getItemName();
+
+		// Get buy price (cost basis) for breakeven calculation
+		Integer costBasis = buyPrices.getOrDefault(itemId, offer.getPrice());
+
+		log.info("Auto-recommend: Checking buy adjustment for {} (price={}, {}min elapsed)",
+			itemName, offer.getPrice(), minutesSince);
+
+		plugin.getApiClient().getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
+			.itemId(itemId)
+			.isBuyOffer(true)
+			.offerPrice(offer.getPrice())
+			.averageBuyPrice(costBasis)
+			.minutesSinceOffer(minutesSince)
+			.adjustmentCount(0)
+			.quantityFilled(offer.getPreviousQuantitySold())
+			.totalQuantity(offer.getTotalQuantity())
+			.timeframe(timeframe)
+			.build()
+		).thenAccept(response ->
 		{
-			log.info("Auto-recommend: {} no longer recommended — queuing for cancellation", offer.getItemName());
+			synchronized (this)
+			{
+				handleBuyAdjustmentResponse(itemId, offer, response, currentRecommendations);
+			}
+		}).exceptionally(ex ->
+		{
+			log.warn("Auto-recommend: Buy adjustment API error for {}: {}", itemName, ex.getMessage());
+			synchronized (this)
+			{
+				// Reschedule with fallback delay
+				adjustmentDeadlines.put(itemId, System.currentTimeMillis() + AdjustmentTimerUtils.FALLBACK_CHECK_DELAY_MS);
+			}
+			return null;
+		});
+	}
+
+	/**
+	 * Handle the response from the buy adjustment API.
+	 */
+	private void handleBuyAdjustmentResponse(int itemId, TrackedOffer offer,
+		FlipAdjustmentResponse response, List<FlipRecommendation> currentRecommendations)
+	{
+		if (response == null)
+		{
+			return;
+		}
+
+		long nextDelay = AdjustmentTimerUtils.nextCheckDelayMs(response.getNextCheckMinutes());
+
+		if (!response.isActionRequired())
+		{
+			// Hold — reschedule using API timing
+			adjustmentDeadlines.put(itemId, System.currentTimeMillis() + nextDelay);
+			log.debug("Auto-recommend: Hold for {} - rescheduling in {}m",
+				offer.getItemName(), nextDelay / 60000);
+			return;
+		}
+
+		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
+		{
+			int newPrice = response.getRecommendedPrice();
+			log.info("Auto-recommend: API recommends adjust {} buy {} → {} gp",
+				offer.getItemName(), offer.getPrice(), newPrice);
+
+			// Find sell price from recommendations or API response
+			int sellPrice = response.getBreakevenPrice() + 1;
+			FlipRecommendation rec = findRecommendationInList(currentRecommendations, itemId);
+			if (rec != null && rec.getRecommendedSellPrice() > 0)
+			{
+				sellPrice = rec.getRecommendedSellPrice();
+			}
+			else if (response.getCurrentMargin() != null && response.getCurrentMargin() > 0)
+			{
+				sellPrice = newPrice + response.getCurrentMargin();
+			}
+
+			focusBuyOverlay(itemId, offer.getItemName(),
+				newPrice, offer.getTotalQuantity(), sellPrice,
+				String.format("Auto: Adjust %s buy price %s → %s gp",
+					offer.getItemName(),
+					GpUtils.formatGPWithSuffix(offer.getPrice()),
+					GpUtils.formatGPWithSuffix(newPrice)));
+
+			// Reschedule in case user doesn't act
+			adjustmentDeadlines.put(itemId, System.currentTimeMillis() + nextDelay);
+		}
+		else if (response.isCancelAndSell())
+		{
+			log.info("Auto-recommend: API says cancel {} — margin gone", offer.getItemName());
 			addToStaleQueue(offer);
-			iter.remove();
-			return;
+			adjustmentDeadlines.remove(itemId);
 		}
-
-		// Check if the offer is uncompetitive (red border = below current market)
-		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(offer);
-		boolean isUncompetitive = competitiveness == FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
-
-		if (rec.getRecommendedBuyPrice() == offer.getPrice() && !isUncompetitive)
-		{
-			// Price unchanged and offer is still competitive — reschedule
-			long delay = AdjustmentTimerUtils.FALLBACK_CHECK_DELAY_MS;
-			entry.setValue(now + delay);
-			log.debug("Auto-recommend: Price unchanged for {} and still competitive - rescheduling timer ({}m)",
-				offer.getItemName(), delay / 60000);
-			return;
-		}
-
-		if (isUncompetitive && rec.getRecommendedBuyPrice() == offer.getPrice())
-		{
-			// Offer is uncompetitive but recommendation hasn't updated yet —
-			// queue for cancellation since the market has moved against this offer
-			log.info("Auto-recommend: {} is uncompetitive — queuing for cancellation", offer.getItemName());
-			addToStaleQueue(offer);
-			iter.remove();
-			return;
-		}
-
-		log.info("Auto-recommend: Price changed for {} ({} -> {}) - prompting adjustment",
-			offer.getItemName(), offer.getPrice(), rec.getRecommendedBuyPrice());
-
-		focusBuyOverlay(itemId, offer.getItemName(),
-			rec.getRecommendedBuyPrice(), offer.getTotalQuantity(), rec.getRecommendedSellPrice(),
-			String.format("Auto: Adjust %s buy price %s → %s gp",
-				offer.getItemName(),
-				GpUtils.formatGPWithSuffix(offer.getPrice()),
-				GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
-
-		iter.remove();
 	}
 
 	/**
