@@ -1811,17 +1811,34 @@ public class AutoRecommendService
 				inInventory = true;
 			}
 			boolean hasBuyOffer = session.hasActiveBuySlotForItem(itemId);
-			if (!inInventory && !hasBuyOffer)
+
+			// Item is in inventory or still has an active buy — check if we have a sell price
+			if (inInventory || hasBuyOffer)
 			{
-				staleItems.add(itemId);
+				Integer sellPrice = resolveBestSellPrice(itemId);
+				if (sellPrice != null && sellPrice > 0)
+				{
+					return itemId;
+				}
 				continue;
 			}
 
-			Integer sellPrice = resolveBestSellPrice(itemId);
-			if (sellPrice != null && sellPrice > 0)
+			// Item not in inventory and no buy offer — might be waiting in GE for collection
+			// (e.g., cancelled partial buy). Keep it if we have a tracked quantity.
+			int trackedQty = session.getCollectedQuantity(itemId);
+			if (trackedQty > 0)
 			{
-				return itemId;
+				// Items are in GE slot waiting for collection — still sellable
+				Integer sellPrice = resolveBestSellPrice(itemId);
+				if (sellPrice != null && sellPrice > 0)
+				{
+					return itemId;
+				}
+				continue;
 			}
+
+			// Truly stale — no inventory, no buy offer, no tracked quantity
+			staleItems.add(itemId);
 		}
 
 		// Clean up stale collected items that are no longer anywhere
