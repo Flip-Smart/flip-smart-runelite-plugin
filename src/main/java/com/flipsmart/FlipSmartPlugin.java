@@ -1380,6 +1380,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			java.util.Map<Integer, TrackedOffer> offers = session.getTrackedOffers();
+			autoRecommendService.ensureAllOffersHaveTimers(offers);
 			autoRecommendService.checkAdjustmentTimers(
 				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
 			autoRecommendService.checkSellAdjustmentTimers(offers);

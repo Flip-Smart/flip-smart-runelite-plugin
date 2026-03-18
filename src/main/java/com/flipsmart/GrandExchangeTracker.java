@@ -612,7 +612,17 @@ public class GrandExchangeTracker
 
 	private void handleNewOfferNoFills(OfferContext ctx, TrackedOffer previousOffer)
 	{
-		session.putTrackedOffer(ctx.slot, new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy, ctx.totalQuantity, ctx.price, 0));
+		// Preserve createdAtMillis from existing offer if same item (avoids timer reset on re-sent events)
+		if (previousOffer != null && previousOffer.getItemId() == ctx.itemId && previousOffer.getCreatedAtMillis() > 0)
+		{
+			session.putTrackedOffer(ctx.slot, new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
+				ctx.totalQuantity, ctx.price, 0, previousOffer.getCreatedAtMillis()));
+		}
+		else
+		{
+			session.putTrackedOffer(ctx.slot, new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
+				ctx.totalQuantity, ctx.price, 0));
+		}
 
 		clearFlipAssistFocusIfMatches(ctx.itemId, ctx.isBuy);
 

@@ -1033,6 +1033,52 @@ public class AutoRecommendService
 		return anyAlreadyStale;
 	}
 
+	/**
+	 * Ensure all tracked offers have adjustment timers scheduled.
+	 * Called on each 2-minute refresh cycle to catch offers that were
+	 * missed (e.g., placed before a plugin rebuild or not present at login).
+	 */
+	public synchronized void ensureAllOffersHaveTimers(Map<Integer, TrackedOffer> trackedOffers)
+	{
+		if (!active || trackedOffers == null)
+		{
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.isCompleted())
+			{
+				continue;
+			}
+
+			if (offer.isBuy() && !adjustmentDeadlines.containsKey(offer.getItemId()))
+			{
+				long offerAgeMs = now - offer.getCreatedAtMillis();
+				long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+					? now - 1  // Already past initial delay — check immediately
+					: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+				adjustmentDeadlines.put(offer.getItemId(), deadline);
+				log.info("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
+					offer.getItemName(), offerAgeMs / 60000);
+			}
+			else if (!offer.isBuy() && !sellAdjustmentStates.containsKey(offer.getItemId()))
+			{
+				Integer buyPrice = buyPrices.getOrDefault(offer.getItemId(), offer.getPrice());
+				long offerAgeMs = now - offer.getCreatedAtMillis();
+				long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+					? now - 1
+					: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+				SellAdjustmentState state = new SellAdjustmentState(
+					offer.getItemId(), offer.getItemName(), buyPrice, deadline);
+				sellAdjustmentStates.put(offer.getItemId(), state);
+				log.info("Auto-recommend: Scheduled missing sell timer for {} (age={}m)",
+					offer.getItemName(), offerAgeMs / 60000);
+			}
+		}
+	}
+
 	// =====================
 	// Stale Offer Scan (timer-independent)
 	// =====================
