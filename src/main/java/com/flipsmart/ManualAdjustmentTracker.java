@@ -121,7 +121,7 @@ public class ManualAdjustmentTracker
 	 */
 	public void scheduleBuyAdjustment(int itemId, String itemName, int geSlot, int offerPrice)
 	{
-		long delay = AdjustmentTimerUtils.getBuyDelayMs(config.flipTimeframe(), offerPrice, config.flipStyle());
+		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
 		OfferAdjustmentState state = new OfferAdjustmentState(
 			itemId, itemName, true, geSlot, deadline, offerPrice);
@@ -142,7 +142,7 @@ public class ManualAdjustmentTracker
 	public void scheduleSellAdjustment(int itemId, String itemName, int geSlot,
 		int offerPrice, int averageBuyPrice)
 	{
-		long delay = AdjustmentTimerUtils.getSellDelayMs(config.flipTimeframe(), offerPrice, config.flipStyle());
+		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
 		OfferAdjustmentState state = new OfferAdjustmentState(
 			itemId, itemName, false, geSlot, deadline, averageBuyPrice);
@@ -161,11 +161,9 @@ public class ManualAdjustmentTracker
 		{
 			return;
 		}
-		long delay = state.isBuy
-			? AdjustmentTimerUtils.getBuyDelayMs(config.flipTimeframe(), offerPrice, config.flipStyle())
-			: AdjustmentTimerUtils.getSellDelayMs(config.flipTimeframe(), offerPrice, config.flipStyle());
-		state.deadlineMs = System.currentTimeMillis() + delay;
-		log.debug("Manual adjustment timer reset for slot {} ({}m)", geSlot, delay / 60000);
+		state.deadlineMs = System.currentTimeMillis() + AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+		log.debug("Manual adjustment timer reset for slot {} ({}m)", geSlot,
+			AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS / 60000);
 	}
 
 	/**
@@ -276,30 +274,16 @@ public class ManualAdjustmentTracker
 				state.adjustmentCount++;
 			}
 
-			// Reschedule based on response or default
-			Integer nextCheck = response.getNextCheckMinutes();
-			long delay;
-			if (nextCheck != null && nextCheck > 0)
-			{
-				delay = nextCheck * 60 * 1000L;
-			}
-			else
-			{
-				delay = state.isBuy
-					? AdjustmentTimerUtils.getBuyDelayMs(config.flipTimeframe(), offer.getPrice(), config.flipStyle())
-					: AdjustmentTimerUtils.getSellDelayMs(config.flipTimeframe(), offer.getPrice(), config.flipStyle());
-			}
-			state.deadlineMs = System.currentTimeMillis() + delay;
+			// Reschedule using API-provided next_check_minutes (source of truth)
+			state.deadlineMs = System.currentTimeMillis()
+				+ AdjustmentTimerUtils.nextCheckDelayMs(response.getNextCheckMinutes());
 
 		}).exceptionally(e ->
 		{
 			log.debug("Failed to get adjustment recommendation for {}: {}",
 				state.itemName, e.getMessage());
-			// Reschedule with default delay on error
-			long delay = state.isBuy
-				? AdjustmentTimerUtils.getBuyDelayMs(config.flipTimeframe(), offer.getPrice(), config.flipStyle())
-				: AdjustmentTimerUtils.getSellDelayMs(config.flipTimeframe(), offer.getPrice(), config.flipStyle());
-			state.deadlineMs = System.currentTimeMillis() + delay;
+			// Reschedule with fallback delay on error
+			state.deadlineMs = System.currentTimeMillis() + AdjustmentTimerUtils.FALLBACK_CHECK_DELAY_MS;
 			return null;
 		});
 
