@@ -200,14 +200,6 @@ public class ManualAdjustmentTracker
 	}
 
 	/**
-	 * Check whether a GE slot has a pending adjustment recommendation.
-	 */
-	public boolean hasAdjustmentPending(int geSlot)
-	{
-		return trackedOffers.containsKey(geSlot);
-	}
-
-	/**
 	 * Check all adjustment timers and fire API calls for expired ones.
 	 * Called periodically from the plugin's refresh timer.
 	 *
