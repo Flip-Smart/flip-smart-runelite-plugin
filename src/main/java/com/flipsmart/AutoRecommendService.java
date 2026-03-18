@@ -1170,7 +1170,7 @@ public class AutoRecommendService
 		TrackedOffer next = staleOfferQueue.get(0);
 		int remaining = staleOfferQueue.size();
 		String prefix = remaining > 1 ? String.format("(%d left) ", remaining) : "";
-		String overlayMsg = String.format("%sCancel %s?", prefix, next.getItemName());
+		String overlayMsg = String.format("%sConsider cancelling %s", prefix, next.getItemName());
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);

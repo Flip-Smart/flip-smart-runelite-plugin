@@ -491,7 +491,19 @@ public class FlipAssistOverlay extends Overlay
 		
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		graphics.setColor(focusedFlip.isBuying() ? COLOR_BUY : COLOR_SELL);
-		graphics.drawString(focusedFlip.isBuying() ? "BUYING" : "SELLING", SECTION_PADDING + ICON_SIZE + 6, y + 24);
+		String stepLabel;
+		if (focusedFlip.isBuying())
+		{
+			stepLabel = "BUYING";
+		}
+		else
+		{
+			// Show "MODIFY" if there's already an active sell order for this item
+			PlayerSession sess = flipSmartPlugin.getSession();
+			boolean hasActiveSell = sess != null && sess.hasActiveSellSlotForItem(focusedFlip.getItemId());
+			stepLabel = hasActiveSell ? "MODIFY" : "SELLING";
+		}
+		graphics.drawString(stepLabel, SECTION_PADDING + ICON_SIZE + 6, y + 24);
 		
 		return y + ICON_SIZE + 4;
 	}
