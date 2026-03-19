@@ -210,8 +210,11 @@ public class OfflineSyncService
 		if (!persistedOffers.isEmpty())
 		{
 			handleEmptyPersistedSlots(persistedOffers);
-			configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
 		}
+
+		// Re-persist the current merged state so timestamps survive unexpected shutdowns
+		// (e.g., client crash, force close where shutDown() doesn't run)
+		persistOfferState();
 
 		log.info("Offline sync completed for {}", session.getRsn());
 
