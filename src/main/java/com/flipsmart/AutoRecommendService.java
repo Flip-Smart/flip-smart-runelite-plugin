@@ -1098,16 +1098,24 @@ public class AutoRecommendService
 	 */
 	private void focusNextStaleOffer()
 	{
-		// Remove any offers that have already been handled (cancelled, collected, etc.)
+		// Remove offers that are no longer relevant:
+		// - cancelled/collected (no longer in GE)
+		// - became competitive (green border — price is back in the spread)
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
 			Map<Integer, TrackedOffer> currentOffers = session.getTrackedOffers();
 			staleOfferQueue.removeIf(o -> {
-				// TrackedOffers are keyed by slot, so search by item ID across all slots
-				boolean stillActive = currentOffers.values().stream()
-					.anyMatch(t -> t.getItemId() == o.getItemId() && !t.isCompleted());
-				return !stillActive;
+				TrackedOffer current = currentOffers.values().stream()
+					.filter(t -> t.getItemId() == o.getItemId() && !t.isCompleted())
+					.findFirst().orElse(null);
+				if (current == null)
+				{
+					return true; // No longer in GE
+				}
+				// Re-check competitiveness — wiki prices may have refreshed
+				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
+				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
 			});
 		}
 
