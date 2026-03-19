@@ -1351,21 +1351,15 @@ public class AutoRecommendService
 			log.info("Auto-recommend: Sell adjustment for {} — {} → {} gp (adj#{})",
 				state.itemName, offer.getPrice(), newPrice, state.adjustmentCount);
 
-			// Show sell overlay with adjusted price
-			int priceOffset = config.priceOffset();
-			FocusedFlip focus = FocusedFlip.forSell(
-				state.itemId, state.itemName, newPrice,
-				offer.getTotalQuantity() - offer.getPreviousQuantitySold(),
-				priceOffset);
-			invokeFocusCallback(focus);
+			// Only prompt if the offer is uncompetitive (red border)
+			FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
+			if (comp == FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+			{
+				// Queue through stale offer system so prompt survives refresh cycles
+				addToStaleQueue(offer);
+			}
 
-			String statusMsg = String.format("Auto: Adjust %s sell %s → %s gp",
-				state.itemName,
-				GpUtils.formatGPWithSuffix(offer.getPrice()),
-				GpUtils.formatGPWithSuffix(newPrice));
-			updateStatus(statusMsg);
-
-			// Don't remove the timer — reschedule in case user doesn't act
+			// Reschedule in case user doesn't act or offer is still competitive
 			state.deadline = System.currentTimeMillis()
 				+ AdjustmentTimerUtils.nextCheckDelayMs(response.getNextCheckMinutes());
 		}
