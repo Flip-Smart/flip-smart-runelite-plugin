@@ -887,11 +887,18 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Correct a single offer's timestamp if the backend has an older (more accurate) value.
-	 * Returns true if the timestamp was corrected.
+	 * Backfill a missing timestamp from the backend.
+	 * Only fills in timestamps that are 0 (unknown) — does NOT override existing
+	 * local timestamps, since they're more accurate (set at offer placement time).
+	 * The backend's last_buy_time can be from older transactions for the same item.
 	 */
 	private boolean correctOfferTimestamp(TrackedOffer offer, Map<Integer, ActiveFlip> flipsByItem)
 	{
+		if (offer.getCreatedAtMillis() > 0)
+		{
+			return false; // Local timestamp exists — trust it
+		}
+
 		ActiveFlip flip = flipsByItem.get(offer.getItemId());
 		if (flip == null)
 		{
@@ -902,18 +909,10 @@ public class FlipSmartPlugin extends Plugin
 			? TimeUtils.parseIsoToMillis(flip.getSellPlacedTime())
 			: TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
 
-		if (backendMs <= 0)
+		if (backendMs > 0)
 		{
-			return false;
-		}
-
-		if (offer.getCreatedAtMillis() <= 0 || backendMs < offer.getCreatedAtMillis())
-		{
-			log.info("Corrected timestamp for {} — local={}m ago, backend={}m ago",
-				offer.getItemName(),
-				offer.getCreatedAtMillis() > 0
-					? (System.currentTimeMillis() - offer.getCreatedAtMillis()) / 60000 : "missing",
-				(System.currentTimeMillis() - backendMs) / 60000);
+			log.info("Backfilled missing timestamp for {} from backend ({}m ago)",
+				offer.getItemName(), (System.currentTimeMillis() - backendMs) / 60000);
 			offer.setCreatedAtMillis(backendMs);
 			return true;
 		}
