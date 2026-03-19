@@ -1879,7 +1879,7 @@ public class AutoRecommendService
 			if (first.isBuy())
 			{
 				updateStatus("Auto: Collect " + first.getItemName() + " from GE");
-				invokeOverlayMessageCallback(first.getItemName(), first.getItemId());
+				invokeOverlayMessageCallback("Collect " + first.getItemName(), first.getItemId());
 			}
 			else
 			{
