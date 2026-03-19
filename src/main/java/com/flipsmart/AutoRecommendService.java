@@ -746,8 +746,17 @@ public class AutoRecommendService
 		int itemId = staleOffer.getItemId();
 		session.addStaleNotified(itemId);
 
+		// Only prompt if the offer is uncompetitive (red border).
+		// Green-bordered offers are still within the market spread.
+		FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(staleOffer);
+		if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+		{
+			log.debug("Auto-recommend: Stale offer for {} but still competitive — skipping", staleOffer.getItemName());
+			return;
+		}
+
 		long age = now - staleOffer.getCreatedAtMillis();
-		log.info("Auto-recommend: Stale offer detected for {} (age: {}m)",
+		log.info("Auto-recommend: Stale & uncompetitive offer for {} (age: {}m)",
 			staleOffer.getItemName(), age / 60000);
 
 		addToStaleQueue(staleOffer);
