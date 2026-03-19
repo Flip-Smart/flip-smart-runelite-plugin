@@ -245,13 +245,6 @@ public class AutoRecommendService
 		// (reevaluateAfterLogin may have fired before auto was active)
 		rescheduleAdjustmentTimersAfterLogin();
 		rescheduleSellAdjustmentTimersAfterLogin();
-
-		// Immediately scan all offers for staleness + uncompetitiveness
-		PlayerSession sess = plugin.getSession();
-		if (sess != null)
-		{
-			scanForStaleOffers(sess.getTrackedOffers());
-		}
 	}
 
 	/**
@@ -1079,74 +1072,6 @@ public class AutoRecommendService
 	// =====================
 	// Stale Offer Scan (timer-independent)
 	// =====================
-
-	/**
-	 * Scan all tracked offers for staleness and uncompetitiveness.
-	 * Uses locally persisted TrackedOffer.createdAtMillis for offer age.
-	 *
-	 * Called on each 2-minute refresh cycle alongside the timer-based checks.
-	 * Only prompts once per item (tracked via promptedStaleItems) until the
-	 * offer is cancelled or a new one is placed.
-	 *
-	 * @param trackedOffers Current GE slot offers
-	 */
-	public synchronized void scanForStaleOffers(Map<Integer, TrackedOffer> trackedOffers)
-	{
-		if (!active || trackedOffers == null || trackedOffers.isEmpty())
-		{
-			return;
-		}
-
-		long now = System.currentTimeMillis();
-		List<TrackedOffer> staleUncompetitive = new ArrayList<>();
-
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (isStaleAndUncompetitive(offer, now))
-			{
-				staleUncompetitive.add(offer);
-			}
-		}
-
-		if (staleUncompetitive.isEmpty())
-		{
-			log.debug("Auto-recommend: No stale uncompetitive offers found");
-			return;
-		}
-
-		log.info("Auto-recommend: Found {} stale uncompetitive offers", staleUncompetitive.size());
-		for (TrackedOffer offer : staleUncompetitive)
-		{
-			addToStaleQueue(offer);
-		}
-	}
-
-	private boolean isStaleAndUncompetitive(TrackedOffer offer, long now)
-	{
-		if (offer.isCompleted() || promptedStaleItems.contains(offer.getItemId()))
-		{
-			return false;
-		}
-
-		long offerAgeMs = now - offer.getCreatedAtMillis();
-		long thresholdMs = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
-
-		if (offerAgeMs < thresholdMs)
-		{
-			return false;
-		}
-
-		FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
-		if (comp == FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
-		{
-			log.info("Auto-recommend: Stale & uncompetitive: {} ({}, age={}h{}m, price={})",
-				offer.getItemName(), offer.isBuy() ? "buy" : "sell",
-				offerAgeMs / 3600000, (offerAgeMs % 3600000) / 60000,
-				offer.getPrice());
-			return true;
-		}
-		return false;
-	}
 
 	/**
 	 * Show the next stale offer in the queue for user action.

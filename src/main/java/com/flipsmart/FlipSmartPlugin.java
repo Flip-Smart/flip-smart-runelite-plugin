@@ -1383,7 +1383,6 @@ public class FlipSmartPlugin extends Plugin
 			autoRecommendService.checkAdjustmentTimers(
 				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
 			autoRecommendService.checkSellAdjustmentTimers(offers);
-			autoRecommendService.scanForStaleOffers(offers);
 		}
 
 		if (manualAdjustmentTracker != null)
