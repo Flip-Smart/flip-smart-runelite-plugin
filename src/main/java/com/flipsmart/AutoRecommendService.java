@@ -948,12 +948,21 @@ public class AutoRecommendService
 			return;
 		}
 
+		// Only prompt if the offer is actually uncompetitive (red border).
+		// Green-bordered offers are still within the market spread and likely to fill.
+		FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
+		if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+		{
+			log.debug("Auto-recommend: API suggests action for {} but offer is still competitive — rescheduling",
+				offer.getItemName());
+			adjustmentDeadlines.put(itemId, System.currentTimeMillis() + nextDelay);
+			return;
+		}
+
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
 		{
 			log.info("Auto-recommend: API recommends adjust {} buy {} → {} gp",
 				offer.getItemName(), offer.getPrice(), response.getRecommendedPrice());
-
-			// Queue through stale offer system so prompt survives refresh cycles
 			addToStaleQueue(offer);
 			adjustmentDeadlines.remove(itemId);
 		}
