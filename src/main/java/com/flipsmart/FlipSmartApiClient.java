@@ -1629,6 +1629,32 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Fetch aggregate flip statistics from the API.
+	 * @param days Number of days to look back (1-365)
+	 * @param rsn Optional RSN filter
+	 */
+	public CompletableFuture<FlipStatisticsResponse> getFlipStatisticsAsync(int days, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/flips/statistics?days=%d&rsn=%s", apiUrl, days, rsn);
+		}
+		else
+		{
+			url = String.format("%s/flips/statistics?days=%d", apiUrl, days);
+		}
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, FlipStatisticsResponse.class));
+	}
+
+	/**
 	 * Response wrapper for dumps API
 	 */
 	public static class DumpsResponse
