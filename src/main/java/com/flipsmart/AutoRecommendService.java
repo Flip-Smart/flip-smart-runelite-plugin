@@ -1351,13 +1351,10 @@ public class AutoRecommendService
 			log.info("Auto-recommend: Sell adjustment for {} — {} → {} gp (adj#{})",
 				state.itemName, offer.getPrice(), newPrice, state.adjustmentCount);
 
-			// Only prompt if the offer is uncompetitive (red border)
-			FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
-			if (comp == FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
-			{
-				// Queue through stale offer system so prompt survives refresh cycles
-				addToStaleQueue(offer);
-			}
+			// The API already determined this sell is overpriced — always queue the prompt.
+			// Unlike buy adjustments (where local wiki competitiveness is a useful gate),
+			// sell adjustments use backend market data which is authoritative.
+			addToStaleQueue(offer);
 
 			// Reschedule in case user doesn't act or offer is still competitive
 			state.deadline = System.currentTimeMillis()
