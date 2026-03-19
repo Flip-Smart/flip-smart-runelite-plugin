@@ -241,10 +241,17 @@ public class AutoRecommendService
 		log.info("Auto-recommend started with {} items in queue (sorted by volume asc)", recommendationQueue.size());
 		focusCurrent();
 
-		// Schedule adjustment timers and scan for stale offers
+		// Schedule adjustment timers
 		// (reevaluateAfterLogin may have fired before auto was active)
 		rescheduleAdjustmentTimersAfterLogin();
 		rescheduleSellAdjustmentTimersAfterLogin();
+
+		// Immediately check timers that are already past deadline (don't wait for 2-min cycle)
+		PlayerSession s = plugin.getSession();
+		if (s != null)
+		{
+			ensureAllOffersHaveTimers(s.getTrackedOffers());
+		}
 	}
 
 	/**
