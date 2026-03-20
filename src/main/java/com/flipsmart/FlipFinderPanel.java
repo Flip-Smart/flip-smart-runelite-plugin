@@ -697,16 +697,22 @@ public class FlipFinderPanel extends PluginPanel
 					itemCount == 1 ? "flip" : "flips",
 					formatGP(invested)));
 			}
-			else if (selectedIndex == 2 && !currentCompletedFlips.isEmpty())
+			else if (selectedIndex == 2)
 			{
-				// Switched to Completed Flips tab, update status
-				int flipCount = currentCompletedFlips.size();
-				int totalProfit = currentCompletedFlips.stream()
-					.mapToInt(CompletedFlip::getNetProfit)
-					.sum();
-				statusLabel.setText(String.format("%d completed | %s profit",
-					flipCount,
-					formatGP(totalProfit)));
+				// Switched to Completed Flips tab — fetch 30-day aggregate stats
+				String rsn = plugin.getCurrentRsnSafe().orElse(null);
+				apiClient.getFlipStatisticsAsync(30, rsn).thenAccept(stats ->
+				{
+					SwingUtilities.invokeLater(() ->
+					{
+						if (stats != null)
+						{
+							statusLabel.setText(String.format("%d flips (30d) | %s profit",
+								stats.getTotalFlips(),
+								formatGP(stats.getTotalProfit())));
+						}
+					});
+				});
 			}
 			else if (selectedIndex == 0 && !currentRecommendations.isEmpty())
 			{
@@ -1593,11 +1599,24 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(completedFlipsScrollPane);
-		// Don't clear container yet - keep showing old flips until new data arrives
-		// This prevents the UI flash when flips disappear and reappear
 
-		// Fetch last 50 completed flips for current RSN
 		String rsn = plugin.getCurrentRsnSafe().orElse(null);
+
+		// Fetch 30-day aggregate stats (source of truth for profit summary)
+		apiClient.getFlipStatisticsAsync(30, rsn).thenAccept(stats ->
+		{
+			SwingUtilities.invokeLater(() ->
+			{
+				if (stats != null && tabbedPane.getSelectedIndex() == 2)
+				{
+					statusLabel.setText(String.format("%d flips (30d) | %s profit",
+						stats.getTotalFlips(),
+						formatGP(stats.getTotalProfit())));
+				}
+			});
+		});
+
+		// Fetch recent completed flips for the list display
 		apiClient.getCompletedFlipsAsync(50, rsn).thenAccept(response ->
 		{
 			SwingUtilities.invokeLater(() ->
@@ -1620,17 +1639,6 @@ public class FlipFinderPanel extends PluginPanel
 					showNoCompletedFlips();
 					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 					return;
-				}
-
-				// Update status if on completed flips tab
-				if (tabbedPane.getSelectedIndex() == 2)
-				{
-					int totalProfit = currentCompletedFlips.stream()
-						.mapToInt(CompletedFlip::getNetProfit)
-						.sum();
-					statusLabel.setText(String.format("%d completed | %s profit",
-						currentCompletedFlips.size(),
-						formatGP(totalProfit)));
 				}
 
 				populateCompletedFlips(currentCompletedFlips);

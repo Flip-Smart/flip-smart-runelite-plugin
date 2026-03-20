@@ -155,6 +155,35 @@ public class OfflineSyncService
 	}
 
 	/**
+	 * Preload persisted offer state into the session so that timestamps
+	 * are available during the login burst (before syncOfflineFills runs).
+	 *
+	 * This mirrors the Flipping Utilities approach: load persisted data
+	 * into memory BEFORE game events fire, so createWithPreservedTimestamps
+	 * can find the existing offer with its original timestamp.
+	 */
+	public void preloadPersistedOffers()
+	{
+		Map<Integer, TrackedOffer> persisted = loadPersistedOffers();
+		if (persisted.isEmpty())
+		{
+			return;
+		}
+
+		for (Map.Entry<Integer, TrackedOffer> entry : persisted.entrySet())
+		{
+			TrackedOffer offer = entry.getValue();
+			if (offer.getCreatedAtMillis() > 0)
+			{
+				session.putTrackedOffer(entry.getKey(), offer);
+			}
+		}
+
+		log.info("Preloaded {} persisted offers into session for timestamp preservation",
+			persisted.size());
+	}
+
+	/**
 	 * Sync fills that occurred while offline.
 	 * Records current GE state to the backend.
 	 */
@@ -181,8 +210,11 @@ public class OfflineSyncService
 		if (!persistedOffers.isEmpty())
 		{
 			handleEmptyPersistedSlots(persistedOffers);
-			configManager.unsetConfiguration(CONFIG_GROUP, getPersistedOffersKey());
 		}
+
+		// Re-persist the current merged state so timestamps survive unexpected shutdowns
+		// (e.g., client crash, force close where shutDown() doesn't run)
+		persistOfferState();
 
 		log.info("Offline sync completed for {}", session.getRsn());
 
@@ -205,37 +237,47 @@ public class OfflineSyncService
 
 			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
 			{
-				// Restore the original timestamp from persisted offer for timer continuity
-				currentOffer.setCreatedAtMillis(persistedOffer.getCreatedAtMillis());
-
-				// Have persisted state - check for offline fills
+				restoreTimestampIfOlder(currentOffer, persistedOffer);
 				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
 			}
 			else if (currentOffer.getTotalQuantity() > 0)
 			{
-				// No persisted state but there's an active order - record it
-				log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
-					currentOffer.isBuy() ? "BUY" : "SELL",
-					currentOffer.getItemName(), slot, currentOffer.getPreviousQuantitySold(),
-					currentOffer.getTotalQuantity(), currentOffer.getPrice());
-
-				Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
-
-				apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-					.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
-						currentOffer.getPreviousQuantitySold(), currentOffer.getPrice())
-					.geSlot(slot)
-					.recommendedSellPrice(recommendedSellPrice)
-					.rsn(getRsnSafe().orElse(null))
-					.totalQuantity(currentOffer.getTotalQuantity())
-					.build());
-
-				// For buy orders with fills, add to collected tracking
-				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
-				{
-					session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
-				}
+				recordNewOfferFromSync(slot, currentOffer);
 			}
+		}
+	}
+
+	private void restoreTimestampIfOlder(TrackedOffer current, TrackedOffer persisted)
+	{
+		if (persisted.getCreatedAtMillis() > 0
+			&& persisted.getCreatedAtMillis() < current.getCreatedAtMillis())
+		{
+			current.setCreatedAtMillis(persisted.getCreatedAtMillis());
+		}
+	}
+
+	private void recordNewOfferFromSync(int slot, TrackedOffer offer)
+	{
+		log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
+			offer.isBuy() ? "BUY" : "SELL",
+			offer.getItemName(), slot, offer.getPreviousQuantitySold(),
+			offer.getTotalQuantity(), offer.getPrice());
+
+		Integer recommendedSellPrice = offer.isBuy()
+			? session.getRecommendedPrice(offer.getItemId()) : null;
+
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(offer.getItemId(), offer.getItemName(), offer.isBuy(),
+				offer.getPreviousQuantitySold(), offer.getPrice())
+			.geSlot(slot)
+			.recommendedSellPrice(recommendedSellPrice)
+			.rsn(getRsnSafe().orElse(null))
+			.totalQuantity(offer.getTotalQuantity())
+			.build());
+
+		if (offer.isBuy() && offer.getPreviousQuantitySold() > 0)
+		{
+			session.addCollectedItem(offer.getItemId(), offer.getPreviousQuantitySold());
 		}
 	}
 

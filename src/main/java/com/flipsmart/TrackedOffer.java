@@ -61,7 +61,10 @@ public class TrackedOffer
 
 	/**
 	 * Create a TrackedOffer preserving timestamps from an existing offer when available.
-	 * Falls back to the current time if no existing offer is present.
+	 * Falls back to the current time if no existing offer is present (genuinely new offer).
+	 *
+	 * To ensure correct timestamps during login burst, callers should preload persisted
+	 * offers into the session BEFORE this method is called. See OfflineSyncService.preloadPersistedOffers().
 	 */
 	public static TrackedOffer createWithPreservedTimestamps(
 		int itemId, String itemName, int totalQuantity,

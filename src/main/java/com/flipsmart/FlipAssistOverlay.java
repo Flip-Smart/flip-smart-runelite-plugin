@@ -64,6 +64,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String HINT_TITLE = "Flip Assist";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
+	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -250,6 +251,10 @@ public class FlipAssistOverlay extends Overlay
 			}
 			if (isGrandExchangeOpen())
 			{
+				if (!flipSmartPlugin.getApiClient().isAuthenticated())
+				{
+					return renderHintBox(graphics, LOGIN_MESSAGE);
+				}
 				PlayerSession session = flipSmartPlugin.getSession();
 				if (session != null && !flipSmartPlugin.isPremium()
 					&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
@@ -344,7 +349,13 @@ public class FlipAssistOverlay extends Overlay
 		int panelHeight;
 		if (hasIcon)
 		{
-			panelHeight = HINT_PANEL_HEIGHT + 18;
+			int iconSpace = 20 + 6; // hintIconSize + gap
+			java.util.List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
+			int lineHeight = smallMetrics.getHeight();
+			int textHeight = lineHeight * iconLines.size();
+			// Title (20px) + gap (12px) + max(icon height, text height) + bottom padding (8px)
+			panelHeight = 20 + 12 + Math.max(20, textHeight) + 8;
+			panelHeight = Math.max(panelHeight, HINT_PANEL_HEIGHT);
 		}
 		else
 		{
@@ -394,28 +405,32 @@ public class FlipAssistOverlay extends Overlay
 
 		if (hasIcon)
 		{
-			// Two-line layout: subtitle + icon with item name
+			// Layout: [icon] + message text (centered together)
 			graphics.setFont(FontManager.getRunescapeSmallFont());
-
-			// Line 1: "Collect items from GE" subtitle
-			graphics.setColor(COLOR_TEXT_DIM);
-			String subtitle = "Collect items from GE";
-			int subtitleWidth = smallMetrics.stringWidth(subtitle);
-			graphics.drawString(subtitle, (HINT_PANEL_WIDTH - subtitleWidth) / 2, 36);
-
-			// Line 2: [icon] + item name
 			graphics.setColor(COLOR_TEXT);
+
 			AsyncBufferedImage itemImage = itemManager.getImage(itemId);
-			int msgWidth = smallMetrics.stringWidth(message);
-			int totalWidth = hintIconSize + 4 + msgWidth;
-			int startX = (HINT_PANEL_WIDTH - totalWidth) / 2;
-			int iconLineY = 54;
+
+			// Wrap message to fit alongside icon
+			int iconSpace = hintIconSize + 6;
+			java.util.List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
+
+			int lineHeight = smallMetrics.getHeight();
+			int textBlockHeight = lineHeight * iconLines.size();
+			int iconY = 32 + (textBlockHeight - hintIconSize) / 2;
+			int textStartX = textPadding + iconSpace;
 
 			if (itemImage != null)
 			{
-				graphics.drawImage(itemImage, startX, iconLineY - hintIconSize + 4, hintIconSize, hintIconSize, null);
+				graphics.drawImage(itemImage, textPadding, iconY, hintIconSize, hintIconSize, null);
 			}
-			graphics.drawString(message, startX + hintIconSize + 4, iconLineY);
+
+			int y = 32 + lineHeight;
+			for (String line : iconLines)
+			{
+				graphics.drawString(line, textStartX, y);
+				y += lineHeight;
+			}
 		}
 		else
 		{
@@ -486,7 +501,19 @@ public class FlipAssistOverlay extends Overlay
 		
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		graphics.setColor(focusedFlip.isBuying() ? COLOR_BUY : COLOR_SELL);
-		graphics.drawString(focusedFlip.isBuying() ? "BUYING" : "SELLING", SECTION_PADDING + ICON_SIZE + 6, y + 24);
+		String stepLabel;
+		if (focusedFlip.isBuying())
+		{
+			stepLabel = "BUYING";
+		}
+		else
+		{
+			// Show "MODIFY" if there's already an active sell order for this item
+			PlayerSession sess = flipSmartPlugin.getSession();
+			boolean hasActiveSell = sess != null && sess.hasActiveSellSlotForItem(focusedFlip.getItemId());
+			stepLabel = hasActiveSell ? "MODIFY" : "SELLING";
+		}
+		graphics.drawString(stepLabel, SECTION_PADDING + ICON_SIZE + 6, y + 24);
 		
 		return y + ICON_SIZE + 4;
 	}

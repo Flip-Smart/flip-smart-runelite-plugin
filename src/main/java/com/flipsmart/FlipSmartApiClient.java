@@ -1629,6 +1629,32 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Fetch aggregate flip statistics from the API.
+	 * @param days Number of days to look back (1-365)
+	 * @param rsn Optional RSN filter
+	 */
+	public CompletableFuture<FlipStatisticsResponse> getFlipStatisticsAsync(int days, String rsn)
+	{
+		String apiUrl = getApiUrl();
+		String url;
+		if (rsn != null && !rsn.isEmpty())
+		{
+			url = String.format("%s/flips/statistics?days=%d&rsn=%s", apiUrl, days, rsn);
+		}
+		else
+		{
+			url = String.format("%s/flips/statistics?days=%d", apiUrl, days);
+		}
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, FlipStatisticsResponse.class));
+	}
+
+	/**
 	 * Response wrapper for dumps API
 	 */
 	public static class DumpsResponse
@@ -2087,6 +2113,60 @@ public class FlipSmartApiClient
 	public CompletableFuture<Boolean> addItemToBlocklistAsync(int blocklistId, int itemId)
 	{
 		return addItemToBlocklistAsync(blocklistId, itemId, null);
+	}
+
+	// =========================================================================
+	// Flip Adjustment API Methods
+	// =========================================================================
+
+	/**
+	 * Request parameters for the flip adjustment API.
+	 */
+	@lombok.Builder
+	public static class FlipAdjustmentRequest
+	{
+		final int itemId;
+		final boolean isBuyOffer;
+		final int offerPrice;
+		final int averageBuyPrice;
+		final int minutesSinceOffer;
+		final int adjustmentCount;
+		final int quantityFilled;
+		final int totalQuantity;
+		final String timeframe;
+	}
+
+	/**
+	 * Get a flip adjustment recommendation from the backend.
+	 * Checks whether a stale offer should be adjusted based on volume, timeframe, and market conditions.
+	 */
+	public CompletableFuture<FlipAdjustmentResponse> getFlipAdjustmentAsync(FlipAdjustmentRequest req)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/flips/adjustment", apiUrl);
+
+		JsonObject jsonBody = new JsonObject();
+		jsonBody.addProperty(JSON_KEY_ITEM_ID, req.itemId);
+		jsonBody.addProperty("is_buy_offer", req.isBuyOffer);
+		jsonBody.addProperty("offer_price", req.offerPrice);
+		jsonBody.addProperty("average_buy_price", req.averageBuyPrice);
+		jsonBody.addProperty("minutes_since_offer", req.minutesSinceOffer);
+		jsonBody.addProperty("adjustment_count", req.adjustmentCount);
+		jsonBody.addProperty("quantity_filled", req.quantityFilled);
+		jsonBody.addProperty("total_quantity", req.totalQuantity);
+		if (req.timeframe != null)
+		{
+			jsonBody.addProperty("timeframe", req.timeframe);
+		}
+
+		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.post(body);
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, FlipAdjustmentResponse.class));
 	}
 
 	// =========================================================================

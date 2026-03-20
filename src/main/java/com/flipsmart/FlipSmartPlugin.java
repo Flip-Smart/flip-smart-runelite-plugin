@@ -33,6 +33,7 @@ import javax.inject.Inject;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
 
@@ -87,9 +88,6 @@ public class FlipSmartPlugin extends Plugin
 	private ConfigManager configManager;
 
 	@Inject
-	private Gson gson;
-
-	@Inject
 	private DumpAlertService dumpAlertService;
 
 	@Inject
@@ -115,6 +113,9 @@ public class FlipSmartPlugin extends Plugin
 	@Getter
 	private AutoRecommendService autoRecommendService;
 
+	// Manual flip adjustment tracker (API-based staleness detection)
+	private ManualAdjustmentTracker manualAdjustmentTracker;
+
 	// Centralized session state management (provided via @Provides @Singleton)
 	@Inject
 	private PlayerSession session;
@@ -127,6 +128,10 @@ public class FlipSmartPlugin extends Plugin
 
 	// Track all active one-shot Swing timers for cleanup on shutdown
 	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
+
+	// Last known RSN — saved when we learn it, used as fallback for persistence on shutdown
+	// when session.getRsn() may already be null
+	private volatile String lastKnownRsn;
 
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
@@ -219,6 +224,11 @@ public class FlipSmartPlugin extends Plugin
 	public int getFlipSlotLimit()
 	{
 		return isPremium() ? 8 : 2;
+	}
+
+	public List<ActiveFlip> getCurrentActiveFlips()
+	{
+		return flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null;
 	}
 
 	public boolean isAutoRecommendActive()
@@ -464,6 +474,7 @@ public class FlipSmartPlugin extends Plugin
 		// Wire service callbacks and initialize auto-recommend
 		wireServiceCallbacks();
 		initializeAutoRecommendService();
+		initializeManualAdjustmentTracker();
 		wireGrandExchangeTrackerCallbacks();
 
 		// Start dump alert service
@@ -495,6 +506,38 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService.setOnFocusChanged(this::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
+	}
+
+	/**
+	 * Initialize manual adjustment tracker for staleness detection on manual flips.
+	 */
+	private void initializeManualAdjustmentTracker()
+	{
+		manualAdjustmentTracker = new ManualAdjustmentTracker(apiClient, config);
+
+		// Wire callback: show adjustment prompts in FlipAssistOverlay
+		manualAdjustmentTracker.setOnAdjustmentPrompt(flipAssistOverlay::setAutoStatusMessage);
+
+		// Wire callback: focus a buy overlay when adjustment recommends a new price
+		manualAdjustmentTracker.setOnFocusFlip((focus, statusMsg) ->
+		{
+			flipAssistOverlay.setFocusedFlip(focus);
+			flipAssistOverlay.setAutoStatusMessage(statusMsg, focus.getItemId());
+		});
+
+		// Wire callback: highlight GE slot for adjustment
+		manualAdjustmentTracker.setOnHighlightSlot((slot, recommendedPrice) ->
+			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
+		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
+
+		// Wire suppliers for ditch logic (replacement recommendations)
+		manualAdjustmentTracker.setCashStackSupplier(() ->
+			session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null);
+		manualAdjustmentTracker.setRsnSupplier(() -> getCurrentRsnSafe().orElse(null));
+		manualAdjustmentTracker.setFilledSlotsSupplier(this::getFilledGESlotCount);
+
+		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
+		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
 	}
 
 	private void handleAutoRecommendFocusChanged(FocusedFlip focus)
@@ -586,11 +629,17 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Persist offer state before shutting down (handles cases where client is closed without logout)
-		// Only persist if we have a valid RSN to avoid overwriting good data
-		if (session.getRsn() != null && !session.getRsn().isEmpty())
+		// Use lastKnownRsn as fallback since session.getRsn() may be null at shutdown
+		String rsnForPersistence = session.getRsn();
+		if ((rsnForPersistence == null || rsnForPersistence.isEmpty()) && lastKnownRsn != null)
+		{
+			session.setRsn(lastKnownRsn);
+			rsnForPersistence = lastKnownRsn;
+		}
+		if (rsnForPersistence != null && !rsnForPersistence.isEmpty())
 		{
 			offlineSyncService.persistOfferState();
-			log.info("Persisted offer state on shutdown for {}", session.getRsn());
+			log.info("Persisted offer state on shutdown for {}", rsnForPersistence);
 		}
 		
 		overlayManager.remove(geOverlay);
@@ -668,6 +717,13 @@ public class FlipSmartPlugin extends Plugin
 		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
 		{
 			session.onLoginStateChange(client.getTickCount());
+
+			// Persist offer state before hop/reconnect so timestamps survive.
+			// handleLogoutState only runs on LOGIN_SCREEN, not hops.
+			if (!session.getTrackedOffers().isEmpty())
+			{
+				offlineSyncService.persistOfferState();
+			}
 		}
 
 		if (gameState == GameState.LOGIN_SCREEN)
@@ -698,6 +754,12 @@ public class FlipSmartPlugin extends Plugin
 		}
 		stopAutoRecommendRefreshTimer();
 
+		// Clear manual adjustment timers on logout
+		if (manualAdjustmentTracker != null)
+		{
+			manualAdjustmentTracker.clearAll();
+		}
+
 		if (flipFinderPanel != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
@@ -727,7 +789,19 @@ public class FlipSmartPlugin extends Plugin
 		// Restore collected items from config (items bought but not yet sold)
 		// Must be after syncRSN() so we have the correct RSN for the config key
 		offlineSyncService.restoreCollectedItems();
+
+		// Preload persisted offers into the session BEFORE login burst fires.
+		// This ensures createWithPreservedTimestamps() finds the existing offer
+		// with its original timestamp, giving us accurate timers from the start.
+		offlineSyncService.preloadPersistedOffers();
+
 		restoreAutoRecommendState();
+
+		// Start the refresh timer if not already running (needed for manual adjustment checks)
+		if (autoRecommendRefreshTimer == null)
+		{
+			startAutoRecommendRefreshTimer();
+		}
 
 		// Schedule offline sync after a delay to ensure all GE events have been processed
 		if (!session.isOfflineSyncCompleted())
@@ -747,33 +821,137 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void schedulePostSyncTasks()
 	{
-		// Refresh the panel after a short delay
+		// Backfill any missing timestamps from backend before panel refresh
+		backfillMissingTimestamps();
+
 		if (flipFinderPanel != null)
 		{
 			scheduleOneShot(PANEL_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
 		}
 
-		// Schedule stale flip cleanup after GE state is stable
-		scheduleOneShot(STALE_FLIP_CLEANUP_DELAY_MS, () ->
-		{
-			if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
-			{
-				activeFlipTracker.cleanupStaleActiveFlips();
-				// After cleanup, validate inventory quantities against active flips
-				scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () ->
-					clientThread.invokeLater(activeFlipTracker::validateInventoryQuantities));
-			}
-			else
-			{
-				log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
-			}
-		});
+		scheduleOneShot(STALE_FLIP_CLEANUP_DELAY_MS, this::performStaleFlipCleanup);
 
-		// Re-evaluate auto-recommend after sync — collected items may need selling
 		if (autoRecommendService != null && autoRecommendService.isActive())
 		{
-			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, () ->
-				autoRecommendService.reevaluateAfterLogin());
+			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, this::reevaluateAutoRecommendAfterLogin);
+		}
+	}
+
+	/**
+	 * Correct offer timestamps using backend active flips as source of truth.
+	 * Always runs — if the backend has an OLDER timestamp than the local one,
+	 * the local one was likely reset (login burst, rebuild, hop) and should
+	 * be replaced with the backend's more accurate value.
+	 */
+	private void backfillMissingTimestamps()
+	{
+		Map<Integer, TrackedOffer> tracked = session.getTrackedOffers();
+		if (tracked.isEmpty())
+		{
+			return;
+		}
+
+		log.debug("Checking offer timestamps against backend active flips");
+		String rsn = getCurrentRsnSafe().orElse(null);
+		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
+		{
+			if (response == null || response.getActiveFlips() == null)
+			{
+				return;
+			}
+
+			Map<Integer, ActiveFlip> flipsByItem = new java.util.HashMap<>();
+			for (ActiveFlip flip : response.getActiveFlips())
+			{
+				flipsByItem.put(flip.getItemId(), flip);
+			}
+
+			int corrected = 0;
+			for (TrackedOffer offer : tracked.values())
+			{
+				if (correctOfferTimestamp(offer, flipsByItem))
+				{
+					corrected++;
+				}
+			}
+
+			if (corrected > 0)
+			{
+				log.info("Corrected {} offer timestamps from backend active flips", corrected);
+			}
+		}).exceptionally(e ->
+		{
+			log.debug("Failed to check timestamps against backend: {}", e.getMessage());
+			return null;
+		});
+	}
+
+	/**
+	 * Backfill a missing timestamp from the backend.
+	 * Only fills in timestamps that are 0 (unknown) — does NOT override existing
+	 * local timestamps, since they're more accurate (set at offer placement time).
+	 * The backend's last_buy_time can be from older transactions for the same item.
+	 */
+	private boolean correctOfferTimestamp(TrackedOffer offer, Map<Integer, ActiveFlip> flipsByItem)
+	{
+		if (offer.getCreatedAtMillis() > 0)
+		{
+			return false; // Local timestamp exists — trust it
+		}
+
+		ActiveFlip flip = flipsByItem.get(offer.getItemId());
+		if (flip == null)
+		{
+			return false;
+		}
+
+		long backendMs = (!offer.isBuy() && flip.getSellPlacedTime() != null)
+			? TimeUtils.parseIsoToMillis(flip.getSellPlacedTime())
+			: TimeUtils.parseIsoToMillis(flip.getLastBuyTime());
+
+		if (backendMs > 0)
+		{
+			log.info("Backfilled missing timestamp for {} from backend ({}m ago)",
+				offer.getItemName(), (System.currentTimeMillis() - backendMs) / 60000);
+			offer.setCreatedAtMillis(backendMs);
+			return true;
+		}
+		return false;
+	}
+
+	private void performStaleFlipCleanup()
+	{
+		if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
+		{
+			activeFlipTracker.cleanupStaleActiveFlips();
+			scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () ->
+				clientThread.invokeLater(activeFlipTracker::validateInventoryQuantities));
+		}
+		else
+		{
+			log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
+		}
+	}
+
+	private void reevaluateAutoRecommendAfterLogin()
+	{
+		boolean hasStaleOffers = autoRecommendService.reevaluateAfterLogin();
+		if (hasStaleOffers)
+		{
+			scheduleOneShot(10_000, this::runEarlyAdjustmentCheck);
+		}
+	}
+
+	private void runEarlyAdjustmentCheck()
+	{
+		PlayerSession sess = getSession();
+		if (sess != null)
+		{
+			autoRecommendService.checkAdjustmentTimers(
+				sess.getTrackedOffers(),
+				flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
+			);
+			autoRecommendService.checkSellAdjustmentTimers(sess.getTrackedOffers());
 		}
 	}
 
@@ -793,6 +971,7 @@ public class FlipSmartPlugin extends Plugin
 		if (rsn != null && !rsn.isEmpty())
 		{
 			session.setRsn(rsn);
+			lastKnownRsn = rsn;
 			log.info("RSN synced: {}", rsn);
 			apiClient.updateRSN(rsn);
 		}
@@ -1161,6 +1340,7 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Start the auto-recommend refresh timer (2-minute interval).
 	 * Fetches fresh recommendations and feeds them to the auto-recommend queue.
+	 * Also checks manual adjustment timers when auto-recommend is inactive.
 	 */
 	void startAutoRecommendRefreshTimer()
 	{
@@ -1172,31 +1352,42 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			public void run()
 			{
-				if (!session.isLoggedIntoRunescape()
-					|| autoRecommendService == null
-					|| !autoRecommendService.isActive())
+				if (session.isLoggedIntoRunescape())
 				{
-					return;
+					runRefreshCycle();
 				}
-
-				if (flipFinderPanel != null)
-				{
-					javax.swing.SwingUtilities.invokeLater(() ->
-					{
-						log.debug("Auto-recommend refresh cycle");
-						flipFinderPanel.refresh();
-					});
-				}
-
-				// Check adjustment timers for unfilled buy offers
-				autoRecommendService.checkAdjustmentTimers(
-					session.getTrackedOffers(),
-					flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
-				);
 			}
 		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
 
 		log.info("Auto-recommend refresh timer started (every 2 minutes)");
+	}
+
+	private void runRefreshCycle()
+	{
+		boolean autoActive = autoRecommendService != null && autoRecommendService.isActive();
+
+		if (autoActive)
+		{
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(() ->
+				{
+					log.debug("Auto-recommend refresh cycle");
+					flipFinderPanel.refresh();
+				});
+			}
+
+			java.util.Map<Integer, TrackedOffer> offers = session.getTrackedOffers();
+			autoRecommendService.ensureAllOffersHaveTimers(offers);
+			autoRecommendService.checkAdjustmentTimers(
+				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
+			autoRecommendService.checkSellAdjustmentTimers(offers);
+		}
+
+		if (manualAdjustmentTracker != null)
+		{
+			manualAdjustmentTracker.checkTimers(session.getTrackedOffers());
+		}
 	}
 
 	void stopAutoRecommendRefreshTimer()
@@ -1214,11 +1405,16 @@ public class FlipSmartPlugin extends Plugin
 
 	private String getAutoRecommendStateKey()
 	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
+		String rsn = session.getRsn();
+		if (rsn == null || rsn.isEmpty())
+		{
+			rsn = lastKnownRsn;
+		}
+		if (rsn == null || rsn.isEmpty())
 		{
 			return AUTO_RECOMMEND_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
-		return AUTO_RECOMMEND_STATE_KEY_PREFIX + session.getRsn();
+		return AUTO_RECOMMEND_STATE_KEY_PREFIX + rsn;
 	}
 
 	/**
@@ -1234,7 +1430,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		AutoRecommendService.PersistedState state = autoRecommendService.getStateForPersistence();
-		String json = gson.toJson(state);
+		String json = new Gson().toJson(state);
 		configManager.setConfiguration(CONFIG_GROUP, getAutoRecommendStateKey(), json);
 		log.info("Persisted auto-recommend state ({} items in queue)", state.queue != null ? state.queue.size() : 0);
 	}
@@ -1252,7 +1448,7 @@ public class FlipSmartPlugin extends Plugin
 
 		try
 		{
-			AutoRecommendService.PersistedState state = gson.fromJson(json, AutoRecommendService.PersistedState.class);
+			AutoRecommendService.PersistedState state = new Gson().fromJson(json, AutoRecommendService.PersistedState.class);
 			if (autoRecommendService.restoreState(state, AutoRecommendService.MAX_PERSISTED_AGE_MS))
 			{
 				log.info("Restored auto-recommend state from previous session");
