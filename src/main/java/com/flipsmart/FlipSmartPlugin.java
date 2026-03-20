@@ -105,6 +105,9 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private WebhookSyncService webhookSyncService;
 
+	@Inject
+	private Gson gson;
+
 	// Flip Finder panel
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
@@ -1430,7 +1433,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		AutoRecommendService.PersistedState state = autoRecommendService.getStateForPersistence();
-		String json = new Gson().toJson(state);
+		String json = gson.toJson(state);
 		configManager.setConfiguration(CONFIG_GROUP, getAutoRecommendStateKey(), json);
 		log.info("Persisted auto-recommend state ({} items in queue)", state.queue != null ? state.queue.size() : 0);
 	}
@@ -1448,7 +1451,7 @@ public class FlipSmartPlugin extends Plugin
 
 		try
 		{
-			AutoRecommendService.PersistedState state = new Gson().fromJson(json, AutoRecommendService.PersistedState.class);
+			AutoRecommendService.PersistedState state = gson.fromJson(json, AutoRecommendService.PersistedState.class);
 			if (autoRecommendService.restoreState(state, AutoRecommendService.MAX_PERSISTED_AGE_MS))
 			{
 				log.info("Restored auto-recommend state from previous session");
