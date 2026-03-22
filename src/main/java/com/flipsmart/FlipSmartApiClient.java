@@ -131,13 +131,43 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Structured API error from the server response.
+	 * Provides HTTP status code, error type, and human-readable message.
+	 */
+	public static class ApiError
+	{
+		public final int httpCode;
+		public final String errorType;
+		public final String message;
+
+		public ApiError(int httpCode, String errorType, String message)
+		{
+			this.httpCode = httpCode;
+			this.errorType = errorType;
+			this.message = message;
+		}
+	}
+
+	// Most recent API error (set on failed requests, cleared on success)
+	private volatile ApiError lastApiError = null;
+
+	/**
+	 * Get the last API error from a failed request.
+	 * Returns null if the last request succeeded.
+	 */
+	public ApiError getLastApiError()
+	{
+		return lastApiError;
+	}
+
+	/**
 	 * Authentication result with status and message
 	 */
 	public static class AuthResult
 	{
 		public final boolean success;
 		public final String message;
-		
+
 		public AuthResult(boolean success, String message)
 		{
 			this.success = success;
@@ -212,15 +242,62 @@ public class FlipSmartApiClient
 					
 					if (!response.isSuccessful())
 					{
-						log.debug("Request returned error: {}", response.code());
+						int code = response.code();
+						String errorType = "unknown";
+						String errorMessage = "Error " + code;
+
+						// Parse error response body for structured error details
+						try
+						{
+							okhttp3.ResponseBody errorBody = response.body();
+							if (errorBody != null)
+							{
+								String errorJson = errorBody.string();
+								JsonObject errorObj = gson.fromJson(errorJson, JsonObject.class);
+								if (errorObj != null && errorObj.has("detail"))
+								{
+									if (errorObj.get("detail").isJsonObject())
+									{
+										JsonObject detail = errorObj.getAsJsonObject("detail");
+										if (detail.has("error"))
+										{
+											errorType = detail.get("error").getAsString();
+										}
+										if (detail.has("message"))
+										{
+											errorMessage = detail.get("message").getAsString();
+										}
+									}
+									else if (errorObj.get("detail").isJsonArray())
+									{
+										// FastAPI validation errors (422) return detail as array
+										errorType = "validation_error";
+										errorMessage = "Invalid request parameters";
+									}
+									else
+									{
+										errorMessage = errorObj.get("detail").getAsString();
+									}
+								}
+							}
+						}
+						catch (Exception e)
+						{
+							log.debug("Could not parse error response body: {}", e.getMessage());
+						}
+
+						lastApiError = new ApiError(code, errorType, errorMessage);
+						log.debug("Request returned error {}: {} - {}", code, errorType, errorMessage);
+
 						if (errorHandler != null)
 						{
-							errorHandler.accept("Error " + response.code());
+							errorHandler.accept(errorMessage);
 						}
 						future.complete(null);
 						return;
 					}
 
+					lastApiError = null;
 					okhttp3.ResponseBody responseBody = response.body();
 					String jsonData = responseBody != null ? responseBody.string() : "";
 					T result = responseHandler.apply(jsonData);

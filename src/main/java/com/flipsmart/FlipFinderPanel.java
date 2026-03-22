@@ -1397,7 +1397,7 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				else
 				{
-					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+					showErrorInRecommended(getDetailedErrorMessage("recommendations"));
 				}
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
@@ -1460,7 +1460,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (response == null)
 				{
-					showErrorInActiveFlips("Failed to fetch active flips. Check your API settings.");
+					showErrorInActiveFlips(getDetailedErrorMessage("active flips"));
 					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 					return;
 				}
@@ -1623,7 +1623,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (response == null)
 				{
-					showErrorInCompletedFlips("Failed to fetch completed flips. Check your API settings.");
+					showErrorInCompletedFlips(getDetailedErrorMessage("completed flips"));
 					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 					return;
 				}
@@ -1822,6 +1822,45 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		statusLabel.setText(ERROR_DIALOG_TITLE);
 		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
+	}
+
+	/**
+	 * Get a detailed error message based on the last API error.
+	 * Maps HTTP codes and error types to user-friendly messages.
+	 */
+	private String getDetailedErrorMessage(String resource)
+	{
+		FlipSmartApiClient.ApiError error = apiClient.getLastApiError();
+		if (error == null)
+		{
+			return "Failed to fetch " + resource + ". Please try again.";
+		}
+
+		switch (error.httpCode)
+		{
+			case 401:
+				return "Session expired. Please log in again.";
+			case 403:
+				if ("premium_required".equals(error.errorType) || "web_premium_required".equals(error.errorType))
+				{
+					return "Premium subscription required for this feature.";
+				}
+				if ("rsn_blocked".equals(error.errorType))
+				{
+					return "Subscribe to Premium to get flip suggestions for this account.";
+				}
+				return "Access denied: " + error.message;
+			case 422:
+				return "Invalid RSN or request parameters. Please check your settings.";
+			case 429:
+				return "Too many requests. Please wait a moment and try again.";
+			case 500:
+			case 502:
+			case 503:
+				return "Server error. The API may be temporarily unavailable.";
+			default:
+				return error.message;
+		}
 	}
 
 	/**
