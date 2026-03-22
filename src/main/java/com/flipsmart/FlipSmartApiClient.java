@@ -8,6 +8,8 @@ import okhttp3.*;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -117,6 +119,15 @@ public class FlipSmartApiClient
 			return PRODUCTION_API_URL;
 		}
 		return configuredUrl;
+	}
+
+	/**
+	 * URL-encode a value for use in query parameters.
+	 * Handles RSNs with spaces and special characters.
+	 */
+	private static String urlEncode(String value)
+	{
+		return URLEncoder.encode(value, StandardCharsets.UTF_8);
 	}
 
 	/**
@@ -806,7 +817,7 @@ public class FlipSmartApiClient
 		String url = String.format("%s/auth/entitlements", getApiUrl());
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url += "?rsn=" + rsn;
+			url += "?rsn=" + urlEncode(rsn);
 		}
 
 		Request request = withAuthHeader(new Request.Builder()
@@ -1094,7 +1105,7 @@ public class FlipSmartApiClient
 		}
 		
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/auth/rsn?rsn=%s", apiUrl, rsn);
+		String url = String.format("%s/auth/rsn?rsn=%s", apiUrl, urlEncode(rsn));
 		
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -1193,7 +1204,7 @@ public class FlipSmartApiClient
 
 		if (rsn != null && !rsn.isEmpty())
 		{
-			urlBuilder.append(String.format("&rsn=%s", rsn));
+			urlBuilder.append(String.format("&rsn=%s", urlEncode(rsn)));
 		}
 
 		if (filledSlots != null)
@@ -1396,7 +1407,7 @@ public class FlipSmartApiClient
 		String url;
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url = String.format("%s/transactions/active-flips?rsn=%s", apiUrl, rsn);
+			url = String.format("%s/transactions/active-flips?rsn=%s", apiUrl, urlEncode(rsn));
 		}
 		else
 		{
@@ -1438,7 +1449,7 @@ public class FlipSmartApiClient
 		String url;
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url = String.format("%s/transactions/active-flips/%d?rsn=%s", apiUrl, itemId, rsn);
+			url = String.format("%s/transactions/active-flips/%d?rsn=%s", apiUrl, itemId, urlEncode(rsn));
 		}
 		else
 		{
@@ -1476,7 +1487,7 @@ public class FlipSmartApiClient
 		String url;
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url = String.format("%s/transactions/active-flips/cleanup?rsn=%s", apiUrl, rsn);
+			url = String.format("%s/transactions/active-flips/cleanup?rsn=%s", apiUrl, urlEncode(rsn));
 		}
 		else
 		{
@@ -1577,7 +1588,7 @@ public class FlipSmartApiClient
 	public CompletableFuture<Boolean> markActiveFlipSellingAsync(int itemId, String rsn)
 	{
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/transactions/active-flips/%d/mark-selling?rsn=%s", apiUrl, itemId, rsn);
+		String url = String.format("%s/transactions/active-flips/%d/mark-selling?rsn=%s", apiUrl, itemId, urlEncode(rsn));
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -1605,7 +1616,7 @@ public class FlipSmartApiClient
 		String url;
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url = String.format("%s/flips/completed?limit=%d&rsn=%s", apiUrl, limit, rsn);
+			url = String.format("%s/flips/completed?limit=%d&rsn=%s", apiUrl, limit, urlEncode(rsn));
 		}
 		else
 		{
@@ -1639,7 +1650,7 @@ public class FlipSmartApiClient
 		String url;
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url = String.format("%s/flips/statistics?days=%d&rsn=%s", apiUrl, days, rsn);
+			url = String.format("%s/flips/statistics?days=%d&rsn=%s", apiUrl, days, urlEncode(rsn));
 		}
 		else
 		{
@@ -1811,7 +1822,7 @@ public class FlipSmartApiClient
 	public CompletableFuture<BankSnapshotStatusResponse> checkBankSnapshotStatusAsync(String rsn)
 	{
 		String apiUrl = getApiUrl();
-		String url = String.format("%s/bank/snapshot/status?rsn=%s", apiUrl, rsn);
+		String url = String.format("%s/bank/snapshot/status?rsn=%s", apiUrl, urlEncode(rsn));
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
