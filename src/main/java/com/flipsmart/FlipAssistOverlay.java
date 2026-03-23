@@ -232,9 +232,13 @@ public class FlipAssistOverlay extends Overlay
 			return null;
 		}
 		
-		// If no flip is focused, show hint box when GE is open or auto message is set
+		// If no flip is focused, show hint box only when GE is open (or showAssistantAlways)
 		if (focusedFlip == null)
 		{
+			if (!isGrandExchangeOpen() && !config.showAssistantAlways())
+			{
+				return null;
+			}
 			if (autoStatusMessage != null)
 			{
 				return renderHintBox(graphics, autoStatusMessage);
@@ -249,21 +253,17 @@ public class FlipAssistOverlay extends Overlay
 					return renderHintBox(graphics, fallbackMessage);
 				}
 			}
-			if (isGrandExchangeOpen())
+			if (!flipSmartPlugin.getApiClient().isAuthenticated())
 			{
-				if (!flipSmartPlugin.getApiClient().isAuthenticated())
-				{
-					return renderHintBox(graphics, LOGIN_MESSAGE);
-				}
-				PlayerSession session = flipSmartPlugin.getSession();
-				if (session != null && !flipSmartPlugin.isPremium()
-					&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
-				{
-					return renderHintBox(graphics, UPGRADE_MESSAGE);
-				}
-				return renderHintBox(graphics, HINT_MESSAGE);
+				return renderHintBox(graphics, LOGIN_MESSAGE);
 			}
-			return null;
+			PlayerSession session = flipSmartPlugin.getSession();
+			if (session != null && !flipSmartPlugin.isPremium()
+				&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
+			{
+				return renderHintBox(graphics, UPGRADE_MESSAGE);
+			}
+			return renderHintBox(graphics, HINT_MESSAGE);
 		}
 		
 		// Only show when GE is open or when we have an active flip
