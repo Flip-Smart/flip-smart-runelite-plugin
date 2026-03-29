@@ -447,33 +447,39 @@ public class FlipAssistOverlay extends Overlay
 	private java.util.List<String> wrapText(String text, FontMetrics fm, int maxWidth)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
-		if (fm.stringWidth(text) <= maxWidth)
-		{
-			lines.add(text);
-			return lines;
-		}
 
-		String[] words = text.split(" ");
-		StringBuilder currentLine = new StringBuilder();
-		for (String word : words)
+		// Handle explicit newlines first, then wrap each segment
+		String[] segments = text.split("\n");
+		for (String segment : segments)
 		{
-			String candidate = currentLine.length() == 0 ? word : currentLine + " " + word;
-			if (fm.stringWidth(candidate) <= maxWidth)
+			if (fm.stringWidth(segment) <= maxWidth)
 			{
-				currentLine = new StringBuilder(candidate);
+				lines.add(segment);
+				continue;
 			}
-			else
+
+			String[] words = segment.split(" ");
+			StringBuilder currentLine = new StringBuilder();
+			for (String word : words)
 			{
-				if (currentLine.length() > 0)
+				String candidate = currentLine.length() == 0 ? word : currentLine + " " + word;
+				if (fm.stringWidth(candidate) <= maxWidth)
 				{
-					lines.add(currentLine.toString());
+					currentLine = new StringBuilder(candidate);
 				}
-				currentLine = new StringBuilder(word);
+				else
+				{
+					if (currentLine.length() > 0)
+					{
+						lines.add(currentLine.toString());
+					}
+					currentLine = new StringBuilder(word);
+				}
 			}
-		}
-		if (currentLine.length() > 0)
-		{
-			lines.add(currentLine.toString());
+			if (currentLine.length() > 0)
+			{
+				lines.add(currentLine.toString());
+			}
 		}
 		return lines;
 	}

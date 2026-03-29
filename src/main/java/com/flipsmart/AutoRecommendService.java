@@ -1913,8 +1913,16 @@ public class AutoRecommendService
 		}
 		else
 		{
-			updateStatus("Auto: Waiting for flips");
-			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
+			if (!plugin.isPremium() && !hasAvailableGESlots())
+			{
+				updateStatus("Auto: Waiting for flips");
+				invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS + "\nUpgrade to Premium for more slots");
+			}
+			else
+			{
+				updateStatus("Auto: Waiting for flips");
+				invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
+			}
 		}
 	}
 
