@@ -1854,6 +1854,34 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
+	 * Re-evaluate slot limits and update the Recommended tab accordingly.
+	 * Called when GE slot state changes (e.g., new buy order placed or offer collected).
+	 */
+	public void reevaluateSlotLimitDisplay()
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			PlayerSession session = plugin.getSession();
+			if (session == null)
+			{
+				return;
+			}
+
+			boolean atLimit = !plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit());
+
+			if (atLimit)
+			{
+				showSlotLimitMessage();
+			}
+			else if (!currentRecommendations.isEmpty())
+			{
+				populateRecommendations(new ArrayList<>(currentRecommendations));
+				subscribeLabel.setVisible(!plugin.isPremium());
+			}
+		});
+	}
+
+	/**
 	 * Show an error message in active flips tab
 	 */
 	private void showErrorInActiveFlips(String message)
