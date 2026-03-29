@@ -1325,14 +1325,6 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 
-		// If free user has hit their slot limit, show upgrade message instead of suggestions
-		PlayerSession session = plugin.getSession();
-		if (session != null && !plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
-		{
-			showSlotLimitMessage();
-			return;
-		}
-
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		// Don't clear container yet - keep showing old recommendations until new data arrives

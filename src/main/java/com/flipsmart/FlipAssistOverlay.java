@@ -257,12 +257,6 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return renderHintBox(graphics, LOGIN_MESSAGE);
 			}
-			PlayerSession session = flipSmartPlugin.getSession();
-			if (session != null && !flipSmartPlugin.isPremium()
-				&& !session.hasAvailableGESlots(flipSmartPlugin.getFlipSlotLimit()))
-			{
-				return renderHintBox(graphics, UPGRADE_MESSAGE);
-			}
 			return renderHintBox(graphics, HINT_MESSAGE);
 		}
 		
