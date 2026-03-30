@@ -1875,6 +1875,13 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			else if (!currentRecommendations.isEmpty())
 			{
+				// Refresh recommendation display and status when a slot frees up
+				int count = currentRecommendations.size();
+				String itemWord = count == 1 ? "suggestion" : "suggestions";
+				FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+				String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
+				statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
+
 				populateRecommendations(new ArrayList<>(currentRecommendations));
 				subscribeLabel.setVisible(!plugin.isPremium());
 			}
