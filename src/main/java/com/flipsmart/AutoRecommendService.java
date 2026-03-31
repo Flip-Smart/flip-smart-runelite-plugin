@@ -515,6 +515,22 @@ public class AutoRecommendService
 					itemId, filledQuantity, totalQuantity);
 			}
 		}
+		else if (!wasBuy)
+		{
+			// Sell cancelled — track unsold items for re-sell
+			int remainingQuantity = totalQuantity - filledQuantity;
+			if (remainingQuantity > 0)
+			{
+				PlayerSession session = plugin.getSession();
+				if (session != null)
+				{
+					session.addCollectedItem(itemId, remainingQuantity);
+					updateSellPriceFromQueueOrFallback(itemId);
+					log.info("Auto-recommend: Sell cancelled for item {} ({}/{} sold) - tracked {} for re-sell",
+						itemId, filledQuantity, totalQuantity, remainingQuantity);
+				}
+			}
+		}
 		else
 		{
 			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}/{}) - re-evaluating",
@@ -631,6 +647,35 @@ public class AutoRecommendService
 			log.info("Auto-recommend: Recovering sell price for item {} from queue ({})",
 				itemId, rec.getRecommendedSellPrice());
 			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
+		}
+	}
+
+	/**
+	 * Update the sell price for an item after a sell cancellation.
+	 * Prefers the recommendation queue price (reflects current market),
+	 * falls back to the existing stored price from the original buy.
+	 */
+	private void updateSellPriceFromQueueOrFallback(int itemId)
+	{
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		if (rec != null && rec.getRecommendedSellPrice() > 0)
+		{
+			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
+			log.info("Auto-recommend: Updated re-sell price for item {} from queue ({})",
+				itemId, rec.getRecommendedSellPrice());
+			return;
+		}
+
+		// Keep existing stored price — it was set when the buy was originally placed
+		PlayerSession session = plugin.getSession();
+		if (session != null && session.getRecommendedPrice(itemId) != null)
+		{
+			log.info("Auto-recommend: Keeping existing sell price for item {} ({})",
+				itemId, session.getRecommendedPrice(itemId));
+		}
+		else
+		{
+			log.warn("Auto-recommend: No sell price available for re-sell of item {}", itemId);
 		}
 	}
 
