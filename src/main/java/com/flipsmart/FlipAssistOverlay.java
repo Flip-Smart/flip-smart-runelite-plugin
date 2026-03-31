@@ -16,6 +16,7 @@ import net.runelite.client.util.AsyncBufferedImage;
 import javax.inject.Inject;
 import java.awt.*;
 import java.text.DecimalFormat;
+import java.util.function.Consumer;
 
 /**
  * Flip Assist overlay - a unique step-by-step workflow guide.
@@ -137,7 +138,14 @@ public class FlipAssistOverlay extends Overlay
 	
 	@Getter
 	private FlipAssistStep currentStep = FlipAssistStep.SELECT_ITEM;
-	
+	private FlipAssistStep previousStep = FlipAssistStep.SELECT_ITEM;
+	private Consumer<FlipAssistStep> onStepChanged;
+
+	public void setOnStepChanged(Consumer<FlipAssistStep> callback)
+	{
+		this.onStepChanged = callback;
+	}
+
 	@Inject
 	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
 	{
@@ -155,38 +163,45 @@ public class FlipAssistOverlay extends Overlay
 	
 	public void updateStep()
 	{
+		FlipAssistStep newStep;
 		if (focusedFlip == null)
 		{
-			currentStep = FlipAssistStep.SELECT_ITEM;
-			return;
+			newStep = FlipAssistStep.SELECT_ITEM;
 		}
-		
-		if (!isGrandExchangeOpen())
+		else if (!isGrandExchangeOpen())
 		{
-			currentStep = focusedFlip.isBuying() ? FlipAssistStep.WAITING_BUY : FlipAssistStep.WAITING_SELL;
-			return;
+			newStep = focusedFlip.isBuying() ? FlipAssistStep.WAITING_BUY : FlipAssistStep.WAITING_SELL;
 		}
-		
-		int inputType = getInputType();
-		if (inputType == INPUT_TYPE_GE_SEARCH)
+		else
 		{
-			currentStep = FlipAssistStep.SEARCH_ITEM;
-			return;
+			int inputType = getInputType();
+			if (inputType == INPUT_TYPE_GE_SEARCH)
+			{
+				newStep = FlipAssistStep.SEARCH_ITEM;
+			}
+			else if (inputType == INPUT_TYPE_NUMERIC)
+			{
+				newStep = determineNumericInputStep();
+			}
+			else if (isOfferSetupOpen())
+			{
+				newStep = determineOfferSetupStep();
+			}
+			else
+			{
+				newStep = focusedFlip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
+			}
 		}
-		
-		if (inputType == INPUT_TYPE_NUMERIC)
+
+		currentStep = newStep;
+		if (currentStep != previousStep)
 		{
-			currentStep = determineNumericInputStep();
-			return;
+			previousStep = currentStep;
+			if (onStepChanged != null)
+			{
+				onStepChanged.accept(currentStep);
+			}
 		}
-		
-		if (isOfferSetupOpen())
-		{
-			currentStep = determineOfferSetupStep();
-			return;
-		}
-		
-		currentStep = focusedFlip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
 	}
 	
 	private FlipAssistStep determineNumericInputStep()

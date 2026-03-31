@@ -518,6 +518,7 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService.setOnFocusChanged(this::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
+		flipAssistOverlay.setOnStepChanged(autoRecommendService::onOverlayStepChanged);
 	}
 
 	/**
