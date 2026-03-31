@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -53,6 +54,9 @@ public class AutoRecommendService
 
 	// Stale offer queue — guides user through stale offers one at a time
 	private final List<TrackedOffer> staleOfferQueue = new ArrayList<>();
+
+	// Deferred actions — queued when user is busy interacting with GE
+	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	// Queue state - guarded by synchronized(this)
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
@@ -627,6 +631,67 @@ public class AutoRecommendService
 			// completed offers, otherwise show "Waiting for flips"
 			promptCollection();
 		}
+	}
+
+	// =====================
+	// Alert Deferral
+	// =====================
+
+	/**
+	 * Check if the user is actively interacting with the GE interface.
+	 * When busy, focus-changing events should be deferred to avoid interrupting
+	 * the user mid-offer setup.
+	 */
+	private boolean isUserBusy()
+	{
+		return isBusyStep(plugin.getFlipAssistOverlayStep());
+	}
+
+	/**
+	 * Execute an action immediately if the user is not busy, or defer it
+	 * until the user finishes their current GE interaction.
+	 */
+	private void executeOrDefer(Runnable action)
+	{
+		if (isUserBusy())
+		{
+			deferredActions.add(action);
+			log.debug("Auto-recommend: Deferred action (user busy, {} queued)", deferredActions.size());
+		}
+		else
+		{
+			action.run();
+		}
+	}
+
+	/**
+	 * Called when the overlay step changes. If the user transitions from a busy
+	 * state to an idle state, drain deferred actions by re-evaluating priorities.
+	 */
+	public synchronized void onOverlayStepChanged(FlipAssistStep newStep)
+	{
+		if (!active || deferredActions.isEmpty())
+		{
+			return;
+		}
+
+		if (!isBusyStep(newStep))
+		{
+			int count = deferredActions.size();
+			deferredActions.clear();
+			log.info("Auto-recommend: Draining {} deferred actions after step change to {}", count, newStep);
+			focusNextAvailableAction();
+		}
+	}
+
+	private static boolean isBusyStep(FlipAssistStep step)
+	{
+		return step == FlipAssistStep.SEARCH_ITEM
+			|| step == FlipAssistStep.SET_QUANTITY
+			|| step == FlipAssistStep.SET_PRICE
+			|| step == FlipAssistStep.CONFIRM_OFFER
+			|| step == FlipAssistStep.SET_SELL_PRICE
+			|| step == FlipAssistStep.CONFIRM_SELL;
 	}
 
 	/**

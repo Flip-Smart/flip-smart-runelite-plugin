@@ -245,6 +245,15 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Get the current Flip Assist overlay step, used by AutoRecommendService
+	 * to determine if the user is busy with a GE interaction.
+	 */
+	public FlipAssistOverlay.FlipAssistStep getFlipAssistOverlayStep()
+	{
+		return flipAssistOverlay != null ? flipAssistOverlay.getCurrentStep() : FlipAssistOverlay.FlipAssistStep.SELECT_ITEM;
+	}
+
+	/**
 	 * Count the number of GE slots that are currently occupied (non-EMPTY) in the game.
 	 * Returns the flip slot limit if GE offers are not yet available (conservative).
 	 */
