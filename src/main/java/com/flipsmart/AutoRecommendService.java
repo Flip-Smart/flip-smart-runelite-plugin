@@ -266,6 +266,7 @@ public class AutoRecommendService
 		buyPrices.clear();
 		promptedStaleItems.clear();
 		staleOfferQueue.clear();
+		deferredActions.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -807,24 +808,27 @@ public class AutoRecommendService
 
 	private void updateOverlayAfterRefresh(FlipRecommendation currentRec)
 	{
-		if (!hasAvailableGESlots() && !hasCollectedItemsToSell())
+		executeOrDefer(() ->
 		{
-			// Don't overwrite stale offer prompts with "Monitoring active offers"
-			if (!staleOfferQueue.isEmpty())
+			if (!hasAvailableGESlots() && !hasCollectedItemsToSell())
 			{
-				focusNextStaleOffer();
+				// Don't overwrite stale offer prompts with "Monitoring active offers"
+				if (!staleOfferQueue.isEmpty())
+				{
+					focusNextStaleOffer();
+				}
+				else
+				{
+					promptCollection();
+				}
 			}
 			else
 			{
-				promptCollection();
+				updateStatus(String.format("Auto: %d/%d - %s",
+					currentIndex + 1, recommendationQueue.size(),
+					currentRec != null ? currentRec.getItemName() : "Refreshed"));
 			}
-		}
-		else
-		{
-			updateStatus(String.format("Auto: %d/%d - %s",
-				currentIndex + 1, recommendationQueue.size(),
-				currentRec != null ? currentRec.getItemName() : "Refreshed"));
-		}
+		});
 	}
 
 	// =====================
@@ -1267,7 +1271,7 @@ public class AutoRecommendService
 
 		if (wasEmpty)
 		{
-			focusNextStaleOffer();
+			executeOrDefer(this::focusNextStaleOffer);
 		}
 	}
 
