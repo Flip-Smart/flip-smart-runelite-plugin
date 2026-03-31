@@ -1325,14 +1325,6 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 
-		// If free user has hit their slot limit, show upgrade message instead of suggestions
-		PlayerSession session = plugin.getSession();
-		if (session != null && !plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
-		{
-			showSlotLimitMessage();
-			return;
-		}
-
 		statusLabel.setText("Loading recommendations...");
 		refreshButton.setEnabled(false);
 		// Don't clear container yet - keep showing old recommendations until new data arrives
@@ -1419,13 +1411,25 @@ public class FlipFinderPanel extends PluginPanel
 				plugin.setRecommendedSellPrice(rec.getItemId(), rec.getRecommendedSellPrice());
 			}
 
-			updateStatusLabel(response);
-			populateRecommendations(response.getRecommendations());
-			restoreScrollPosition(recommendedScrollPane, scrollPos);
-
 			// Update premium status from flip-finder response and show/hide subscribe message
 			apiClient.setPremium(response.isPremium());
-			subscribeLabel.setVisible(!response.isPremium());
+
+			// If free user has hit their slot limit, show upgrade message over recommendations
+			// but keep currentRecommendations populated so auto-flip can still use them
+			PlayerSession session = plugin.getSession();
+			if (session != null && !response.isPremium()
+				&& !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
+			{
+				showSlotLimitMessage();
+			}
+			else
+			{
+				updateStatusLabel(response);
+				populateRecommendations(response.getRecommendations());
+				subscribeLabel.setVisible(!response.isPremium());
+			}
+
+			restoreScrollPosition(recommendedScrollPane, scrollPos);
 
 			// Validate focus after refresh in case focused item is no longer recommended
 			validateFocus();
@@ -1839,15 +1843,49 @@ public class FlipFinderPanel extends PluginPanel
 
 	/**
 	 * Show an upgrade message when a free user has reached their flip slot limit.
-	 * Clears recommendations and prompts the user to upgrade to Premium.
+	 * Keeps currentRecommendations so auto-flip can still use them to manage slots.
 	 */
 	private void showSlotLimitMessage()
 	{
-		currentRecommendations.clear();
 		showErrorInRecommended("Upgrade to Premium for more flip slots");
 		subscribeLabel.setText(SUBSCRIBE_MESSAGE);
 		subscribeLabel.setVisible(true);
 		refreshButton.setEnabled(true);
+	}
+
+	/**
+	 * Re-evaluate slot limits and update the Recommended tab accordingly.
+	 * Called when GE slot state changes (e.g., new buy order placed or offer collected).
+	 */
+	public void reevaluateSlotLimitDisplay()
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			PlayerSession session = plugin.getSession();
+			if (session == null)
+			{
+				return;
+			}
+
+			boolean atLimit = !plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit());
+
+			if (atLimit)
+			{
+				showSlotLimitMessage();
+			}
+			else if (!currentRecommendations.isEmpty())
+			{
+				// Refresh recommendation display and status when a slot frees up
+				int count = currentRecommendations.size();
+				String itemWord = count == 1 ? "suggestion" : "suggestions";
+				FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+				String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
+				statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
+
+				populateRecommendations(new ArrayList<>(currentRecommendations));
+				subscribeLabel.setVisible(!plugin.isPremium());
+			}
+		});
 	}
 
 	/**

@@ -199,12 +199,6 @@ public class AutoRecommendService
 			return;
 		}
 
-		if (!plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
-		{
-			updateStatus("Auto: Upgrade to Premium for more flip slots");
-			return;
-		}
-
 		if (recommendations == null || recommendations.isEmpty())
 		{
 			updateStatus("Auto: No recommendations available");
@@ -1919,8 +1913,16 @@ public class AutoRecommendService
 		}
 		else
 		{
-			updateStatus("Auto: Waiting for flips");
-			invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
+			if (!plugin.isPremium() && !hasAvailableGESlots())
+			{
+				updateStatus("Auto: Waiting for flips");
+				invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS + "\nUpgrade to Premium for more slots");
+			}
+			else
+			{
+				updateStatus("Auto: Waiting for flips");
+				invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS);
+			}
 		}
 	}
 

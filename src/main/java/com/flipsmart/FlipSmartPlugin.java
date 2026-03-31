@@ -581,7 +581,7 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setRsnSupplier(this::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
-		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
+		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) { flipFinderPanel.refreshActiveFlips(); flipFinderPanel.reevaluateSlotLimitDisplay(); } });
 		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (flipFinderPanel != null) flipFinderPanel.updatePendingOrders(getPendingBuyOrders()); });
 		grandExchangeTracker.setOnFocusChanged(this::handleGETrackerFocusChanged);
 		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
