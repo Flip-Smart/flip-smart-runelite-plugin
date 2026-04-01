@@ -1676,7 +1676,7 @@ public class AutoRecommendService
 	// =====================
 
 	/**
-	 * Skip the current recommendation and advance to the next one.
+	 * Skip the current recommendation or stale offer prompt.
 	 * Called when the user clicks the Skip button during auto-recommend.
 	 */
 	public synchronized void skip()
@@ -1685,6 +1685,15 @@ public class AutoRecommendService
 		{
 			return;
 		}
+
+		if (!staleOfferQueue.isEmpty())
+		{
+			TrackedOffer skipped = staleOfferQueue.remove(0);
+			log.info("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
+			focusNextAvailableAction();
+			return;
+		}
+
 		log.info("Auto-recommend: User skipped current recommendation");
 		advanceToNext();
 	}
