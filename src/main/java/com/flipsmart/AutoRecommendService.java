@@ -822,6 +822,11 @@ public class AutoRecommendService
 					promptCollection();
 				}
 			}
+			else if (!recommendationQueue.isEmpty() && hasAvailableGESlots())
+			{
+				// Queue was refreshed with new items and slots are available - present the next one
+				focusCurrent();
+			}
 			else
 			{
 				updateStatus(String.format("Auto: %d/%d - %s",
