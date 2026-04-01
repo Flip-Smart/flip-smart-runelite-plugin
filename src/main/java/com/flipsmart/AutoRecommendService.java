@@ -54,6 +54,8 @@ public class AutoRecommendService
 
 	// Stale offer queue — guides user through stale offers one at a time
 	private final List<TrackedOffer> staleOfferQueue = new ArrayList<>();
+	// Recommended re-sell prices for stale sell offers (itemId -> price)
+	private final Map<Integer, Integer> staleResellPrices = new HashMap<>();
 
 	// Deferred actions — queued when user is busy interacting with GE
 	private final List<Runnable> deferredActions = new ArrayList<>();
@@ -266,6 +268,7 @@ public class AutoRecommendService
 		buyPrices.clear();
 		promptedStaleItems.clear();
 		staleOfferQueue.clear();
+		staleResellPrices.clear();
 		deferredActions.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
@@ -328,6 +331,7 @@ public class AutoRecommendService
 	{
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
 		if (!active)
 		{
 			return;
@@ -498,6 +502,7 @@ public class AutoRecommendService
 	{
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
 		if (!active)
 		{
 			return;
@@ -558,6 +563,7 @@ public class AutoRecommendService
 	public synchronized void onOfferCollected(int itemId, boolean wasBuy, String itemName, int quantity)
 	{
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
 		if (!active)
 		{
 			return;
@@ -1231,11 +1237,17 @@ public class AutoRecommendService
 					.findFirst().orElse(null);
 				if (current == null)
 				{
+					staleResellPrices.remove(o.getItemId());
 					return true; // No longer in GE
 				}
 				// Re-check competitiveness — wiki prices may have refreshed
 				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
-				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
+				if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+				{
+					staleResellPrices.remove(o.getItemId());
+					return true;
+				}
+				return false;
 			});
 		}
 
@@ -1247,7 +1259,16 @@ public class AutoRecommendService
 		}
 
 		TrackedOffer next = staleOfferQueue.get(0);
-		String overlayMsg = String.format("Consider cancelling %s", next.getItemName());
+		Integer resellPrice = staleResellPrices.get(next.getItemId());
+		String overlayMsg;
+		if (!next.isBuy() && resellPrice != null)
+		{
+			overlayMsg = String.format("Re-sell %s at %s gp", next.getItemName(), GpUtils.formatGPWithSuffix(resellPrice));
+		}
+		else
+		{
+			overlayMsg = String.format("Consider cancelling %s", next.getItemName());
+		}
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
@@ -1474,6 +1495,7 @@ public class AutoRecommendService
 			// The API already determined this sell is overpriced — always queue the prompt.
 			// Unlike buy adjustments (where local wiki competitiveness is a useful gate),
 			// sell adjustments use backend market data which is authoritative.
+			staleResellPrices.put(offer.getItemId(), newPrice);
 			addToStaleQueue(offer);
 
 			// Reschedule in case user doesn't act or offer is still competitive
@@ -1689,6 +1711,7 @@ public class AutoRecommendService
 		if (!staleOfferQueue.isEmpty())
 		{
 			TrackedOffer skipped = staleOfferQueue.remove(0);
+			staleResellPrices.remove(skipped.getItemId());
 			log.info("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
 			focusNextAvailableAction();
 			return;
