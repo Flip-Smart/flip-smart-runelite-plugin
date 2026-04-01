@@ -652,7 +652,7 @@ public class AutoRecommendService
 	 * Execute an action immediately if the user is not busy, or defer it
 	 * until the user finishes their current GE interaction.
 	 */
-	private void executeOrDefer(Runnable action)
+	private synchronized void executeOrDefer(Runnable action)
 	{
 		if (isUserBusy())
 		{
