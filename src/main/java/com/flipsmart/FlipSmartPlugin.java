@@ -551,6 +551,7 @@ public class FlipSmartPlugin extends Plugin
 
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
 		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
+		grandExchangeTracker.setConfig(config);
 	}
 
 	private void handleAutoRecommendFocusChanged(FocusedFlip focus)

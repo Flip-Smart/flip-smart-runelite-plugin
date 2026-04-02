@@ -34,6 +34,7 @@ public class GrandExchangeTracker
 	private AutoRecommendService autoRecommendService;
 	private ManualAdjustmentTracker manualAdjustmentTracker;
 	private java.util.function.BooleanSupplier adjustmentPromptsEnabled;
+	private FlipSmartConfig config;
 
 	// Callbacks wired by the plugin
 	private Supplier<Optional<String>> rsnSupplier;
@@ -102,6 +103,11 @@ public class GrandExchangeTracker
 	public void setRsnSupplier(Supplier<Optional<String>> rsnSupplier)
 	{
 		this.rsnSupplier = rsnSupplier;
+	}
+
+	public void setConfig(FlipSmartConfig config)
+	{
+		this.config = config;
 	}
 
 	public void setOnPanelRefresh(Runnable callback)
@@ -819,11 +825,13 @@ public class GrandExchangeTracker
 		int apiQuantity = flip.getTotalQuantity();
 		int sellQuantity = Math.max(apiQuantity, inventoryFallbackCount);
 
+		int priceOffset = config != null ? config.priceOffset() : 0;
 		FocusedFlip focus = FocusedFlip.forSell(
 			flip.getItemId(),
 			flip.getItemName(),
 			sellPrice,
-			sellQuantity
+			sellQuantity,
+			priceOffset
 		);
 
 		if (onFocusChanged != null)
