@@ -437,7 +437,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 32 + lineHeight;
 			for (String line : iconLines)
 			{
-				graphics.setColor(line.trim().endsWith("gp") ? COLOR_BUY : COLOR_TEXT);
+				graphics.setColor(getHintLineColor(line));
 				graphics.drawString(line, textStartX, y);
 				y += lineHeight;
 			}
@@ -450,7 +450,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 28 + lineHeight;
 			for (String line : wrappedLines)
 			{
-				graphics.setColor(line.trim().endsWith("gp") ? COLOR_BUY : COLOR_TEXT);
+				graphics.setColor(getHintLineColor(line));
 				int lineWidth = smallMetrics.stringWidth(line);
 				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
 				y += lineHeight;
@@ -458,6 +458,30 @@ public class FlipAssistOverlay extends Overlay
 		}
 
 		return new Dimension(HINT_PANEL_WIDTH, panelHeight);
+	}
+
+	/**
+	 * Determine the color for a hint box line.
+	 * Lines ending in "gp" or standalone item names (no colon, no action verb) are green.
+	 */
+	private Color getHintLineColor(String line)
+	{
+		String trimmed = line.trim();
+		if (trimmed.endsWith("gp"))
+		{
+			return COLOR_BUY;
+		}
+		// Item name lines: don't contain action words or colons
+		if (!trimmed.contains(":") && !trimmed.isEmpty()
+			&& !trimmed.startsWith("Consider") && !trimmed.startsWith("Re-sell")
+			&& !trimmed.startsWith("Adjust") && !trimmed.startsWith("Margin")
+			&& !trimmed.startsWith("Click") && !trimmed.startsWith("Monitoring")
+			&& !trimmed.startsWith("Waiting") && !trimmed.startsWith("Checking")
+			&& !trimmed.startsWith("Auto"))
+		{
+			return COLOR_BUY;
+		}
+		return COLOR_TEXT;
 	}
 
 	private java.util.List<String> wrapText(String text, FontMetrics fm, int maxWidth)

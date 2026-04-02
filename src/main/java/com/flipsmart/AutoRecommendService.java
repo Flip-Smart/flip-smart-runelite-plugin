@@ -86,6 +86,9 @@ public class AutoRecommendService
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
+	// Callback when a stale offer is prompted (for GE slot highlighting)
+	private volatile java.util.function.IntConsumer onStaleOfferPrompted;
+
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
 
@@ -160,6 +163,11 @@ public class AutoRecommendService
 	public void setOnOverlayMessageChanged(ObjIntConsumer<String> callback)
 	{
 		this.onOverlayMessageChanged = callback;
+	}
+
+	public void setOnStaleOfferPrompted(java.util.function.IntConsumer callback)
+	{
+		this.onStaleOfferPrompted = callback;
 	}
 
 	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
@@ -521,6 +529,20 @@ public class AutoRecommendService
 			{
 				session.addCollectedItem(itemId, filledQuantity);
 				ensureSellPriceAvailable(itemId);
+
+				// If no sell price is available (e.g., stale item not in queue),
+				// use wiki insta-buy as fallback so the sell prompt isn't skipped
+				if (session.getRecommendedPrice(itemId) == null)
+				{
+					FlipSmartApiClient.WikiPrice wikiPrice = plugin.getWikiPrice(itemId);
+					if (wikiPrice != null && wikiPrice.instaBuy > 0)
+					{
+						plugin.setRecommendedSellPrice(itemId, wikiPrice.instaBuy);
+						log.info("Auto-recommend: Using wiki insta-buy {} as sell price fallback for item {}",
+							wikiPrice.instaBuy, itemId);
+					}
+				}
+
 				log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
 					itemId, filledQuantity, totalQuantity);
 			}
@@ -828,10 +850,10 @@ public class AutoRecommendService
 					promptCollection();
 				}
 			}
-			else if (!recommendationQueue.isEmpty() && hasAvailableGESlots())
+			else if (hasCollectedItemsToSell() || (!recommendationQueue.isEmpty() && hasAvailableGESlots()))
 			{
-				// Queue was refreshed with new items and slots are available - present the next one
-				focusCurrent();
+				// Re-evaluate priorities: sells first, then buys from refreshed queue
+				focusNextAvailableAction();
 			}
 			else
 			{
@@ -1268,12 +1290,18 @@ public class AutoRecommendService
 		}
 		else
 		{
-			overlayMsg = String.format("Consider cancelling %s", next.getItemName());
+			overlayMsg = String.format("Consider cancelling:\n%s", next.getItemName());
 		}
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
 		invokeOverlayMessageCallback(overlayMsg, next.getItemId());
+
+		java.util.function.IntConsumer staleCallback = onStaleOfferPrompted;
+		if (staleCallback != null)
+		{
+			staleCallback.accept(next.getItemId());
+		}
 	}
 
 	/**
@@ -1945,7 +1973,7 @@ public class AutoRecommendService
 		{
 			return plugin.getInventoryCountForItem(itemId) > 0;
 		}
-		catch (AssertionError e)
+		catch (Exception | AssertionError e)
 		{
 			return false; // Not on client thread — caller handles missing inventory gracefully
 		}

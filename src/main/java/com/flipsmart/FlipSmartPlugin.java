@@ -67,6 +67,9 @@ public class FlipSmartPlugin extends Plugin
 	private FlipAssistOverlay flipAssistOverlay;
 
 	@Inject
+	private InventoryHighlightOverlay inventoryHighlightOverlay;
+
+	@Inject
 	private FlipSmartApiClient apiClient;
 	
 	@Inject
@@ -468,6 +471,7 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.add(geOverlay);
 		overlayManager.add(geSlotOverlay);
 		overlayManager.add(flipAssistOverlay);
+		overlayManager.add(inventoryHighlightOverlay);
 		mouseManager.registerMouseListener(overlayMouseListener);
 
 		// Initialize Flip Assist input listener for hotkey support
@@ -518,6 +522,7 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService.setOnFocusChanged(this::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
+		autoRecommendService.setOnStaleOfferPrompted(this::highlightSlotForItem);
 		flipAssistOverlay.setOnStepChanged(autoRecommendService::onOverlayStepChanged);
 	}
 
@@ -536,12 +541,17 @@ public class FlipSmartPlugin extends Plugin
 		{
 			flipAssistOverlay.setFocusedFlip(focus);
 			flipAssistOverlay.setAutoStatusMessage(statusMsg, focus.getItemId());
+			updateInventoryHighlightForFocus(focus);
 		});
 
 		// Wire callback: highlight GE slot for adjustment
 		manualAdjustmentTracker.setOnHighlightSlot((slot, recommendedPrice) ->
 			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
 		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
+
+		// Wire callback: highlight inventory item for sell adjustments
+		manualAdjustmentTracker.setOnHighlightInventoryItem(inventoryHighlightOverlay::addHighlight);
+		manualAdjustmentTracker.setOnClearInventoryItem(inventoryHighlightOverlay::removeHighlight);
 
 		// Wire suppliers for ditch logic (replacement recommendations)
 		manualAdjustmentTracker.setCashStackSupplier(() ->
@@ -554,11 +564,43 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setConfig(config);
 	}
 
+	/**
+	 * Update inventory highlights when the focused flip changes.
+	 * Highlights the item in inventory when a sell-focused flip is active.
+	 */
+	/**
+	 * Find the GE slot for an item and highlight it with the adjustment amber border.
+	 */
+	private void highlightSlotForItem(int itemId)
+	{
+		geSlotOverlay.clearAllAdjustmentHighlights();
+		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
+		{
+			if (entry.getValue().getItemId() == itemId)
+			{
+				geSlotOverlay.setAdjustmentHighlight(entry.getKey(), 0);
+				return;
+			}
+		}
+	}
+
+	private void updateInventoryHighlightForFocus(FocusedFlip focus)
+	{
+		inventoryHighlightOverlay.clearAll();
+		if (focus != null && focus.isSelling())
+		{
+			inventoryHighlightOverlay.addHighlight(focus.getItemId());
+		}
+	}
+
 	private void handleAutoRecommendFocusChanged(FocusedFlip focus)
 	{
 		flipAssistOverlay.setFocusedFlip(focus);
+		updateInventoryHighlightForFocus(focus);
 		if (focus != null)
 		{
+			// Clear stale offer GE slot highlights when focus moves to a new recommendation
+			geSlotOverlay.clearAllAdjustmentHighlights();
 			log.info("Auto-recommend focus set: {} {} @ {} gp",
 				focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
 			// Keep panel focus in sync so the active flip refresh cycle doesn't
@@ -603,6 +645,7 @@ public class FlipSmartPlugin extends Plugin
 	private void handleGETrackerFocusChanged(FocusedFlip focus)
 	{
 		flipAssistOverlay.setFocusedFlip(focus);
+		updateInventoryHighlightForFocus(focus);
 		if (flipFinderPanel != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
@@ -622,6 +665,7 @@ public class FlipSmartPlugin extends Plugin
 			log.info("Clearing Flip Assist focus - order submitted for {} ({})",
 				focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
 			flipAssistOverlay.clearFocus();
+			updateInventoryHighlightForFocus(null);
 			if (flipFinderPanel != null)
 			{
 				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
@@ -659,6 +703,7 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.remove(geOverlay);
 		overlayManager.remove(geSlotOverlay);
 		overlayManager.remove(flipAssistOverlay);
+		overlayManager.remove(inventoryHighlightOverlay);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
 		// Unregister Flip Assist input listener

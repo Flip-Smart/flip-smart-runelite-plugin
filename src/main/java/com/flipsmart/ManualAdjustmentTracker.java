@@ -65,6 +65,12 @@ public class ManualAdjustmentTracker
 	// Callback to clear a GE slot highlight
 	private volatile java.util.function.IntConsumer onClearHighlight;
 
+	// Callback to highlight an inventory item for sell adjustments
+	private volatile java.util.function.IntConsumer onHighlightInventoryItem;
+
+	// Callback to clear an inventory item highlight
+	private volatile java.util.function.IntConsumer onClearInventoryItem;
+
 	// Suppliers for ditch logic — needed to fetch replacement recommendations
 	private volatile java.util.function.Supplier<Integer> cashStackSupplier;
 	private volatile java.util.function.Supplier<String> rsnSupplier;
@@ -94,6 +100,16 @@ public class ManualAdjustmentTracker
 	public void setOnClearHighlight(java.util.function.IntConsumer callback)
 	{
 		this.onClearHighlight = callback;
+	}
+
+	public void setOnHighlightInventoryItem(java.util.function.IntConsumer callback)
+	{
+		this.onHighlightInventoryItem = callback;
+	}
+
+	public void setOnClearInventoryItem(java.util.function.IntConsumer callback)
+	{
+		this.onClearInventoryItem = callback;
 	}
 
 	public void setCashStackSupplier(java.util.function.Supplier<Integer> supplier)
@@ -180,6 +196,10 @@ public class ManualAdjustmentTracker
 			{
 				cb.accept(geSlot);
 			}
+			if (!removed.isBuy)
+			{
+				notifyClearInventoryHighlight(removed.itemId);
+			}
 		}
 	}
 
@@ -188,12 +208,16 @@ public class ManualAdjustmentTracker
 	 */
 	public void clearAll()
 	{
-		for (int slot : trackedOffers.keySet())
+		for (Map.Entry<Integer, OfferAdjustmentState> entry : trackedOffers.entrySet())
 		{
 			java.util.function.IntConsumer cb = onClearHighlight;
 			if (cb != null)
 			{
-				cb.accept(slot);
+				cb.accept(entry.getKey());
+			}
+			if (!entry.getValue().isBuy)
+			{
+				notifyClearInventoryHighlight(entry.getValue().itemId);
 			}
 		}
 		trackedOffers.clear();
@@ -343,6 +367,7 @@ public class ManualAdjustmentTracker
 		log.info("Manual adjustment: {}", msg);
 		notifyPrompt(msg, state.itemId);
 		notifyHighlight(state.geSlot, response.getRecommendedPrice());
+		notifyInventoryHighlight(state.itemId);
 	}
 
 	private void notifyPrompt(String msg, int itemId)
@@ -360,6 +385,24 @@ public class ManualAdjustmentTracker
 		if (cb != null)
 		{
 			cb.accept(geSlot, price);
+		}
+	}
+
+	private void notifyInventoryHighlight(int itemId)
+	{
+		java.util.function.IntConsumer cb = onHighlightInventoryItem;
+		if (cb != null)
+		{
+			cb.accept(itemId);
+		}
+	}
+
+	private void notifyClearInventoryHighlight(int itemId)
+	{
+		java.util.function.IntConsumer cb = onClearInventoryItem;
+		if (cb != null)
+		{
+			cb.accept(itemId);
 		}
 	}
 
