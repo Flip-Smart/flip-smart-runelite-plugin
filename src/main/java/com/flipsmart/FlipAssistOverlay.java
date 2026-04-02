@@ -437,6 +437,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 32 + lineHeight;
 			for (String line : iconLines)
 			{
+				graphics.setColor(line.trim().endsWith("gp") ? COLOR_BUY : COLOR_TEXT);
 				graphics.drawString(line, textStartX, y);
 				y += lineHeight;
 			}
@@ -445,11 +446,11 @@ public class FlipAssistOverlay extends Overlay
 		{
 			// Wrapped text layout
 			graphics.setFont(FontManager.getRunescapeSmallFont());
-			graphics.setColor(COLOR_TEXT);
 			int lineHeight = smallMetrics.getHeight();
 			int y = 28 + lineHeight;
 			for (String line : wrappedLines)
 			{
+				graphics.setColor(line.trim().endsWith("gp") ? COLOR_BUY : COLOR_TEXT);
 				int lineWidth = smallMetrics.stringWidth(line);
 				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
 				y += lineHeight;

@@ -1263,7 +1263,8 @@ public class AutoRecommendService
 		String overlayMsg;
 		if (!next.isBuy() && resellPrice != null)
 		{
-			overlayMsg = String.format("Re-sell %s at %s", next.getItemName(), GpUtils.formatGPWithSuffix(resellPrice));
+			overlayMsg = String.format("Re-sell %s at:\n%s gp", next.getItemName(),
+				String.format("%,d", resellPrice));
 		}
 		else
 		{
