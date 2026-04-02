@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -53,6 +54,11 @@ public class AutoRecommendService
 
 	// Stale offer queue — guides user through stale offers one at a time
 	private final List<TrackedOffer> staleOfferQueue = new ArrayList<>();
+	// Recommended re-sell prices for stale sell offers (itemId -> price)
+	private final Map<Integer, Integer> staleResellPrices = new HashMap<>();
+
+	// Deferred actions — queued when user is busy interacting with GE
+	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	// Queue state - guarded by synchronized(this)
 	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
@@ -262,6 +268,8 @@ public class AutoRecommendService
 		buyPrices.clear();
 		promptedStaleItems.clear();
 		staleOfferQueue.clear();
+		staleResellPrices.clear();
+		deferredActions.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -323,6 +331,7 @@ public class AutoRecommendService
 	{
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
 		if (!active)
 		{
 			return;
@@ -493,6 +502,7 @@ public class AutoRecommendService
 	{
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
 		if (!active)
 		{
 			return;
@@ -513,6 +523,22 @@ public class AutoRecommendService
 				ensureSellPriceAvailable(itemId);
 				log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
 					itemId, filledQuantity, totalQuantity);
+			}
+		}
+		else if (!wasBuy)
+		{
+			// Sell cancelled — track unsold items for re-sell
+			int remainingQuantity = totalQuantity - filledQuantity;
+			if (remainingQuantity > 0)
+			{
+				PlayerSession session = plugin.getSession();
+				if (session != null)
+				{
+					session.addCollectedItem(itemId, remainingQuantity);
+					updateSellPriceFromQueueOrFallback(itemId);
+					log.info("Auto-recommend: Sell cancelled for item {} ({}/{} sold) - tracked {} for re-sell",
+						itemId, filledQuantity, totalQuantity, remainingQuantity);
+				}
 			}
 		}
 		else
@@ -537,6 +563,7 @@ public class AutoRecommendService
 	public synchronized void onOfferCollected(int itemId, boolean wasBuy, String itemName, int quantity)
 	{
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
 		if (!active)
 		{
 			return;
@@ -613,6 +640,67 @@ public class AutoRecommendService
 		}
 	}
 
+	// =====================
+	// Alert Deferral
+	// =====================
+
+	/**
+	 * Check if the user is actively interacting with the GE interface.
+	 * When busy, focus-changing events should be deferred to avoid interrupting
+	 * the user mid-offer setup.
+	 */
+	private boolean isUserBusy()
+	{
+		return isBusyStep(plugin.getFlipAssistOverlayStep());
+	}
+
+	/**
+	 * Execute an action immediately if the user is not busy, or defer it
+	 * until the user finishes their current GE interaction.
+	 */
+	private synchronized void executeOrDefer(Runnable action)
+	{
+		if (isUserBusy())
+		{
+			deferredActions.add(action);
+			log.debug("Auto-recommend: Deferred action (user busy, {} queued)", deferredActions.size());
+		}
+		else
+		{
+			action.run();
+		}
+	}
+
+	/**
+	 * Called when the overlay step changes. If the user transitions from a busy
+	 * state to an idle state, drain deferred actions by re-evaluating priorities.
+	 */
+	public synchronized void onOverlayStepChanged(FlipAssistStep newStep)
+	{
+		if (!active || deferredActions.isEmpty())
+		{
+			return;
+		}
+
+		if (!isBusyStep(newStep))
+		{
+			int count = deferredActions.size();
+			deferredActions.clear();
+			log.info("Auto-recommend: Draining {} deferred actions after step change to {}", count, newStep);
+			focusNextAvailableAction();
+		}
+	}
+
+	private static boolean isBusyStep(FlipAssistStep step)
+	{
+		return step == FlipAssistStep.SEARCH_ITEM
+			|| step == FlipAssistStep.SET_QUANTITY
+			|| step == FlipAssistStep.SET_PRICE
+			|| step == FlipAssistStep.CONFIRM_OFFER
+			|| step == FlipAssistStep.SET_SELL_PRICE
+			|| step == FlipAssistStep.CONFIRM_SELL;
+	}
+
 	/**
 	 * Ensure a sell price is available for an item. If the stored price was lost
 	 * (e.g., plugin restart), try to recover it from the recommendation queue.
@@ -631,6 +719,35 @@ public class AutoRecommendService
 			log.info("Auto-recommend: Recovering sell price for item {} from queue ({})",
 				itemId, rec.getRecommendedSellPrice());
 			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
+		}
+	}
+
+	/**
+	 * Update the sell price for an item after a sell cancellation.
+	 * Prefers the recommendation queue price (reflects current market),
+	 * falls back to the existing stored price from the original buy.
+	 */
+	private void updateSellPriceFromQueueOrFallback(int itemId)
+	{
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		if (rec != null && rec.getRecommendedSellPrice() > 0)
+		{
+			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
+			log.info("Auto-recommend: Updated re-sell price for item {} from queue ({})",
+				itemId, rec.getRecommendedSellPrice());
+			return;
+		}
+
+		// Keep existing stored price — it was set when the buy was originally placed
+		PlayerSession session = plugin.getSession();
+		if (session != null && session.getRecommendedPrice(itemId) != null)
+		{
+			log.info("Auto-recommend: Keeping existing sell price for item {} ({})",
+				itemId, session.getRecommendedPrice(itemId));
+		}
+		else
+		{
+			log.warn("Auto-recommend: No sell price available for re-sell of item {}", itemId);
 		}
 	}
 
@@ -697,24 +814,32 @@ public class AutoRecommendService
 
 	private void updateOverlayAfterRefresh(FlipRecommendation currentRec)
 	{
-		if (!hasAvailableGESlots() && !hasCollectedItemsToSell())
+		executeOrDefer(() ->
 		{
-			// Don't overwrite stale offer prompts with "Monitoring active offers"
-			if (!staleOfferQueue.isEmpty())
+			if (!hasAvailableGESlots() && !hasCollectedItemsToSell())
 			{
-				focusNextStaleOffer();
+				// Don't overwrite stale offer prompts with "Monitoring active offers"
+				if (!staleOfferQueue.isEmpty())
+				{
+					focusNextStaleOffer();
+				}
+				else
+				{
+					promptCollection();
+				}
+			}
+			else if (!recommendationQueue.isEmpty() && hasAvailableGESlots())
+			{
+				// Queue was refreshed with new items and slots are available - present the next one
+				focusCurrent();
 			}
 			else
 			{
-				promptCollection();
+				updateStatus(String.format("Auto: %d/%d - %s",
+					currentIndex + 1, recommendationQueue.size(),
+					currentRec != null ? currentRec.getItemName() : "Refreshed"));
 			}
-		}
-		else
-		{
-			updateStatus(String.format("Auto: %d/%d - %s",
-				currentIndex + 1, recommendationQueue.size(),
-				currentRec != null ? currentRec.getItemName() : "Refreshed"));
-		}
+		});
 	}
 
 	// =====================
@@ -1112,11 +1237,17 @@ public class AutoRecommendService
 					.findFirst().orElse(null);
 				if (current == null)
 				{
+					staleResellPrices.remove(o.getItemId());
 					return true; // No longer in GE
 				}
 				// Re-check competitiveness — wiki prices may have refreshed
 				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
-				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
+				if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+				{
+					staleResellPrices.remove(o.getItemId());
+					return true;
+				}
+				return false;
 			});
 		}
 
@@ -1128,7 +1259,17 @@ public class AutoRecommendService
 		}
 
 		TrackedOffer next = staleOfferQueue.get(0);
-		String overlayMsg = String.format("Consider cancelling %s", next.getItemName());
+		Integer resellPrice = staleResellPrices.get(next.getItemId());
+		String overlayMsg;
+		if (!next.isBuy() && resellPrice != null)
+		{
+			overlayMsg = String.format("Re-sell %s at:\n%s gp", next.getItemName(),
+				String.format("%,d", resellPrice));
+		}
+		else
+		{
+			overlayMsg = String.format("Consider cancelling %s", next.getItemName());
+		}
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
@@ -1157,7 +1298,7 @@ public class AutoRecommendService
 
 		if (wasEmpty)
 		{
-			focusNextStaleOffer();
+			executeOrDefer(this::focusNextStaleOffer);
 		}
 	}
 
@@ -1355,6 +1496,7 @@ public class AutoRecommendService
 			// The API already determined this sell is overpriced — always queue the prompt.
 			// Unlike buy adjustments (where local wiki competitiveness is a useful gate),
 			// sell adjustments use backend market data which is authoritative.
+			staleResellPrices.put(offer.getItemId(), newPrice);
 			addToStaleQueue(offer);
 
 			// Reschedule in case user doesn't act or offer is still competitive
@@ -1557,7 +1699,7 @@ public class AutoRecommendService
 	// =====================
 
 	/**
-	 * Skip the current recommendation and advance to the next one.
+	 * Skip the current recommendation or stale offer prompt.
 	 * Called when the user clicks the Skip button during auto-recommend.
 	 */
 	public synchronized void skip()
@@ -1566,6 +1708,16 @@ public class AutoRecommendService
 		{
 			return;
 		}
+
+		if (!staleOfferQueue.isEmpty())
+		{
+			TrackedOffer skipped = staleOfferQueue.remove(0);
+			staleResellPrices.remove(skipped.getItemId());
+			log.info("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
+			focusNextAvailableAction();
+			return;
+		}
+
 		log.info("Auto-recommend: User skipped current recommendation");
 		advanceToNext();
 	}
