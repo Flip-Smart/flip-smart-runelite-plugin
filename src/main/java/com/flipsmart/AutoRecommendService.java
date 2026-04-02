@@ -519,49 +519,13 @@ public class AutoRecommendService
 		clearAdjustmentTimer(itemId);
 		clearSellAdjustmentTimer(itemId);
 
-		// For partial buy cancels, proactively track the filled items as collected
-		// so focusNextAvailableAction() can prompt a sell immediately.
-		// onOfferCollected may not fire reliably for cancelled offers.
 		if (wasBuy && filledQuantity > 0)
 		{
-			PlayerSession session = plugin.getSession();
-			if (session != null)
-			{
-				session.addCollectedItem(itemId, filledQuantity);
-				ensureSellPriceAvailable(itemId);
-
-				// If no sell price is available (e.g., stale item not in queue),
-				// use wiki insta-buy as fallback so the sell prompt isn't skipped
-				if (session.getRecommendedPrice(itemId) == null)
-				{
-					FlipSmartApiClient.WikiPrice wikiPrice = plugin.getWikiPrice(itemId);
-					if (wikiPrice != null && wikiPrice.instaBuy > 0)
-					{
-						plugin.setRecommendedSellPrice(itemId, wikiPrice.instaBuy);
-						log.info("Auto-recommend: Using wiki insta-buy {} as sell price fallback for item {}",
-							wikiPrice.instaBuy, itemId);
-					}
-				}
-
-				log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
-					itemId, filledQuantity, totalQuantity);
-			}
+			trackPartialBuyCancel(itemId, filledQuantity, totalQuantity);
 		}
 		else if (!wasBuy)
 		{
-			// Sell cancelled — track unsold items for re-sell
-			int remainingQuantity = totalQuantity - filledQuantity;
-			if (remainingQuantity > 0)
-			{
-				PlayerSession session = plugin.getSession();
-				if (session != null)
-				{
-					session.addCollectedItem(itemId, remainingQuantity);
-					updateSellPriceFromQueueOrFallback(itemId);
-					log.info("Auto-recommend: Sell cancelled for item {} ({}/{} sold) - tracked {} for re-sell",
-						itemId, filledQuantity, totalQuantity, remainingQuantity);
-				}
-			}
+			trackSellCancel(itemId, filledQuantity, totalQuantity);
 		}
 		else
 		{
@@ -570,6 +534,63 @@ public class AutoRecommendService
 		}
 
 		focusNextAvailableAction();
+	}
+
+	private void trackPartialBuyCancel(int itemId, int filledQuantity, int totalQuantity)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		session.addCollectedItem(itemId, filledQuantity);
+		ensureSellPriceAvailable(itemId);
+		ensureSellPriceFallback(itemId);
+
+		log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
+			itemId, filledQuantity, totalQuantity);
+	}
+
+	private void trackSellCancel(int itemId, int filledQuantity, int totalQuantity)
+	{
+		int remainingQuantity = totalQuantity - filledQuantity;
+		if (remainingQuantity <= 0)
+		{
+			return;
+		}
+
+		PlayerSession session = plugin.getSession();
+		if (session == null)
+		{
+			return;
+		}
+
+		session.addCollectedItem(itemId, remainingQuantity);
+		updateSellPriceFromQueueOrFallback(itemId);
+		log.info("Auto-recommend: Sell cancelled for item {} ({}/{} sold) - tracked {} for re-sell",
+			itemId, filledQuantity, totalQuantity, remainingQuantity);
+	}
+
+	/**
+	 * If no sell price is available (e.g., stale item not in recommendation queue),
+	 * use the wiki insta-buy price as a fallback so the sell prompt isn't skipped.
+	 */
+	private void ensureSellPriceFallback(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session == null || session.getRecommendedPrice(itemId) != null)
+		{
+			return;
+		}
+
+		FlipSmartApiClient.WikiPrice wikiPrice = plugin.getWikiPrice(itemId);
+		if (wikiPrice != null && wikiPrice.instaBuy > 0)
+		{
+			plugin.setRecommendedSellPrice(itemId, wikiPrice.instaBuy);
+			log.info("Auto-recommend: Using wiki insta-buy {} as sell price fallback for item {}",
+				wikiPrice.instaBuy, itemId);
+		}
 	}
 
 
