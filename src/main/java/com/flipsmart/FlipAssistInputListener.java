@@ -14,6 +14,7 @@ import java.awt.Canvas;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -66,6 +67,18 @@ public class FlipAssistInputListener implements KeyListener
 	
 	// Track the keyPressed event we're handling to consume its corresponding keyTyped
 	private final AtomicReference<KeyEvent> handledKeyPressedEvent = new AtomicReference<>(null);
+
+	// Cached input type from VarClientInt, updated via event from FlipSmartPlugin.
+	// Used on EDT to decide whether to consume the hotkey before clientThread runs.
+	private final AtomicInteger currentInputType = new AtomicInteger(0);
+
+	/**
+	 * Update the cached input type. Called from FlipSmartPlugin on VarClientIntChanged.
+	 */
+	public void updateInputType(int inputType)
+	{
+		currentInputType.set(inputType);
+	}
 	
 	@Override
 	public void keyTyped(KeyEvent e)
@@ -100,6 +113,14 @@ public class FlipAssistInputListener implements KeyListener
 		// Don't trigger if no focused flip (this doesn't need client thread)
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null)
+		{
+			return;
+		}
+
+		// Only consume the hotkey when a GE input dialog is active (search, price, or quantity).
+		// This prevents the hotkey from blocking normal chat typing.
+		int cachedInputType = currentInputType.get();
+		if (cachedInputType != INPUT_TYPE_NUMERIC && cachedInputType != INPUT_TYPE_GE_ITEM_SEARCH)
 		{
 			return;
 		}
