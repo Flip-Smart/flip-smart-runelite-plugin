@@ -131,40 +131,48 @@ public class FlipAssistInputListener implements KeyListener
 		handledKeyPressedEvent.set(e);
 		e.consume();
 
-		clientThread.invoke(() -> {
-			if (!isGrandExchangeOpen())
+		clientThread.invoke(() -> handleHotkeyOnClientThread(focusedFlip));
+	}
+
+	/**
+	 * Handle the hotkey action on the client thread.
+	 * Validates GE state and dispatches to the appropriate handler.
+	 * MUST be called on client thread.
+	 */
+	private void handleHotkeyOnClientThread(FocusedFlip focusedFlip)
+	{
+		if (!isGrandExchangeOpen())
+		{
+			return;
+		}
+
+		int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
+
+		// Handle GE item search - press hotkey to select the first result
+		// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
+		if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
+		{
+			// Only auto-select if the search text matches the focused item
+			// This prevents the hotkey from interfering when user is manually typing
+			if (!isSearchTextMatchingFocusedItem(focusedFlip))
 			{
 				return;
 			}
 
-			int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
-
-			// Handle GE item search - press hotkey to select the first result
-			// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
-			if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
+			if (hasSearchResults())
 			{
-				// Only auto-select if the search text matches the focused item
-				// This prevents the hotkey from interfering when user is manually typing
-				if (!isSearchTextMatchingFocusedItem(focusedFlip))
-				{
-					return;
-				}
-
-				if (hasSearchResults())
-				{
-					selectFirstSearchResult();
-					flipAssistOverlay.updateStep();
-				}
-				return;
-			}
-
-			// Handle numeric input (price/quantity)
-			if (inputType == INPUT_TYPE_NUMERIC)
-			{
-				handleFlipAssistAction(focusedFlip);
+				selectFirstSearchResult();
 				flipAssistOverlay.updateStep();
 			}
-		});
+			return;
+		}
+
+		// Handle numeric input (price/quantity)
+		if (inputType == INPUT_TYPE_NUMERIC)
+		{
+			handleFlipAssistAction(focusedFlip);
+			flipAssistOverlay.updateStep();
+		}
 	}
 	
 	@Override
