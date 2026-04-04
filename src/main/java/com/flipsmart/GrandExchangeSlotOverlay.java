@@ -266,12 +266,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		boolean hasAdjustment = adjustmentHighlights.containsKey(slot);
 		if (hasAdjustment)
 		{
-			// Amber pulsing border for slots with pending adjustment recommendations
-			Stroke originalStroke = graphics.getStroke();
-			graphics.setColor(COLOR_ADJUSTMENT_HIGHLIGHT);
-			graphics.setStroke(new BasicStroke(3));
-			graphics.drawRoundRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2, 4, 4);
-			graphics.setStroke(originalStroke);
+			drawOrangeGlow(graphics, bounds);
 		}
 		else if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
 		{

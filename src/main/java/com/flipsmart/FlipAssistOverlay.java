@@ -174,23 +174,7 @@ public class FlipAssistOverlay extends Overlay
 		}
 		else
 		{
-			int inputType = getInputType();
-			if (inputType == INPUT_TYPE_GE_SEARCH)
-			{
-				newStep = FlipAssistStep.SEARCH_ITEM;
-			}
-			else if (inputType == INPUT_TYPE_NUMERIC)
-			{
-				newStep = determineNumericInputStep();
-			}
-			else if (isOfferSetupOpen())
-			{
-				newStep = determineOfferSetupStep();
-			}
-			else
-			{
-				newStep = focusedFlip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
-			}
+			newStep = determineGEOpenStep();
 		}
 
 		currentStep = newStep;
@@ -213,6 +197,24 @@ public class FlipAssistOverlay extends Overlay
 		return FlipAssistStep.SET_QUANTITY;
 	}
 	
+	private FlipAssistStep determineGEOpenStep()
+	{
+		int inputType = getInputType();
+		if (inputType == INPUT_TYPE_GE_SEARCH)
+		{
+			return FlipAssistStep.SEARCH_ITEM;
+		}
+		if (inputType == INPUT_TYPE_NUMERIC)
+		{
+			return determineNumericInputStep();
+		}
+		if (isOfferSetupOpen())
+		{
+			return determineOfferSetupStep();
+		}
+		return focusedFlip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
+	}
+
 	private FlipAssistStep determineOfferSetupStep()
 	{
 		boolean qtyCorrect = isValueWithinTolerance(getCurrentQuantityFromGE(), focusedFlip.getCurrentStepQuantity());
@@ -437,7 +439,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 32 + lineHeight;
 			for (String line : iconLines)
 			{
-				graphics.setColor(line.trim().endsWith("gp") ? COLOR_BUY : COLOR_TEXT);
+				graphics.setColor(getHintLineColor(line));
 				graphics.drawString(line, textStartX, y);
 				y += lineHeight;
 			}
@@ -450,7 +452,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 28 + lineHeight;
 			for (String line : wrappedLines)
 			{
-				graphics.setColor(line.trim().endsWith("gp") ? COLOR_BUY : COLOR_TEXT);
+				graphics.setColor(getHintLineColor(line));
 				int lineWidth = smallMetrics.stringWidth(line);
 				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
 				y += lineHeight;
@@ -460,44 +462,70 @@ public class FlipAssistOverlay extends Overlay
 		return new Dimension(HINT_PANEL_WIDTH, panelHeight);
 	}
 
+	/**
+	 * Determine the color for a hint box line.
+	 * Lines ending in "gp" or standalone item names (no colon, no action verb) are green.
+	 */
+	private Color getHintLineColor(String line)
+	{
+		String trimmed = line.trim();
+		if (trimmed.endsWith("gp"))
+		{
+			return COLOR_BUY;
+		}
+		// Item name lines: don't contain action words or colons
+		if (!trimmed.contains(":") && !trimmed.isEmpty()
+			&& !trimmed.startsWith("Consider") && !trimmed.startsWith("Re-sell")
+			&& !trimmed.startsWith("Adjust") && !trimmed.startsWith("Margin")
+			&& !trimmed.startsWith("Click") && !trimmed.startsWith("Monitoring")
+			&& !trimmed.startsWith("Waiting") && !trimmed.startsWith("Checking")
+			&& !trimmed.startsWith("Auto"))
+		{
+			return COLOR_BUY;
+		}
+		return COLOR_TEXT;
+	}
+
 	private java.util.List<String> wrapText(String text, FontMetrics fm, int maxWidth)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
-
-		// Handle explicit newlines first, then wrap each segment
-		String[] segments = text.split("\n");
-		for (String segment : segments)
+		for (String segment : text.split("\n"))
 		{
 			if (fm.stringWidth(segment) <= maxWidth)
 			{
 				lines.add(segment);
-				continue;
 			}
-
-			String[] words = segment.split(" ");
-			StringBuilder currentLine = new StringBuilder();
-			for (String word : words)
+			else
 			{
-				String candidate = currentLine.length() == 0 ? word : currentLine + " " + word;
-				if (fm.stringWidth(candidate) <= maxWidth)
-				{
-					currentLine = new StringBuilder(candidate);
-				}
-				else
-				{
-					if (currentLine.length() > 0)
-					{
-						lines.add(currentLine.toString());
-					}
-					currentLine = new StringBuilder(word);
-				}
-			}
-			if (currentLine.length() > 0)
-			{
-				lines.add(currentLine.toString());
+				wrapSegment(segment, fm, maxWidth, lines);
 			}
 		}
 		return lines;
+	}
+
+	private void wrapSegment(String segment, FontMetrics fm, int maxWidth, java.util.List<String> lines)
+	{
+		StringBuilder currentLine = new StringBuilder();
+		for (String word : segment.split(" "))
+		{
+			String candidate = currentLine.length() == 0 ? word : currentLine + " " + word;
+			if (fm.stringWidth(candidate) <= maxWidth)
+			{
+				currentLine = new StringBuilder(candidate);
+			}
+			else
+			{
+				if (currentLine.length() > 0)
+				{
+					lines.add(currentLine.toString());
+				}
+				currentLine = new StringBuilder(word);
+			}
+		}
+		if (currentLine.length() > 0)
+		{
+			lines.add(currentLine.toString());
+		}
 	}
 	
 	private int renderHeader(Graphics2D graphics, int y)
