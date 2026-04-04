@@ -358,6 +358,14 @@ public class AutoRecommendService
 				log.info("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
 					itemId, rec.getRecommendedSellPrice());
 			}
+
+			// If all GE slots are now full, clear the buy overlay so it doesn't
+			// keep showing a recommendation the user can't act on (fixes #393)
+			if (!hasAvailableGESlots())
+			{
+				log.info("Auto-recommend: Non-focused buy filled last GE slot - clearing focus");
+				promptCollection();
+			}
 			return;
 		}
 
