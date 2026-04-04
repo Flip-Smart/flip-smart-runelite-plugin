@@ -14,6 +14,7 @@ import java.awt.Canvas;
 import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -36,7 +37,7 @@ public class FlipAssistInputListener implements KeyListener
 	private static final int GE_QUANTITY_CHILD = 24;
 	
 	// VarClient IDs (raw values to avoid deprecated API)
-	private static final int VARCLIENT_INPUT_TYPE = 5;
+	static final int VARCLIENT_INPUT_TYPE = 5;
 	private static final int VARCLIENT_INPUT_TEXT = 359;
 	
 	// Input type values
@@ -66,6 +67,18 @@ public class FlipAssistInputListener implements KeyListener
 	
 	// Track the keyPressed event we're handling to consume its corresponding keyTyped
 	private final AtomicReference<KeyEvent> handledKeyPressedEvent = new AtomicReference<>(null);
+
+	// Cached input type from VarClientInt, updated via event from FlipSmartPlugin.
+	// Used on EDT to decide whether to consume the hotkey before clientThread runs.
+	private final AtomicInteger currentInputType = new AtomicInteger(0);
+
+	/**
+	 * Update the cached input type. Called from FlipSmartPlugin on VarClientIntChanged.
+	 */
+	public void updateInputType(int inputType)
+	{
+		currentInputType.set(inputType);
+	}
 	
 	@Override
 	public void keyTyped(KeyEvent e)
@@ -104,46 +117,62 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
+		// Only consume the hotkey when a GE input dialog is active (search, price, or quantity).
+		// This prevents the hotkey from blocking normal chat typing.
+		int cachedInputType = currentInputType.get();
+		if (cachedInputType != INPUT_TYPE_NUMERIC && cachedInputType != INPUT_TYPE_GE_ITEM_SEARCH)
+		{
+			return;
+		}
+
 		// Consume the event eagerly on the EDT to prevent the hotkey character
 		// from being typed into the GE search/input. clientThread.invoke() is
 		// asynchronous from the EDT, so consuming inside the callback is too late.
 		handledKeyPressedEvent.set(e);
 		e.consume();
 
-		clientThread.invoke(() -> {
-			if (!isGrandExchangeOpen())
+		clientThread.invoke(() -> handleHotkeyOnClientThread(focusedFlip));
+	}
+
+	/**
+	 * Handle the hotkey action on the client thread.
+	 * Validates GE state and dispatches to the appropriate handler.
+	 * MUST be called on client thread.
+	 */
+	private void handleHotkeyOnClientThread(FocusedFlip focusedFlip)
+	{
+		if (!isGrandExchangeOpen())
+		{
+			return;
+		}
+
+		int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
+
+		// Handle GE item search - press hotkey to select the first result
+		// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
+		if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
+		{
+			// Only auto-select if the search text matches the focused item
+			// This prevents the hotkey from interfering when user is manually typing
+			if (!isSearchTextMatchingFocusedItem(focusedFlip))
 			{
 				return;
 			}
 
-			int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
-
-			// Handle GE item search - press hotkey to select the first result
-			// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
-			if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
+			if (hasSearchResults())
 			{
-				// Only auto-select if the search text matches the focused item
-				// This prevents the hotkey from interfering when user is manually typing
-				if (!isSearchTextMatchingFocusedItem(focusedFlip))
-				{
-					return;
-				}
-
-				if (hasSearchResults())
-				{
-					selectFirstSearchResult();
-					flipAssistOverlay.updateStep();
-				}
-				return;
-			}
-
-			// Handle numeric input (price/quantity)
-			if (inputType == INPUT_TYPE_NUMERIC)
-			{
-				handleFlipAssistAction(focusedFlip);
+				selectFirstSearchResult();
 				flipAssistOverlay.updateStep();
 			}
-		});
+			return;
+		}
+
+		// Handle numeric input (price/quantity)
+		if (inputType == INPUT_TYPE_NUMERIC)
+		{
+			handleFlipAssistAction(focusedFlip);
+			flipAssistOverlay.updateStep();
+		}
 	}
 	
 	@Override
