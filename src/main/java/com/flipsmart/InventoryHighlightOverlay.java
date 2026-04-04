@@ -1,7 +1,6 @@
 package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.ItemComposition;
 import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
@@ -24,8 +23,8 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	private final Set<Integer> highlightedItemIds = ConcurrentHashMap.newKeySet();
 
-	// Cache outline images to avoid regenerating every frame
-	private final Map<Integer, BufferedImage> outlineCache = new ConcurrentHashMap<>();
+	// Cache outline images keyed by (itemId, quantity) to handle stack-variant sprites
+	private final Map<Long, BufferedImage> outlineCache = new ConcurrentHashMap<>();
 
 	@Inject
 	private ItemManager itemManager;
@@ -37,13 +36,14 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	public void addHighlight(int itemId)
 	{
+		log.debug("addHighlight called with itemId={}", itemId);
 		highlightedItemIds.add(itemId);
 	}
 
 	public void removeHighlight(int itemId)
 	{
 		highlightedItemIds.remove(itemId);
-		outlineCache.remove(itemId);
+		outlineCache.keySet().removeIf(key -> (int) (key >> 32) == itemId);
 	}
 
 	public void clearAll()
@@ -52,10 +52,28 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		outlineCache.clear();
 	}
 
+	private boolean debugLogged = false;
+
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
-		if (!highlightedItemIds.contains(itemId) && !highlightedItemIds.contains(getUnnotedId(itemId)))
+		// Log all inventory item IDs once per cycle to diagnose matching
+		if (!highlightedItemIds.isEmpty() && !debugLogged)
+		{
+			log.debug("renderItemOverlay: itemId={}, qty={}, highlighted={}", itemId, widgetItem.getQuantity(), highlightedItemIds);
+			debugLogged = true;
+			// Reset after a short delay so we get periodic logs, not every frame
+			new java.util.Timer().schedule(new java.util.TimerTask()
+			{
+				@Override
+				public void run()
+				{
+					debugLogged = false;
+				}
+			}, 5000);
+		}
+
+		if (!highlightedItemIds.contains(itemId))
 		{
 			return;
 		}
@@ -66,7 +84,9 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 			return;
 		}
 
-		BufferedImage outline = outlineCache.computeIfAbsent(itemId, this::generateOutline);
+		int quantity = widgetItem.getQuantity();
+		long cacheKey = ((long) itemId << 32) | (quantity & 0xFFFFFFFFL);
+		BufferedImage outline = outlineCache.computeIfAbsent(cacheKey, k -> generateOutline(itemId, quantity));
 		if (outline == null)
 		{
 			return;
@@ -109,12 +129,12 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 	}
 
 	/**
-	 * Generate an outline image from the item sprite. The outline consists of
-	 * pixels that are transparent but adjacent to a non-transparent pixel.
+	 * Generate an outline image from the item sprite. Uses the quantity-aware
+	 * sprite so the outline matches the actual rendered stack appearance.
 	 */
-	private BufferedImage generateOutline(int itemId)
+	private BufferedImage generateOutline(int itemId, int quantity)
 	{
-		BufferedImage itemImage = itemManager.getImage(itemId);
+		BufferedImage itemImage = itemManager.getImage(itemId, quantity, false);
 		if (itemImage == null)
 		{
 			return null;
@@ -166,28 +186,5 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * Get the unnoted (base) item ID for a potentially noted item.
-	 * If the item is already unnoted, returns the item ID unchanged.
-	 * This is called on the render thread where ItemComposition access is safe.
-	 */
-	private int getUnnotedId(int itemId)
-	{
-		try
-		{
-			ItemComposition comp = itemManager.getItemComposition(itemId);
-			// getNote() == 799 means this IS a noted item; getLinkedNoteId() returns the unnoted version
-			if (comp.getNote() == 799)
-			{
-				return comp.getLinkedNoteId();
-			}
-		}
-		catch (Exception e)
-		{
-			// Fall through
-		}
-		return itemId;
 	}
 }
