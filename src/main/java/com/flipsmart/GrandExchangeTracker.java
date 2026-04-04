@@ -46,6 +46,9 @@ public class GrandExchangeTracker
 	private IntFunction<Integer> displayedSellPriceProvider;
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 
+	// Callback to re-focus on an item for relisting after manual adjustment cancellation
+	private volatile Consumer<FocusedFlip> onManualRelistFocus;
+
 	// Debounce: prevent duplicate autoFocusOnActiveFlip calls for the same item
 	private volatile int lastAutoFocusItemId;
 	private volatile long lastAutoFocusTimeMs;
@@ -145,6 +148,11 @@ public class GrandExchangeTracker
 		this.oneShotScheduler = scheduler;
 	}
 
+	public void setOnManualRelistFocus(Consumer<FocusedFlip> callback)
+	{
+		this.onManualRelistFocus = callback;
+	}
+
 	// =====================
 	// GE Offer Changed Handler
 	// =====================
@@ -226,6 +234,42 @@ public class GrandExchangeTracker
 		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.isBuy, ctx.quantitySold, totalQuantity);
+		}
+		else if (manualAdjustmentTracker != null)
+		{
+			// In manual mode: if the cancelled offer had an active adjustment prompt,
+			// re-focus on it so the user is guided to relist at the new price
+			ManualAdjustmentTracker.PendingAdjustment pending =
+				manualAdjustmentTracker.consumePendingAdjustment(ctx.slot);
+			if (pending != null)
+			{
+				FocusedFlip focus;
+				if (pending.isBuy)
+				{
+					log.info("Manual relist: Re-focusing on {} for buy relist at {} gp",
+						pending.itemName, pending.recommendedPrice);
+					focus = FocusedFlip.forBuy(
+						pending.itemId, pending.itemName,
+						pending.recommendedPrice, pending.quantity,
+						pending.sellPrice,
+						config != null ? config.priceOffset() : 0);
+				}
+				else
+				{
+					log.info("Manual relist: Re-focusing on {} for sell relist at {} gp",
+						pending.itemName, pending.recommendedPrice);
+					focus = FocusedFlip.forSell(
+						pending.itemId, pending.itemName,
+						pending.recommendedPrice, pending.quantity,
+						config != null ? config.priceOffset() : 0);
+				}
+
+				Consumer<FocusedFlip> cb = onManualRelistFocus;
+				if (cb != null)
+				{
+					cb.accept(focus);
+				}
+			}
 		}
 	}
 

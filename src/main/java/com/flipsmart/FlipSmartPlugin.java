@@ -641,6 +641,14 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(this::scheduleOneShot);
+		grandExchangeTracker.setOnManualRelistFocus(focus -> {
+			flipAssistOverlay.setFocusedFlip(focus);
+			String msg = String.format("Relist %s at %s gp",
+				focus.getItemName(),
+				GpUtils.formatGPWithSuffix(focus.getCurrentStepPrice()));
+			flipAssistOverlay.setAutoStatusMessage(msg, focus.getItemId());
+			updateInventoryHighlightForFocus(focus);
+		});
 	}
 
 	private void handleGETrackerFocusChanged(FocusedFlip focus)
