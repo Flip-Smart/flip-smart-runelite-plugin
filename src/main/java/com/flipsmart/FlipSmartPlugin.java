@@ -1156,9 +1156,9 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onVarClientIntChanged(VarClientIntChanged event)
 	{
-		if (event.getIndex() == 5 && flipAssistInputListener != null)
+		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TYPE && flipAssistInputListener != null)
 		{
-			flipAssistInputListener.updateInputType(client.getVarcIntValue(5));
+			flipAssistInputListener.updateInputType(client.getVarcIntValue(FlipAssistInputListener.VARCLIENT_INPUT_TYPE));
 		}
 	}
 

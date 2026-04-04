@@ -37,7 +37,7 @@ public class FlipAssistInputListener implements KeyListener
 	private static final int GE_QUANTITY_CHILD = 24;
 	
 	// VarClient IDs (raw values to avoid deprecated API)
-	private static final int VARCLIENT_INPUT_TYPE = 5;
+	static final int VARCLIENT_INPUT_TYPE = 5;
 	private static final int VARCLIENT_INPUT_TEXT = 359;
 	
 	// Input type values
