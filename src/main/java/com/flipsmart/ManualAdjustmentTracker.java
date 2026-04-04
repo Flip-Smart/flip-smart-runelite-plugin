@@ -46,6 +46,33 @@ public class ManualAdjustmentTracker
 		}
 	}
 
+	/**
+	 * Snapshot of an adjustment recommendation, preserved after clearTimer()
+	 * so the cancellation handler can re-focus on the item for relisting.
+	 */
+	static class PendingAdjustment
+	{
+		final int itemId;
+		final String itemName;
+		final boolean isBuy;
+		final int recommendedPrice;
+		final int quantity;
+		final int sellPrice;
+
+		PendingAdjustment(int itemId, String itemName, boolean isBuy,
+			int recommendedPrice, int quantity, int sellPrice)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.recommendedPrice = recommendedPrice;
+			this.quantity = quantity;
+			this.sellPrice = sellPrice;
+		}
+	}
+
+	private final Map<Integer, PendingAdjustment> pendingAdjustments = new ConcurrentHashMap<>();
+
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartConfig config;
 
@@ -221,6 +248,18 @@ public class ManualAdjustmentTracker
 			}
 		}
 		trackedOffers.clear();
+		pendingAdjustments.clear();
+	}
+
+	/**
+	 * Check if the given GE slot had an active adjustment prompt.
+	 * Returns and removes the pending adjustment if present, null otherwise.
+	 * Called by GrandExchangeTracker.handleCancelledOffer() to determine
+	 * if the cancellation was for relisting purposes.
+	 */
+	public PendingAdjustment consumePendingAdjustment(int geSlot)
+	{
+		return pendingAdjustments.remove(geSlot);
 	}
 
 	/**
@@ -344,6 +383,10 @@ public class ManualAdjustmentTracker
 			{
 				sellPrice = response.getRecommendedPrice() + response.getCurrentMargin();
 			}
+			// Preserve adjustment info for relist on cancellation
+			pendingAdjustments.put(state.geSlot, new PendingAdjustment(
+				state.itemId, state.itemName, true,
+				response.getRecommendedPrice(), offer.getTotalQuantity(), sellPrice));
 			FocusedFlip focus = FocusedFlip.forBuy(
 				state.itemId, state.itemName,
 				response.getRecommendedPrice(),
@@ -365,6 +408,10 @@ public class ManualAdjustmentTracker
 			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
 
 		log.info("Manual adjustment: {}", msg);
+		// Preserve adjustment info for relist on cancellation
+		pendingAdjustments.put(state.geSlot, new PendingAdjustment(
+			state.itemId, state.itemName, false,
+			response.getRecommendedPrice(), offer.getTotalQuantity(), 0));
 		notifyPrompt(msg, state.itemId);
 		notifyHighlight(state.geSlot, response.getRecommendedPrice());
 		notifyInventoryHighlight(state.itemId);
