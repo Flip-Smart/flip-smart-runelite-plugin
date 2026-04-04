@@ -36,7 +36,6 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	public void addHighlight(int itemId)
 	{
-		log.debug("addHighlight called with itemId={}", itemId);
 		highlightedItemIds.add(itemId);
 	}
 
@@ -52,27 +51,9 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		outlineCache.clear();
 	}
 
-	private boolean debugLogged = false;
-
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
-		// Log all inventory item IDs once per cycle to diagnose matching
-		if (!highlightedItemIds.isEmpty() && !debugLogged)
-		{
-			log.debug("renderItemOverlay: itemId={}, qty={}, highlighted={}", itemId, widgetItem.getQuantity(), highlightedItemIds);
-			debugLogged = true;
-			// Reset after a short delay so we get periodic logs, not every frame
-			new java.util.Timer().schedule(new java.util.TimerTask()
-			{
-				@Override
-				public void run()
-				{
-					debugLogged = false;
-				}
-			}, 5000);
-		}
-
 		if (!highlightedItemIds.contains(itemId))
 		{
 			return;
