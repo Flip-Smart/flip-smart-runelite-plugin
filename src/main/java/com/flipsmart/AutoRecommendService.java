@@ -57,6 +57,13 @@ public class AutoRecommendService
 	// Recommended re-sell prices for stale sell offers (itemId -> price)
 	private final Map<Integer, Integer> staleResellPrices = new HashMap<>();
 
+	/**
+	 * Item pending relist after adjustment cancellation.
+	 * Takes priority over all other actions in focusNextAvailableAction().
+	 * Cleared when the relist buy order is placed or a new recommendation cycle starts.
+	 */
+	private PendingRelist pendingRelist;
+
 	// Deferred actions — queued when user is busy interacting with GE
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
@@ -131,6 +138,24 @@ public class AutoRecommendService
 			this.averageBuyPrice = averageBuyPrice;
 			this.deadline = deadline;
 			this.adjustmentCount = 0;
+		}
+	}
+
+	private static class PendingRelist
+	{
+		final int itemId;
+		final String itemName;
+		final int buyPrice;
+		final int quantity;
+		final int sellPrice;
+
+		PendingRelist(int itemId, String itemName, int buyPrice, int quantity, int sellPrice)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.buyPrice = buyPrice;
+			this.quantity = quantity;
+			this.sellPrice = sellPrice;
 		}
 	}
 
@@ -277,6 +302,7 @@ public class AutoRecommendService
 		promptedStaleItems.clear();
 		staleOfferQueue.clear();
 		staleResellPrices.clear();
+		pendingRelist = null;
 		deferredActions.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
@@ -337,6 +363,7 @@ public class AutoRecommendService
 	 */
 	public synchronized void onBuyOrderPlaced(int itemId)
 	{
+		pendingRelist = null;
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
 		staleResellPrices.remove(itemId);
@@ -516,6 +543,7 @@ public class AutoRecommendService
 	 */
 	public synchronized void onOfferCancelled(int itemId, boolean wasBuy, int filledQuantity, int totalQuantity)
 	{
+		boolean wasPromptedStale = promptedStaleItems.contains(itemId);
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
 		staleResellPrices.remove(itemId);
@@ -539,6 +567,23 @@ public class AutoRecommendService
 		{
 			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}/{}) - re-evaluating",
 				wasBuy, filledQuantity, totalQuantity);
+		}
+
+		// If this was a zero-fill buy cancel for a stale/adjustment-prompted item,
+		// prioritize relisting it before any other action
+		if (wasBuy && filledQuantity == 0 && wasPromptedStale)
+		{
+			String itemName = itemNames.getOrDefault(itemId, "Item " + itemId);
+			Integer buyPrice = buyPrices.get(itemId);
+			PlayerSession session = plugin.getSession();
+			Integer sellPrice = session != null ? session.getRecommendedPrice(itemId) : null;
+
+			if (buyPrice != null && sellPrice != null)
+			{
+				pendingRelist = new PendingRelist(itemId, itemName, buyPrice, totalQuantity, sellPrice);
+				log.info("Auto-recommend: Relist priority set for {} (buy={}, sell={}, qty={})",
+					itemName, buyPrice, sellPrice, totalQuantity);
+			}
 		}
 
 		focusNextAvailableAction();
@@ -670,6 +715,18 @@ public class AutoRecommendService
 	 */
 	private void focusNextAvailableAction()
 	{
+		// Priority 0: Relist item that was cancelled for adjustment
+		if (pendingRelist != null)
+		{
+			PendingRelist relist = pendingRelist;
+			pendingRelist = null;
+			log.info("Auto-recommend: Focusing relist for {} @ {} gp", relist.itemName, relist.buyPrice);
+			focusBuyOverlay(relist.itemId, relist.itemName,
+				relist.buyPrice, relist.quantity, relist.sellPrice,
+				"Auto: Relist " + relist.itemName);
+			return;
+		}
+
 		if (hasCollectedItemsToSell())
 		{
 			focusNextCollectedItemSell();
