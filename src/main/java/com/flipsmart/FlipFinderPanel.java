@@ -83,6 +83,9 @@ public class FlipFinderPanel extends PluginPanel
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
 
+	// Discord invite link
+	private static final String DISCORD_INVITE_URL = "https://discord.gg/8CrcM9qYF9";
+
 	// Premium subscription link (update when dashboard URL is available)
 	private static final String SUBSCRIBE_LINK = "https://flipsmart.net/dashboard";
 	private static final String SUBSCRIBE_MESSAGE = "Subscribe to Premium for all slots & RSNs";
@@ -746,11 +749,10 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		JLabel websiteLink = new JLabel("Flip Smart Website");
+		JLabel websiteLink = new JLabel("Website");
 		websiteLink.setForeground(new Color(100, 180, 255));
 		websiteLink.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
 		websiteLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		websiteLink.setAlignmentX(Component.CENTER_ALIGNMENT);
 		websiteLink.setToolTipText("Visit our website to view your flips and track your performance");
 		websiteLink.addMouseListener(new MouseAdapter()
 		{
@@ -761,7 +763,29 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		footerPanel.add(websiteLink);
+		JLabel discordLink = new JLabel("Discord");
+		discordLink.setForeground(new Color(88, 101, 242));
+		discordLink.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
+		discordLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		discordLink.setToolTipText("Join our Discord community");
+		discordLink.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				LinkBrowser.browse(DISCORD_INVITE_URL);
+			}
+		});
+
+		JPanel linksPanel = new JPanel();
+		linksPanel.setLayout(new BoxLayout(linksPanel, BoxLayout.X_AXIS));
+		linksPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		linksPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+		linksPanel.add(websiteLink);
+		linksPanel.add(Box.createHorizontalStrut(12));
+		linksPanel.add(discordLink);
+
+		footerPanel.add(linksPanel);
 		footerPanel.add(Box.createVerticalStrut(3));
 		footerPanel.add(subscribeLabel);
 
