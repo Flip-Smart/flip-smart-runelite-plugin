@@ -508,8 +508,12 @@ public class AutoRecommendService
 	 * @param filledQuantity how many items were filled before cancellation
 	 * @param totalQuantity  the original order quantity
 	 */
-	public synchronized void onOfferCancelled(int itemId, boolean wasBuy, int filledQuantity, int totalQuantity)
+	public synchronized void onOfferCancelled(int itemId, String itemName, boolean wasBuy, int filledQuantity, int totalQuantity)
 	{
+		if (itemName != null)
+		{
+			itemNames.put(itemId, itemName);
+		}
 		promptedStaleItems.remove(itemId);
 		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
 		staleResellPrices.remove(itemId);

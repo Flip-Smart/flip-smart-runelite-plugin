@@ -225,7 +225,7 @@ public class GrandExchangeTracker
 		// Notify auto-recommend AFTER tracked offer removal
 		if (isAutoRecommendActive())
 		{
-			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.isBuy, ctx.quantitySold, totalQuantity);
+			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.itemName, ctx.isBuy, ctx.quantitySold, totalQuantity);
 		}
 	}
 
@@ -238,7 +238,7 @@ public class GrandExchangeTracker
 		{
 			session.addCollectedItem(ctx.itemId, remaining);
 			log.info("Sell cancelled for {} - re-added {} unsold items to collected",
-				sellOffer != null ? sellOffer.getItemName() : ctx.itemName, remaining);
+				ctx.itemName, remaining);
 		}
 	}
 
@@ -253,7 +253,7 @@ public class GrandExchangeTracker
 
 			log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
 				ctx.isBuy ? "BUY" : "SELL",
-				previousOffer.getItemName(),
+				ctx.itemName,
 				newQuantity,
 				previousOffer.getTotalQuantity(),
 				pricePerItem);
@@ -261,7 +261,7 @@ public class GrandExchangeTracker
 			Integer recommendedSellPrice = ctx.isBuy ? session.getRecommendedPrice(ctx.itemId) : null;
 
 			apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-				.builder(ctx.itemId, previousOffer.getItemName(), ctx.isBuy, newQuantity, pricePerItem)
+				.builder(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity, pricePerItem)
 				.geSlot(ctx.slot)
 				.recommendedSellPrice(recommendedSellPrice)
 				.rsn(getRsn().orElse(null))
@@ -271,7 +271,7 @@ public class GrandExchangeTracker
 
 		log.info("Order cancelled: {} {} - {} items filled out of {}",
 			ctx.isBuy ? "BUY" : "SELL",
-			previousOffer != null ? previousOffer.getItemName() : ctx.itemName,
+			ctx.itemName,
 			ctx.quantitySold,
 			ctx.totalQuantity);
 	}
@@ -281,7 +281,7 @@ public class GrandExchangeTracker
 		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
 		log.info("Order cancelled with no fills: {} {}",
 			ctx.isBuy ? "BUY" : "SELL",
-			previousOffer != null ? previousOffer.getItemName() : ctx.itemName);
+			ctx.itemName);
 
 		if (ctx.isBuy)
 		{
@@ -303,10 +303,10 @@ public class GrandExchangeTracker
 		{
 			int pricePerItem = ctx.spent / ctx.quantitySold;
 			log.info("Syncing cancelled order quantity to backend: {} x{} (was {})",
-				cancelledOffer.getItemName(), ctx.quantitySold, cancelledOffer.getTotalQuantity());
+				ctx.itemName, ctx.quantitySold, cancelledOffer.getTotalQuantity());
 			apiClient.syncActiveFlipAsync(
 				ctx.itemId,
-				cancelledOffer.getItemName(),
+				ctx.itemName,
 				ctx.quantitySold,
 				ctx.quantitySold,
 				pricePerItem,
