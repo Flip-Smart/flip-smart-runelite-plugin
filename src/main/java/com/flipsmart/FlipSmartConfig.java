@@ -146,13 +146,13 @@ public interface FlipSmartConfig extends Config
 	@ConfigItem(
 		keyName = "minProfit",
 		name = "Minimum Profit",
-		description = "Minimum profit margin to highlight (in GP)",
+		description = "Hide recommendations with total profit below this value (in GP)",
 		section = flipFinderSection,
 		position = 4
 	)
 	default int minimumProfit()
 	{
-		return 100;
+		return 10000;
 	}
 
 	// ============================================
