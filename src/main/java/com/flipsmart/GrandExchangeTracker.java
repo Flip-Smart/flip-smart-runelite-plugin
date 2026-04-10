@@ -416,7 +416,9 @@ public class GrandExchangeTracker
 		if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0
 			&& session.getRecommendedPrice(collectedOffer.getItemId()) == null)
 		{
-			int buyPrice = collectedOffer.getPrice();
+			int buyPrice = (collectedOffer.getPreviousSpent() > 0 && collectedOffer.getPreviousQuantitySold() > 0)
+				? (int)(collectedOffer.getPreviousSpent() / collectedOffer.getPreviousQuantitySold())
+				: collectedOffer.getPrice();
 			int fallbackSellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
 			session.setRecommendedPrice(collectedOffer.getItemId(), fallbackSellPrice);
 			log.info("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",

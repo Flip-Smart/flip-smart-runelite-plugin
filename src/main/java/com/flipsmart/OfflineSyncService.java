@@ -463,12 +463,15 @@ public class OfflineSyncService
 			return;
 		}
 
+		int syncPrice = (persistedOffer.getPreviousSpent() > 0 && persistedOffer.getPreviousQuantitySold() > 0)
+			? (int)(persistedOffer.getPreviousSpent() / persistedOffer.getPreviousQuantitySold())
+			: persistedOffer.getPrice();
 		apiClient.syncActiveFlipAsync(
 			persistedOffer.getItemId(),
 			persistedOffer.getItemName(),
 			actualFills,
 			persistedOffer.getTotalQuantity(),
-			persistedOffer.getPrice(),
+			syncPrice,
 			rsn
 		);
 	}
