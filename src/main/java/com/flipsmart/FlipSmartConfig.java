@@ -275,11 +275,23 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showProfitLoss",
+		name = "Show Profit/Loss",
+		description = "Display profit/loss on GE sell offer tooltips based on your buy price",
+		section = displaySection,
+		position = 9
+	)
+	default boolean showProfitLoss()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "colorblindMode",
 		name = "Colorblind Mode",
 		description = "Use blue/orange colors instead of green/red for better accessibility",
 		section = displaySection,
-		position = 9
+		position = 10
 	)
 	default boolean colorblindMode()
 	{
