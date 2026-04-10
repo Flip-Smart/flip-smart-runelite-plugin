@@ -32,7 +32,6 @@ public class OfflineSyncService
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
-
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
 	private final ConfigManager configManager;
@@ -87,6 +86,7 @@ public class OfflineSyncService
 			log.info("No collected items found in config for RSN: {}", session.getRsn());
 			session.clearCollectedItems();
 		}
+
 	}
 
 	/**
@@ -152,6 +152,7 @@ public class OfflineSyncService
 				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
 			}
 		}
+
 	}
 
 	/**

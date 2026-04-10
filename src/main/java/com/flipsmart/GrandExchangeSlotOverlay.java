@@ -149,7 +149,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		TooltipData tooltip = renderAllSlots(graphics, offers);
 		if (tooltip != null)
 		{
-			drawPriceTooltip(graphics, tooltip.x, tooltip.y, tooltip.offer, tooltip.wikiPrice, tooltip.offerPrice);
+			drawPriceTooltip(graphics, tooltip.x, tooltip.y, tooltip.offer, tooltip.wikiPrice, tooltip.offerPrice, tooltip.buyPrice);
 		}
 
 		return null;
@@ -202,6 +202,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		int offerPrice;
 		int x;
 		int y;
+		Integer buyPrice; // null if no buy price on record or not a sell offer
 	}
 
 	/**
@@ -377,12 +378,39 @@ public class GrandExchangeSlotOverlay extends Overlay
 		tooltip.x = mousePos.getX() + 15;
 		tooltip.y = mousePos.getY() - 30;
 
+		// Look up buy price for sell offers (for P/L display)
+		// Prefer active flip data from API (survives restarts), fall back to local tracking
+		if (!isOfferBuyType(offer) && config.showProfitLoss())
+		{
+			tooltip.buyPrice = getBuyPriceForItem(offer.getItemId());
+		}
+
 		if (tooltip.wikiPrice == null)
 		{
 			plugin.refreshWikiPrices();
 		}
 
 		return tooltip;
+	}
+
+	/**
+	 * Get the buy price for an item from cached active flips (API data).
+	 */
+	private Integer getBuyPriceForItem(int itemId)
+	{
+		java.util.List<ActiveFlip> activeFlips = plugin.getCurrentActiveFlips();
+		if (activeFlips == null)
+		{
+			return null;
+		}
+		for (ActiveFlip flip : activeFlips)
+		{
+			if (flip.getItemId() == itemId && flip.getAverageBuyPrice() > 0)
+			{
+				return flip.getAverageBuyPrice();
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -440,7 +468,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Draw a custom tooltip with background showing real-time insta prices
 	 */
 	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer,
-								  FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice)
+								  FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice, Integer buyPrice)
 	{
 		boolean isBuy = isOfferBuyType(offer);
 
@@ -448,7 +476,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setFont(new Font("Arial", Font.PLAIN, 11));
 		FontMetrics fm = graphics.getFontMetrics();
 
-		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice);
+		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy, offer.getTotalQuantity());
 		Color yourPriceColor = determineYourPriceColor(wikiPrice, offerPrice, isBuy);
 
 		drawTooltipBackground(graphics, x, y, lines, fm);
@@ -468,28 +496,61 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Build tooltip text lines based on wiki price data
 	 */
-	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice)
+	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice,
+													  Integer buyPrice, boolean isBuy, int totalQuantity)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
 
-		if (wikiPrice != null && (wikiPrice.instaBuy > 0 || wikiPrice.instaSell > 0))
+		addPriceLines(lines, wikiPrice);
+		lines.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
+
+		if (!isBuy && buyPrice != null && buyPrice > 0 && totalQuantity > 0)
 		{
-			if (wikiPrice.instaBuy > 0)
-			{
-				lines.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
-			}
-			if (wikiPrice.instaSell > 0)
-			{
-				lines.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
-			}
-		}
-		else
-		{
-			lines.add("Price data loading...");
+			addProfitLossLine(lines, offerPrice, buyPrice, totalQuantity);
 		}
 
-		lines.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
 		return lines;
+	}
+
+	private void addPriceLines(java.util.List<String> lines, FlipSmartApiClient.WikiPrice wikiPrice)
+	{
+		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
+		{
+			lines.add("Price data loading...");
+			return;
+		}
+		if (wikiPrice.instaBuy > 0)
+		{
+			lines.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
+		}
+		if (wikiPrice.instaSell > 0)
+		{
+			lines.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
+		}
+	}
+
+	private void addProfitLossLine(java.util.List<String> lines, int sellPrice, int buyPrice, int totalQuantity)
+	{
+		int geTaxPerItem = Math.min((int)(sellPrice * 0.02), 5_000_000);
+		int netPnlPerItem = sellPrice - buyPrice - geTaxPerItem;
+		int totalPnl = netPnlPerItem * totalQuantity;
+		double roiPercent = (netPnlPerItem / (double) buyPrice) * 100.0;
+
+		lines.add("---");
+
+		String formattedPnl = formatPnlValue(totalPnl);
+		String label = totalPnl >= 0 ? "Profit: " : "Loss: ";
+		lines.add(label + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
+	}
+
+	private String formatPnlValue(int totalPnl)
+	{
+		if (Math.abs(totalPnl) >= 100_000)
+		{
+			return GpUtils.formatGPSigned(totalPnl);
+		}
+		String sign = totalPnl >= 0 ? "+" : "";
+		return sign + NUMBER_FORMAT.format(totalPnl);
 	}
 
 	/**
@@ -512,13 +573,20 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Draw tooltip background and border
 	 */
+	private static final int DIVIDER_HEIGHT = 6;
+
 	private void drawTooltipBackground(Graphics2D graphics, int x, int y, java.util.List<String> lines, FontMetrics fm)
 	{
 		int lineHeight = fm.getHeight();
 		int padding = 5;
-		int maxWidth = lines.stream().mapToInt(fm::stringWidth).max().orElse(0);
+		int maxWidth = lines.stream()
+			.filter(l -> !l.equals("---"))
+			.mapToInt(fm::stringWidth).max().orElse(0);
 		int tooltipWidth = maxWidth + padding * 2;
-		int tooltipHeight = lineHeight * lines.size() + padding * 2;
+
+		int textLines = (int) lines.stream().filter(l -> !l.equals("---")).count();
+		int dividers = (int) lines.stream().filter(l -> l.equals("---")).count();
+		int tooltipHeight = lineHeight * textLines + DIVIDER_HEIGHT * dividers + padding * 2;
 
 		graphics.setColor(new Color(30, 30, 30, 220));
 		graphics.fillRoundRect(x, y, tooltipWidth, tooltipHeight, 4, 4);
@@ -535,11 +603,25 @@ public class GrandExchangeSlotOverlay extends Overlay
 	{
 		int padding = 5;
 		int textY = y + padding + fm.getAscent();
+		int maxWidth = lines.stream()
+			.filter(l -> !l.equals("---"))
+			.mapToInt(fm::stringWidth).max().orElse(0);
 
 		for (String line : lines)
 		{
-			drawTooltipLine(graphics, line, x + padding, textY, yourPriceColor, fm);
-			textY += fm.getHeight();
+			if (line.equals("---"))
+			{
+				// Draw a subtle divider line
+				int dividerY = textY - fm.getAscent() + DIVIDER_HEIGHT / 2;
+				graphics.setColor(new Color(80, 80, 80));
+				graphics.drawLine(x + padding, dividerY, x + padding + maxWidth, dividerY);
+				textY += DIVIDER_HEIGHT;
+			}
+			else
+			{
+				drawTooltipLine(graphics, line, x + padding, textY, yourPriceColor, fm);
+				textY += fm.getHeight();
+			}
 		}
 	}
 
@@ -555,6 +637,22 @@ public class GrandExchangeSlotOverlay extends Overlay
 			graphics.drawString(prefix, x, y);
 
 			graphics.setColor(yourPriceColor);
+			graphics.drawString(line.substring(prefix.length()), x + fm.stringWidth(prefix), y);
+		}
+		else if (line.startsWith("Profit:"))
+		{
+			String prefix = "Profit: ";
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(prefix, x, y);
+			graphics.setColor(getCompetitiveColor());
+			graphics.drawString(line.substring(prefix.length()), x + fm.stringWidth(prefix), y);
+		}
+		else if (line.startsWith("Loss:"))
+		{
+			String prefix = "Loss: ";
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(prefix, x, y);
+			graphics.setColor(getUncompetitiveColor());
 			graphics.drawString(line.substring(prefix.length()), x + fm.stringWidth(prefix), y);
 		}
 		else

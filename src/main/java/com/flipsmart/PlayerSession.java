@@ -50,7 +50,6 @@ public class PlayerSession
 
 	private final Map<Integer, TrackedOffer> trackedOffers = new ConcurrentHashMap<>();
 	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
-
 	// =====================
 	// Sync Status
 	// =====================
