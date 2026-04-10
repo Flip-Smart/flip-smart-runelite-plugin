@@ -505,13 +505,19 @@ public class GrandExchangeSlotOverlay extends Overlay
 			int netPnl = offerPrice - buyPrice - geTax;
 			double roiPercent = (netPnl / (double) buyPrice) * 100.0;
 
+			lines.add("---"); // Divider marker
+
+			String formattedPnl = Math.abs(netPnl) >= 100_000
+				? GpUtils.formatGPSigned(netPnl)
+				: (netPnl >= 0 ? "+" : "") + NUMBER_FORMAT.format(netPnl);
+
 			if (netPnl >= 0)
 			{
-				lines.add("Profit: +" + NUMBER_FORMAT.format(netPnl) + " gp (" + String.format("%.1f%%", roiPercent) + ")");
+				lines.add("Profit: " + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
 			}
 			else
 			{
-				lines.add("Loss: " + NUMBER_FORMAT.format(netPnl) + " gp (" + String.format("%.1f%%", roiPercent) + ")");
+				lines.add("Loss: " + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
 			}
 		}
 
@@ -538,13 +544,20 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Draw tooltip background and border
 	 */
+	private static final int DIVIDER_HEIGHT = 6;
+
 	private void drawTooltipBackground(Graphics2D graphics, int x, int y, java.util.List<String> lines, FontMetrics fm)
 	{
 		int lineHeight = fm.getHeight();
 		int padding = 5;
-		int maxWidth = lines.stream().mapToInt(fm::stringWidth).max().orElse(0);
+		int maxWidth = lines.stream()
+			.filter(l -> !l.equals("---"))
+			.mapToInt(fm::stringWidth).max().orElse(0);
 		int tooltipWidth = maxWidth + padding * 2;
-		int tooltipHeight = lineHeight * lines.size() + padding * 2;
+
+		int textLines = (int) lines.stream().filter(l -> !l.equals("---")).count();
+		int dividers = (int) lines.stream().filter(l -> l.equals("---")).count();
+		int tooltipHeight = lineHeight * textLines + DIVIDER_HEIGHT * dividers + padding * 2;
 
 		graphics.setColor(new Color(30, 30, 30, 220));
 		graphics.fillRoundRect(x, y, tooltipWidth, tooltipHeight, 4, 4);
@@ -561,11 +574,25 @@ public class GrandExchangeSlotOverlay extends Overlay
 	{
 		int padding = 5;
 		int textY = y + padding + fm.getAscent();
+		int maxWidth = lines.stream()
+			.filter(l -> !l.equals("---"))
+			.mapToInt(fm::stringWidth).max().orElse(0);
 
 		for (String line : lines)
 		{
-			drawTooltipLine(graphics, line, x + padding, textY, yourPriceColor, fm);
-			textY += fm.getHeight();
+			if (line.equals("---"))
+			{
+				// Draw a subtle divider line
+				int dividerY = textY - fm.getAscent() + DIVIDER_HEIGHT / 2;
+				graphics.setColor(new Color(80, 80, 80));
+				graphics.drawLine(x + padding, dividerY, x + padding + maxWidth, dividerY);
+				textY += DIVIDER_HEIGHT;
+			}
+			else
+			{
+				drawTooltipLine(graphics, line, x + padding, textY, yourPriceColor, fm);
+				textY += fm.getHeight();
+			}
 		}
 	}
 
@@ -585,13 +612,19 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 		else if (line.startsWith("Profit:"))
 		{
+			String prefix = "Profit: ";
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(prefix, x, y);
 			graphics.setColor(getCompetitiveColor());
-			graphics.drawString(line, x, y);
+			graphics.drawString(line.substring(prefix.length()), x + fm.stringWidth(prefix), y);
 		}
 		else if (line.startsWith("Loss:"))
 		{
+			String prefix = "Loss: ";
+			graphics.setColor(Color.WHITE);
+			graphics.drawString(prefix, x, y);
 			graphics.setColor(getUncompetitiveColor());
-			graphics.drawString(line, x, y);
+			graphics.drawString(line.substring(prefix.length()), x + fm.stringWidth(prefix), y);
 		}
 		else
 		{
