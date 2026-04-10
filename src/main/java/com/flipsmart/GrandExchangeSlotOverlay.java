@@ -379,9 +379,10 @@ public class GrandExchangeSlotOverlay extends Overlay
 		tooltip.y = mousePos.getY() - 30;
 
 		// Look up buy price for sell offers (for P/L display)
+		// Prefer active flip data from API (survives restarts), fall back to local tracking
 		if (!isOfferBuyType(offer) && config.showProfitLoss())
 		{
-			tooltip.buyPrice = plugin.getLastBuyPrice(offer.getItemId());
+			tooltip.buyPrice = getBuyPriceForItem(offer.getItemId());
 		}
 
 		if (tooltip.wikiPrice == null)
@@ -390,6 +391,27 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 
 		return tooltip;
+	}
+
+	/**
+	 * Get the buy price for an item from cached active flips (API data),
+	 * falling back to locally tracked buy price.
+	 */
+	private Integer getBuyPriceForItem(int itemId)
+	{
+		java.util.List<ActiveFlip> activeFlips = plugin.getCurrentActiveFlips();
+		if (activeFlips != null)
+		{
+			for (ActiveFlip flip : activeFlips)
+			{
+				if (flip.getItemId() == itemId && flip.getAverageBuyPrice() > 0)
+				{
+					return flip.getAverageBuyPrice();
+				}
+			}
+		}
+		// Fall back to locally tracked buy price (covers the window before API syncs)
+		return plugin.getLastBuyPrice(itemId);
 	}
 
 	/**
