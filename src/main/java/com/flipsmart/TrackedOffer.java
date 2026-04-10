@@ -24,7 +24,7 @@ public class TrackedOffer
 
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, 0L, System.currentTimeMillis(), 0);
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, System.currentTimeMillis());
 	}
 
 	/**
@@ -32,31 +32,13 @@ public class TrackedOffer
 	 */
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis)
 	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, 0L, createdAtMillis, 0);
-	}
-
-	/**
-	 * Constructor with explicit timestamps and spent (for preserving completion state)
-	 */
-	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long spent, long createdAtMillis, long completedAtMillis)
-	{
 		this.itemId = itemId;
 		this.itemName = itemName;
 		this.isBuy = isBuy;
 		this.totalQuantity = totalQuantity;
 		this.price = price;
 		this.previousQuantitySold = quantitySold;
-		this.previousSpent = spent;
 		this.createdAtMillis = createdAtMillis;
-		this.completedAtMillis = completedAtMillis;
-	}
-
-	/**
-	 * Constructor with explicit timestamps (for preserving completion state) — backwards compat
-	 */
-	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
-	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, 0L, createdAtMillis, completedAtMillis);
 	}
 
 	/**
@@ -78,33 +60,24 @@ public class TrackedOffer
 	 */
 	public static TrackedOffer createWithPreservedTimestamps(
 		int itemId, String itemName, int totalQuantity,
-		int price, int quantitySold, long spent, TrackedOffer existing,
+		int price, int quantitySold, TrackedOffer existing,
 		GrandExchangeOfferState state)
 	{
 		long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
 			? existing.getCreatedAtMillis()
 			: System.currentTimeMillis();
-		long completedTimestamp = 0;
+
+		TrackedOffer offer = new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp);
 
 		if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
 		{
-			completedTimestamp = (existing != null && existing.getCompletedAtMillis() > 0)
-				? existing.getCompletedAtMillis()
-				: System.currentTimeMillis();
+			offer.setCompletedAtMillis(
+				(existing != null && existing.getCompletedAtMillis() > 0)
+					? existing.getCompletedAtMillis()
+					: System.currentTimeMillis());
 		}
 
-		return new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, spent, originalTimestamp, completedTimestamp);
-	}
-
-	/**
-	 * Backwards-compatible overload that passes 0 for spent.
-	 */
-	public static TrackedOffer createWithPreservedTimestamps(
-		int itemId, String itemName, int totalQuantity,
-		int price, int quantitySold, TrackedOffer existing,
-		GrandExchangeOfferState state)
-	{
-		return createWithPreservedTimestamps(itemId, itemName, totalQuantity, price, quantitySold, 0L, existing, state);
+		return offer;
 	}
 
 	/**

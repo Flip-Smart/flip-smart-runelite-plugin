@@ -1121,8 +1121,10 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
 			TrackedOffer existing = session.getTrackedOffer(slot);
-			session.putTrackedOffer(slot, TrackedOffer.createWithPreservedTimestamps(
-				itemId, itemName, totalQuantity, price, quantitySold, (long) spent, existing, state));
+			TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
+				itemId, itemName, totalQuantity, price, quantitySold, existing, state);
+			updated.setPreviousSpent(spent);
+			session.putTrackedOffer(slot, updated);
 			return;
 		}
 

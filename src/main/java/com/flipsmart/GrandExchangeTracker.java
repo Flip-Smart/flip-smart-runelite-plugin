@@ -508,8 +508,10 @@ public class GrandExchangeTracker
 
 		// Update tracked offer BEFORE notifying auto-recommend so getCompletedOffers()
 		// sees the BOUGHT/SOLD state when promptCollection() is called
-		session.putTrackedOffer(ctx.slot, TrackedOffer.createWithPreservedTimestamps(
-			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, (long) ctx.spent, previousOffer, ctx.state));
+		TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
+			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state);
+		updated.setPreviousSpent(ctx.spent);
+		session.putTrackedOffer(ctx.slot, updated);
 
 		notifyAutoRecommendOnCompletion(ctx);
 
