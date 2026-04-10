@@ -303,7 +303,7 @@ public class GrandExchangeTracker
 		String rsn = getRsn().orElse(null);
 		if (rsn != null && cancelledOffer != null)
 		{
-			int pricePerItem = ctx.spent / ctx.quantitySold;
+			int pricePerItem = (ctx.quantitySold > 0) ? (int)((long) ctx.spent / ctx.quantitySold) : 0;
 			log.info("Syncing cancelled order quantity to backend: {} x{} (was {})",
 				ctx.itemName, ctx.quantitySold, cancelledOffer.getTotalQuantity());
 			apiClient.syncActiveFlipAsync(
@@ -370,7 +370,9 @@ public class GrandExchangeTracker
 					collectedOffer.getItemName(),
 					collectedQty,
 					collectedOffer.getTotalQuantity(),
-					collectedOffer.getPrice(),
+					collectedOffer.getPreviousSpent() > 0 && collectedOffer.getPreviousQuantitySold() > 0
+						? (int)(collectedOffer.getPreviousSpent() / collectedOffer.getPreviousQuantitySold())
+						: collectedOffer.getPrice(),
 					rsn
 				);
 			}
