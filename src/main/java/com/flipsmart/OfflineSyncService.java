@@ -32,8 +32,6 @@ public class OfflineSyncService
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
-	private static final String LAST_BUY_PRICES_KEY_PREFIX = "lastBuyPrices_";
-
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
 	private final ConfigManager configManager;
@@ -89,26 +87,6 @@ public class OfflineSyncService
 			session.clearCollectedItems();
 		}
 
-		// Restore last buy prices
-		String buyPricesKey = getLastBuyPricesKey();
-		String buyPricesJson = configManager.getConfiguration(CONFIG_GROUP, buyPricesKey);
-		if (buyPricesJson != null && !buyPricesJson.isEmpty())
-		{
-			try
-			{
-				Type buyPricesType = new TypeToken<Map<Integer, Integer>>(){}.getType();
-				Map<Integer, Integer> buyPrices = gson.fromJson(buyPricesJson, buyPricesType);
-				if (buyPrices != null && !buyPrices.isEmpty())
-				{
-					session.restoreLastBuyPrices(buyPrices);
-					log.info("Restored {} last buy prices for {}", buyPrices.size(), session.getRsn());
-				}
-			}
-			catch (Exception e)
-			{
-				log.error("Failed to restore last buy prices: {}", e.getMessage());
-			}
-		}
 	}
 
 	/**
@@ -175,26 +153,6 @@ public class OfflineSyncService
 			}
 		}
 
-		// Persist last buy prices (for P/L tooltip on sell offers)
-		String buyPricesKey = getLastBuyPricesKey();
-		Map<Integer, Integer> buyPrices = session.getLastBuyPricesForPersistence();
-		if (buyPrices.isEmpty())
-		{
-			configManager.unsetConfiguration(CONFIG_GROUP, buyPricesKey);
-		}
-		else
-		{
-			try
-			{
-				String json = gson.toJson(buyPrices);
-				configManager.setConfiguration(CONFIG_GROUP, buyPricesKey, json);
-				log.debug("Persisted {} last buy prices for {}", buyPrices.size(), session.getRsn());
-			}
-			catch (Exception e)
-			{
-				log.error("Failed to persist last buy prices for {}: {}", session.getRsn(), e.getMessage());
-			}
-		}
 	}
 
 	/**
@@ -535,15 +493,6 @@ public class OfflineSyncService
 			return COLLECTED_QUANTITIES_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return COLLECTED_QUANTITIES_KEY_PREFIX + session.getRsn();
-	}
-
-	public String getLastBuyPricesKey()
-	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return LAST_BUY_PRICES_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return LAST_BUY_PRICES_KEY_PREFIX + session.getRsn();
 	}
 
 	/**

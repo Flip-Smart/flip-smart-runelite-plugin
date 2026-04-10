@@ -394,24 +394,23 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Get the buy price for an item from cached active flips (API data),
-	 * falling back to locally tracked buy price.
+	 * Get the buy price for an item from cached active flips (API data).
 	 */
 	private Integer getBuyPriceForItem(int itemId)
 	{
 		java.util.List<ActiveFlip> activeFlips = plugin.getCurrentActiveFlips();
-		if (activeFlips != null)
+		if (activeFlips == null)
 		{
-			for (ActiveFlip flip : activeFlips)
+			return null;
+		}
+		for (ActiveFlip flip : activeFlips)
+		{
+			if (flip.getItemId() == itemId && flip.getAverageBuyPrice() > 0)
 			{
-				if (flip.getItemId() == itemId && flip.getAverageBuyPrice() > 0)
-				{
-					return flip.getAverageBuyPrice();
-				}
+				return flip.getAverageBuyPrice();
 			}
 		}
-		// Fall back to locally tracked buy price (covers the window before API syncs)
-		return plugin.getLastBuyPrice(itemId);
+		return null;
 	}
 
 	/**

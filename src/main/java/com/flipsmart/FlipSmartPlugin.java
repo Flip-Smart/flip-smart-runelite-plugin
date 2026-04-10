@@ -304,14 +304,6 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Get the last recorded buy price for an item (for P/L tooltip)
-	 */
-	public Integer getLastBuyPrice(int itemId)
-	{
-		return session.getLastBuyPrice(itemId);
-	}
-
-	/**
 	 * Get the current flip assist step for GE button highlighting
 	 */
 	public FlipAssistOverlay.FlipAssistStep getFlipAssistStep()
