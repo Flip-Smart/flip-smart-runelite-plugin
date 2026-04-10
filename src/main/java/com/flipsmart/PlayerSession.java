@@ -50,6 +50,7 @@ public class PlayerSession
 
 	private final Map<Integer, TrackedOffer> trackedOffers = new ConcurrentHashMap<>();
 	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Integer> lastBuyPrices = new ConcurrentHashMap<>();
 
 	// =====================
 	// Sync Status
@@ -250,6 +251,44 @@ public class PlayerSession
 	}
 
 	// =====================
+	// Last Buy Prices Methods
+	// =====================
+
+	public Integer getLastBuyPrice(int itemId)
+	{
+		return lastBuyPrices.get(itemId);
+	}
+
+	public void setLastBuyPrice(int itemId, int price)
+	{
+		lastBuyPrices.put(itemId, price);
+		log.debug("Stored last buy price for item {}: {}", itemId, price);
+	}
+
+	public void removeLastBuyPrice(int itemId)
+	{
+		lastBuyPrices.remove(itemId);
+	}
+
+	/**
+	 * Get a snapshot of last buy prices for persistence.
+	 * Returns a new HashMap to avoid concurrent modification during serialization.
+	 */
+	public Map<Integer, Integer> getLastBuyPricesForPersistence()
+	{
+		return new HashMap<>(lastBuyPrices);
+	}
+
+	public void restoreLastBuyPrices(Map<Integer, Integer> prices)
+	{
+		lastBuyPrices.clear();
+		if (prices != null)
+		{
+			lastBuyPrices.putAll(prices);
+		}
+	}
+
+	// =====================
 	// Sync Status Methods
 	// =====================
 
@@ -325,6 +364,7 @@ public class PlayerSession
 		collectedQuantities.clear();
 		trackedOffers.clear();
 		recommendedPrices.clear();
+		lastBuyPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 	}
 
