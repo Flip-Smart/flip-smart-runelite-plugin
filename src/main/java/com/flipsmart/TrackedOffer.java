@@ -18,12 +18,13 @@ public class TrackedOffer
 	private int totalQuantity;
 	private int price;
 	private int previousQuantitySold;
+	private long previousSpent;  // cumulative GP spent/received — long to handle values > 2.1B
 	private long createdAtMillis;  // Timestamp when offer was created (for timer display)
 	private long completedAtMillis;  // Timestamp when offer completed (0 if not complete)
 
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, System.currentTimeMillis(), 0);
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, 0L, System.currentTimeMillis(), 0);
 	}
 
 	/**
@@ -31,13 +32,13 @@ public class TrackedOffer
 	 */
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis)
 	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, createdAtMillis, 0);
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, 0L, createdAtMillis, 0);
 	}
 
 	/**
-	 * Constructor with explicit timestamps (for preserving completion state)
+	 * Constructor with explicit timestamps and spent (for preserving completion state)
 	 */
-	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
+	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long spent, long createdAtMillis, long completedAtMillis)
 	{
 		this.itemId = itemId;
 		this.itemName = itemName;
@@ -45,8 +46,17 @@ public class TrackedOffer
 		this.totalQuantity = totalQuantity;
 		this.price = price;
 		this.previousQuantitySold = quantitySold;
+		this.previousSpent = spent;
 		this.createdAtMillis = createdAtMillis;
 		this.completedAtMillis = completedAtMillis;
+	}
+
+	/**
+	 * Constructor with explicit timestamps (for preserving completion state) — backwards compat
+	 */
+	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
+	{
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, 0L, createdAtMillis, completedAtMillis);
 	}
 
 	/**
@@ -68,7 +78,7 @@ public class TrackedOffer
 	 */
 	public static TrackedOffer createWithPreservedTimestamps(
 		int itemId, String itemName, int totalQuantity,
-		int price, int quantitySold, TrackedOffer existing,
+		int price, int quantitySold, long spent, TrackedOffer existing,
 		GrandExchangeOfferState state)
 	{
 		long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
@@ -83,7 +93,18 @@ public class TrackedOffer
 				: System.currentTimeMillis();
 		}
 
-		return new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp);
+		return new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, spent, originalTimestamp, completedTimestamp);
+	}
+
+	/**
+	 * Backwards-compatible overload that passes 0 for spent.
+	 */
+	public static TrackedOffer createWithPreservedTimestamps(
+		int itemId, String itemName, int totalQuantity,
+		int price, int quantitySold, TrackedOffer existing,
+		GrandExchangeOfferState state)
+	{
+		return createWithPreservedTimestamps(itemId, itemName, totalQuantity, price, quantitySold, 0L, existing, state);
 	}
 
 	/**
@@ -100,6 +121,14 @@ public class TrackedOffer
 	public void setPreviousQuantitySold(int quantitySold)
 	{
 		this.previousQuantitySold = quantitySold;
+	}
+
+	/**
+	 * Update the cumulative GP spent/received for this offer.
+	 */
+	public void setPreviousSpent(long spent)
+	{
+		this.previousSpent = spent;
 	}
 
 	/**
