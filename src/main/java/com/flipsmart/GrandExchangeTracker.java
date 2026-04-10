@@ -249,7 +249,9 @@ public class GrandExchangeTracker
 		if (previousOffer != null && ctx.quantitySold > previousOffer.getPreviousQuantitySold())
 		{
 			int newQuantity = ctx.quantitySold - previousOffer.getPreviousQuantitySold();
-			int pricePerItem = ctx.spent / ctx.quantitySold;
+			long previousSpent = previousOffer.getPreviousSpent();
+			long incrementalSpent = ctx.spent - previousSpent;
+			int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
 			log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
 				ctx.isBuy ? "BUY" : "SELL",
@@ -469,7 +471,7 @@ public class GrandExchangeTracker
 
 		if (newQuantity > 0)
 		{
-			recordFillTransaction(ctx, newQuantity);
+			recordFillTransaction(ctx, newQuantity, previousOffer);
 		}
 
 		// Reset adjustment timer on partial fills (not yet fully completed)
@@ -540,9 +542,11 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void recordFillTransaction(OfferContext ctx, int newQuantity)
+	private void recordFillTransaction(OfferContext ctx, int newQuantity, TrackedOffer previousOffer)
 	{
-		int pricePerItem = ctx.spent / ctx.quantitySold;
+		long previousSpent = (previousOffer != null) ? previousOffer.getPreviousSpent() : 0L;
+		long incrementalSpent = ctx.spent - previousSpent;
+		int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
 		log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
 			ctx.isBuy ? "BUY" : "SELL",
