@@ -455,7 +455,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setFont(new Font("Arial", Font.PLAIN, 11));
 		FontMetrics fm = graphics.getFontMetrics();
 
-		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy);
+		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy, offer.getTotalQuantity());
 		Color yourPriceColor = determineYourPriceColor(wikiPrice, offerPrice, isBuy);
 
 		drawTooltipBackground(graphics, x, y, lines, fm);
@@ -476,7 +476,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Build tooltip text lines based on wiki price data
 	 */
 	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice,
-													  Integer buyPrice, boolean isBuy)
+													  Integer buyPrice, boolean isBuy, int totalQuantity)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
 
@@ -499,19 +499,20 @@ public class GrandExchangeSlotOverlay extends Overlay
 		lines.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
 
 		// Add P/L line for sell offers with known buy price
-		if (!isBuy && buyPrice != null && buyPrice > 0)
+		if (!isBuy && buyPrice != null && buyPrice > 0 && totalQuantity > 0)
 		{
-			int geTax = Math.min((int)(offerPrice * 0.02), 5_000_000);
-			int netPnl = offerPrice - buyPrice - geTax;
-			double roiPercent = (netPnl / (double) buyPrice) * 100.0;
+			int geTaxPerItem = Math.min((int)(offerPrice * 0.02), 5_000_000);
+			int netPnlPerItem = offerPrice - buyPrice - geTaxPerItem;
+			int totalPnl = netPnlPerItem * totalQuantity;
+			double roiPercent = (netPnlPerItem / (double) buyPrice) * 100.0;
 
 			lines.add("---"); // Divider marker
 
-			String formattedPnl = Math.abs(netPnl) >= 100_000
-				? GpUtils.formatGPSigned(netPnl)
-				: (netPnl >= 0 ? "+" : "") + NUMBER_FORMAT.format(netPnl);
+			String formattedPnl = Math.abs(totalPnl) >= 100_000
+				? GpUtils.formatGPSigned(totalPnl)
+				: (totalPnl >= 0 ? "+" : "") + NUMBER_FORMAT.format(totalPnl);
 
-			if (netPnl >= 0)
+			if (totalPnl >= 0)
 			{
 				lines.add("Profit: " + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
 			}
