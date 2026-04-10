@@ -502,49 +502,56 @@ public class GrandExchangeSlotOverlay extends Overlay
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
 
-		if (wikiPrice != null && (wikiPrice.instaBuy > 0 || wikiPrice.instaSell > 0))
-		{
-			if (wikiPrice.instaBuy > 0)
-			{
-				lines.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
-			}
-			if (wikiPrice.instaSell > 0)
-			{
-				lines.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
-			}
-		}
-		else
-		{
-			lines.add("Price data loading...");
-		}
-
+		addPriceLines(lines, wikiPrice);
 		lines.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
 
-		// Add P/L line for sell offers with known buy price
 		if (!isBuy && buyPrice != null && buyPrice > 0 && totalQuantity > 0)
 		{
-			int geTaxPerItem = Math.min((int)(offerPrice * 0.02), 5_000_000);
-			int netPnlPerItem = offerPrice - buyPrice - geTaxPerItem;
-			int totalPnl = netPnlPerItem * totalQuantity;
-			double roiPercent = (netPnlPerItem / (double) buyPrice) * 100.0;
-
-			lines.add("---"); // Divider marker
-
-			String formattedPnl = Math.abs(totalPnl) >= 100_000
-				? GpUtils.formatGPSigned(totalPnl)
-				: (totalPnl >= 0 ? "+" : "") + NUMBER_FORMAT.format(totalPnl);
-
-			if (totalPnl >= 0)
-			{
-				lines.add("Profit: " + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
-			}
-			else
-			{
-				lines.add("Loss: " + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
-			}
+			addProfitLossLine(lines, offerPrice, buyPrice, totalQuantity);
 		}
 
 		return lines;
+	}
+
+	private void addPriceLines(java.util.List<String> lines, FlipSmartApiClient.WikiPrice wikiPrice)
+	{
+		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
+		{
+			lines.add("Price data loading...");
+			return;
+		}
+		if (wikiPrice.instaBuy > 0)
+		{
+			lines.add("Insta Buy: " + NUMBER_FORMAT.format(wikiPrice.instaBuy) + " gp");
+		}
+		if (wikiPrice.instaSell > 0)
+		{
+			lines.add("Insta Sell: " + NUMBER_FORMAT.format(wikiPrice.instaSell) + " gp");
+		}
+	}
+
+	private void addProfitLossLine(java.util.List<String> lines, int sellPrice, int buyPrice, int totalQuantity)
+	{
+		int geTaxPerItem = Math.min((int)(sellPrice * 0.02), 5_000_000);
+		int netPnlPerItem = sellPrice - buyPrice - geTaxPerItem;
+		int totalPnl = netPnlPerItem * totalQuantity;
+		double roiPercent = (netPnlPerItem / (double) buyPrice) * 100.0;
+
+		lines.add("---");
+
+		String formattedPnl = formatPnlValue(totalPnl);
+		String label = totalPnl >= 0 ? "Profit: " : "Loss: ";
+		lines.add(label + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
+	}
+
+	private String formatPnlValue(int totalPnl)
+	{
+		if (Math.abs(totalPnl) >= 100_000)
+		{
+			return GpUtils.formatGPSigned(totalPnl);
+		}
+		String sign = totalPnl >= 0 ? "+" : "";
+		return sign + NUMBER_FORMAT.format(totalPnl);
 	}
 
 	/**
