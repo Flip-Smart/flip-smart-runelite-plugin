@@ -393,6 +393,7 @@ public class GrandExchangeTracker
 			log.info("Sell offer for {} went empty with no items in inventory - dismissing active flip",
 				collectedOffer.getItemName());
 			activeFlipTracker.dismissFlip(collectedOffer.getItemId());
+			session.removeLastBuyPrice(collectedOffer.getItemId());
 		}
 	}
 
@@ -544,6 +545,11 @@ public class GrandExchangeTracker
 	{
 		int pricePerItem = ctx.spent / ctx.quantitySold;
 
+		if (ctx.isBuy)
+		{
+			session.setLastBuyPrice(ctx.itemId, pricePerItem);
+		}
+
 		log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
 			ctx.isBuy ? "BUY" : "SELL",
 			ctx.itemName,
@@ -650,6 +656,8 @@ public class GrandExchangeTracker
 	{
 		log.debug("Recording new buy order: {} x{} @ {} gp each (slot {}, 0/{} filled)",
 			ctx.itemName, 0, ctx.price, ctx.slot, ctx.totalQuantity);
+
+		session.setLastBuyPrice(ctx.itemId, ctx.price);
 
 		if (isAutoRecommendActive())
 		{
