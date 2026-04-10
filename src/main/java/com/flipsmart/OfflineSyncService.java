@@ -303,9 +303,24 @@ public class OfflineSyncService
 
 		Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
 
-		int fillPrice = (currentOffer.getPreviousSpent() > 0 && currentOffer.getPreviousQuantitySold() > 0)
-			? (int)(currentOffer.getPreviousSpent() / currentOffer.getPreviousQuantitySold())
-			: currentOffer.getPrice();
+		// Compute exact price for offline fills using spent delta:
+		// (currentSpent - persistedSpent) / offlineFills gives the avg price of just the offline fills
+		long spentDelta = currentOffer.getPreviousSpent() - persistedOffer.getPreviousSpent();
+		int fillPrice;
+		if (spentDelta > 0 && offlineFills > 0)
+		{
+			fillPrice = (int)(spentDelta / offlineFills);
+		}
+		else if (currentOffer.getPreviousSpent() > 0 && currentOffer.getPreviousQuantitySold() > 0)
+		{
+			// Fallback: cumulative average (e.g. if persistedOffer predates previousSpent tracking)
+			fillPrice = (int)(currentOffer.getPreviousSpent() / currentOffer.getPreviousQuantitySold());
+		}
+		else
+		{
+			// Last-resort fallback: offer price
+			fillPrice = currentOffer.getPrice();
+		}
 		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 			.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
 				offlineFills, fillPrice)
@@ -313,6 +328,7 @@ public class OfflineSyncService
 			.recommendedSellPrice(recommendedSellPrice)
 			.rsn(getRsnSafe().orElse(null))
 			.totalQuantity(currentOffer.getTotalQuantity())
+			.isOfflineFill(true)
 			.build());
 	}
 
