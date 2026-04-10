@@ -119,5 +119,18 @@ public class FocusedFlip
 	{
 		return step == FlipStep.SELL;
 	}
+
+	/**
+	 * Calculate the expected profit for a recommendation after applying the price offset.
+	 * This matches the profit shown in the Flip Assist overlay.
+	 */
+	public static int calculateAdjustedProfit(FlipRecommendation rec, int priceOffset)
+	{
+		int adjBuy = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
+		int adjSell = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
+		int margin = adjSell - adjBuy;
+		int geTax = Math.min((int)(adjSell * 0.02), 5_000_000);
+		return (margin - geTax) * rec.getRecommendedQuantity();
+	}
 }
 

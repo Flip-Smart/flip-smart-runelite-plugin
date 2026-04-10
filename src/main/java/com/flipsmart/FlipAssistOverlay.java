@@ -462,10 +462,6 @@ public class FlipAssistOverlay extends Overlay
 		return new Dimension(HINT_PANEL_WIDTH, panelHeight);
 	}
 
-	/**
-	 * Determine the color for a hint box line.
-	 * Lines ending in "gp" or standalone item names (no colon, no action verb) are green.
-	 */
 	private Color getHintLineColor(String line)
 	{
 		String trimmed = line.trim();
@@ -473,7 +469,6 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return COLOR_BUY;
 		}
-		// Item name lines: don't contain action words or colons
 		if (!trimmed.contains(":") && !trimmed.isEmpty()
 			&& !trimmed.startsWith("Consider") && !trimmed.startsWith("Re-sell")
 			&& !trimmed.startsWith("Adjust") && !trimmed.startsWith("Margin")

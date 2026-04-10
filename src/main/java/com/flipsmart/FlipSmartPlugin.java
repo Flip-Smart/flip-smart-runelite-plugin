@@ -248,10 +248,6 @@ public class FlipSmartPlugin extends Plugin
 		return autoRecommendService != null ? autoRecommendService.getLastOverlayMessage() : null;
 	}
 
-	/**
-	 * Get the current Flip Assist overlay step, used by AutoRecommendService
-	 * to determine if the user is busy with a GE interaction.
-	 */
 	public FlipAssistOverlay.FlipAssistStep getFlipAssistOverlayStep()
 	{
 		return flipAssistOverlay != null ? flipAssistOverlay.getCurrentStep() : FlipAssistOverlay.FlipAssistStep.SELECT_ITEM;
@@ -545,12 +541,10 @@ public class FlipSmartPlugin extends Plugin
 			updateInventoryHighlightForFocus(focus);
 		});
 
-		// Wire callback: highlight GE slot for adjustment
 		manualAdjustmentTracker.setOnHighlightSlot((slot, recommendedPrice) ->
 			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
 		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
 
-		// Wire callback: highlight inventory item for sell adjustments
 		manualAdjustmentTracker.setOnHighlightInventoryItem(inventoryHighlightOverlay::addHighlight);
 		manualAdjustmentTracker.setOnClearInventoryItem(inventoryHighlightOverlay::removeHighlight);
 
@@ -565,13 +559,6 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setConfig(config);
 	}
 
-	/**
-	 * Update inventory highlights when the focused flip changes.
-	 * Highlights the item in inventory when a sell-focused flip is active.
-	 */
-	/**
-	 * Find the GE slot for an item and highlight it with the adjustment amber border.
-	 */
 	private void highlightSlotForItem(int itemId)
 	{
 		geSlotOverlay.clearAllAdjustmentHighlights();
@@ -600,7 +587,6 @@ public class FlipSmartPlugin extends Plugin
 		updateInventoryHighlightForFocus(focus);
 		if (focus != null)
 		{
-			// Clear stale offer GE slot highlights when focus moves to a new recommendation
 			geSlotOverlay.clearAllAdjustmentHighlights();
 			log.info("Auto-recommend focus set: {} {} @ {} gp",
 				focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());

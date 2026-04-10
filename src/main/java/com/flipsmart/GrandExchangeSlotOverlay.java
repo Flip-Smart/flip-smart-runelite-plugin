@@ -378,8 +378,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 		tooltip.x = mousePos.getX() + 15;
 		tooltip.y = mousePos.getY() - 30;
 
-		// Look up buy price for sell offers (for P/L display)
-		// Prefer active flip data from API (survives restarts), fall back to local tracking
 		if (!isOfferBuyType(offer) && config.showProfitLoss())
 		{
 			tooltip.buyPrice = getBuyPriceForItem(offer.getItemId());
@@ -393,9 +391,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 		return tooltip;
 	}
 
-	/**
-	 * Get the buy price for an item from cached active flips (API data).
-	 */
 	private Integer getBuyPriceForItem(int itemId)
 	{
 		java.util.List<ActiveFlip> activeFlips = plugin.getCurrentActiveFlips();
@@ -611,7 +606,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 		{
 			if (line.equals("---"))
 			{
-				// Draw a subtle divider line
 				int dividerY = textY - fm.getAscent() + DIVIDER_HEIGHT / 2;
 				graphics.setColor(new Color(80, 80, 80));
 				graphics.drawLine(x + padding, dividerY, x + padding + maxWidth, dividerY);

@@ -54,10 +54,7 @@ public class AutoRecommendService
 
 	// Stale offer queue — guides user through stale offers one at a time
 	private final List<TrackedOffer> staleOfferQueue = new ArrayList<>();
-	// Recommended re-sell prices for stale sell offers (itemId -> price)
 	private final Map<Integer, Integer> staleResellPrices = new HashMap<>();
-
-	// Deferred actions — queued when user is busy interacting with GE
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	// Queue state - guarded by synchronized(this)
@@ -86,7 +83,6 @@ public class AutoRecommendService
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
-	// Callback when a stale offer is prompted (for GE slot highlighting)
 	private volatile java.util.function.IntConsumer onStaleOfferPrompted;
 
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
@@ -359,8 +355,6 @@ public class AutoRecommendService
 					itemId, rec.getRecommendedSellPrice());
 			}
 
-			// If all GE slots are now full, clear the buy overlay so it doesn't
-			// keep showing a recommendation the user can't act on (fixes #393)
 			if (!hasAvailableGESlots())
 			{
 				log.info("Auto-recommend: Non-focused buy filled last GE slot - clearing focus");
@@ -691,24 +685,11 @@ public class AutoRecommendService
 		}
 	}
 
-	// =====================
-	// Alert Deferral
-	// =====================
-
-	/**
-	 * Check if the user is actively interacting with the GE interface.
-	 * When busy, focus-changing events should be deferred to avoid interrupting
-	 * the user mid-offer setup.
-	 */
 	private boolean isUserBusy()
 	{
 		return isBusyStep(plugin.getFlipAssistOverlayStep());
 	}
 
-	/**
-	 * Execute an action immediately if the user is not busy, or defer it
-	 * until the user finishes their current GE interaction.
-	 */
 	private synchronized void executeOrDefer(Runnable action)
 	{
 		if (isUserBusy())
@@ -722,10 +703,6 @@ public class AutoRecommendService
 		}
 	}
 
-	/**
-	 * Called when the overlay step changes. If the user transitions from a busy
-	 * state to an idle state, drain deferred actions by re-evaluating priorities.
-	 */
 	public synchronized void onOverlayStepChanged(FlipAssistStep newStep)
 	{
 		if (!active || deferredActions.isEmpty())
@@ -752,10 +729,6 @@ public class AutoRecommendService
 			|| step == FlipAssistStep.CONFIRM_SELL;
 	}
 
-	/**
-	 * Ensure a sell price is available for an item. If the stored price was lost
-	 * (e.g., plugin restart), try to recover it from the recommendation queue.
-	 */
 	private void ensureSellPriceAvailable(int itemId)
 	{
 		PlayerSession session = plugin.getSession();
@@ -773,11 +746,6 @@ public class AutoRecommendService
 		}
 	}
 
-	/**
-	 * Update the sell price for an item after a sell cancellation.
-	 * Prefers the recommendation queue price (reflects current market),
-	 * falls back to the existing stored price from the original buy.
-	 */
 	private void updateSellPriceFromQueueOrFallback(int itemId)
 	{
 		FlipRecommendation rec = findRecommendationForItem(itemId);
@@ -831,14 +799,17 @@ public class AutoRecommendService
 	private List<FlipRecommendation> filterAndSortRecommendations(List<FlipRecommendation> newRecommendations)
 	{
 		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+		int priceOffset = config.priceOffset();
+		int minProfit = config.minimumProfit();
 		List<FlipRecommendation> filtered = new ArrayList<>();
 		for (FlipRecommendation rec : newRecommendations)
 		{
-			if (!activeItemIds.contains(rec.getItemId()))
+			itemNames.put(rec.getItemId(), rec.getItemName());
+			if (!activeItemIds.contains(rec.getItemId())
+				&& FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
 			{
 				filtered.add(rec);
 			}
-			itemNames.put(rec.getItemId(), rec.getItemName());
 		}
 		filtered.sort(Comparator.comparingDouble(FlipRecommendation::getVolumePerHour));
 		return filtered;
@@ -1783,10 +1754,14 @@ public class AutoRecommendService
 	{
 		currentIndex++;
 
+		int priceOffset = config.priceOffset();
+		int minProfit = config.minimumProfit();
+
 		while (currentIndex < recommendationQueue.size())
 		{
 			FlipRecommendation next = recommendationQueue.get(currentIndex);
-			if (!plugin.getActiveFlipItemIds().contains(next.getItemId()))
+			if (!plugin.getActiveFlipItemIds().contains(next.getItemId())
+				&& FocusedFlip.calculateAdjustedProfit(next, priceOffset) >= minProfit)
 			{
 				break;
 			}
