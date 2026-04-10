@@ -831,14 +831,22 @@ public class AutoRecommendService
 	private List<FlipRecommendation> filterAndSortRecommendations(List<FlipRecommendation> newRecommendations)
 	{
 		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+		int priceOffset = config.priceOffset();
+		int minProfit = config.minimumProfit();
 		List<FlipRecommendation> filtered = new ArrayList<>();
 		for (FlipRecommendation rec : newRecommendations)
 		{
-			if (!activeItemIds.contains(rec.getItemId()))
-			{
-				filtered.add(rec);
-			}
 			itemNames.put(rec.getItemId(), rec.getItemName());
+			if (activeItemIds.contains(rec.getItemId()))
+			{
+				continue;
+			}
+			// Skip items whose offset-adjusted profit falls below the minimum
+			if (FocusedFlip.calculateAdjustedProfit(rec, priceOffset) < minProfit)
+			{
+				continue;
+			}
+			filtered.add(rec);
 		}
 		filtered.sort(Comparator.comparingDouble(FlipRecommendation::getVolumePerHour));
 		return filtered;
@@ -1783,14 +1791,24 @@ public class AutoRecommendService
 	{
 		currentIndex++;
 
+		int priceOffset = config.priceOffset();
+		int minProfit = config.minimumProfit();
+
 		while (currentIndex < recommendationQueue.size())
 		{
 			FlipRecommendation next = recommendationQueue.get(currentIndex);
-			if (!plugin.getActiveFlipItemIds().contains(next.getItemId()))
+			if (plugin.getActiveFlipItemIds().contains(next.getItemId()))
 			{
-				break;
+				currentIndex++;
+				continue;
 			}
-			currentIndex++;
+			// Skip items whose offset-adjusted profit falls below the minimum
+			if (FocusedFlip.calculateAdjustedProfit(next, priceOffset) < minProfit)
+			{
+				currentIndex++;
+				continue;
+			}
+			break;
 		}
 
 		if (currentIndex >= recommendationQueue.size())

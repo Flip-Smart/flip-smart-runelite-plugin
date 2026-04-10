@@ -2033,10 +2033,12 @@ public class FlipFinderPanel extends PluginPanel
 			? service.getCurrentRecommendation() : null;
 
 		int minProfit = config.minimumProfit();
+		int priceOffset = config.priceOffset();
 
 		for (FlipRecommendation rec : recommendations)
 		{
-			if (rec.getPotentialProfit() < minProfit)
+			int adjustedProfit = FocusedFlip.calculateAdjustedProfit(rec, priceOffset);
+			if (adjustedProfit < minProfit)
 			{
 				continue;
 			}
@@ -2087,8 +2089,18 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		JPanel detailsPanel = createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
 
+		// Apply price offset to displayed values so they match Flip Assist
+		int priceOffset = config.priceOffset();
+		int displayBuyPrice = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
+		int displaySellPrice = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
+		int displayMargin = displaySellPrice - displayBuyPrice;
+		int geTax = Math.min((int)(displaySellPrice * 0.02), 5_000_000);
+		int displayProfit = (displayMargin - geTax) * rec.getRecommendedQuantity();
+		int displayCost = displayBuyPrice * rec.getRecommendedQuantity();
+		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
+
 		// Recommended Buy/Sell prices
-		JLabel priceLabel = new JLabel(formatBuySellText(rec.getRecommendedBuyPrice(), rec.getRecommendedSellPrice()));
+		JLabel priceLabel = new JLabel(formatBuySellText(displayBuyPrice, displaySellPrice));
 		priceLabel.setForeground(Color.LIGHT_GRAY);
 		priceLabel.setFont(FONT_PLAIN_12);
 
@@ -2100,12 +2112,12 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Margin and ROI
 		JLabel marginLabel = new JLabel(String.format("Margin: %s (%s ROI)",
-			formatGP(rec.getMargin()), rec.getFormattedROI()));
+			formatGP(displayMargin - geTax), GpUtils.formatROI(displayRoi)));
 		marginLabel.setForeground(COLOR_PROFIT_GREEN);
 		marginLabel.setFont(FONT_PLAIN_12);
 
 		// Potential profit and total cost
-		JLabel profitLabel = new JLabel(formatProfitCostText(rec.getPotentialProfit(), rec.getTotalCost()));
+		JLabel profitLabel = new JLabel(formatProfitCostText(displayProfit, displayCost));
 		profitLabel.setForeground(new Color(255, 215, 0));
 		profitLabel.setFont(FONT_PLAIN_12);
 
