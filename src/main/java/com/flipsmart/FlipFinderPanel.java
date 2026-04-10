@@ -2032,8 +2032,15 @@ public class FlipFinderPanel extends PluginPanel
 		FlipRecommendation autoRecCurrent = (service != null && service.isActive())
 			? service.getCurrentRecommendation() : null;
 
+		int minProfit = config.minimumProfit();
+
 		for (FlipRecommendation rec : recommendations)
 		{
+			if (rec.getPotentialProfit() < minProfit)
+			{
+				continue;
+			}
+
 			JPanel panel = createRecommendationPanel(rec);
 
 			// Highlight if this is the current auto-recommend item
