@@ -277,6 +277,7 @@ public class OfflineSyncService
 			.recommendedSellPrice(recommendedSellPrice)
 			.rsn(getRsnSafe().orElse(null))
 			.totalQuantity(offer.getTotalQuantity())
+			.isOfflineFill(true)
 			.build());
 
 		if (offer.isBuy() && offer.getPreviousQuantitySold() > 0)
@@ -402,14 +403,11 @@ public class OfflineSyncService
 		int sellPrice = (persistedOffer.getPreviousSpent() > 0 && persistedOffer.getPreviousQuantitySold() > 0)
 			? (int)(persistedOffer.getPreviousSpent() / persistedOffer.getPreviousQuantitySold())
 			: persistedOffer.getPrice();
-		apiClient.recordTransactionAsync(
-			persistedOffer.getItemId(),
-			persistedOffer.getItemName(),
-			"SELL",
-			soldQuantity,
-			sellPrice,
-			rsn
-		);
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(persistedOffer.getItemId(), persistedOffer.getItemName(), false, soldQuantity, sellPrice)
+			.rsn(rsn)
+			.isOfflineFill(true)
+			.build());
 	}
 
 	/**
