@@ -267,9 +267,12 @@ public class OfflineSyncService
 		Integer recommendedSellPrice = offer.isBuy()
 			? session.getRecommendedPrice(offer.getItemId()) : null;
 
+		int actualPrice = (offer.getPreviousSpent() > 0 && offer.getPreviousQuantitySold() > 0)
+			? (int)(offer.getPreviousSpent() / offer.getPreviousQuantitySold())
+			: offer.getPrice();
 		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 			.builder(offer.getItemId(), offer.getItemName(), offer.isBuy(),
-				offer.getPreviousQuantitySold(), offer.getPrice())
+				offer.getPreviousQuantitySold(), actualPrice)
 			.geSlot(slot)
 			.recommendedSellPrice(recommendedSellPrice)
 			.rsn(getRsnSafe().orElse(null))
@@ -300,9 +303,12 @@ public class OfflineSyncService
 
 		Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
 
+		int fillPrice = (currentOffer.getPreviousSpent() > 0 && currentOffer.getPreviousQuantitySold() > 0)
+			? (int)(currentOffer.getPreviousSpent() / currentOffer.getPreviousQuantitySold())
+			: currentOffer.getPrice();
 		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 			.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
-				offlineFills, currentOffer.getPrice())
+				offlineFills, fillPrice)
 			.geSlot(slot)
 			.recommendedSellPrice(recommendedSellPrice)
 			.rsn(getRsnSafe().orElse(null))
@@ -377,12 +383,15 @@ public class OfflineSyncService
 			return;
 		}
 
+		int sellPrice = (persistedOffer.getPreviousSpent() > 0 && persistedOffer.getPreviousQuantitySold() > 0)
+			? (int)(persistedOffer.getPreviousSpent() / persistedOffer.getPreviousQuantitySold())
+			: persistedOffer.getPrice();
 		apiClient.recordTransactionAsync(
 			persistedOffer.getItemId(),
 			persistedOffer.getItemName(),
 			"SELL",
 			soldQuantity,
-			persistedOffer.getPrice(),
+			sellPrice,
 			rsn
 		);
 	}
