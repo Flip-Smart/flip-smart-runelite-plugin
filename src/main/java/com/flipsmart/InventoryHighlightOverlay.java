@@ -12,10 +12,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Overlay that draws a pulsing orange glow around the outline of inventory
- * items that have pending sell adjustment recommendations.
- */
 @Slf4j
 public class InventoryHighlightOverlay extends WidgetItemOverlay
 {
@@ -23,7 +19,6 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	private final Set<Integer> highlightedItemIds = ConcurrentHashMap.newKeySet();
 
-	// Cache outline images keyed by (itemId, quantity) to handle stack-variant sprites
 	private final Map<Long, BufferedImage> outlineCache = new ConcurrentHashMap<>();
 
 	@Inject
@@ -76,8 +71,6 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		long elapsed = System.currentTimeMillis() % 1500;
 		float pulseAlpha = (float) (0.5 + 0.5 * Math.sin(elapsed / 1500.0 * 2 * Math.PI));
 
-		// Clip out the top-left corner where quantity text is rendered
-		// so the glow doesn't obscure it
 		Shape originalClip = graphics.getClip();
 		java.awt.geom.Area clipArea = new java.awt.geom.Area(new Rectangle(
 			bounds.x - 10, bounds.y - 10,
@@ -86,7 +79,6 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 			bounds.x, bounds.y, bounds.width / 2, bounds.height / 3)));
 		graphics.setClip(clipArea);
 
-		// Draw expanded glow layers for outer glow effect
 		Composite originalComposite = graphics.getComposite();
 		for (int i = 2; i >= 1; i--)
 		{
@@ -100,7 +92,6 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 				null);
 		}
 
-		// Draw the crisp inner outline
 		float innerAlpha = 0.7f + 0.3f * pulseAlpha;
 		graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, innerAlpha));
 		graphics.drawImage(outline, bounds.x, bounds.y, bounds.width, bounds.height, null);
@@ -109,10 +100,6 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		graphics.setClip(originalClip);
 	}
 
-	/**
-	 * Generate an outline image from the item sprite. Uses the quantity-aware
-	 * sprite so the outline matches the actual rendered stack appearance.
-	 */
 	private BufferedImage generateOutline(int itemId, int quantity)
 	{
 		BufferedImage itemImage = itemManager.getImage(itemId, quantity, false);
