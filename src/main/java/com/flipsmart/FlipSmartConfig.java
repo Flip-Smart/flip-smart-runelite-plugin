@@ -144,6 +144,18 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "f2pMode",
+		name = "F2P Mode",
+		description = "Only show F2P items in Flip Finder, even on members worlds",
+		section = flipFinderSection,
+		position = 6
+	)
+	default boolean f2pMode()
+	{
+		return false;
+	}
+
+	@ConfigItem(
 		keyName = "minProfit",
 		name = "Minimum Profit",
 		description = "Hide recommendations with total profit below this value (in GP)",

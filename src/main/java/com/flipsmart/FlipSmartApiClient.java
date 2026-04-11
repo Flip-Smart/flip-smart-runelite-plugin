@@ -1179,7 +1179,7 @@ public class FlipSmartApiClient
 	 */
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
 		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots)
+		Integer filledSlots, boolean isMembersWorld)
 	{
 		String apiUrl = getApiUrl();
 
@@ -1212,6 +1212,11 @@ public class FlipSmartApiClient
 			urlBuilder.append(String.format("&filled_slots=%d", filledSlots));
 		}
 
+		if (!isMembersWorld)
+		{
+			urlBuilder.append("&is_members_world=false");
+		}
+
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -1222,7 +1227,7 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String, String, Integer)} instead.
+	 * @deprecated Use {@link #getFlipRecommendationsAsync(Integer, String, int, Integer, String, String, Integer, boolean)} instead.
 	 * This method uses the deprecated /flip-finder/timeframe endpoint.
 	 *
 	 * Fetch timeframe-based flip recommendations from the API asynchronously.

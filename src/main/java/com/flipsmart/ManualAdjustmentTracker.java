@@ -75,6 +75,7 @@ public class ManualAdjustmentTracker
 	private volatile java.util.function.Supplier<Integer> cashStackSupplier;
 	private volatile java.util.function.Supplier<String> rsnSupplier;
 	private volatile java.util.function.Supplier<Integer> filledSlotsSupplier;
+	private volatile java.util.function.Supplier<Boolean> membersWorldSupplier;
 
 	public ManualAdjustmentTracker(FlipSmartApiClient apiClient, FlipSmartConfig config)
 	{
@@ -125,6 +126,11 @@ public class ManualAdjustmentTracker
 	public void setFilledSlotsSupplier(java.util.function.Supplier<Integer> supplier)
 	{
 		this.filledSlotsSupplier = supplier;
+	}
+
+	public void setMembersWorldSupplier(java.util.function.Supplier<Boolean> supplier)
+	{
+		this.membersWorldSupplier = supplier;
 	}
 
 	/**
@@ -415,10 +421,11 @@ public class ManualAdjustmentTracker
 		Integer cashStack = cashStackSupplier != null ? cashStackSupplier.get() : null;
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
 		Integer filledSlots = filledSlotsSupplier != null ? filledSlotsSupplier.get() : null;
+		boolean isMembersWorld = membersWorldSupplier == null || membersWorldSupplier.get();
 		String timeframe = config.flipTimeframe().getApiValue();
 		String flipStyle = config.flipStyle().getApiValue();
 
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots)
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots, isMembersWorld)
 			.thenAccept(response -> handleReplacementResponse(response, state))
 			.exceptionally(e ->
 			{
