@@ -1844,15 +1844,19 @@ public class FlipFinderPanel extends PluginPanel
 		}
 	}
 
+	/** Returns true if a recommendation passes the current profit filter. */
+	private boolean shouldDisplay(FlipRecommendation rec)
+	{
+		return FocusedFlip.calculateAdjustedProfit(rec, config.priceOffset()) >= config.minimumProfit();
+	}
+
 	/** Returns the number of recommendations that pass the current profit filter. */
 	private int countDisplayed(List<FlipRecommendation> recommendations)
 	{
-		int minProfit = config.minimumProfit();
-		int priceOffset = config.priceOffset();
 		int count = 0;
 		for (FlipRecommendation rec : recommendations)
 		{
-			if (FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
+			if (shouldDisplay(rec))
 			{
 				count++;
 			}
@@ -2049,13 +2053,9 @@ public class FlipFinderPanel extends PluginPanel
 		FlipRecommendation autoRecCurrent = (service != null && service.isActive())
 			? service.getCurrentRecommendation() : null;
 
-		int minProfit = config.minimumProfit();
-		int priceOffset = config.priceOffset();
-
 		for (FlipRecommendation rec : recommendations)
 		{
-			int adjustedProfit = FocusedFlip.calculateAdjustedProfit(rec, priceOffset);
-			if (adjustedProfit < minProfit)
+			if (!shouldDisplay(rec))
 			{
 				continue;
 			}

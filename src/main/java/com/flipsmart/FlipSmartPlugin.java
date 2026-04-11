@@ -13,6 +13,7 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.WorldType;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.WorldChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptPostFired;
@@ -141,6 +142,10 @@ public class FlipSmartPlugin extends Plugin
 	// when session.getRsn() may already be null
 	private volatile String lastKnownRsn;
 
+	// Cached world-type flag — updated on the client thread (WorldChanged, login) and read
+	// from any thread (Swing EDT, scheduler). Defaults to true so unlinked callers see more items.
+	private volatile boolean membersWorld = true;
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -232,7 +237,8 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Returns true if recommendations should include members items.
 	 * Returns false when on an F2P world, or when F2P Mode is enabled in config.
-	 * Defaults to true when world type cannot be determined (e.g. not logged in).
+	 *
+	 * Reads a cached value updated on the client thread to avoid off-thread Client API access.
 	 */
 	public boolean isMembersWorld()
 	{
@@ -240,11 +246,16 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return false;
 		}
-		if (client.getLocalPlayer() == null)
-		{
-			return true;
-		}
-		return client.getWorldType().contains(WorldType.MEMBERS);
+		return membersWorld;
+	}
+
+	/**
+	 * Refresh the cached members-world state from the Client API.
+	 * Must be called on the client thread.
+	 */
+	private void updateMembersWorldCache()
+	{
+		membersWorld = client.getWorldType().contains(WorldType.MEMBERS);
 	}
 
 	public int getFlipSlotLimit()
@@ -808,6 +819,16 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
+	@Subscribe
+	public void onWorldChanged(WorldChanged event)
+	{
+		updateMembersWorldCache();
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.refresh();
+		}
+	}
+
 	private void handleLogoutState()
 	{
 		session.onLogout();
@@ -840,6 +861,7 @@ public class FlipSmartPlugin extends Plugin
 	private void handleLoggedInState()
 	{
 		log.info("Player logged in");
+		updateMembersWorldCache();
 		session.onLoggedIn();
 		syncRSN();
 		updateCashStack();
