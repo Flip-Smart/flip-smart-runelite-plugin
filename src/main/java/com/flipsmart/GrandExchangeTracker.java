@@ -249,7 +249,9 @@ public class GrandExchangeTracker
 		if (previousOffer != null && ctx.quantitySold > previousOffer.getPreviousQuantitySold())
 		{
 			int newQuantity = ctx.quantitySold - previousOffer.getPreviousQuantitySold();
-			int pricePerItem = ctx.spent / ctx.quantitySold;
+			long previousSpent = previousOffer.getPreviousSpent();
+			long incrementalSpent = ctx.spent - previousSpent;
+			int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
 			log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
 				ctx.isBuy ? "BUY" : "SELL",
@@ -301,7 +303,7 @@ public class GrandExchangeTracker
 		String rsn = getRsn().orElse(null);
 		if (rsn != null && cancelledOffer != null)
 		{
-			int pricePerItem = ctx.spent / ctx.quantitySold;
+			int pricePerItem = (ctx.quantitySold > 0) ? (int)((long) ctx.spent / ctx.quantitySold) : 0;
 			log.info("Syncing cancelled order quantity to backend: {} x{} (was {})",
 				ctx.itemName, ctx.quantitySold, cancelledOffer.getTotalQuantity());
 			apiClient.syncActiveFlipAsync(
@@ -368,7 +370,9 @@ public class GrandExchangeTracker
 					collectedOffer.getItemName(),
 					collectedQty,
 					collectedOffer.getTotalQuantity(),
-					collectedOffer.getPrice(),
+					collectedOffer.getPreviousSpent() > 0 && collectedOffer.getPreviousQuantitySold() > 0
+						? (int)(collectedOffer.getPreviousSpent() / collectedOffer.getPreviousQuantitySold())
+						: collectedOffer.getPrice(),
 					rsn
 				);
 			}
@@ -412,7 +416,9 @@ public class GrandExchangeTracker
 		if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0
 			&& session.getRecommendedPrice(collectedOffer.getItemId()) == null)
 		{
-			int buyPrice = collectedOffer.getPrice();
+			int buyPrice = (collectedOffer.getPreviousSpent() > 0 && collectedOffer.getPreviousQuantitySold() > 0)
+				? (int)(collectedOffer.getPreviousSpent() / collectedOffer.getPreviousQuantitySold())
+				: collectedOffer.getPrice();
 			int fallbackSellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
 			session.setRecommendedPrice(collectedOffer.getItemId(), fallbackSellPrice);
 			log.info("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",
@@ -469,7 +475,7 @@ public class GrandExchangeTracker
 
 		if (newQuantity > 0)
 		{
-			recordFillTransaction(ctx, newQuantity);
+			recordFillTransaction(ctx, newQuantity, previousOffer);
 		}
 
 		// Reset adjustment timer on partial fills (not yet fully completed)
@@ -502,8 +508,10 @@ public class GrandExchangeTracker
 
 		// Update tracked offer BEFORE notifying auto-recommend so getCompletedOffers()
 		// sees the BOUGHT/SOLD state when promptCollection() is called
-		session.putTrackedOffer(ctx.slot, TrackedOffer.createWithPreservedTimestamps(
-			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state));
+		TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
+			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state);
+		updated.setPreviousSpent(ctx.spent);
+		session.putTrackedOffer(ctx.slot, updated);
 
 		notifyAutoRecommendOnCompletion(ctx);
 
@@ -540,9 +548,11 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void recordFillTransaction(OfferContext ctx, int newQuantity)
+	private void recordFillTransaction(OfferContext ctx, int newQuantity, TrackedOffer previousOffer)
 	{
-		int pricePerItem = ctx.spent / ctx.quantitySold;
+		long previousSpent = (previousOffer != null) ? previousOffer.getPreviousSpent() : 0L;
+		long incrementalSpent = ctx.spent - previousSpent;
+		int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
 		log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
 			ctx.isBuy ? "BUY" : "SELL",

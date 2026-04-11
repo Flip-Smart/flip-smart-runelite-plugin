@@ -18,26 +18,19 @@ public class TrackedOffer
 	private int totalQuantity;
 	private int price;
 	private int previousQuantitySold;
+	private long previousSpent;  // cumulative GP spent/received — long to handle values > 2.1B
 	private long createdAtMillis;  // Timestamp when offer was created (for timer display)
 	private long completedAtMillis;  // Timestamp when offer completed (0 if not complete)
 
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, System.currentTimeMillis(), 0);
+		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, System.currentTimeMillis());
 	}
 
 	/**
 	 * Constructor with explicit timestamp (for login restoration)
 	 */
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis)
-	{
-		this(itemId, itemName, isBuy, totalQuantity, price, quantitySold, createdAtMillis, 0);
-	}
-
-	/**
-	 * Constructor with explicit timestamps (for preserving completion state)
-	 */
-	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold, long createdAtMillis, long completedAtMillis)
 	{
 		this.itemId = itemId;
 		this.itemName = itemName;
@@ -46,7 +39,6 @@ public class TrackedOffer
 		this.price = price;
 		this.previousQuantitySold = quantitySold;
 		this.createdAtMillis = createdAtMillis;
-		this.completedAtMillis = completedAtMillis;
 	}
 
 	/**
@@ -74,16 +66,18 @@ public class TrackedOffer
 		long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
 			? existing.getCreatedAtMillis()
 			: System.currentTimeMillis();
-		long completedTimestamp = 0;
+
+		TrackedOffer offer = new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp);
 
 		if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
 		{
-			completedTimestamp = (existing != null && existing.getCompletedAtMillis() > 0)
-				? existing.getCompletedAtMillis()
-				: System.currentTimeMillis();
+			offer.setCompletedAtMillis(
+				(existing != null && existing.getCompletedAtMillis() > 0)
+					? existing.getCompletedAtMillis()
+					: System.currentTimeMillis());
 		}
 
-		return new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp, completedTimestamp);
+		return offer;
 	}
 
 	/**
@@ -100,6 +94,14 @@ public class TrackedOffer
 	public void setPreviousQuantitySold(int quantitySold)
 	{
 		this.previousQuantitySold = quantitySold;
+	}
+
+	/**
+	 * Update the cumulative GP spent/received for this offer.
+	 */
+	public void setPreviousSpent(long spent)
+	{
+		this.previousSpent = spent;
 	}
 
 	/**
