@@ -11,6 +11,7 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.WorldType;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
@@ -226,6 +227,24 @@ public class FlipSmartPlugin extends Plugin
 	public boolean isPremium()
 	{
 		return apiClient.isPremium();
+	}
+
+	/**
+	 * Returns true if recommendations should include members items.
+	 * Returns false when on an F2P world, or when F2P Mode is enabled in config.
+	 * Defaults to true when world type cannot be determined (e.g. not logged in).
+	 */
+	public boolean isMembersWorld()
+	{
+		if (config.f2pMode())
+		{
+			return false;
+		}
+		if (client.getLocalPlayer() == null)
+		{
+			return true;
+		}
+		return client.getWorldType().contains(WorldType.MEMBERS);
 	}
 
 	public int getFlipSlotLimit()
@@ -553,6 +572,7 @@ public class FlipSmartPlugin extends Plugin
 			session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null);
 		manualAdjustmentTracker.setRsnSupplier(() -> getCurrentRsnSafe().orElse(null));
 		manualAdjustmentTracker.setFilledSlotsSupplier(this::getFilledGESlotCount);
+		manualAdjustmentTracker.setMembersWorldSupplier(this::isMembersWorld);
 
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
 		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
@@ -744,6 +764,11 @@ public class FlipSmartPlugin extends Plugin
 		if ("enableAutoRecommend".equals(configChanged.getKey()) && flipFinderPanel != null)
 		{
 			flipFinderPanel.setAutoRecommendVisible(config.enableAutoRecommend());
+		}
+
+		if ("f2pMode".equals(configChanged.getKey()) && flipFinderPanel != null)
+		{
+			flipFinderPanel.refresh();
 		}
 
 		// Sync webhook config changes to backend
