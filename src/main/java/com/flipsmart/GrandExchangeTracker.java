@@ -511,6 +511,13 @@ public class GrandExchangeTracker
 		TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
 			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state);
 		updated.setPreviousSpent(ctx.spent);
+
+		// Reset activity timestamp on every fill for timer display & stale detection
+		if (newQuantity > 0)
+		{
+			updated.setLastActivityAtMillis(System.currentTimeMillis());
+		}
+
 		session.putTrackedOffer(ctx.slot, updated);
 
 		notifyAutoRecommendOnCompletion(ctx);
