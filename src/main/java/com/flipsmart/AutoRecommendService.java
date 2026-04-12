@@ -969,6 +969,14 @@ public class AutoRecommendService
 		long deadline = System.currentTimeMillis() + delay;
 		adjustmentDeadlines.put(itemId, deadline);
 		log.info("Auto-recommend: Adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
+
+		// Clear stale-notified flag so the 15-minute inactivity check can fire again
+		// if the offer goes quiet after this fill
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			session.removeStaleNotified(itemId);
+		}
 	}
 
 	/**
@@ -1415,6 +1423,13 @@ public class AutoRecommendService
 		state.deadline = System.currentTimeMillis() + AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		log.info("Auto-recommend: Sell adjustment timer reset for item {} ({}m)", itemId,
 			AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS / 60000);
+
+		// Clear stale-notified flag so the inactivity check can fire again
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			session.removeStaleNotified(itemId);
+		}
 	}
 
 	/**
