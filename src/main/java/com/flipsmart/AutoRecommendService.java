@@ -907,7 +907,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		long age = now - staleOffer.getCreatedAtMillis();
+		long age = now - staleOffer.getEffectiveLastActivityAtMillis();
 		log.info("Auto-recommend: Stale & uncompetitive offer for {} (age: {}m)",
 			staleOffer.getItemName(), age / 60000);
 
@@ -929,7 +929,7 @@ public class AutoRecommendService
 				continue;
 			}
 
-			long age = now - offer.getCreatedAtMillis();
+			long age = now - offer.getEffectiveLastActivityAtMillis();
 			if (age >= INACTIVITY_TIMEOUT_MS && !session.isStaleNotified(offer.getItemId()))
 			{
 				return offer;
@@ -1048,7 +1048,7 @@ public class AutoRecommendService
 		// Set a temporary long deadline to prevent duplicate calls while API responds
 		entry.setValue(now + 5 * 60 * 1000L);
 
-		int minutesSince = (int) ((now - offer.getCreatedAtMillis()) / 60000);
+		int minutesSince = (int) ((now - offer.getEffectiveLastActivityAtMillis()) / 60000);
 		String timeframe = config.flipTimeframe().getApiValue();
 		String itemName = offer.getItemName();
 
@@ -1164,7 +1164,7 @@ public class AutoRecommendService
 			}
 
 			long delayMs = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
-			long offerAgeMs = now - offer.getCreatedAtMillis();
+			long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 			long remainingMs = delayMs - offerAgeMs;
 
 			if (remainingMs <= 0)
@@ -1218,7 +1218,7 @@ public class AutoRecommendService
 
 	private void scheduleMissingBuyTimer(TrackedOffer offer, long now)
 	{
-		long offerAgeMs = now - offer.getCreatedAtMillis();
+		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		adjustmentDeadlines.put(offer.getItemId(), deadline);
@@ -1229,7 +1229,7 @@ public class AutoRecommendService
 	private void scheduleMissingSellTimer(TrackedOffer offer, long now)
 	{
 		Integer buyPrice = buyPrices.getOrDefault(offer.getItemId(), offer.getPrice());
-		long offerAgeMs = now - offer.getCreatedAtMillis();
+		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		SellAdjustmentState state = new SellAdjustmentState(
@@ -1455,7 +1455,7 @@ public class AutoRecommendService
 		}
 
 		// Timer expired — call the adjustment API
-		int minutesSince = (int) ((now - offer.getCreatedAtMillis()) / 60000);
+		int minutesSince = (int) ((now - offer.getEffectiveLastActivityAtMillis()) / 60000);
 		callSellAdjustmentApi(state, offer, minutesSince);
 
 		// Set a temporary long deadline to prevent duplicate calls (API callback will reschedule)
@@ -1575,7 +1575,7 @@ public class AutoRecommendService
 			}
 
 			long delayMs = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
-			long offerAgeMs = now - offer.getCreatedAtMillis();
+			long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 			long remainingMs = delayMs - offerAgeMs;
 
 			long deadline;
