@@ -635,11 +635,16 @@ public class GrandExchangeTracker
 
 	private void handleNewOfferNoFills(OfferContext ctx, TrackedOffer previousOffer)
 	{
-		// Preserve createdAtMillis from existing offer if same item (avoids timer reset on re-sent events)
+		// Preserve timestamps from existing offer if same item (avoids timer reset on re-sent events)
 		if (previousOffer != null && previousOffer.getItemId() == ctx.itemId && previousOffer.getCreatedAtMillis() > 0)
 		{
-			session.putTrackedOffer(ctx.slot, new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
-				ctx.totalQuantity, ctx.price, 0, previousOffer.getCreatedAtMillis()));
+			TrackedOffer preserved = new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
+				ctx.totalQuantity, ctx.price, 0, previousOffer.getCreatedAtMillis());
+			if (previousOffer.getLastActivityAtMillis() > 0)
+			{
+				preserved.setLastActivityAtMillis(previousOffer.getLastActivityAtMillis());
+			}
+			session.putTrackedOffer(ctx.slot, preserved);
 		}
 		else
 		{
