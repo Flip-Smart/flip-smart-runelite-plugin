@@ -577,6 +577,13 @@ public class FlipSmartPlugin extends Plugin
 
 		manualAdjustmentTracker.setOnHighlightInventoryItem(inventoryHighlightOverlay::addHighlight);
 		manualAdjustmentTracker.setOnClearInventoryItem(inventoryHighlightOverlay::removeHighlight);
+		manualAdjustmentTracker.setOnSellPriceAdjusted((itemId, price) ->
+		{
+			if (session != null)
+			{
+				session.setRecommendedPrice(itemId, price);
+			}
+		});
 
 		// Wire suppliers for ditch logic (replacement recommendations)
 		manualAdjustmentTracker.setCashStackSupplier(() ->
