@@ -3987,16 +3987,13 @@ public class FlipFinderPanel extends PluginPanel
 		int buyPrice = flip.getAverageBuyPrice();
 		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
 		
-		// Check if we've exceeded the time threshold
-		boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
-		
-		if (pastThreshold && currentMarketPrice != null)
-		{
-			// Past threshold: prioritize selling, even at potential loss
-			// Use current market price, but at minimum use the market price
-			// that gives best chance of selling
-			return currentMarketPrice;
-		}
+		// HOTFIX (#438): Disabled loss-minimizing sell price. Never recommend selling
+		// below breakeven — always use original target or minimum profitable price.
+		// The time-threshold logic will be re-enabled once the sell-side readjustment
+		// bugs are fixed (Step 3 below-breakeven, login timer reset, plugin price overwrite).
+		// Original code:
+		// boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
+		// if (pastThreshold && currentMarketPrice != null) return currentMarketPrice;
 		
 		// Before threshold: prioritize profit
 		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
