@@ -3974,11 +3974,14 @@ public class FlipFinderPanel extends PluginPanel
 		int buyPrice = flip.getAverageBuyPrice();
 		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
 
+		// Use recommended price if it's profitable
 		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
 		{
 			return flip.getRecommendedSellPrice();
 		}
 
+		// No recommended price or it's not profitable - use minimum profitable price
+		// but only if market price is higher (otherwise the flip was never good)
 		if (currentMarketPrice != null && currentMarketPrice >= minProfitablePrice)
 		{
 			return minProfitablePrice;
