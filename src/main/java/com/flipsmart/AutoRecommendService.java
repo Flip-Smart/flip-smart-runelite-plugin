@@ -1487,6 +1487,9 @@ public class AutoRecommendService
 		log.info("Auto-recommend: Checking sell adjustment for {} (price={}, buyPrice={}, {}min elapsed, adj#{})",
 			state.itemName, offer.getPrice(), state.averageBuyPrice, minutesSince, state.adjustmentCount);
 
+		PlayerSession session = plugin.getSession();
+		String rsn = session != null ? session.getRsnSafe().orElse(null) : null;
+
 		plugin.getApiClient().getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
 			.isBuyOffer(false)
@@ -1497,6 +1500,7 @@ public class AutoRecommendService
 			.quantityFilled(offer.getPreviousQuantitySold())
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
+			.rsn(rsn)
 			.build()
 		).thenAccept(response ->
 		{
@@ -1545,6 +1549,13 @@ public class AutoRecommendService
 			// sell adjustments use backend market data which is authoritative.
 			staleResellPrices.put(offer.getItemId(), newPrice);
 			addToStaleQueue(offer);
+
+			// Persist to session so relist auto-fill uses the adjusted price
+			PlayerSession sess = plugin.getSession();
+			if (sess != null)
+			{
+				sess.setRecommendedPrice(offer.getItemId(), newPrice);
+			}
 
 			// Reschedule in case user doesn't act or offer is still competitive
 			state.deadline = System.currentTimeMillis()

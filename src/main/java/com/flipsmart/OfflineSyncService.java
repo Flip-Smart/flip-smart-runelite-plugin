@@ -7,6 +7,7 @@ import net.runelite.api.Client;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 
 import javax.inject.Inject;
@@ -37,6 +38,7 @@ public class OfflineSyncService
 	private final ConfigManager configManager;
 	private final Gson gson;
 	private final Client client;
+	private final ClientThread clientThread;
 	private final ActiveFlipTracker activeFlipTracker;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
@@ -49,6 +51,7 @@ public class OfflineSyncService
 		ConfigManager configManager,
 		Gson gson,
 		Client client,
+		ClientThread clientThread,
 		ActiveFlipTracker activeFlipTracker)
 	{
 		this.session = session;
@@ -56,6 +59,7 @@ public class OfflineSyncService
 		this.configManager = configManager;
 		this.gson = gson;
 		this.client = client;
+		this.clientThread = clientThread;
 		this.activeFlipTracker = activeFlipTracker;
 	}
 
@@ -380,12 +384,16 @@ public class OfflineSyncService
 			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
 		}
 
-		int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
-		if (inventoryCount == 0)
+		// Inventory check must run on the client thread (getItemContainer requires it)
+		clientThread.invokeLater(() ->
 		{
-			log.info("No {} in inventory after offline sell - dismissing active flip", persistedOffer.getItemName());
-			activeFlipTracker.dismissFlip(persistedOffer.getItemId());
-		}
+			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
+			if (inventoryCount == 0)
+			{
+				log.info("No {} in inventory after offline sell - dismissing active flip", persistedOffer.getItemName());
+				activeFlipTracker.dismissFlip(persistedOffer.getItemId());
+			}
+		});
 	}
 
 	/**

@@ -3048,7 +3048,7 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				
 				// Calculate smart sell price
-				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice, dailyVolume);
+				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice);
 				int sellPrice = smartSellPrice != null ? smartSellPrice : calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
 				
 				// Cache this price for future use
@@ -3336,7 +3336,7 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				
 				// Calculate smart sell price based on time, volume, and profitability
-				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice, dailyVolume);
+				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice);
 				boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
 				
 				if (smartSellPrice != null && smartSellPrice > 0)
@@ -3969,57 +3969,29 @@ public class FlipFinderPanel extends PluginPanel
 		return (int) Math.ceil(buyPrice / 0.98) + 1;
 	}
 	
-	/**
-	 * Determine the smart sell price for an active flip.
-	 * 
-	 * Strategy:
-	 * 1. First try to sell at the recommended price (profitable)
-	 * 2. If no recommended price, calculate minimum profitable price
-	 * 3. After time threshold, switch to current market price to minimize loss
-	 * 
-	 * @param flip The active flip
-	 * @param currentMarketPrice The current instant sell price from market
-	 * @param dailyVolume Daily trade volume (optional)
-	 * @return The recommended sell price, or null to indicate need to fetch market price
-	 */
-	private Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice, Integer dailyVolume)
+	private Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice)
 	{
 		int buyPrice = flip.getAverageBuyPrice();
 		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
-		
-		// Check if we've exceeded the time threshold
-		boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
-		
-		if (pastThreshold && currentMarketPrice != null)
-		{
-			// Past threshold: prioritize selling, even at potential loss
-			// Use current market price, but at minimum use the market price
-			// that gives best chance of selling
-			return currentMarketPrice;
-		}
-		
-		// Before threshold: prioritize profit
+
+		// Use recommended price if it's profitable
 		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
 		{
-			// Use recommended price if it's profitable
 			return flip.getRecommendedSellPrice();
 		}
-		
+
 		// No recommended price or it's not profitable - use minimum profitable price
 		// but only if market price is higher (otherwise the flip was never good)
 		if (currentMarketPrice != null && currentMarketPrice >= minProfitablePrice)
 		{
 			return minProfitablePrice;
 		}
-		
-		// Market price is below profitable threshold
-		// Before time threshold: still try to sell at profitable price
-		// After threshold: this would be handled above
+
 		if (flip.getRecommendedSellPrice() != null)
 		{
 			return flip.getRecommendedSellPrice();
 		}
-		
+
 		return minProfitablePrice;
 	}
 

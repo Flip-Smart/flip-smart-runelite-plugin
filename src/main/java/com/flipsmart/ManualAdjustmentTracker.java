@@ -71,6 +71,9 @@ public class ManualAdjustmentTracker
 	// Callback to clear an inventory item highlight
 	private volatile java.util.function.IntConsumer onClearInventoryItem;
 
+	// Callback to persist adjusted sell price to session
+	private volatile BiConsumer<Integer, Integer> onSellPriceAdjusted;
+
 	// Suppliers for ditch logic — needed to fetch replacement recommendations
 	private volatile java.util.function.Supplier<Integer> cashStackSupplier;
 	private volatile java.util.function.Supplier<String> rsnSupplier;
@@ -111,6 +114,11 @@ public class ManualAdjustmentTracker
 	public void setOnClearInventoryItem(java.util.function.IntConsumer callback)
 	{
 		this.onClearInventoryItem = callback;
+	}
+
+	public void setOnSellPriceAdjusted(BiConsumer<Integer, Integer> callback)
+	{
+		this.onSellPriceAdjusted = callback;
 	}
 
 	public void setCashStackSupplier(java.util.function.Supplier<Integer> supplier)
@@ -274,6 +282,8 @@ public class ManualAdjustmentTracker
 		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
 
+		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
+
 		apiClient.getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
 			.isBuyOffer(state.isBuy)
@@ -284,6 +294,7 @@ public class ManualAdjustmentTracker
 			.quantityFilled(offer.getPreviousQuantitySold())
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
+			.rsn(rsn)
 			.build()
 		).thenAccept(response ->
 		{
@@ -374,6 +385,12 @@ public class ManualAdjustmentTracker
 		notifyPrompt(msg, state.itemId);
 		notifyHighlight(state.geSlot, response.getRecommendedPrice());
 		notifyInventoryHighlight(state.itemId);
+
+		BiConsumer<Integer, Integer> cb = onSellPriceAdjusted;
+		if (cb != null)
+		{
+			cb.accept(state.itemId, response.getRecommendedPrice());
+		}
 	}
 
 	private void notifyPrompt(String msg, int itemId)

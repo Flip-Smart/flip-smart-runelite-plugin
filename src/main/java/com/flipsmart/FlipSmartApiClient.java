@@ -2155,6 +2155,7 @@ public class FlipSmartApiClient
 		final int quantityFilled;
 		final int totalQuantity;
 		final String timeframe;
+		final String rsn;
 	}
 
 	/**
@@ -2178,6 +2179,10 @@ public class FlipSmartApiClient
 		if (req.timeframe != null)
 		{
 			jsonBody.addProperty("timeframe", req.timeframe);
+		}
+		if (req.rsn != null)
+		{
+			jsonBody.addProperty("rsn", req.rsn);
 		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
