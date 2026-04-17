@@ -279,7 +279,7 @@ public class ManualAdjustmentTracker
 
 	private void processExpiredTimer(OfferAdjustmentState state, TrackedOffer offer)
 	{
-		long minutesSinceOffer = (System.currentTimeMillis() - offer.getCreatedAtMillis()) / 60000;
+		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
 
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;

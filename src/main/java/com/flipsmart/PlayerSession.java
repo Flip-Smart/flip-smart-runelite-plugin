@@ -462,4 +462,9 @@ public class PlayerSession
 	{
 		staleNotifiedAutoRecommendItemIds.clear();
 	}
+
+	public void removeStaleNotified(int itemId)
+	{
+		staleNotifiedAutoRecommendItemIds.remove(itemId);
+	}
 }

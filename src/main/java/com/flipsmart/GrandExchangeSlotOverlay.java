@@ -284,12 +284,12 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		// Draw timer in top-right corner — uses locally persisted timestamps
 		// that survive plugin restarts via OfflineSyncService
-		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.getCreatedAtMillis() > 0)
+		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.getEffectiveLastActivityAtMillis() > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
 								 offer.getState() == GrandExchangeOfferState.SOLD;
 
-			long realStartTime = trackedOffer.getCreatedAtMillis();
+			long realStartTime = trackedOffer.getEffectiveLastActivityAtMillis();
 
 			String timerText;
 			if (isComplete && trackedOffer.getCompletedAtMillis() > 0)
