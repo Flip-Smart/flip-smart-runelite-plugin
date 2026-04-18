@@ -153,6 +153,7 @@ public class FlipSmartPlugin extends Plugin
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
+	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
 
 	/** Auto-recommend queue refresh interval (2 minutes) */
 	private static final long AUTO_RECOMMEND_REFRESH_INTERVAL_MS = 2 * 60 * 1000L;
@@ -373,7 +374,12 @@ public class FlipSmartPlugin extends Plugin
 			return compareOfferPrice(offer.getPrice(), targetPrice, offer.isBuy());
 		}
 
-		// Fallback to GE guide price if real-time prices unavailable
+		// Fallback to GE guide price if real-time prices unavailable.
+		// getItemPrice requires the client thread — return UNKNOWN if called off-thread.
+		if (!client.isClientThread())
+		{
+			return OfferCompetitiveness.UNKNOWN;
+		}
 		int guidePrice = itemManager.getItemPrice(offer.getItemId());
 		if (guidePrice <= 0)
 		{
@@ -712,14 +718,21 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Persist offer state before shutting down (handles cases where client is closed without logout)
-		// Use lastKnownRsn as fallback since session.getRsn() may be null at shutdown
+		// Try multiple RSN sources: session → lastKnownRsn → config
 		String rsnForPersistence = session.getRsn();
-		if ((rsnForPersistence == null || rsnForPersistence.isEmpty()) && lastKnownRsn != null)
+		if (rsnForPersistence == null || rsnForPersistence.isEmpty())
 		{
-			session.setRsn(lastKnownRsn);
 			rsnForPersistence = lastKnownRsn;
 		}
+		if (rsnForPersistence == null || rsnForPersistence.isEmpty())
+		{
+			rsnForPersistence = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+		}
 		if (rsnForPersistence != null && !rsnForPersistence.isEmpty())
+		{
+			session.setRsn(rsnForPersistence);
+		}
+		if (!session.getTrackedOffers().isEmpty())
 		{
 			offlineSyncService.persistOfferState();
 			log.info("Persisted offer state on shutdown for {}", rsnForPersistence);
@@ -885,6 +898,20 @@ public class FlipSmartPlugin extends Plugin
 			// Pull webhook config after auth is confirmed
 			webhookSyncService.pullFromBackend();
 		});
+
+		// If RSN isn't available yet from the client (common on cold starts),
+		// fall back to the last known RSN persisted in config so offer preloading
+		// can find the correct config key (e.g. persistedOffers_dumbridge3 vs _unknown)
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			String persistedRsn = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+			if (persistedRsn != null && !persistedRsn.isEmpty())
+			{
+				session.setRsn(persistedRsn);
+				lastKnownRsn = persistedRsn;
+				log.info("Using persisted RSN fallback: {}", persistedRsn);
+			}
+		}
 
 		// Restore collected items from config (items bought but not yet sold)
 		// Must be after syncRSN() so we have the correct RSN for the config key
@@ -1072,6 +1099,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			session.setRsn(rsn);
 			lastKnownRsn = rsn;
+			configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
 			log.info("RSN synced: {}", rsn);
 			apiClient.updateRSN(rsn);
 		}
@@ -1096,9 +1124,12 @@ public class FlipSmartPlugin extends Plugin
 		// Try to get RSN from client if not cached
 		if (client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null)
 		{
-			session.setRsn(client.getLocalPlayer().getName());
-			log.info("RSN fetched from client on-demand: {}", session.getRsn());
-			return Optional.of(session.getRsn());
+			String rsn = client.getLocalPlayer().getName();
+			session.setRsn(rsn);
+			lastKnownRsn = rsn;
+			configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
+			log.info("RSN fetched from client on-demand: {}", rsn);
+			return Optional.of(rsn);
 		}
 		
 		log.warn("Unable to determine RSN - transactions will be recorded without RSN");

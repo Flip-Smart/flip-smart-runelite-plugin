@@ -15,6 +15,7 @@ import javax.inject.Singleton;
 import java.lang.reflect.Type;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -31,6 +32,7 @@ public class OfflineSyncService
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
+	private static final String PERSISTED_OFFERS_FALLBACK_KEY = "persistedOffers_lastSession";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 	private final PlayerSession session;
@@ -107,6 +109,7 @@ public class OfflineSyncService
 		if (session.getTrackedOffers().isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, offersKey);
+			configManager.unsetConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY);
 			log.debug("No tracked offers to persist for {}", session.getRsn());
 		}
 		else
@@ -116,6 +119,7 @@ public class OfflineSyncService
 				Map<Integer, TrackedOffer> offersToSave = session.getOffersForPersistence();
 				String json = gson.toJson(offersToSave);
 				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
+				configManager.setConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY, json);
 				log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), session.getRsn());
 			}
 			catch (Exception e)
@@ -172,7 +176,11 @@ public class OfflineSyncService
 		Map<Integer, TrackedOffer> persisted = loadPersistedOffers();
 		if (persisted.isEmpty())
 		{
-			return;
+			persisted = loadPersistedOffersByKeyScan();
+			if (persisted.isEmpty())
+			{
+				return;
+			}
 		}
 
 		for (Map.Entry<Integer, TrackedOffer> entry : persisted.entrySet())
@@ -609,6 +617,57 @@ public class OfflineSyncService
 			log.error("Failed to load persisted offers for {}: {}", session.getRsn(), e.getMessage());
 			return new HashMap<>();
 		}
+	}
+
+	/**
+	 * Scan all config keys matching persistedOffers_* to find offer data
+	 * when the RSN-specific key lookup failed (cold start, RSN not yet available).
+	 */
+	private Map<Integer, TrackedOffer> loadPersistedOffersByKeyScan()
+	{
+		try
+		{
+			Map<Integer, TrackedOffer> result = tryLoadOffersFromKey(PERSISTED_OFFERS_FALLBACK_KEY);
+			if (!result.isEmpty())
+			{
+				log.info("Loaded {} offers from fallback key", result.size());
+				return result;
+			}
+
+			String prefix = CONFIG_GROUP + "." + PERSISTED_OFFERS_KEY_PREFIX;
+			List<String> keys = configManager.getConfigurationKeys(prefix);
+			for (String fullKey : keys)
+			{
+				String keyPart = fullKey.substring((CONFIG_GROUP + ".").length());
+				if (keyPart.equals(PERSISTED_OFFERS_FALLBACK_KEY))
+				{
+					continue;
+				}
+				result = tryLoadOffersFromKey(keyPart);
+				if (!result.isEmpty())
+				{
+					log.info("Loaded {} offers via key scan (key: {})", result.size(), keyPart);
+					return result;
+				}
+			}
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load persisted offers by key scan: {}", e.getMessage());
+		}
+		return new HashMap<>();
+	}
+
+	private Map<Integer, TrackedOffer> tryLoadOffersFromKey(String key)
+	{
+		String json = configManager.getConfiguration(CONFIG_GROUP, key);
+		if (json == null || json.isEmpty())
+		{
+			return new HashMap<>();
+		}
+		Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
+		Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
+		return (offers != null) ? offers : new HashMap<>();
 	}
 
 	// =====================
