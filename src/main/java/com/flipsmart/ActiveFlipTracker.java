@@ -2,6 +2,8 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.callback.ClientThread;
@@ -172,7 +174,35 @@ public class ActiveFlipTracker
 
 	private Set<Integer> collectAllActiveItemIds()
 	{
-		return session.getActiveFlipItemIds();
+		Set<Integer> itemIds = session.getActiveFlipItemIds();
+
+		// Also read directly from the game client's GE state as the definitive
+		// source of truth. This protects against the race condition where
+		// trackedOffers may not be fully populated from login burst events.
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers != null)
+		{
+			int addedFromClient = 0;
+			for (GrandExchangeOffer offer : offers)
+			{
+				if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
+				{
+					if (itemIds.add(offer.getItemId()))
+					{
+						addedFromClient++;
+						log.info("Cleanup safety: item {} found in GE client state but not in tracked offers",
+							offer.getItemId());
+					}
+				}
+			}
+			if (addedFromClient > 0)
+			{
+				log.warn("Cleanup safety caught {} items from client GE state that were missing from session tracking",
+					addedFromClient);
+			}
+		}
+
+		return itemIds;
 	}
 
 	private void handleCleanupResult(Boolean success)

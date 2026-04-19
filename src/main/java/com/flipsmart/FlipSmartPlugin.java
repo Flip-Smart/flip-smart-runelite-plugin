@@ -1048,7 +1048,7 @@ public class FlipSmartPlugin extends Plugin
 
 	private void performStaleFlipCleanup()
 	{
-		if (!session.getTrackedOffers().isEmpty() || session.getCollectedItemIds().isEmpty())
+		if (!session.getTrackedOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())
 		{
 			activeFlipTracker.cleanupStaleActiveFlips();
 			scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () ->
@@ -1056,7 +1056,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 		else
 		{
-			log.info("Skipping cleanup - no GE offers detected yet, may not be safe");
+			log.info("Skipping cleanup - no GE offers or collected items detected, may not be safe");
 		}
 	}
 
