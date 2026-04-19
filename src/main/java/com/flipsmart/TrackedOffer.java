@@ -65,6 +65,13 @@ public class TrackedOffer
 		int price, int quantitySold, TrackedOffer existing,
 		GrandExchangeOfferState state)
 	{
+		// Only preserve timestamps from the same item — a slot reused for a
+		// different item must start with a fresh timestamp.
+		if (existing != null && existing.getItemId() != itemId)
+		{
+			existing = null;
+		}
+
 		long originalTimestamp = (existing != null && existing.getCreatedAtMillis() > 0)
 			? existing.getCreatedAtMillis()
 			: System.currentTimeMillis();
