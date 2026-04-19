@@ -92,6 +92,9 @@ public class AutoRecommendService
 	// async callback result gets lost due to race conditions
 	private volatile String lastOverlayMessage;
 
+	// Currently-focused collected item sell prompt — used by skip() to remove stuck items
+	private volatile int focusedCollectedItemId = -1;
+
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -280,6 +283,7 @@ public class AutoRecommendService
 			session.clearStaleNotifications();
 		}
 		currentIndex = 0;
+		focusedCollectedItemId = -1;
 
 		invokeFocusCallback(null);
 
@@ -668,6 +672,7 @@ public class AutoRecommendService
 	 */
 	private void focusNextAvailableAction()
 	{
+		focusedCollectedItemId = -1;
 		if (hasCollectedItemsToSell())
 		{
 			focusNextCollectedItemSell();
@@ -1776,6 +1781,18 @@ public class AutoRecommendService
 			return;
 		}
 
+		// If we're currently showing a collected-item sell prompt, skip it
+		int collectedId = focusedCollectedItemId;
+		if (collectedId >= 0)
+		{
+			PlayerSession session = plugin.getSession();
+			log.info("Auto-recommend: User skipped collected item sell prompt for item {}", collectedId);
+			session.removeCollectedItem(collectedId);
+			focusedCollectedItemId = -1;
+			focusNextAvailableAction();
+			return;
+		}
+
 		log.info("Auto-recommend: User skipped current recommendation");
 		advanceToNext();
 	}
@@ -1915,6 +1932,7 @@ public class AutoRecommendService
 					priceOffset
 				);
 
+				focusedCollectedItemId = sellableItemId;
 				invokeFocusCallback(focus);
 				invokeQueueAdvancedCallback();
 
@@ -1923,10 +1941,13 @@ public class AutoRecommendService
 				return;
 			}
 
-			// Collected item has no sell price - fall through to buy/wait
-			log.warn("Auto-recommend: Cannot focus sell for collected item {} (price={})",
+			// Collected item has no sell price — clean it up so it doesn't block the queue
+			log.warn("Auto-recommend: Removing collected item {} with no sell price (price={})",
 				sellableItemId, sellPrice);
+			plugin.getSession().removeCollectedItem(sellableItemId);
 		}
+
+		focusedCollectedItemId = -1;
 
 		// No sellable items can be properly displayed - check buy queue
 		if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
@@ -1988,16 +2009,10 @@ public class AutoRecommendService
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
 
-		// Not in inventory, no buy offer — might be waiting in GE for collection
-		if (session.getCollectedQuantity(itemId) > 0 && hasSellPrice(itemId))
-		{
-			return itemId;
-		}
-
-		if (session.getCollectedQuantity(itemId) <= 0)
-		{
-			staleItems.add(itemId);
-		}
+		// Not in inventory and no active buy offer — item is no longer accessible.
+		// Even if collectedQuantity > 0, the tracking is stale (item was already
+		// collected and sold/used, or the state got out of sync). Mark for cleanup.
+		staleItems.add(itemId);
 		return -1;
 	}
 
