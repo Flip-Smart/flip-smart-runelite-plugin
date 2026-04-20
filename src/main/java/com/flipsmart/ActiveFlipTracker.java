@@ -185,14 +185,12 @@ public class ActiveFlipTracker
 			int addedFromClient = 0;
 			for (GrandExchangeOffer offer : offers)
 			{
-				if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
+				if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY
+					&& itemIds.add(offer.getItemId()))
 				{
-					if (itemIds.add(offer.getItemId()))
-					{
-						addedFromClient++;
-						log.info("Cleanup safety: item {} found in GE client state but not in tracked offers",
-							offer.getItemId());
-					}
+					addedFromClient++;
+					log.info("Cleanup safety: item {} found in GE client state but not in tracked offers",
+						offer.getItemId());
 				}
 			}
 			if (addedFromClient > 0)
