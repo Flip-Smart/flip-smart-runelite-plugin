@@ -1824,6 +1824,22 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Data class for an inventory or gear item.
+	 * Backend prices these server-side, so no value_per_item is sent.
+	 */
+	public static class BankItemId
+	{
+		public final int itemId;
+		public final int quantity;
+
+		public BankItemId(int itemId, int quantity)
+		{
+			this.itemId = itemId;
+			this.quantity = quantity;
+		}
+	}
+
+	/**
 	 * Check if a bank snapshot can be taken (rate limit check)
 	 *
 	 * @param rsn RuneScape Name to check
@@ -1843,27 +1859,31 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Create a bank snapshot with all items and total wealth components
+	 * Create a bank snapshot with bank items, equipped gear, inventory, and GE offers.
+	 *
+	 * Bank items carry plugin-supplied prices; backend re-prices them when zero
+	 * or when they're a known charged variant. Inventory and gear items are
+	 * priced server-side, so only item_id + quantity are sent.
 	 *
 	 * @param rsn RuneScape Name
-	 * @param items List of bank items with quantities and values
-	 * @param inventoryValue Total value of tradeable inventory items (excluding coins)
+	 * @param items Bank items with quantities and values
+	 * @param inventoryItems Tradeable inventory items (priced server-side)
+	 * @param gearItems Equipped gear items (priced server-side)
 	 * @param geOffersValue Total value locked in GE offers
 	 * @return CompletableFuture with BankSnapshotResponse
 	 */
 	public CompletableFuture<BankSnapshotResponse> createBankSnapshotAsync(
 		String rsn,
 		java.util.List<BankItem> items,
-		long inventoryValue,
+		java.util.List<BankItemId> inventoryItems,
+		java.util.List<BankItemId> gearItems,
 		long geOffersValue)
 	{
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/bank/snapshot", apiUrl);
 
-		// Build the request body
 		JsonObject requestBody = new JsonObject();
 		requestBody.addProperty("rsn", rsn);
-		requestBody.addProperty("inventory_value", inventoryValue);
 		requestBody.addProperty("ge_offers_value", geOffersValue);
 
 		com.google.gson.JsonArray itemsArray = new com.google.gson.JsonArray();
@@ -1876,6 +1896,26 @@ public class FlipSmartApiClient
 			itemsArray.add(itemObj);
 		}
 		requestBody.add("items", itemsArray);
+
+		com.google.gson.JsonArray invArray = new com.google.gson.JsonArray();
+		for (BankItemId inv : inventoryItems)
+		{
+			JsonObject obj = new JsonObject();
+			obj.addProperty(JSON_KEY_ITEM_ID, inv.itemId);
+			obj.addProperty("quantity", inv.quantity);
+			invArray.add(obj);
+		}
+		requestBody.add("inventory_items", invArray);
+
+		com.google.gson.JsonArray gearArray = new com.google.gson.JsonArray();
+		for (BankItemId gear : gearItems)
+		{
+			JsonObject obj = new JsonObject();
+			obj.addProperty(JSON_KEY_ITEM_ID, gear.itemId);
+			obj.addProperty("quantity", gear.quantity);
+			gearArray.add(obj);
+		}
+		requestBody.add("gear_items", gearArray);
 
 		RequestBody body = RequestBody.create(JSON, requestBody.toString());
 		Request.Builder requestBuilder = new Request.Builder()
