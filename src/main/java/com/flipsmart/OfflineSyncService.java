@@ -379,17 +379,30 @@ public class OfflineSyncService
 	 */
 	private void handleEmptySellSlot(TrackedOffer persistedOffer)
 	{
-		int soldQuantity = persistedOffer.getPreviousQuantitySold();
+		int persistedSoldQty = persistedOffer.getPreviousQuantitySold();
+		int totalQty = persistedOffer.getTotalQuantity();
 
-		if (soldQuantity > 0)
+		// Only record fills that happened AFTER the last logout (offline fills).
+		// persistedSoldQty fills were already recorded as online transactions in the previous session.
+		// If the order was fully sold before logout, only collection happened offline — don't re-record.
+		if (persistedSoldQty >= totalQty && totalQty > 0)
 		{
-			log.info("Detected {} {} sold offline. Recording SELL transaction.",
-				soldQuantity, persistedOffer.getItemName());
-			recordOfflineSellTransaction(persistedOffer, soldQuantity);
+			log.info("Sell order for {} was complete before logout ({}/{}). Collection happened offline — no offline sells to record.",
+				persistedOffer.getItemName(), persistedSoldQty, totalQty);
 		}
 		else
 		{
-			log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
+			int offlineSells = totalQty - persistedSoldQty;
+			if (offlineSells > 0)
+			{
+				log.info("Detected {} {} sold offline (total: {}, tracked before logout: {}). Recording SELL transaction.",
+					offlineSells, persistedOffer.getItemName(), totalQty, persistedSoldQty);
+				recordOfflineSellTransaction(persistedOffer, offlineSells);
+			}
+			else
+			{
+				log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
+			}
 		}
 
 		// Inventory check must run on the client thread (getItemContainer requires it)
