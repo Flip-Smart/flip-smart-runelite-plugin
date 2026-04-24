@@ -131,13 +131,14 @@ public class BankSnapshotService
 				return;
 			}
 
-			long inventoryValue = calculateInventoryValue();
+			List<FlipSmartApiClient.BankItemId> inventoryItems = collectInventoryItems();
+			List<FlipSmartApiClient.BankItemId> gearItems = collectGearItems();
 			long geOffersValue = calculateGEOffersValue();
 
-			log.info("Capturing bank snapshot: {} tradeable items, inv={}, ge={} for RSN {}",
-				items.size(), inventoryValue, geOffersValue, rsn);
+			log.info("Capturing bank snapshot: {} bank items, {} inv items, {} gear items, ge={} for RSN {}",
+				items.size(), inventoryItems.size(), gearItems.size(), geOffersValue, rsn);
 
-			apiClient.createBankSnapshotAsync(rsn, items, inventoryValue, geOffersValue).thenAccept(response ->
+			apiClient.createBankSnapshotAsync(rsn, items, inventoryItems, gearItems, geOffersValue).thenAccept(response ->
 			{
 				if (response != null)
 				{
@@ -259,52 +260,59 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Calculate the total value of items in the player's inventory.
+	 * Collect tradeable items from the player's inventory.
+	 * The backend prices these server-side, so no GE price is computed here.
+	 * Coins (item_id 995) are included; backend prices coins as 1 GP each.
 	 */
-	private long calculateInventoryValue()
+	private List<FlipSmartApiClient.BankItemId> collectInventoryItems()
 	{
 		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
 		if (inventory == null)
 		{
-			return 0;
+			return new ArrayList<>();
 		}
-
-		long totalValue = 0;
-
-		for (Item item : inventory.getItems())
-		{
-			totalValue += getInventoryItemValue(item);
-		}
-
-		return totalValue;
+		return collectItemIds(inventory.getItems());
 	}
 
 	/**
-	 * Get the GP value of a single inventory item.
-	 * Returns coin quantity directly, tradeable item value at GE price, or 0.
+	 * Collect tradeable equipped gear items from the EQUIPMENT container.
+	 * The backend prices these server-side.
 	 */
-	private long getInventoryItemValue(Item item)
+	private List<FlipSmartApiClient.BankItemId> collectGearItems()
 	{
-		int itemId = item.getId();
-		int quantity = item.getQuantity();
-
-		if (itemId <= 0 || quantity <= 0)
+		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
+		if (equipment == null)
 		{
-			return 0;
+			return new ArrayList<>();
 		}
+		return collectItemIds(equipment.getItems());
+	}
 
-		if (itemId == COINS_ITEM_ID)
+	/**
+	 * Filter an item array to tradeable items (or coins) and return as a list
+	 * of BankItemId records (item_id + quantity, no client-side price).
+	 */
+	private List<FlipSmartApiClient.BankItemId> collectItemIds(Item[] items)
+	{
+		List<FlipSmartApiClient.BankItemId> out = new ArrayList<>();
+		if (items == null)
 		{
-			return quantity;
+			return out;
 		}
-
-		if (!ItemUtils.isTradeable(itemManager, itemId))
+		for (Item item : items)
 		{
-			return 0;
+			int itemId = item.getId();
+			int quantity = item.getQuantity();
+			if (itemId <= 0 || quantity <= 0)
+			{
+				continue;
+			}
+			if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
+			{
+				out.add(new FlipSmartApiClient.BankItemId(itemId, quantity));
+			}
 		}
-
-		int gePrice = itemManager.getItemPrice(itemId);
-		return gePrice > 0 ? (long) quantity * gePrice : 0;
+		return out;
 	}
 
 	/**
