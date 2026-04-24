@@ -27,6 +27,7 @@ public class FlipSmartApiClient
 	private static final String ACCESS_TOKEN_KEY = "access_token";
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
+	private static final String JSON_KEY_QUANTITY = "quantity";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
 	private static final String JSON_KEY_STATUS = "status";
@@ -1350,7 +1351,7 @@ public class FlipSmartApiClient
 		jsonBody.addProperty(JSON_KEY_ITEM_ID, request.itemId);
 		jsonBody.addProperty("item_name", request.itemName);
 		jsonBody.addProperty("is_buy", request.isBuy);
-		jsonBody.addProperty("quantity", request.quantity);
+		jsonBody.addProperty(JSON_KEY_QUANTITY, request.quantity);
 		jsonBody.addProperty("price_per_item", request.pricePerItem);
 		if (request.geSlot != null)
 		{
@@ -1891,7 +1892,7 @@ public class FlipSmartApiClient
 		{
 			JsonObject itemObj = new JsonObject();
 			itemObj.addProperty(JSON_KEY_ITEM_ID, item.itemId);
-			itemObj.addProperty("quantity", item.quantity);
+			itemObj.addProperty(JSON_KEY_QUANTITY, item.quantity);
 			itemObj.addProperty("value_per_item", item.valuePerItem);
 			itemsArray.add(itemObj);
 		}
@@ -1902,7 +1903,7 @@ public class FlipSmartApiClient
 		{
 			JsonObject obj = new JsonObject();
 			obj.addProperty(JSON_KEY_ITEM_ID, inv.itemId);
-			obj.addProperty("quantity", inv.quantity);
+			obj.addProperty(JSON_KEY_QUANTITY, inv.quantity);
 			invArray.add(obj);
 		}
 		requestBody.add("inventory_items", invArray);
@@ -1912,7 +1913,7 @@ public class FlipSmartApiClient
 		{
 			JsonObject obj = new JsonObject();
 			obj.addProperty(JSON_KEY_ITEM_ID, gear.itemId);
-			obj.addProperty("quantity", gear.quantity);
+			obj.addProperty(JSON_KEY_QUANTITY, gear.quantity);
 			gearArray.add(obj);
 		}
 		requestBody.add("gear_items", gearArray);
