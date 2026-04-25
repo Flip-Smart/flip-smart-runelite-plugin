@@ -5,7 +5,6 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
-import net.runelite.client.ui.components.PluginErrorPanel;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.LinkBrowser;
 
@@ -1966,15 +1965,8 @@ public class FlipFinderPanel extends PluginPanel
 	private void showErrorInContainer(JPanel container, String title, String message)
 	{
 		container.removeAll();
-
-		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		String wrappedMessage = "<html><table width='160'><tr><td align='center'>"
-			+ message + "</td></tr></table></html>";
-		errorPanel.setContent(title, wrappedMessage);
-		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		container.add(errorPanel);
-
+		String wrappedMessage = "<html><table width='160'><tr><td align='center'>" + message + "</td></tr></table></html>";
+		container.add(createEmptyStatePanel(title, wrappedMessage, 80));
 		container.revalidate();
 		container.repaint();
 	}
