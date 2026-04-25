@@ -1879,8 +1879,8 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Show a subscribe message when the current RSN is blocked (3rd+ account without premium).
-	 * Clears current recommendations and shows a CTA to subscribe.
+	 * Show a "not at Grand Exchange" message in the recommendations panel.
+	 * Clears current recommendations until the player travels to the GE.
 	 */
 	private void showNotAtGeMessage()
 	{
@@ -1890,6 +1890,10 @@ public class FlipFinderPanel extends PluginPanel
 		refreshButton.setEnabled(true);
 	}
 
+	/**
+	 * Show a subscribe message when the current RSN is blocked (3rd+ account without premium).
+	 * Clears current recommendations and shows a CTA to subscribe.
+	 */
 	private void showRsnBlockedMessage()
 	{
 		currentRecommendations.clear();

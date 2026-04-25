@@ -11,6 +11,7 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
+import net.runelite.api.Player;
 import net.runelite.api.WorldType;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -51,6 +52,7 @@ public class FlipSmartPlugin extends Plugin
 {
 	private static final int INVENTORY_CONTAINER_ID = 93;
 	private static final int COINS_ITEM_ID = 995;
+	private static final int GE_REGION_ID = 12598;
 
 	@Inject
 	private Client client;
@@ -861,8 +863,8 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
-		var localPlayer = client.getLocalPlayer();
-		atGrandExchange = localPlayer != null && localPlayer.getWorldLocation().getRegionID() == 12598;
+		Player localPlayer = client.getLocalPlayer();
+		atGrandExchange = localPlayer != null && localPlayer.getWorldLocation().getRegionID() == GE_REGION_ID;
 	}
 
 	private void handleLogoutState()
