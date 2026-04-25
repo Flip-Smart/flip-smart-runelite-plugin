@@ -250,6 +250,16 @@ public class FlipSmartPlugin extends Plugin
 		return membersWorld;
 	}
 
+	public boolean isAtGrandExchange()
+	{
+		var localPlayer = client.getLocalPlayer();
+		if (localPlayer == null)
+		{
+			return false;
+		}
+		return localPlayer.getWorldLocation().getRegionID() == 12598;
+	}
+
 	/**
 	 * Refresh the cached members-world state from the Client API.
 	 * Must be called on the client thread.

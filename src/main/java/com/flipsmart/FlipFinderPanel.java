@@ -1342,6 +1342,12 @@ public class FlipFinderPanel extends PluginPanel
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
 
+		if (!plugin.isAtGrandExchange())
+		{
+			showNotAtGeMessage();
+			return;
+		}
+
 		// If RSN is blocked, show subscribe message instead of fetching recommendations
 		if (apiClient.isRsnBlocked())
 		{
@@ -1877,6 +1883,14 @@ public class FlipFinderPanel extends PluginPanel
 	 * Show a subscribe message when the current RSN is blocked (3rd+ account without premium).
 	 * Clears current recommendations and shows a CTA to subscribe.
 	 */
+	private void showNotAtGeMessage()
+	{
+		currentRecommendations.clear();
+		showErrorInContainer(recommendedListContainer, "Flip Finder", "You must be in the Grand Exchange to load suggestions.");
+		statusLabel.setText("Visit the Grand Exchange");
+		refreshButton.setEnabled(true);
+	}
+
 	private void showRsnBlockedMessage()
 	{
 		currentRecommendations.clear();
