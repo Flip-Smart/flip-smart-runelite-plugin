@@ -1968,7 +1968,9 @@ public class FlipFinderPanel extends PluginPanel
 		container.removeAll();
 
 		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent(title, message);
+		String wrappedMessage = "<html><body style='width:170px;text-align:center;padding:4px 8px'>"
+			+ message + "</body></html>";
+		errorPanel.setContent(title, wrappedMessage);
 		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 		container.add(errorPanel);
