@@ -13,6 +13,7 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.WorldType;
 import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
@@ -146,6 +147,9 @@ public class FlipSmartPlugin extends Plugin
 	// from any thread (Swing EDT, scheduler). Defaults to true so unlinked callers see more items.
 	private volatile boolean membersWorld = true;
 
+	// Cached GE location flag — updated each game tick on the client thread.
+	private volatile boolean atGrandExchange = false;
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -252,12 +256,7 @@ public class FlipSmartPlugin extends Plugin
 
 	public boolean isAtGrandExchange()
 	{
-		var localPlayer = client.getLocalPlayer();
-		if (localPlayer == null)
-		{
-			return false;
-		}
-		return localPlayer.getWorldLocation().getRegionID() == 12598;
+		return atGrandExchange;
 	}
 
 	/**
@@ -857,6 +856,13 @@ public class FlipSmartPlugin extends Plugin
 		{
 			flipFinderPanel.refresh();
 		}
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		var localPlayer = client.getLocalPlayer();
+		atGrandExchange = localPlayer != null && localPlayer.getWorldLocation().getRegionID() == 12598;
 	}
 
 	private void handleLogoutState()
