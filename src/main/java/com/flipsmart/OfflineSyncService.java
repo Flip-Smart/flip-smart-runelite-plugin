@@ -444,18 +444,22 @@ public class OfflineSyncService
 	 */
 	private void handleEmptyBuySlot(TrackedOffer persistedOffer)
 	{
-		int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
-		int trackedFills = persistedOffer.getPreviousQuantitySold();
+		// getItemContainer requires the client thread
+		clientThread.invokeLater(() ->
+		{
+			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
+			int trackedFills = persistedOffer.getPreviousQuantitySold();
 
-		if (inventoryCount > 0)
-		{
-			handleBuyOrderWithInventory(persistedOffer, inventoryCount, trackedFills);
-		}
-		else if (trackedFills > 0)
-		{
-			log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
-				persistedOffer.getItemName(), trackedFills);
-		}
+			if (inventoryCount > 0)
+			{
+				handleBuyOrderWithInventory(persistedOffer, inventoryCount, trackedFills);
+			}
+			else if (trackedFills > 0)
+			{
+				log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
+					persistedOffer.getItemName(), trackedFills);
+			}
+		});
 	}
 
 	/**

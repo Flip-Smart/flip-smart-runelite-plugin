@@ -5,7 +5,6 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.ColorScheme;
 import net.runelite.client.ui.PluginPanel;
-import net.runelite.client.ui.components.PluginErrorPanel;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.LinkBrowser;
 
@@ -1342,6 +1341,12 @@ public class FlipFinderPanel extends PluginPanel
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
 
+		if (!plugin.isAtGrandExchange())
+		{
+			showNotAtGeMessage();
+			return;
+		}
+
 		// If RSN is blocked, show subscribe message instead of fetching recommendations
 		if (apiClient.isRsnBlocked())
 		{
@@ -1874,6 +1879,18 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
+	 * Show a "not at Grand Exchange" message in the recommendations panel.
+	 * Clears current recommendations until the player travels to the GE.
+	 */
+	private void showNotAtGeMessage()
+	{
+		currentRecommendations.clear();
+		showErrorInContainer(recommendedListContainer, "Flip Finder", "You must be in the Grand Exchange to load suggestions.");
+		statusLabel.setText("Visit the Grand Exchange");
+		refreshButton.setEnabled(true);
+	}
+
+	/**
 	 * Show a subscribe message when the current RSN is blocked (3rd+ account without premium).
 	 * Clears current recommendations and shows a CTA to subscribe.
 	 */
@@ -1952,13 +1969,8 @@ public class FlipFinderPanel extends PluginPanel
 	private void showErrorInContainer(JPanel container, String title, String message)
 	{
 		container.removeAll();
-
-		PluginErrorPanel errorPanel = new PluginErrorPanel();
-		errorPanel.setContent(title, message);
-		errorPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		errorPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
-		container.add(errorPanel);
-
+		String wrappedMessage = "<html><table width='160'><tr><td align='center'>" + message + "</td></tr></table></html>";
+		container.add(createEmptyStatePanel(title, wrappedMessage, 80));
 		container.revalidate();
 		container.repaint();
 	}
