@@ -293,10 +293,16 @@ public class PlayerSession
 
 	/**
 	 * Handle logout state change (LOGIN_SCREEN).
+	 *
+	 * Clears the cached RSN so a subsequent login as a different account does
+	 * not reuse the previous account's name. Issue #549 / #556 — without this,
+	 * an outgoing API call between logout and the next syncRSN() would still
+	 * carry the previous account's RSN.
 	 */
 	public void onLogout()
 	{
 		this.loggedIntoRunescape = false;
+		this.rsn = null;
 	}
 
 	/**

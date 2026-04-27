@@ -145,6 +145,11 @@ public class FlipSmartPlugin extends Plugin
 	// when session.getRsn() may already be null
 	private volatile String lastKnownRsn;
 
+	// True when handleLoggedInState ran but the local player was not yet
+	// populated, so syncRSN couldn't capture the current account's name. The
+	// onGameTick handler retries until it succeeds. Issue #556.
+	private volatile boolean rsnSyncPending;
+
 	// Cached world-type flag — updated on the client thread (WorldChanged, login) and read
 	// from any thread (Swing EDT, scheduler). Defaults to true so unlinked callers see more items.
 	private volatile boolean membersWorld = true;
@@ -865,6 +870,15 @@ public class FlipSmartPlugin extends Plugin
 	{
 		Player localPlayer = client.getLocalPlayer();
 		atGrandExchange = localPlayer != null && localPlayer.getWorldLocation().getRegionID() == GE_REGION_ID;
+
+		// On the first LOGGED_IN tick the local player is sometimes not yet
+		// populated, so syncRSN()'s early-return fires and we'd be stuck with
+		// either no RSN or (worse) the previous account's name. Retry here on
+		// each tick until the live name is captured. Issue #556.
+		if (rsnSyncPending && localPlayer != null && localPlayer.getName() != null && !localPlayer.getName().isEmpty())
+		{
+			syncRSN();
+		}
 	}
 
 	private void handleLogoutState()
@@ -902,6 +916,23 @@ public class FlipSmartPlugin extends Plugin
 		updateMembersWorldCache();
 		session.onLoggedIn();
 		syncRSN();
+
+		// If syncRSN couldn't capture the live name yet (player object not
+		// populated on the first LOGGED_IN tick), fall back to the persisted
+		// last-known RSN so offer preloading and the entitlements call below
+		// have *something* to work with. onGameTick will refresh to the live
+		// name as soon as it's available. Issue #556.
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			String persistedRsn = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+			if (persistedRsn != null && !persistedRsn.isEmpty())
+			{
+				session.setRsn(persistedRsn);
+				lastKnownRsn = persistedRsn;
+				log.info("Using persisted RSN fallback: {}", persistedRsn);
+			}
+		}
+
 		updateCashStack();
 
 		apiClient.fetchWikiPrices();
@@ -916,20 +947,6 @@ public class FlipSmartPlugin extends Plugin
 			// Pull webhook config after auth is confirmed
 			webhookSyncService.pullFromBackend();
 		});
-
-		// If RSN isn't available yet from the client (common on cold starts),
-		// fall back to the last known RSN persisted in config so offer preloading
-		// can find the correct config key (e.g. persistedOffers_dumbridge3 vs _unknown)
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			String persistedRsn = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
-			if (persistedRsn != null && !persistedRsn.isEmpty())
-			{
-				session.setRsn(persistedRsn);
-				lastKnownRsn = persistedRsn;
-				log.info("Using persisted RSN fallback: {}", persistedRsn);
-			}
-		}
 
 		// Restore collected items from config (items bought but not yet sold)
 		// Must be after syncRSN() so we have the correct RSN for the config key
@@ -1102,54 +1119,83 @@ public class FlipSmartPlugin extends Plugin
 
 	
 	/**
-	 * Sync the player's RSN with the API and store locally
+	 * Sync the player's RSN with the API and store locally.
+	 *
+	 * On the first LOGGED_IN tick the local player can still be null or
+	 * unnamed; in that case we set rsnSyncPending so onGameTick retries
+	 * until the live name is captured. Issue #556.
 	 */
 	private void syncRSN()
 	{
-		if (client.getLocalPlayer() == null)
+		Player localPlayer = client.getLocalPlayer();
+		if (localPlayer == null)
 		{
-			log.warn("syncRSN called but getLocalPlayer() is null");
+			log.debug("syncRSN: getLocalPlayer() is null, will retry on next tick");
+			rsnSyncPending = true;
 			return;
 		}
-		
-		String rsn = client.getLocalPlayer().getName();
-		if (rsn != null && !rsn.isEmpty())
+
+		String rsn = localPlayer.getName();
+		if (rsn == null || rsn.isEmpty())
 		{
-			session.setRsn(rsn);
-			lastKnownRsn = rsn;
-			configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
-			log.info("RSN synced: {}", rsn);
-			apiClient.updateRSN(rsn);
+			log.debug("syncRSN: player name is null or empty, will retry on next tick");
+			rsnSyncPending = true;
+			return;
+		}
+
+		rsnSyncPending = false;
+		String previous = session.getRsn();
+		session.setRsn(rsn);
+		lastKnownRsn = rsn;
+		configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
+		if (previous != null && !previous.equals(rsn))
+		{
+			log.info("RSN switched: {} -> {}", previous, rsn);
 		}
 		else
 		{
-			log.warn("syncRSN: player name is null or empty");
+			log.info("RSN synced: {}", rsn);
 		}
+		apiClient.updateRSN(rsn);
 	}
-	
+
 	/**
-	 * Get the current RSN, attempting to fetch from client if not cached.
-	 * Returns Optional.empty() if RSN cannot be determined.
-	 * This ensures callers explicitly handle the case where RSN is unavailable.
+	 * Get the current RSN.
+	 *
+	 * When the player is logged in, the live client is authoritative — the
+	 * cache may still hold the previous account's name from a quick character
+	 * switch (issue #556). When offline, fall back to the cached or persisted
+	 * value so background work (offer persistence, config keys) still resolves.
 	 */
 	public Optional<String> getCurrentRsnSafe()
 	{
-		if (session.getRsn() != null && !session.getRsn().isEmpty())
+		if (client.getGameState() == GameState.LOGGED_IN)
 		{
-			return Optional.of(session.getRsn());
+			Player localPlayer = client.getLocalPlayer();
+			if (localPlayer != null && localPlayer.getName() != null && !localPlayer.getName().isEmpty())
+			{
+				String liveRsn = localPlayer.getName();
+				String cached = session.getRsn();
+				if (!liveRsn.equals(cached))
+				{
+					log.info("RSN refreshed from client: {} -> {}", cached, liveRsn);
+					session.setRsn(liveRsn);
+					lastKnownRsn = liveRsn;
+					configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, liveRsn);
+				}
+				return Optional.of(liveRsn);
+			}
+			// Logged in but the player object isn't ready yet — fall through
+			// to the cache so the request still has *some* RSN. onGameTick
+			// will refresh once the live name is available.
 		}
-		
-		// Try to get RSN from client if not cached
-		if (client.getLocalPlayer() != null && client.getLocalPlayer().getName() != null)
+
+		String cached = session.getRsn();
+		if (cached != null && !cached.isEmpty())
 		{
-			String rsn = client.getLocalPlayer().getName();
-			session.setRsn(rsn);
-			lastKnownRsn = rsn;
-			configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
-			log.info("RSN fetched from client on-demand: {}", rsn);
-			return Optional.of(rsn);
+			return Optional.of(cached);
 		}
-		
+
 		log.warn("Unable to determine RSN - transactions will be recorded without RSN");
 		return Optional.empty();
 	}
