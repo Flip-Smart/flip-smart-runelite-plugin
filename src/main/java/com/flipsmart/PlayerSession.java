@@ -409,6 +409,38 @@ public class PlayerSession
 	}
 
 	/**
+	 * Check if an item has a buy offer that is still in flight
+	 * (placed but not yet completed/cancelled — items not yet collectable).
+	 */
+	public boolean hasInFlightBuyOfferForItem(int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == itemId && offer.isBuy() && !offer.isCompleted())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Check if an item has a completed buy offer that hasn't been collected yet
+	 * (BOUGHT state — items waiting in the GE slot for the user to collect).
+	 */
+	public boolean hasUncollectedBuyOfferForItem(int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == itemId && offer.isBuy() && offer.isCompleted())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Check if there are available GE slots for new offers.
 	 */
 	public boolean hasAvailableGESlots(int slotLimit)

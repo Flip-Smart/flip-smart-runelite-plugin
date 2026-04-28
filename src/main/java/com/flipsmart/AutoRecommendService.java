@@ -1920,7 +1920,7 @@ public class AutoRecommendService
 
 			if (sellPrice != null && sellPrice > 0)
 			{
-				String itemName = itemNames.getOrDefault(sellableItemId, "Item " + sellableItemId);
+				String itemName = itemNames.getOrDefault(sellableItemId, plugin.getItemName(sellableItemId));
 				int sellQuantity = resolveSellQuantity(sellableItemId);
 
 				int priceOffset = config.priceOffset();
@@ -1997,21 +1997,38 @@ public class AutoRecommendService
 
 	/**
 	 * Evaluate whether a collected item is sellable, stale, or waiting for collection.
-	 * Returns the item ID if sellable, or -1 to continue searching.
+	 * Returns the item ID if sellable now, or -1 to continue searching.
+	 *
+	 * The three non-sellable cases are kept distinct (vs lumped under one
+	 * "hasBuyOffer" check) so the UI can route to the correct prompt:
+	 *   - In-flight buy: stay on the buy / let promptCollection() handle messaging
+	 *   - Completed buy not yet collected: promptCollection() shows "Collect <name>"
+	 *   - Truly stale: queued for cleanup
+	 *
+	 * Critically, an item with an active buy offer that is NOT yet in inventory
+	 * must not be treated as sellable — selling instructions for items still in
+	 * the GE slot are misleading (issue #582).
 	 */
 	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
 	{
-		boolean inInventory = isItemInInventory(itemId);
-		boolean hasBuyOffer = session.hasActiveBuySlotForItem(itemId);
-
-		if (inInventory || hasBuyOffer)
+		if (isItemInInventory(itemId))
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
 
-		// Not in inventory and no active buy offer — item is no longer accessible.
-		// Even if collectedQuantity > 0, the tracking is stale (item was already
-		// collected and sold/used, or the state got out of sync). Mark for cleanup.
+		// Buy still placing/partially filling — items aren't collectable yet.
+		if (session.hasInFlightBuyOfferForItem(itemId))
+		{
+			return -1;
+		}
+
+		// Buy completed but items still in the GE slot — user needs to collect first.
+		if (session.hasUncollectedBuyOfferForItem(itemId))
+		{
+			return -1;
+		}
+
+		// Not in inventory and no buy offer of any kind — tracking is stale.
 		staleItems.add(itemId);
 		return -1;
 	}

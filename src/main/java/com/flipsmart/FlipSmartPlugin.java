@@ -331,6 +331,15 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Resolve a human-readable item name via RuneLite's ItemManager.
+	 * Used as a last-resort fallback when caller-side caches don't have the name.
+	 */
+	public String getItemName(int itemId)
+	{
+		return ItemUtils.getItemName(itemManager, itemId);
+	}
+
+	/**
 	 * Store recommended sell price when user views/acts on a flip recommendation
 	 */
 	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)
