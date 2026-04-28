@@ -830,13 +830,13 @@ public class FlipFinderPanel extends PluginPanel
 						}
 						else
 						{
-							log.info("Refresh token auth failed (transient) - keeping token for next attempt");
+							log.debug("Refresh token auth failed (transient) - keeping token for next attempt");
 						}
 						tryLegacyPasswordAuth();
 					}
 				})
 			).exceptionally(e -> {
-				log.info("Refresh token auth failed: {}", e.getMessage());
+				log.debug("Refresh token auth failed: {}", e.getMessage());
 				SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
 				return null;
 			});
@@ -3150,7 +3150,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 		
-		log.info("Set Flip Assist focus: {} - {} at {} gp x{}", 
+		log.debug("Set Flip Assist focus: {} - {} at {} gp x{}", 
 			newFocus.getStep(), 
 			newFocus.getItemName(), 
 			newFocus.getCurrentStepPrice(),
@@ -4063,7 +4063,7 @@ public class FlipFinderPanel extends PluginPanel
 			autoRecommendButton.setForeground(Color.WHITE);
 			autoRecommendButton.setText("Auto");
 			skipButton.setVisible(true);
-			log.info("Auto-recommend enabled with {} recommendations", currentRecommendations.size());
+			log.debug("Auto-recommend enabled with {} recommendations", currentRecommendations.size());
 		}
 		else
 		{
@@ -4080,7 +4080,7 @@ public class FlipFinderPanel extends PluginPanel
 			// Repaint recommendations to remove highlight
 			populateRecommendations(new ArrayList<>(currentRecommendations));
 
-			log.info("Auto-recommend disabled");
+			log.debug("Auto-recommend disabled");
 		}
 	}
 

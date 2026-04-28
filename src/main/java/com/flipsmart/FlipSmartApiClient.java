@@ -409,7 +409,7 @@ public class FlipSmartApiClient
 			}
 
 			processSuccessfulLogin(response);
-			log.info("Successfully authenticated with API (premium: {})", isPremium());
+			log.debug("Successfully authenticated with API (premium: {})", isPremium());
 			return new AuthResult(true, "Login successful!");
 		}
 		catch (Exception e)
@@ -566,7 +566,7 @@ public class FlipSmartApiClient
 
 					processTokenResponse(tokenResponse);
 
-					log.info("Successfully refreshed access token (premium: {})", isPremium());
+					log.debug("Successfully refreshed access token (premium: {})", isPremium());
 					future.complete(true);
 				}
 				catch (Exception e)
@@ -682,7 +682,7 @@ public class FlipSmartApiClient
 						tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
 					}
 					
-					log.info("Successfully signed up and authenticated with API");
+					log.debug("Successfully signed up and authenticated with API");
 					future.complete(new AuthResult(true, "Account created successfully!"));
 				}
 				catch (Exception e)
@@ -866,7 +866,7 @@ public class FlipSmartApiClient
 					isRsnBlocked = rsnBlocked;
 				}
 
-				log.info("Fetched entitlements - premium: {}, rsnBlocked: {}", premium, rsnBlocked);
+				log.debug("Fetched entitlements - premium: {}, rsnBlocked: {}", premium, rsnBlocked);
 				return premium;
 			}
 			catch (Exception e)
@@ -987,7 +987,7 @@ public class FlipSmartApiClient
 					authResponse.expiresIn = json.get("expires_in").getAsInt();
 					authResponse.pollInterval = json.get("poll_interval").getAsInt();
 					
-					log.info("Device auth started, verification URL: {}", authResponse.verificationUrl);
+					log.debug("Device auth started, verification URL: {}", authResponse.verificationUrl);
 					future.complete(authResponse);
 				}
 				catch (Exception e)
@@ -1092,7 +1092,7 @@ public class FlipSmartApiClient
 			// JWT tokens from this API expire in 7 days, but we'll check earlier
 			this.tokenExpiry = System.currentTimeMillis() + (6 * 24 * 60 * 60 * 1000L);
 		}
-		log.info("Successfully authenticated via Discord");
+		log.debug("Successfully authenticated via Discord");
 	}
 	
 	/**
@@ -1114,7 +1114,7 @@ public class FlipSmartApiClient
 		
 		executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
-			log.info("Successfully updated RSN to: {}", rsn);
+			log.debug("Successfully updated RSN to: {}", rsn);
 			return true;
 		}).exceptionally(e ->
 		{
@@ -1380,7 +1380,7 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
-			log.info("Transaction recorded for {}: {}", request.rsn, responseObj.get("message").getAsString());
+			log.debug("Transaction recorded for {}: {}", request.rsn, responseObj.get("message").getAsString());
 			return null;
 		}).thenApply(v -> null);
 	}
@@ -1473,7 +1473,7 @@ public class FlipSmartApiClient
 		
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
-			log.info("Successfully dismissed active flip for item {}", itemId);
+			log.debug("Successfully dismissed active flip for item {}", itemId);
 			return true;
 		}).exceptionally(e ->
 		{
@@ -1525,7 +1525,7 @@ public class FlipSmartApiClient
 			int itemsCleaned = responseObj.has("items_cleaned") ? responseObj.get("items_cleaned").getAsInt() : 0;
 			if (itemsCleaned > 0)
 			{
-				log.info("Cleaned up {} stale active flips", itemsCleaned);
+				log.debug("Cleaned up {} stale active flips", itemsCleaned);
 			}
 			else
 			{
@@ -1577,7 +1577,7 @@ public class FlipSmartApiClient
 			int newQty = responseObj.has("new_quantity") ? responseObj.get("new_quantity").getAsInt() : 0;
 			if (previousQty != newQty)
 			{
-				log.info("Synced active flip for {} ({}): {} -> {} items", 
+				log.debug("Synced active flip for {} ({}): {} -> {} items", 
 					itemName, itemId, previousQty, newQty);
 			}
 			return true;
@@ -1607,7 +1607,7 @@ public class FlipSmartApiClient
 
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
-			log.info("Marked active flip for item {} as selling", itemId);
+			log.debug("Marked active flip for item {} as selling", itemId);
 			return true;
 		}).exceptionally(e ->
 		{
@@ -2156,7 +2156,7 @@ public class FlipSmartApiClient
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			// If we got here, the request succeeded
-			log.info("Added item {} to blocklist {}", itemId, blocklistId);
+			log.debug("Added item {} to blocklist {}", itemId, blocklistId);
 			return true;
 		}).exceptionally(e ->
 		{

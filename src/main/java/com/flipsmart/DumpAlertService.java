@@ -66,7 +66,7 @@ public class DumpAlertService
 
 		int intervalSeconds = Math.max(30, Math.min(300, config.dumpAlertInterval()));
 
-		log.info("Starting dump alert service with {}s interval", intervalSeconds);
+		log.debug("Starting dump alert service with {}s interval", intervalSeconds);
 
 		if (executor == null || executor.isShutdown())
 		{
@@ -93,7 +93,7 @@ public class DumpAlertService
 	{
 		if (pollingTask != null)
 		{
-			log.info("Stopping dump alert service");
+			log.debug("Stopping dump alert service");
 			pollingTask.cancel(false);
 			pollingTask = null;
 		}
@@ -238,7 +238,7 @@ public class DumpAlertService
 			.runeLiteFormattedMessage(message)
 			.build());
 
-		log.info("Posted dump alert: {} ({}% drop, {} profit)",
+		log.debug("Posted dump alert: {} ({}% drop, {} profit)",
 			dump.getItemName(),
 			String.format("%.1f", dump.getPriceDropPercent()),
 			dump.getEstimatedProfit() != null ? dump.getEstimatedProfit() + "gp" : "unknown");
