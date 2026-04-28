@@ -156,7 +156,7 @@ public class ManualAdjustmentTracker
 		OfferAdjustmentState state = new OfferAdjustmentState(
 			itemId, itemName, true, geSlot, deadline, offerPrice);
 		trackedOffers.put(geSlot, state);
-		log.info("Manual adjustment timer scheduled for {} (slot {}) in {}m",
+		log.debug("Manual adjustment timer scheduled for {} (slot {}) in {}m",
 			itemName, geSlot, delay / 60000);
 	}
 
@@ -177,7 +177,7 @@ public class ManualAdjustmentTracker
 		OfferAdjustmentState state = new OfferAdjustmentState(
 			itemId, itemName, false, geSlot, deadline, averageBuyPrice);
 		trackedOffers.put(geSlot, state);
-		log.info("Manual sell adjustment timer scheduled for {} (slot {}) in {}m",
+		log.debug("Manual sell adjustment timer scheduled for {} (slot {}) in {}m",
 			itemName, geSlot, delay / 60000);
 	}
 
@@ -338,7 +338,7 @@ public class ManualAdjustmentTracker
 		}
 		else if (response.isCancelAndSell())
 		{
-			log.info("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
+			log.debug("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
 			fetchReplacementRecommendation(state);
 		}
 	}
@@ -351,7 +351,7 @@ public class ManualAdjustmentTracker
 			GpUtils.formatGPWithSuffix(offer.getPrice()),
 			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
 
-		log.info("Manual adjustment: {}", msg);
+		log.debug("Manual adjustment: {}", msg);
 
 		BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
 		if (focusCallback != null)
@@ -381,7 +381,7 @@ public class ManualAdjustmentTracker
 			GpUtils.formatGPWithSuffix(offer.getPrice()),
 			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
 
-		log.info("Manual adjustment: {}", msg);
+		log.debug("Manual adjustment: {}", msg);
 		notifyPrompt(msg, state.itemId);
 		notifyHighlight(state.geSlot, response.getRecommendedPrice());
 		notifyInventoryHighlight(state.itemId);
@@ -474,7 +474,7 @@ public class ManualAdjustmentTracker
 			replacement.getItemName(),
 			GpUtils.formatGPWithSuffix(replacement.getPotentialProfit()));
 
-		log.info("Ditch recommendation: {}", msg);
+		log.debug("Ditch recommendation: {}", msg);
 
 		BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
 		if (focusCallback != null)

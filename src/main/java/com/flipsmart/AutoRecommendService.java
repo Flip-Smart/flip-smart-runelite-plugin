@@ -245,7 +245,7 @@ public class AutoRecommendService
 
 		active = true;
 		lastQueueRefreshMillis = System.currentTimeMillis();
-		log.info("Auto-recommend started with {} items in queue (sorted by volume asc)", recommendationQueue.size());
+		log.debug("Auto-recommend started with {} items in queue (sorted by volume asc)", recommendationQueue.size());
 		focusCurrent();
 
 		// Schedule adjustment timers
@@ -287,7 +287,7 @@ public class AutoRecommendService
 
 		invokeFocusCallback(null);
 
-		log.info("Auto-recommend stopped");
+		log.debug("Auto-recommend stopped");
 	}
 
 	// =====================
@@ -310,7 +310,7 @@ public class AutoRecommendService
 			return false;
 		}
 
-		log.info("Auto-recommend: Re-evaluating after login");
+		log.debug("Auto-recommend: Re-evaluating after login");
 		focusNextAvailableAction();
 
 		// Reschedule adjustment timers from persisted offer timestamps
@@ -355,13 +355,13 @@ public class AutoRecommendService
 				plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
 				buyPrices.put(itemId, rec.getRecommendedBuyPrice());
 				scheduleAdjustmentTimer(itemId, rec.getRecommendedBuyPrice());
-				log.info("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
+				log.debug("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
 					itemId, rec.getRecommendedSellPrice());
 			}
 
 			if (!hasAvailableGESlots())
 			{
-				log.info("Auto-recommend: Non-focused buy filled last GE slot - clearing focus");
+				log.debug("Auto-recommend: Non-focused buy filled last GE slot - clearing focus");
 				promptCollection();
 			}
 			return;
@@ -372,7 +372,7 @@ public class AutoRecommendService
 
 		scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
 
-		log.info("Auto-recommend: Buy order placed for {} - advancing to next", current.getItemName());
+		log.debug("Auto-recommend: Buy order placed for {} - advancing to next", current.getItemName());
 		advanceToNext();
 	}
 
@@ -389,7 +389,7 @@ public class AutoRecommendService
 		}
 
 		clearAdjustmentTimer(itemId);
-		log.info("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
+		log.debug("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
 		updateStatus("Auto: Collect " + itemName + " from GE");
 
 		// When no GE slots are available, clear the buy focus and show collect overlay.
@@ -440,11 +440,11 @@ public class AutoRecommendService
 			{
 				sellPrice = rec.getRecommendedSellPrice();
 				plugin.setRecommendedSellPrice(itemId, sellPrice);
-				log.info("Auto-recommend: Recovered sell price for {} from queue ({})", itemName, sellPrice);
+				log.debug("Auto-recommend: Recovered sell price for {} from queue ({})", itemName, sellPrice);
 			}
 			else
 			{
-				log.info("Auto-recommend: No local sell price for {} - falling through to API lookup", itemName);
+				log.debug("Auto-recommend: No local sell price for {} - falling through to API lookup", itemName);
 				return false;
 			}
 		}
@@ -463,7 +463,7 @@ public class AutoRecommendService
 		invokeFocusCallback(focus);
 		updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 
-		log.info("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
+		log.debug("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
 		return true;
 	}
 
@@ -477,7 +477,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		log.info("Auto-recommend: Sell order placed for item {} - checking next action", itemId);
+		log.debug("Auto-recommend: Sell order placed for item {} - checking next action", itemId);
 
 		// Schedule sell adjustment timer
 		scheduleSellAdjustmentTimer(itemId);
@@ -499,7 +499,7 @@ public class AutoRecommendService
 
 		clearSellAdjustmentTimer(itemId);
 		buyPrices.remove(itemId);
-		log.info("Auto-recommend: Sell completed for item {} - checking next action", itemId);
+		log.debug("Auto-recommend: Sell completed for item {} - checking next action", itemId);
 		focusNextAvailableAction();
 	}
 
@@ -539,7 +539,7 @@ public class AutoRecommendService
 		}
 		else
 		{
-			log.info("Auto-recommend: Offer cancelled (wasBuy={}, filled={}/{}) - re-evaluating",
+			log.debug("Auto-recommend: Offer cancelled (wasBuy={}, filled={}/{}) - re-evaluating",
 				wasBuy, filledQuantity, totalQuantity);
 		}
 
@@ -558,7 +558,7 @@ public class AutoRecommendService
 		ensureSellPriceAvailable(itemId);
 		ensureSellPriceFallback(itemId);
 
-		log.info("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
+		log.debug("Auto-recommend: Partial buy cancelled for item {} ({}/{} filled) - tracked for sell",
 			itemId, filledQuantity, totalQuantity);
 	}
 
@@ -578,7 +578,7 @@ public class AutoRecommendService
 
 		session.addCollectedItem(itemId, remainingQuantity);
 		updateSellPriceFromQueueOrFallback(itemId);
-		log.info("Auto-recommend: Sell cancelled for item {} ({}/{} sold) - tracked {} for re-sell",
+		log.debug("Auto-recommend: Sell cancelled for item {} ({}/{} sold) - tracked {} for re-sell",
 			itemId, filledQuantity, totalQuantity, remainingQuantity);
 	}
 
@@ -598,7 +598,7 @@ public class AutoRecommendService
 		if (wikiPrice != null && wikiPrice.instaBuy > 0)
 		{
 			plugin.setRecommendedSellPrice(itemId, wikiPrice.instaBuy);
-			log.info("Auto-recommend: Using wiki insta-buy {} as sell price fallback for item {}",
+			log.debug("Auto-recommend: Using wiki insta-buy {} as sell price fallback for item {}",
 				wikiPrice.instaBuy, itemId);
 		}
 	}
@@ -631,7 +631,7 @@ public class AutoRecommendService
 		{
 			clearSellAdjustmentTimer(itemId);
 			buyPrices.remove(itemId);
-			log.info("Auto-recommend: Sell collected for {} - advancing", itemName);
+			log.debug("Auto-recommend: Sell collected for {} - advancing", itemName);
 			focusNextAvailableAction();
 		}
 	}
@@ -642,7 +642,7 @@ public class AutoRecommendService
 	 */
 	private void handleBuyCollected(int itemId, String itemName, int quantity)
 	{
-		log.info("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
+		log.debug("Auto-recommend: Buy collected for {} x{} - checking sell", itemName, quantity);
 
 		PlayerSession session = plugin.getSession();
 		if (session == null)
@@ -653,12 +653,12 @@ public class AutoRecommendService
 		ensureSellPriceAvailable(itemId);
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
 		Integer sellPrice = session.getRecommendedPrice(itemId);
-		log.info("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
+		log.debug("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
 			itemId, isCollected, sellPrice);
 
 		if (isCollected && sellPrice != null)
 		{
-			log.info("Auto-recommend: Focusing sell for {} x{}", itemName, quantity);
+			log.debug("Auto-recommend: Focusing sell for {} x{}", itemName, quantity);
 			focusSellForItem(itemId, itemName, quantity);
 			return;
 		}
@@ -723,7 +723,7 @@ public class AutoRecommendService
 		{
 			int count = deferredActions.size();
 			deferredActions.clear();
-			log.info("Auto-recommend: Draining {} deferred actions after step change to {}", count, newStep);
+			log.debug("Auto-recommend: Draining {} deferred actions after step change to {}", count, newStep);
 			focusNextAvailableAction();
 		}
 	}
@@ -749,7 +749,7 @@ public class AutoRecommendService
 		FlipRecommendation rec = findRecommendationForItem(itemId);
 		if (rec != null && rec.getRecommendedSellPrice() > 0)
 		{
-			log.info("Auto-recommend: Recovering sell price for item {} from queue ({})",
+			log.debug("Auto-recommend: Recovering sell price for item {} from queue ({})",
 				itemId, rec.getRecommendedSellPrice());
 			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
 		}
@@ -761,7 +761,7 @@ public class AutoRecommendService
 		if (rec != null && rec.getRecommendedSellPrice() > 0)
 		{
 			plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
-			log.info("Auto-recommend: Updated re-sell price for item {} from queue ({})",
+			log.debug("Auto-recommend: Updated re-sell price for item {} from queue ({})",
 				itemId, rec.getRecommendedSellPrice());
 			return;
 		}
@@ -770,7 +770,7 @@ public class AutoRecommendService
 		PlayerSession session = plugin.getSession();
 		if (session != null && session.getRecommendedPrice(itemId) != null)
 		{
-			log.info("Auto-recommend: Keeping existing sell price for item {} ({})",
+			log.debug("Auto-recommend: Keeping existing sell price for item {} ({})",
 				itemId, session.getRecommendedPrice(itemId));
 		}
 		else
@@ -801,7 +801,7 @@ public class AutoRecommendService
 		lastQueueRefreshMillis = System.currentTimeMillis();
 		plugin.getSession().clearStaleNotifications();
 
-		log.info("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
+		log.debug("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
 		updateOverlayAfterRefresh(currentRec);
 	}
 
@@ -913,7 +913,7 @@ public class AutoRecommendService
 		}
 
 		long age = now - staleOffer.getEffectiveLastActivityAtMillis();
-		log.info("Auto-recommend: Stale & uncompetitive offer for {} (age: {}m)",
+		log.debug("Auto-recommend: Stale & uncompetitive offer for {} (age: {}m)",
 			staleOffer.getItemName(), age / 60000);
 
 		addToStaleQueue(staleOffer);
@@ -957,7 +957,7 @@ public class AutoRecommendService
 		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
 		adjustmentDeadlines.put(itemId, deadline);
-		log.info("Auto-recommend: Adjustment timer scheduled for item {} in {}m", itemId, delay / 60000);
+		log.debug("Auto-recommend: Adjustment timer scheduled for item {} in {}m", itemId, delay / 60000);
 	}
 
 	/**
@@ -973,7 +973,7 @@ public class AutoRecommendService
 		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
 		adjustmentDeadlines.put(itemId, deadline);
-		log.info("Auto-recommend: Adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
+		log.debug("Auto-recommend: Adjustment timer reset for item {} ({}m)", itemId, delay / 60000);
 
 		// Clear stale-notified flag so the 15-minute inactivity check can fire again
 		// if the offer goes quiet after this fill
@@ -1007,13 +1007,13 @@ public class AutoRecommendService
 	{
 		if (!active || adjustmentDeadlines.isEmpty() || trackedOffers == null)
 		{
-			log.info("Auto-recommend: checkAdjustmentTimers skipped (active={}, deadlines={}, offers={})",
+			log.debug("Auto-recommend: checkAdjustmentTimers skipped (active={}, deadlines={}, offers={})",
 				active, adjustmentDeadlines.size(), trackedOffers != null ? trackedOffers.size() : "null");
 			return;
 		}
 
 		long now = System.currentTimeMillis();
-		log.info("Auto-recommend: Checking {} adjustment timers (recommendations={})",
+		log.debug("Auto-recommend: Checking {} adjustment timers (recommendations={})",
 			adjustmentDeadlines.size(),
 			currentRecommendations != null ? currentRecommendations.size() : "null");
 
@@ -1026,7 +1026,7 @@ public class AutoRecommendService
 			String itemName = itemNames.getOrDefault(entry.getKey(), "id=" + entry.getKey());
 			if (now >= deadline)
 			{
-				log.info("Auto-recommend: Timer expired for {} (overdue by {}s)",
+				log.debug("Auto-recommend: Timer expired for {} (overdue by {}s)",
 					itemName, (now - deadline) / 1000);
 				processExpiredAdjustmentTimer(entry, trackedOffers, currentRecommendations, iter, now);
 			}
@@ -1068,7 +1068,7 @@ public class AutoRecommendService
 		// Get buy price (cost basis) for breakeven calculation
 		Integer costBasis = buyPrices.getOrDefault(itemId, offer.getPrice());
 
-		log.info("Auto-recommend: Checking buy adjustment for {} (price={}, {}min elapsed)",
+		log.debug("Auto-recommend: Checking buy adjustment for {} (price={}, {}min elapsed)",
 			itemName, offer.getPrice(), minutesSince);
 
 		plugin.getApiClient().getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
@@ -1135,14 +1135,14 @@ public class AutoRecommendService
 
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
 		{
-			log.info("Auto-recommend: API recommends adjust {} buy {} → {} gp",
+			log.debug("Auto-recommend: API recommends adjust {} buy {} → {} gp",
 				offer.getItemName(), offer.getPrice(), response.getRecommendedPrice());
 			addToStaleQueue(offer);
 			adjustmentDeadlines.remove(itemId);
 		}
 		else if (response.isCancelAndSell())
 		{
-			log.info("Auto-recommend: API says cancel {} — margin gone", offer.getItemName());
+			log.debug("Auto-recommend: API says cancel {} — margin gone", offer.getItemName());
 			addToStaleQueue(offer);
 			adjustmentDeadlines.remove(itemId);
 		}
@@ -1184,13 +1184,13 @@ public class AutoRecommendService
 			{
 				adjustmentDeadlines.put(offer.getItemId(), now - 1);
 				anyAlreadyStale = true;
-				log.info("Auto-recommend: {} already stale (age={}m, threshold={}m) — will check immediately",
+				log.debug("Auto-recommend: {} already stale (age={}m, threshold={}m) — will check immediately",
 					offer.getItemName(), offerAgeMs / 60000, delayMs / 60000);
 			}
 			else
 			{
 				adjustmentDeadlines.put(offer.getItemId(), now + remainingMs);
-				log.info("Auto-recommend: Rescheduled adjustment timer for {} in {}m (age={}m, threshold={}m)",
+				log.debug("Auto-recommend: Rescheduled adjustment timer for {} in {}m (age={}m, threshold={}m)",
 					offer.getItemName(), remainingMs / 60000, offerAgeMs / 60000, delayMs / 60000);
 			}
 		}
@@ -1235,7 +1235,7 @@ public class AutoRecommendService
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		adjustmentDeadlines.put(offer.getItemId(), deadline);
-		log.info("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
+		log.debug("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
 			offer.getItemName(), offerAgeMs / 60000);
 	}
 
@@ -1248,7 +1248,7 @@ public class AutoRecommendService
 		SellAdjustmentState state = new SellAdjustmentState(
 			offer.getItemId(), offer.getItemName(), buyPrice, deadline);
 		sellAdjustmentStates.put(offer.getItemId(), state);
-		log.info("Auto-recommend: Scheduled missing sell timer for {} (age={}m)",
+		log.debug("Auto-recommend: Scheduled missing sell timer for {} (age={}m)",
 			offer.getItemName(), offerAgeMs / 60000);
 	}
 
@@ -1338,7 +1338,7 @@ public class AutoRecommendService
 		boolean wasEmpty = staleOfferQueue.isEmpty();
 		staleOfferQueue.add(offer);
 		promptedStaleItems.add(offer.getItemId());
-		log.info("Auto-recommend: Added {} to stale queue (queue size: {})",
+		log.debug("Auto-recommend: Added {} to stale queue (queue size: {})",
 			offer.getItemName(), staleOfferQueue.size());
 
 		if (wasEmpty)
@@ -1394,7 +1394,7 @@ public class AutoRecommendService
 			itemId, sellOffer.getItemName(), buyPrice, deadline);
 		sellAdjustmentStates.put(itemId, state);
 
-		log.info("Auto-recommend: Sell adjustment timer scheduled for {} in {}m (buyPrice={})",
+		log.debug("Auto-recommend: Sell adjustment timer scheduled for {} in {}m (buyPrice={})",
 			sellOffer.getItemName(), delay / 60000, buyPrice);
 	}
 
@@ -1426,7 +1426,7 @@ public class AutoRecommendService
 		}
 
 		state.deadline = System.currentTimeMillis() + AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
-		log.info("Auto-recommend: Sell adjustment timer reset for item {} ({}m)", itemId,
+		log.debug("Auto-recommend: Sell adjustment timer reset for item {} ({}m)", itemId,
 			AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS / 60000);
 
 		// Clear stale-notified flag so the inactivity check can fire again
@@ -1489,7 +1489,7 @@ public class AutoRecommendService
 	{
 		String timeframe = config.flipTimeframe().getApiValue();
 
-		log.info("Auto-recommend: Checking sell adjustment for {} (price={}, buyPrice={}, {}min elapsed, adj#{})",
+		log.debug("Auto-recommend: Checking sell adjustment for {} (price={}, buyPrice={}, {}min elapsed, adj#{})",
 			state.itemName, offer.getPrice(), state.averageBuyPrice, minutesSince, state.adjustmentCount);
 
 		PlayerSession session = plugin.getSession();
@@ -1546,7 +1546,7 @@ public class AutoRecommendService
 			int newPrice = response.getRecommendedPrice();
 			state.adjustmentCount++;
 
-			log.info("Auto-recommend: Sell adjustment for {} — {} → {} gp (adj#{})",
+			log.debug("Auto-recommend: Sell adjustment for {} — {} → {} gp (adj#{})",
 				state.itemName, offer.getPrice(), newPrice, state.adjustmentCount);
 
 			// The API already determined this sell is overpriced — always queue the prompt.
@@ -1569,7 +1569,7 @@ public class AutoRecommendService
 		else
 		{
 			// Unexpected action — log and reschedule
-			log.info("Auto-recommend: Sell adjustment response for {}: action={}, message={}",
+			log.debug("Auto-recommend: Sell adjustment response for {}: action={}, message={}",
 				state.itemName, response.getAction(), response.getMessage());
 			state.deadline = System.currentTimeMillis()
 				+ AdjustmentTimerUtils.nextCheckDelayMs(response.getNextCheckMinutes());
@@ -1613,13 +1613,13 @@ public class AutoRecommendService
 			if (remainingMs <= 0)
 			{
 				deadline = now - 1;
-				log.info("Auto-recommend: Sell {} already stale (age={}m, threshold={}m) — will check immediately",
+				log.debug("Auto-recommend: Sell {} already stale (age={}m, threshold={}m) — will check immediately",
 					offer.getItemName(), offerAgeMs / 60000, delayMs / 60000);
 			}
 			else
 			{
 				deadline = now + remainingMs;
-				log.info("Auto-recommend: Rescheduled sell adjustment timer for {} in {}m (age={}m, threshold={}m)",
+				log.debug("Auto-recommend: Rescheduled sell adjustment timer for {} in {}m (age={}m, threshold={}m)",
 					offer.getItemName(), remainingMs / 60000, offerAgeMs / 60000, delayMs / 60000);
 			}
 
@@ -1719,7 +1719,7 @@ public class AutoRecommendService
 		long age = System.currentTimeMillis() - state.savedAtMillis;
 		if (age > maxAgeMs)
 		{
-			log.info("Auto-recommend: Persisted state is stale ({}m old), not restoring", age / 60000);
+			log.debug("Auto-recommend: Persisted state is stale ({}m old), not restoring", age / 60000);
 			return false;
 		}
 
@@ -1747,10 +1747,10 @@ public class AutoRecommendService
 		if (state.buyPrices != null)
 		{
 			buyPrices.putAll(state.buyPrices);
-			log.info("Auto-recommend: Restored {} buy prices from persisted state", state.buyPrices.size());
+			log.debug("Auto-recommend: Restored {} buy prices from persisted state", state.buyPrices.size());
 		}
 
-		log.info("Auto-recommend: Restored state with {} items in queue, index {}",
+		log.debug("Auto-recommend: Restored state with {} items in queue, index {}",
 			recommendationQueue.size(), currentIndex);
 
 		focusCurrent();
@@ -1776,7 +1776,7 @@ public class AutoRecommendService
 		{
 			TrackedOffer skipped = staleOfferQueue.remove(0);
 			staleResellPrices.remove(skipped.getItemId());
-			log.info("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
+			log.debug("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
 			focusNextAvailableAction();
 			return;
 		}
@@ -1786,14 +1786,14 @@ public class AutoRecommendService
 		if (collectedId >= 0)
 		{
 			PlayerSession session = plugin.getSession();
-			log.info("Auto-recommend: User skipped collected item sell prompt for item {}", collectedId);
+			log.debug("Auto-recommend: User skipped collected item sell prompt for item {}", collectedId);
 			session.removeCollectedItem(collectedId);
 			focusedCollectedItemId = -1;
 			focusNextAvailableAction();
 			return;
 		}
 
-		log.info("Auto-recommend: User skipped current recommendation");
+		log.debug("Auto-recommend: User skipped current recommendation");
 		advanceToNext();
 	}
 
@@ -1839,7 +1839,7 @@ public class AutoRecommendService
 
 		if (!hasAvailableGESlots())
 		{
-			log.info("Auto-recommend: All GE slots full - waiting for collection");
+			log.debug("Auto-recommend: All GE slots full - waiting for collection");
 			promptCollection();
 			return;
 		}
@@ -1988,7 +1988,7 @@ public class AutoRecommendService
 
 		for (int staleId : staleItems)
 		{
-			log.info("Auto-recommend: Cleaning up stale collected item {} (not in inventory or GE)", staleId);
+			log.debug("Auto-recommend: Cleaning up stale collected item {} (not in inventory or GE)", staleId);
 			session.removeCollectedItem(staleId);
 		}
 

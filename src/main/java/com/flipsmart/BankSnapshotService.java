@@ -135,7 +135,7 @@ public class BankSnapshotService
 			List<FlipSmartApiClient.BankItemId> gearItems = collectGearItems();
 			long geOffersValue = calculateGEOffersValue();
 
-			log.info("Capturing bank snapshot: {} bank items, {} inv items, {} gear items, ge={} for RSN {}",
+			log.debug("Capturing bank snapshot: {} bank items, {} inv items, {} gear items, ge={} for RSN {}",
 				items.size(), inventoryItems.size(), gearItems.size(), geOffersValue, rsn);
 
 			apiClient.createBankSnapshotAsync(rsn, items, inventoryItems, gearItems, geOffersValue).thenAccept(response ->
@@ -143,7 +143,7 @@ public class BankSnapshotService
 				if (response != null)
 				{
 					String wealthStr = String.format("%,d", response.getTotalWealth());
-					log.info("Bank snapshot captured: {} items, {} GP total wealth",
+					log.debug("Bank snapshot captured: {} items, {} GP total wealth",
 						response.getItemCount(), wealthStr);
 					postBankSnapshotMessage(
 						String.format("Bank snapshot saved: %s GP total wealth", wealthStr),

@@ -92,7 +92,7 @@ public class ActiveFlipTracker
 		{
 			if (Boolean.TRUE.equals(success))
 			{
-				log.info("Dismissed active flip for item {}", itemId);
+				log.debug("Dismissed active flip for item {}", itemId);
 				if (onPanelRefreshNeeded != null)
 				{
 					javax.swing.SwingUtilities.invokeLater(onPanelRefreshNeeded);
@@ -112,12 +112,12 @@ public class ActiveFlipTracker
 			return;
 		}
 
-		log.info("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
+		log.debug("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
 		apiClient.dismissActiveFlipAsync(itemId, getRsnSafe().orElse(null)).thenAccept(success ->
 		{
 			if (Boolean.TRUE.equals(success))
 			{
-				log.info("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
+				log.debug("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
 				if (onPanelRefreshNeeded != null)
 				{
 					javax.swing.SwingUtilities.invokeLater(onPanelRefreshNeeded);
@@ -166,7 +166,7 @@ public class ActiveFlipTracker
 	{
 		Set<Integer> activeItemIds = collectAllActiveItemIds();
 
-		log.info("Cleaning up stale flips - {} item IDs are truly active", activeItemIds.size());
+		log.debug("Cleaning up stale flips - {} item IDs are truly active", activeItemIds.size());
 
 		apiClient.cleanupStaleFlipsAsync(activeItemIds, getRsnSafe().orElse(null))
 			.thenAccept(this::handleCleanupResult);
@@ -189,7 +189,7 @@ public class ActiveFlipTracker
 					&& itemIds.add(offer.getItemId()))
 				{
 					addedFromClient++;
-					log.info("Cleanup safety: item {} found in GE client state but not in tracked offers",
+					log.debug("Cleanup safety: item {} found in GE client state but not in tracked offers",
 						offer.getItemId());
 				}
 			}
@@ -207,7 +207,7 @@ public class ActiveFlipTracker
 	{
 		if (Boolean.TRUE.equals(success))
 		{
-			log.info("Stale flip cleanup completed successfully");
+			log.debug("Stale flip cleanup completed successfully");
 			if (onActiveFlipsRefreshNeeded != null)
 			{
 				javax.swing.SwingUtilities.invokeLater(onActiveFlipsRefreshNeeded);
@@ -273,7 +273,7 @@ public class ActiveFlipTracker
 
 		if (actualQty == 0)
 		{
-			log.info("No items found for {} during validation - dismissing active flip", flip.getItemName());
+			log.debug("No items found for {} during validation - dismissing active flip", flip.getItemName());
 			dismissFlip(itemId);
 			return;
 		}
@@ -288,7 +288,7 @@ public class ActiveFlipTracker
 		}
 
 		String direction = actualQty > activeFlipQty ? "up" : "down";
-		log.info("Inventory quantity mismatch for {} - active flip shows {} but have {} (inv + sell slots). Syncing {}.",
+		log.debug("Inventory quantity mismatch for {} - active flip shows {} but have {} (inv + sell slots). Syncing {}.",
 			flip.getItemName(), activeFlipQty, actualQty, direction);
 
 		int orderQty = flip.getOrderQuantity() > 0 ? flip.getOrderQuantity() : Math.max(activeFlipQty, actualQty);

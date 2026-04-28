@@ -77,19 +77,19 @@ public class OfflineSyncService
 	public void restoreCollectedItems()
 	{
 		String key = getCollectedItemsKey();
-		log.info("Attempting to restore collected items for RSN: {} (key: {})", session.getRsn(), key);
+		log.debug("Attempting to restore collected items for RSN: {} (key: {})", session.getRsn(), key);
 
 		Set<Integer> persisted = loadPersistedCollectedItems();
 		if (!persisted.isEmpty())
 		{
 			Map<Integer, Integer> quantities = loadPersistedCollectedQuantities();
 			session.restoreCollectedItems(persisted, quantities);
-			log.info("Restored {} collected items from previous session: {} (with {} quantities)",
+			log.debug("Restored {} collected items from previous session: {} (with {} quantities)",
 				persisted.size(), persisted, quantities.size());
 		}
 		else
 		{
-			log.info("No collected items found in config for RSN: {}", session.getRsn());
+			log.debug("No collected items found in config for RSN: {}", session.getRsn());
 			session.clearCollectedItems();
 		}
 
@@ -120,7 +120,7 @@ public class OfflineSyncService
 				String json = gson.toJson(offersToSave);
 				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
 				configManager.setConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY, json);
-				log.info("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), session.getRsn());
+				log.debug("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), session.getRsn());
 			}
 			catch (Exception e)
 			{
@@ -153,7 +153,7 @@ public class OfflineSyncService
 					configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
 				}
 
-				log.info("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
+				log.debug("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
 			}
 			catch (Exception e)
 			{
@@ -192,7 +192,7 @@ public class OfflineSyncService
 			}
 		}
 
-		log.info("Preloaded {} persisted offers into session for timestamp preservation",
+		log.debug("Preloaded {} persisted offers into session for timestamp preservation",
 			persisted.size());
 	}
 
@@ -229,7 +229,7 @@ public class OfflineSyncService
 		// (e.g., client crash, force close where shutDown() doesn't run)
 		persistOfferState();
 
-		log.info("Offline sync completed for {}", session.getRsn());
+		log.debug("Offline sync completed for {}", session.getRsn());
 
 		if (onSyncComplete != null)
 		{
@@ -360,7 +360,7 @@ public class OfflineSyncService
 				continue;
 			}
 
-			log.info("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
+			log.debug("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
 				slot, persistedOffer.getItemName(), persistedOffer.getTotalQuantity());
 
 			if (persistedOffer.isBuy())
@@ -387,7 +387,7 @@ public class OfflineSyncService
 		// If the order was fully sold before logout, only collection happened offline — don't re-record.
 		if (persistedSoldQty >= totalQty && totalQty > 0)
 		{
-			log.info("Sell order for {} was complete before logout ({}/{}). Collection happened offline — no offline sells to record.",
+			log.debug("Sell order for {} was complete before logout ({}/{}). Collection happened offline — no offline sells to record.",
 				persistedOffer.getItemName(), persistedSoldQty, totalQty);
 		}
 		else
@@ -395,13 +395,13 @@ public class OfflineSyncService
 			int offlineSells = totalQty - persistedSoldQty;
 			if (offlineSells > 0)
 			{
-				log.info("Detected {} {} sold offline (total: {}, tracked before logout: {}). Recording SELL transaction.",
+				log.debug("Detected {} {} sold offline (total: {}, tracked before logout: {}). Recording SELL transaction.",
 					offlineSells, persistedOffer.getItemName(), totalQty, persistedSoldQty);
 				recordOfflineSellTransaction(persistedOffer, offlineSells);
 			}
 			else
 			{
-				log.info("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
+				log.debug("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
 			}
 		}
 
@@ -411,7 +411,7 @@ public class OfflineSyncService
 			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
 			if (inventoryCount == 0)
 			{
-				log.info("No {} in inventory after offline sell - dismissing active flip", persistedOffer.getItemName());
+				log.debug("No {} in inventory after offline sell - dismissing active flip", persistedOffer.getItemName());
 				activeFlipTracker.dismissFlip(persistedOffer.getItemId());
 			}
 		});
@@ -456,7 +456,7 @@ public class OfflineSyncService
 			}
 			else if (trackedFills > 0)
 			{
-				log.info("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
+				log.debug("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
 					persistedOffer.getItemName(), trackedFills);
 			}
 		});
@@ -476,7 +476,7 @@ public class OfflineSyncService
 		}
 		else
 		{
-			log.info("Adding {} to collected tracking (had {} items filled before going offline)",
+			log.debug("Adding {} to collected tracking (had {} items filled before going offline)",
 				persistedOffer.getItemName(), trackedFills);
 		}
 	}
@@ -501,7 +501,7 @@ public class OfflineSyncService
 	 */
 	private void syncOfflineCompletedOrder(TrackedOffer persistedOffer, int inventoryCount, int trackedFills, int actualFills)
 	{
-		log.info("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
+		log.debug("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
 			persistedOffer.getItemName(), trackedFills, inventoryCount, actualFills);
 
 		String rsn = getRsnSafe().orElse(null);
@@ -626,7 +626,7 @@ public class OfflineSyncService
 
 			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
 			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
-			log.info("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, session.getRsn());
+			log.debug("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, session.getRsn());
 			return offers != null ? offers : new HashMap<>();
 		}
 		catch (Exception e)
@@ -647,7 +647,7 @@ public class OfflineSyncService
 			Map<Integer, TrackedOffer> result = tryLoadOffersFromKey(PERSISTED_OFFERS_FALLBACK_KEY);
 			if (!result.isEmpty())
 			{
-				log.info("Loaded {} offers from fallback key", result.size());
+				log.debug("Loaded {} offers from fallback key", result.size());
 				return result;
 			}
 
@@ -663,7 +663,7 @@ public class OfflineSyncService
 				result = tryLoadOffersFromKey(keyPart);
 				if (!result.isEmpty())
 				{
-					log.info("Loaded {} offers via key scan (key: {})", result.size(), keyPart);
+					log.debug("Loaded {} offers via key scan (key: {})", result.size(), keyPart);
 					return result;
 				}
 			}

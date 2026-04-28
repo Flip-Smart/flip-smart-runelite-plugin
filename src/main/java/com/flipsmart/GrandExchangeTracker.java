@@ -237,7 +237,7 @@ public class GrandExchangeTracker
 		if (remaining > 0)
 		{
 			session.addCollectedItem(ctx.itemId, remaining);
-			log.info("Sell cancelled for {} - re-added {} unsold items to collected",
+			log.debug("Sell cancelled for {} - re-added {} unsold items to collected",
 				ctx.itemName, remaining);
 		}
 	}
@@ -253,7 +253,7 @@ public class GrandExchangeTracker
 			long incrementalSpent = ctx.spent - previousSpent;
 			int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
-			log.info("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
+			log.debug("Recording final transaction before cancellation: {} {} x{}/{} @ {} gp each",
 				ctx.isBuy ? "BUY" : "SELL",
 				ctx.itemName,
 				newQuantity,
@@ -271,7 +271,7 @@ public class GrandExchangeTracker
 				.build());
 		}
 
-		log.info("Order cancelled: {} {} - {} items filled out of {}",
+		log.debug("Order cancelled: {} {} - {} items filled out of {}",
 			ctx.isBuy ? "BUY" : "SELL",
 			ctx.itemName,
 			ctx.quantitySold,
@@ -281,13 +281,13 @@ public class GrandExchangeTracker
 	private void handleZeroFillCancellation(OfferContext ctx)
 	{
 		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
-		log.info("Order cancelled with no fills: {} {}",
+		log.debug("Order cancelled with no fills: {} {}",
 			ctx.isBuy ? "BUY" : "SELL",
 			ctx.itemName);
 
 		if (ctx.isBuy)
 		{
-			log.info("Dismissing active flip for {} - buy order cancelled with 0 fills", ctx.itemName);
+			log.debug("Dismissing active flip for {} - buy order cancelled with 0 fills", ctx.itemName);
 			apiClient.dismissActiveFlipAsync(ctx.itemId, getRsn().orElse(null));
 			fireActiveFlipsRefresh();
 		}
@@ -296,7 +296,7 @@ public class GrandExchangeTracker
 	private void syncCancelledPartialBuy(OfferContext ctx)
 	{
 		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
-		log.info("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
+		log.debug("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
 			ctx.quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
 		session.addCollectedItem(ctx.itemId, ctx.quantitySold);
 
@@ -304,7 +304,7 @@ public class GrandExchangeTracker
 		if (rsn != null && cancelledOffer != null)
 		{
 			int pricePerItem = (ctx.quantitySold > 0) ? (int)((long) ctx.spent / ctx.quantitySold) : 0;
-			log.info("Syncing cancelled order quantity to backend: {} x{} (was {})",
+			log.debug("Syncing cancelled order quantity to backend: {} x{} (was {})",
 				ctx.itemName, ctx.quantitySold, cancelledOffer.getTotalQuantity());
 			apiClient.syncActiveFlipAsync(
 				ctx.itemId,
@@ -359,7 +359,7 @@ public class GrandExchangeTracker
 		if (inventoryCount > trackedFills)
 		{
 			collectedQty = Math.min(inventoryCount, collectedOffer.getTotalQuantity());
-			log.info("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Using {} as collected quantity.",
+			log.debug("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Using {} as collected quantity.",
 				collectedOffer.getItemName(), trackedFills, inventoryCount, collectedQty);
 
 			String rsn = getRsn().orElse(null);
@@ -378,7 +378,7 @@ public class GrandExchangeTracker
 			}
 		}
 
-		log.info("Buy offer collected from GE: {} x{} - tracking until sold",
+		log.debug("Buy offer collected from GE: {} x{} - tracking until sold",
 			collectedOffer.getItemName(), collectedQty);
 		session.addCollectedItem(collectedOffer.getItemId(), collectedQty);
 	}
@@ -388,13 +388,13 @@ public class GrandExchangeTracker
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
 		if (inventoryCount > 0)
 		{
-			log.info("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking",
+			log.debug("Sell offer collected/modified for {}: {} items returned to inventory - keeping active flip tracking",
 				collectedOffer.getItemName(), inventoryCount);
 			session.addCollectedItem(collectedOffer.getItemId(), inventoryCount);
 		}
 		else
 		{
-			log.info("Sell offer for {} went empty with no items in inventory - dismissing active flip",
+			log.debug("Sell offer for {} went empty with no items in inventory - dismissing active flip",
 				collectedOffer.getItemName());
 			activeFlipTracker.dismissFlip(collectedOffer.getItemId());
 		}
@@ -405,7 +405,7 @@ public class GrandExchangeTracker
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
 		if (inventoryCount > 0)
 		{
-			log.info("Buy order for {} went empty but found {} items in inventory - may have filled offline",
+			log.debug("Buy order for {} went empty but found {} items in inventory - may have filled offline",
 				collectedOffer.getItemName(), inventoryCount);
 			session.addCollectedItem(collectedOffer.getItemId(), inventoryCount);
 		}
@@ -421,7 +421,7 @@ public class GrandExchangeTracker
 				: collectedOffer.getPrice();
 			int fallbackSellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
 			session.setRecommendedPrice(collectedOffer.getItemId(), fallbackSellPrice);
-			log.info("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",
+			log.debug("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",
 				collectedOffer.getItemName(), fallbackSellPrice, buyPrice);
 		}
 	}
@@ -550,7 +550,7 @@ public class GrandExchangeTracker
 		FlipRecommendation currentRec = autoRecommendService.getCurrentRecommendation();
 		if (currentRec != null && currentRec.getItemId() == ctx.itemId && currentRec.getRecommendedSellPrice() > 0)
 		{
-			log.info("Immediate-fill buy for {} - pre-storing recommended sell price {}", ctx.itemName, currentRec.getRecommendedSellPrice());
+			log.debug("Immediate-fill buy for {} - pre-storing recommended sell price {}", ctx.itemName, currentRec.getRecommendedSellPrice());
 			session.setRecommendedPrice(ctx.itemId, currentRec.getRecommendedSellPrice());
 		}
 	}
@@ -561,7 +561,7 @@ public class GrandExchangeTracker
 		long incrementalSpent = ctx.spent - previousSpent;
 		int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
-		log.info("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
+		log.debug("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
 			ctx.isBuy ? "BUY" : "SELL",
 			ctx.itemName,
 			newQuantity,
@@ -609,7 +609,7 @@ public class GrandExchangeTracker
 	{
 		if (isBuy && isAutoRecommendActive())
 		{
-			log.info("Immediate-fill buy for {} - advancing auto-recommend queue", itemName);
+			log.debug("Immediate-fill buy for {} - advancing auto-recommend queue", itemName);
 			autoRecommendService.onBuyOrderPlaced(itemId);
 		}
 		else if (!isBuy)
@@ -620,7 +620,7 @@ public class GrandExchangeTracker
 
 	private void handleImmediateFillSell(int itemId, String itemName)
 	{
-		log.info("Immediate-fill sell for {} - performing sell bookkeeping", itemName);
+		log.debug("Immediate-fill sell for {} - performing sell bookkeeping", itemName);
 		String rsn = getRsn().orElse(null);
 		if (rsn != null)
 		{
@@ -696,7 +696,7 @@ public class GrandExchangeTracker
 
 	private void recordNewSellOrder(OfferContext ctx)
 	{
-		log.info("Sell order placed for {} x{} - marking active flip as selling", ctx.itemName, ctx.totalQuantity);
+		log.debug("Sell order placed for {} x{} - marking active flip as selling", ctx.itemName, ctx.totalQuantity);
 		String rsn = getRsn().orElse(null);
 		if (rsn != null)
 		{
@@ -794,7 +794,7 @@ public class GrandExchangeTracker
 		{
 			int orderQty = matchingFlip.getOrderQuantity() > 0
 				? matchingFlip.getOrderQuantity() : inventoryCount;
-			log.info("Syncing inventory-corrected quantity for {} to API: {} items",
+			log.debug("Syncing inventory-corrected quantity for {} to API: {} items",
 				matchingFlip.getItemName(), inventoryCount);
 			apiClient.syncActiveFlipAsync(
 				matchingFlip.getItemId(),
@@ -860,7 +860,7 @@ public class GrandExchangeTracker
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
 		}
-		log.info("Auto-focused on active flip for sell: {} @ {} gp (qty: api={}, inv={}, using={})",
+		log.debug("Auto-focused on active flip for sell: {} @ {} gp (qty: api={}, inv={}, using={})",
 			flip.getItemName(), sellPrice, apiQuantity, inventoryFallbackCount, sellQuantity);
 	}
 

@@ -516,7 +516,7 @@ public class FlipSmartPlugin extends Plugin
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.info("Flip Smart started!");
+		log.debug("Flip Smart started!");
 		overlayManager.add(geOverlay);
 		overlayManager.add(geSlotOverlay);
 		overlayManager.add(flipAssistOverlay);
@@ -648,7 +648,7 @@ public class FlipSmartPlugin extends Plugin
 		if (focus != null)
 		{
 			geSlotOverlay.clearAllAdjustmentHighlights();
-			log.info("Auto-recommend focus set: {} {} @ {} gp",
+			log.debug("Auto-recommend focus set: {} {} @ {} gp",
 				focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
 			// Keep panel focus in sync so the active flip refresh cycle doesn't
 			// re-create a stale sell overlay for a previously focused item
@@ -709,7 +709,7 @@ public class FlipSmartPlugin extends Plugin
 		boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
 		if (stepMatches)
 		{
-			log.info("Clearing Flip Assist focus - order submitted for {} ({})",
+			log.debug("Clearing Flip Assist focus - order submitted for {} ({})",
 				focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
 			flipAssistOverlay.clearFocus();
 			updateInventoryHighlightForFocus(null);
@@ -723,7 +723,7 @@ public class FlipSmartPlugin extends Plugin
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.info("Flip Smart stopped!");
+		log.debug("Flip Smart stopped!");
 
 		// Persist refresh token on shutdown to prevent session loss
 		String currentRefreshToken = apiClient.getRefreshToken();
@@ -751,7 +751,7 @@ public class FlipSmartPlugin extends Plugin
 		if (!session.getTrackedOffers().isEmpty())
 		{
 			offlineSyncService.persistOfferState();
-			log.info("Persisted offer state on shutdown for {}", rsnForPersistence);
+			log.debug("Persisted offer state on shutdown for {}", rsnForPersistence);
 		}
 		
 		overlayManager.remove(geOverlay);
@@ -912,7 +912,7 @@ public class FlipSmartPlugin extends Plugin
 
 	private void handleLoggedInState()
 	{
-		log.info("Player logged in");
+		log.debug("Player logged in");
 		updateMembersWorldCache();
 		session.onLoggedIn();
 		syncRSN();
@@ -929,7 +929,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				session.setRsn(persistedRsn);
 				lastKnownRsn = persistedRsn;
-				log.info("Using persisted RSN fallback: {}", persistedRsn);
+				log.debug("Using persisted RSN fallback: {}", persistedRsn);
 			}
 		}
 
@@ -938,7 +938,7 @@ public class FlipSmartPlugin extends Plugin
 		apiClient.fetchWikiPrices();
 
 		apiClient.fetchEntitlementsAsync(getCurrentRsnSafe().orElse(null)).thenAccept(isPremium -> {
-			log.info("User premium status: {}", isPremium);
+			log.debug("User premium status: {}", isPremium);
 			if (flipFinderPanel != null)
 			{
 				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
@@ -1039,7 +1039,7 @@ public class FlipSmartPlugin extends Plugin
 
 			if (corrected > 0)
 			{
-				log.info("Corrected {} offer timestamps from backend active flips", corrected);
+				log.debug("Corrected {} offer timestamps from backend active flips", corrected);
 			}
 		}).exceptionally(e ->
 		{
@@ -1073,7 +1073,7 @@ public class FlipSmartPlugin extends Plugin
 
 		if (backendMs > 0)
 		{
-			log.info("Backfilled missing timestamp for {} from backend ({}m ago)",
+			log.debug("Backfilled missing timestamp for {} from backend ({}m ago)",
 				offer.getItemName(), (System.currentTimeMillis() - backendMs) / 60000);
 			offer.setCreatedAtMillis(backendMs);
 			return true;
@@ -1091,7 +1091,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 		else
 		{
-			log.info("Skipping cleanup - no GE offers or collected items detected, may not be safe");
+			log.debug("Skipping cleanup - no GE offers or collected items detected, may not be safe");
 		}
 	}
 
@@ -1150,11 +1150,11 @@ public class FlipSmartPlugin extends Plugin
 		configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
 		if (previous != null && !previous.equals(rsn))
 		{
-			log.info("RSN switched: {} -> {}", previous, rsn);
+			log.debug("RSN switched: {} -> {}", previous, rsn);
 		}
 		else
 		{
-			log.info("RSN synced: {}", rsn);
+			log.debug("RSN synced: {}", rsn);
 		}
 		apiClient.updateRSN(rsn);
 	}
@@ -1178,7 +1178,7 @@ public class FlipSmartPlugin extends Plugin
 				String cached = session.getRsn();
 				if (!liveRsn.equals(cached))
 				{
-					log.info("RSN refreshed from client: {} -> {}", cached, liveRsn);
+					log.debug("RSN refreshed from client: {} -> {}", cached, liveRsn);
 					session.setRsn(liveRsn);
 					lastKnownRsn = liveRsn;
 					configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, liveRsn);
@@ -1324,7 +1324,7 @@ public class FlipSmartPlugin extends Plugin
 			flipAssistOverlay.setFocusedFlip(focus);
 			if (focus != null)
 			{
-				log.info("Flip Assist focus set: {} {} - {} @ {} gp", 
+				log.debug("Flip Assist focus set: {} {} - {} @ {} gp", 
 					focus.getStep(),
 					focus.getItemName(),
 					focus.getCurrentStepQuantity(),
@@ -1332,7 +1332,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 			else
 			{
-				log.info("Flip Assist focus cleared");
+				log.debug("Flip Assist focus cleared");
 				flipAssistOverlay.clearFocus();
 			}
 		});
@@ -1342,7 +1342,7 @@ public class FlipSmartPlugin extends Plugin
 			// Sync RSN to API if we have one (player is logged in)
 			if (session.getRsn() != null && !session.getRsn().isEmpty())
 			{
-				log.info("Auth success callback - syncing RSN: {}", session.getRsn());
+				log.debug("Auth success callback - syncing RSN: {}", session.getRsn());
 				apiClient.updateRSN(session.getRsn());
 			}
 			else
@@ -1377,7 +1377,7 @@ public class FlipSmartPlugin extends Plugin
 			.build();
 
 		clientToolbar.addNavigation(flipFinderNavButton);
-		log.info("Flip Finder panel initialized");
+		log.debug("Flip Finder panel initialized");
 	}
 
 	/**
@@ -1491,7 +1491,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}, refreshIntervalMs, refreshIntervalMs);
 
-		log.info("Flip Finder auto-refresh started (every {} minutes)", refreshMinutes);
+		log.debug("Flip Finder auto-refresh started (every {} minutes)", refreshMinutes);
 	}
 
 	/**
@@ -1503,7 +1503,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			flipFinderRefreshTimer.cancel();
 			flipFinderRefreshTimer = null;
-			log.info("Flip Finder auto-refresh stopped");
+			log.debug("Flip Finder auto-refresh stopped");
 		}
 	}
 
@@ -1565,7 +1565,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
 
-		log.info("Auto-recommend refresh timer started (every 2 minutes)");
+		log.debug("Auto-recommend refresh timer started (every 2 minutes)");
 	}
 
 	private void runRefreshCycle()
@@ -1638,7 +1638,7 @@ public class FlipSmartPlugin extends Plugin
 		AutoRecommendService.PersistedState state = autoRecommendService.getStateForPersistence();
 		String json = gson.toJson(state);
 		configManager.setConfiguration(CONFIG_GROUP, getAutoRecommendStateKey(), json);
-		log.info("Persisted auto-recommend state ({} items in queue)", state.queue != null ? state.queue.size() : 0);
+		log.debug("Persisted auto-recommend state ({} items in queue)", state.queue != null ? state.queue.size() : 0);
 	}
 
 	/**
@@ -1657,7 +1657,7 @@ public class FlipSmartPlugin extends Plugin
 			AutoRecommendService.PersistedState state = gson.fromJson(json, AutoRecommendService.PersistedState.class);
 			if (autoRecommendService.restoreState(state, AutoRecommendService.MAX_PERSISTED_AGE_MS))
 			{
-				log.info("Restored auto-recommend state from previous session");
+				log.debug("Restored auto-recommend state from previous session");
 
 				// Update the panel button
 				if (flipFinderPanel != null)

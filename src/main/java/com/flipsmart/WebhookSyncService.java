@@ -131,7 +131,7 @@ public class WebhookSyncService
 		// If webhook URL is empty, delete webhook from backend
 		if (webhookUrl == null || webhookUrl.trim().isEmpty())
 		{
-			log.info("Webhook URL cleared in plugin config (lastSynced={})", lastSyncedWebhookUrl);
+			log.debug("Webhook URL cleared in plugin config (lastSynced={})", lastSyncedWebhookUrl);
 			if (lastSyncedWebhookUrl != null && !lastSyncedWebhookUrl.trim().isEmpty())
 			{
 				deleteWebhook();
@@ -151,7 +151,7 @@ public class WebhookSyncService
 			notifySale,
 			notifySuggestion,
 			() -> {
-				log.info("Webhook config synced to backend successfully");
+				log.debug("Webhook config synced to backend successfully");
 				lastSyncedWebhookUrl = webhookUrl;
 				lastSyncedNotifySale = notifySale;
 				lastSyncedNotifySuggestion = notifySuggestion;
@@ -166,7 +166,7 @@ public class WebhookSyncService
 
 		apiClient.deleteWebhookAsync(
 			() -> {
-				log.info("Webhook deleted from backend successfully");
+				log.debug("Webhook deleted from backend successfully");
 				lastSyncedWebhookUrl = null;
 				lastSyncedNotifySale = false;
 				lastSyncedNotifySuggestion = false;
