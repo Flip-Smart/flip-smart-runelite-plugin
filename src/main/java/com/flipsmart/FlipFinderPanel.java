@@ -3031,9 +3031,13 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void setFocus(ActiveFlip flip, JPanel panel)
 	{
-		// Use the cached sell price that's already displayed in the panel
-		// This ensures the Flip Assist shows the same price as the Active Flips tab
-		Integer cachedSellPrice = displayedSellPrices.get(flip.getItemId());
+		// Prefer session — it carries any sell-price adjustments. The displayed
+		// cache is only a fallback when session hasn't been populated yet.
+		PlayerSession session = plugin.getSession();
+		Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+		Integer cachedSellPrice = (sessionPrice != null && sessionPrice > 0)
+			? sessionPrice
+			: displayedSellPrices.get(flip.getItemId());
 		int priceOffset = config.priceOffset();
 		
 		if (cachedSellPrice != null && cachedSellPrice > 0)
@@ -3355,13 +3359,22 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				}
 				
-				// Calculate smart sell price based on time, volume, and profitability
-				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice);
+				// Session is the source of truth for sell price (initial smart-sell or
+				// any subsequent adjustment writes there). Only fall through to the
+				// freshly-computed smart-sell when the session has nothing yet.
+				PlayerSession session = plugin.getSession();
+				Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+				Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
+					? sessionPrice
+					: calculateSmartSellPrice(flip, currentMarketPrice);
 				boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
-				
+
 				if (smartSellPrice != null && smartSellPrice > 0)
 				{
-					// Cache the displayed sell price so Flip Assist uses the same value
+					if ((sessionPrice == null || sessionPrice <= 0) && session != null)
+					{
+						session.setRecommendedPrice(flip.getItemId(), smartSellPrice);
+					}
 					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
 					
 					// Apply background color based on price comparison with original recommendation

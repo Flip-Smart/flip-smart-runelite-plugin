@@ -2081,12 +2081,18 @@ public class AutoRecommendService
 	}
 
 	/**
-	 * Resolve the best sell price for an item.
-	 * Prefers the panel's displayed (smart) sell price over the session's stored price,
-	 * since the panel's price reflects current market conditions and time thresholds.
+	 * Resolve the best sell price for an item. Session is the single source of truth:
+	 * it carries the most recent decision (initial smart-sell, or a manual/auto sell
+	 * adjustment) and is what the Flip Assist prompt reads. The panel's displayed
+	 * price is only a fallback for items the session hasn't seen yet.
 	 */
 	private Integer resolveBestSellPrice(int itemId)
 	{
+		Integer sessionPrice = plugin.getSession().getRecommendedPrice(itemId);
+		if (sessionPrice != null && sessionPrice > 0)
+		{
+			return sessionPrice;
+		}
 		IntFunction<Integer> provider = displayedSellPriceProvider;
 		if (provider != null)
 		{
@@ -2096,7 +2102,7 @@ public class AutoRecommendService
 				return smartPrice;
 			}
 		}
-		return plugin.getSession().getRecommendedPrice(itemId);
+		return null;
 	}
 
 	/**
