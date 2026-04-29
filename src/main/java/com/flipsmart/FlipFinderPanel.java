@@ -1279,8 +1279,10 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Update the premium status display (subscribe label visibility).
-	 * Called when entitlements are fetched on game login.
+	 * Sync the subscribe banner's text and visibility with the locally-stored
+	 * premium / RSN-entitlement state. Safe to call from any UI-transition path
+	 * (login, logout, away-from-GE, empty/failed responses, entitlements fetch);
+	 * it never depends on a fresh API response.
 	 */
 	public void updatePremiumStatus()
 	{
@@ -1395,6 +1397,8 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				refreshButton.setEnabled(true);
 				showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+				// Failed call — banner should reflect stored premium state.
+				updatePremiumStatus();
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
 			return null;
@@ -1419,6 +1423,9 @@ public class FlipFinderPanel extends PluginPanel
 				else
 				{
 					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+					// API call failed — derive banner from stored premium status
+					// rather than leaving it stuck on the previous response.
+					updatePremiumStatus();
 				}
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
@@ -1428,6 +1435,9 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				currentRecommendations.clear();
 				showErrorInRecommended("No flip recommendations found matching your criteria.");
+				// Empty result — banner must still reflect current premium status,
+				// not whatever it happened to be set to last.
+				updatePremiumStatus();
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
 			}
@@ -1888,6 +1898,11 @@ public class FlipFinderPanel extends PluginPanel
 		showErrorInContainer(recommendedListContainer, "Flip Finder", "You must be in the Grand Exchange to load suggestions.");
 		statusLabel.setText("Visit the Grand Exchange");
 		refreshButton.setEnabled(true);
+		// Banner visibility must reflect stored premium status, not be left stale
+		// from the last API response. Without this, premium users who walk away
+		// from the GE see a "Subscribe to Premium" banner because no /flip-finder
+		// call ever runs to refresh it.
+		updatePremiumStatus();
 	}
 
 	/**
@@ -2035,6 +2050,10 @@ public class FlipFinderPanel extends PluginPanel
 		completedFlipsListContainer.add(createEmptyStatePanel(MSG_LOGIN_TO_RUNESCAPE, MSG_LOGIN_INSTRUCTION, 80));
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
+
+		// Keep subscribe banner aligned with stored premium status while logged out
+		// of RuneScape (no API calls run, so the banner would otherwise stay stale).
+		updatePremiumStatus();
 	}
 
 	/**
