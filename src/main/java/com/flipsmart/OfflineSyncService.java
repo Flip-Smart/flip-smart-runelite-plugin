@@ -35,6 +35,17 @@ public class OfflineSyncService
 	private static final String PERSISTED_OFFERS_FALLBACK_KEY = "persistedOffers_lastSession";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
+	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
+
+	/**
+	 * Persisted collected-item entries older than this are dropped on restore.
+	 * Issue #582: a multi-week absence left orphan entries in the collected-items
+	 * set that no longer matched live GE / inventory state, which the auto-recommend
+	 * focus path then misinterpreted. Seven days is well above any realistic
+	 * "bought but haven't sold yet" gap and well below the multi-week window
+	 * that produced the original bug report.
+	 */
+	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
 	private final ConfigManager configManager;
@@ -73,11 +84,23 @@ public class OfflineSyncService
 	/**
 	 * Restore collected item IDs from persisted config.
 	 * These are items that were bought but not yet sold when the player logged out.
+	 * Entries older than {@link #MAX_PERSISTED_COLLECTED_AGE_MS} are dropped to
+	 * avoid resurrecting state that no longer matches live GE/inventory after a
+	 * long absence (issue #582).
 	 */
 	public void restoreCollectedItems()
 	{
 		String key = getCollectedItemsKey();
 		log.debug("Attempting to restore collected items for RSN: {} (key: {})", session.getRsn(), key);
+
+		if (isPersistedCollectedTooOld())
+		{
+			log.debug("Persisted collected items for {} are stale (>{} days) - clearing instead of restoring",
+				session.getRsn(), MAX_PERSISTED_COLLECTED_AGE_MS / (24L * 60 * 60 * 1000));
+			clearPersistedCollectedItems();
+			session.clearCollectedItems();
+			return;
+		}
 
 		Set<Integer> persisted = loadPersistedCollectedItems();
 		if (!persisted.isEmpty())
@@ -93,6 +116,46 @@ public class OfflineSyncService
 			session.clearCollectedItems();
 		}
 
+	}
+
+	/**
+	 * Check whether the savedAt timestamp for the collected-items blob is missing
+	 * or older than the staleness threshold. Missing timestamps (legacy data
+	 * persisted before this guard existed) are treated as stale.
+	 */
+	private boolean isPersistedCollectedTooOld()
+	{
+		String savedAtKey = getCollectedItemsSavedAtKey();
+		String collectedKey = getCollectedItemsKey();
+
+		String collectedJson = configManager.getConfiguration(CONFIG_GROUP, collectedKey);
+		if (collectedJson == null || collectedJson.isEmpty())
+		{
+			return false;
+		}
+
+		String savedAtStr = configManager.getConfiguration(CONFIG_GROUP, savedAtKey);
+		if (savedAtStr == null || savedAtStr.isEmpty())
+		{
+			return true;
+		}
+
+		try
+		{
+			long savedAt = Long.parseLong(savedAtStr);
+			return System.currentTimeMillis() - savedAt > MAX_PERSISTED_COLLECTED_AGE_MS;
+		}
+		catch (NumberFormatException e)
+		{
+			return true;
+		}
+	}
+
+	private void clearPersistedCollectedItems()
+	{
+		configManager.unsetConfiguration(CONFIG_GROUP, getCollectedItemsKey());
+		configManager.unsetConfiguration(CONFIG_GROUP, getCollectedQuantitiesKey());
+		configManager.unsetConfiguration(CONFIG_GROUP, getCollectedItemsSavedAtKey());
 	}
 
 	/**
@@ -129,10 +192,12 @@ public class OfflineSyncService
 		}
 
 		// Persist collected item IDs (items bought but not yet sold)
+		String savedAtKey = getCollectedItemsSavedAtKey();
 		if (session.getCollectedItemIds().isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
 			configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
+			configManager.unsetConfiguration(CONFIG_GROUP, savedAtKey);
 			log.debug("No collected items to persist for {}", session.getRsn());
 		}
 		else
@@ -152,6 +217,8 @@ public class OfflineSyncService
 				{
 					configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
 				}
+
+				configManager.setConfiguration(CONFIG_GROUP, savedAtKey, Long.toString(System.currentTimeMillis()));
 
 				log.debug("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
 			}
@@ -552,6 +619,15 @@ public class OfflineSyncService
 			return COLLECTED_QUANTITIES_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return COLLECTED_QUANTITIES_KEY_PREFIX + session.getRsn();
+	}
+
+	public String getCollectedItemsSavedAtKey()
+	{
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			return COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
+		}
+		return COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + session.getRsn();
 	}
 
 	/**
