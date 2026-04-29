@@ -1279,8 +1279,10 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Update the premium status display (subscribe label visibility).
-	 * Called when entitlements are fetched on game login.
+	 * Sync the subscribe banner's text and visibility with the locally-stored
+	 * premium / RSN-entitlement state. Safe to call from any UI-transition path
+	 * (login, logout, away-from-GE, empty/failed responses, entitlements fetch);
+	 * it never depends on a fresh API response.
 	 */
 	public void updatePremiumStatus()
 	{
@@ -1395,6 +1397,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				refreshButton.setEnabled(true);
 				showErrorInRecommended(ERROR_PREFIX + throwable.getMessage());
+				updatePremiumStatus();
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 			});
 			return null;
@@ -1419,6 +1422,7 @@ public class FlipFinderPanel extends PluginPanel
 				else
 				{
 					showErrorInRecommended("Failed to fetch recommendations. Check your API settings.");
+					updatePremiumStatus();
 				}
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
@@ -1428,6 +1432,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				currentRecommendations.clear();
 				showErrorInRecommended("No flip recommendations found matching your criteria.");
+				updatePremiumStatus();
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
 			}
@@ -1888,6 +1893,7 @@ public class FlipFinderPanel extends PluginPanel
 		showErrorInContainer(recommendedListContainer, "Flip Finder", "You must be in the Grand Exchange to load suggestions.");
 		statusLabel.setText("Visit the Grand Exchange");
 		refreshButton.setEnabled(true);
+		updatePremiumStatus();
 	}
 
 	/**
@@ -2035,6 +2041,8 @@ public class FlipFinderPanel extends PluginPanel
 		completedFlipsListContainer.add(createEmptyStatePanel(MSG_LOGIN_TO_RUNESCAPE, MSG_LOGIN_INSTRUCTION, 80));
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
+
+		updatePremiumStatus();
 	}
 
 	/**
