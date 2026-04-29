@@ -1996,9 +1996,10 @@ public class AutoRecommendService
 	}
 
 	/**
-	 * Returns itemId if sellable now (in inventory + has price), else -1.
-	 * In-flight or uncollected buys are skipped so promptCollection() can
-	 * route the correct UI message; truly orphaned entries are queued for cleanup.
+	 * Returns itemId if sellable now, else -1. Items in inventory are sellable.
+	 * Active/completed buys are skipped (promptCollection routes the message).
+	 * Cancelled partial buys (no tracked offer, but collectedQuantity > 0) are
+	 * treated as sellable so the user gets a sell prompt for the partial fill.
 	 */
 	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
 	{
@@ -2010,6 +2011,10 @@ public class AutoRecommendService
 			|| session.hasUncollectedBuyOfferForItem(itemId))
 		{
 			return -1;
+		}
+		if (session.getCollectedQuantity(itemId) > 0)
+		{
+			return hasSellPrice(itemId) ? itemId : -1;
 		}
 		staleItems.add(itemId);
 		return -1;
