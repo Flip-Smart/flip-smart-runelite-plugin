@@ -1,6 +1,8 @@
 package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
@@ -17,12 +19,18 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 {
 	private static final Color COLOR_GLOW = new Color(255, 185, 50);
 
+	private static final int GE_INTERFACE_GROUP = 465;
+	private static final int GE_OFFER_PANEL_CHILD = 26;
+
 	private final Set<Integer> highlightedItemIds = ConcurrentHashMap.newKeySet();
 
 	private final Map<Long, BufferedImage> outlineCache = new ConcurrentHashMap<>();
 
 	@Inject
 	private ItemManager itemManager;
+
+	@Inject
+	private Client client;
 
 	public InventoryHighlightOverlay()
 	{
@@ -50,6 +58,11 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
 		if (!highlightedItemIds.contains(itemId))
+		{
+			return;
+		}
+
+		if (!isGrandExchangeOpen())
 		{
 			return;
 		}
@@ -132,6 +145,18 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		}
 
 		return outline;
+	}
+
+	private boolean isGrandExchangeOpen()
+	{
+		Widget geWidget = client.getWidget(GE_INTERFACE_GROUP, 0);
+		if (geWidget != null && !geWidget.isHidden())
+		{
+			return true;
+		}
+
+		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_PANEL_CHILD);
+		return offerPanel != null && !offerPanel.isHidden();
 	}
 
 	private boolean hasOpaqueNeighbor(BufferedImage image, int x, int y, int w, int h)
