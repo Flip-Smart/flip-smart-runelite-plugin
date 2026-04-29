@@ -37,14 +37,7 @@ public class OfflineSyncService
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
 
-	/**
-	 * Persisted collected-item entries older than this are dropped on restore.
-	 * Issue #582: a multi-week absence left orphan entries in the collected-items
-	 * set that no longer matched live GE / inventory state, which the auto-recommend
-	 * focus path then misinterpreted. Seven days is well above any realistic
-	 * "bought but haven't sold yet" gap and well below the multi-week window
-	 * that produced the original bug report.
-	 */
+	/** Persisted collected-item entries older than this are dropped on restore. */
 	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
@@ -84,9 +77,7 @@ public class OfflineSyncService
 	/**
 	 * Restore collected item IDs from persisted config.
 	 * These are items that were bought but not yet sold when the player logged out.
-	 * Entries older than {@link #MAX_PERSISTED_COLLECTED_AGE_MS} are dropped to
-	 * avoid resurrecting state that no longer matches live GE/inventory after a
-	 * long absence (issue #582).
+	 * Entries older than {@link #MAX_PERSISTED_COLLECTED_AGE_MS} are dropped.
 	 */
 	public void restoreCollectedItems()
 	{
@@ -95,8 +86,7 @@ public class OfflineSyncService
 
 		if (isPersistedCollectedTooOld())
 		{
-			log.debug("Persisted collected items for {} are stale (>{} days) - clearing instead of restoring",
-				session.getRsn(), MAX_PERSISTED_COLLECTED_AGE_MS / (24L * 60 * 60 * 1000));
+			log.debug("Persisted collected items for {} are stale - clearing", session.getRsn());
 			clearPersistedCollectedItems();
 			session.clearCollectedItems();
 			return;
@@ -118,11 +108,7 @@ public class OfflineSyncService
 
 	}
 
-	/**
-	 * Check whether the savedAt timestamp for the collected-items blob is missing
-	 * or older than the staleness threshold. Missing timestamps (legacy data
-	 * persisted before this guard existed) are treated as stale.
-	 */
+	/** Missing timestamps (legacy data) are treated as stale. */
 	private boolean isPersistedCollectedTooOld()
 	{
 		String savedAtKey = getCollectedItemsSavedAtKey();

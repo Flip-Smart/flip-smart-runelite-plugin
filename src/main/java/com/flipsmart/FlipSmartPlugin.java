@@ -330,10 +330,6 @@ public class FlipSmartPlugin extends Plugin
 		return activeFlipTracker.getInventoryCountForItem(itemId);
 	}
 
-	/**
-	 * Resolve a human-readable item name via RuneLite's ItemManager.
-	 * Used as a last-resort fallback when caller-side caches don't have the name.
-	 */
 	public String getItemName(int itemId)
 	{
 		return ItemUtils.getItemName(itemManager, itemId);

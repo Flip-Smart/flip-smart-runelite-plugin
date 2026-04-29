@@ -64,10 +64,6 @@ public class PlayerSessionTest
 		assertEquals("Foo", session.getRsnSafe().orElse(null));
 	}
 
-	// --- Buy-state classification (issue #582) ---
-	// The plugin must distinguish in-flight buys from completed-but-uncollected
-	// buys so the SELL prompt doesn't fire while items are still in the GE slot.
-
 	private static TrackedOffer inFlightBuy(int itemId)
 	{
 		return new TrackedOffer(itemId, "x", true, 100, 1, 5);

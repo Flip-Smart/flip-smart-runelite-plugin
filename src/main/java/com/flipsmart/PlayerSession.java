@@ -408,10 +408,7 @@ public class PlayerSession
 		return false;
 	}
 
-	/**
-	 * Check if an item has a buy offer that is still in flight
-	 * (placed but not yet completed/cancelled — items not yet collectable).
-	 */
+	/** Buy offer placed but not yet completed (items not collectable yet). */
 	public boolean hasInFlightBuyOfferForItem(int itemId)
 	{
 		for (TrackedOffer offer : trackedOffers.values())
@@ -424,10 +421,7 @@ public class PlayerSession
 		return false;
 	}
 
-	/**
-	 * Check if an item has a completed buy offer that hasn't been collected yet
-	 * (BOUGHT state — items waiting in the GE slot for the user to collect).
-	 */
+	/** Buy offer completed but items still in the GE slot awaiting collection. */
 	public boolean hasUncollectedBuyOfferForItem(int itemId)
 	{
 		for (TrackedOffer offer : trackedOffers.values())

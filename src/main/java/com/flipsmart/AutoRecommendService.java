@@ -1996,18 +1996,9 @@ public class AutoRecommendService
 	}
 
 	/**
-	 * Evaluate whether a collected item is sellable, stale, or waiting for collection.
-	 * Returns the item ID if sellable now, or -1 to continue searching.
-	 *
-	 * The three non-sellable cases are kept distinct (vs lumped under one
-	 * "hasBuyOffer" check) so the UI can route to the correct prompt:
-	 *   - In-flight buy: stay on the buy / let promptCollection() handle messaging
-	 *   - Completed buy not yet collected: promptCollection() shows "Collect <name>"
-	 *   - Truly stale: queued for cleanup
-	 *
-	 * Critically, an item with an active buy offer that is NOT yet in inventory
-	 * must not be treated as sellable — selling instructions for items still in
-	 * the GE slot are misleading (issue #582).
+	 * Returns itemId if sellable now (in inventory + has price), else -1.
+	 * In-flight or uncollected buys are skipped so promptCollection() can
+	 * route the correct UI message; truly orphaned entries are queued for cleanup.
 	 */
 	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
 	{
@@ -2015,20 +2006,11 @@ public class AutoRecommendService
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
-
-		// Buy still placing/partially filling — items aren't collectable yet.
-		if (session.hasInFlightBuyOfferForItem(itemId))
+		if (session.hasInFlightBuyOfferForItem(itemId)
+			|| session.hasUncollectedBuyOfferForItem(itemId))
 		{
 			return -1;
 		}
-
-		// Buy completed but items still in the GE slot — user needs to collect first.
-		if (session.hasUncollectedBuyOfferForItem(itemId))
-		{
-			return -1;
-		}
-
-		// Not in inventory and no buy offer of any kind — tracking is stale.
 		staleItems.add(itemId);
 		return -1;
 	}
