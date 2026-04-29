@@ -408,6 +408,32 @@ public class PlayerSession
 		return false;
 	}
 
+	/** Buy offer placed but not yet completed (items not collectable yet). */
+	public boolean hasInFlightBuyOfferForItem(int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == itemId && offer.isBuy() && !offer.isCompleted())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Buy offer completed but items still in the GE slot awaiting collection. */
+	public boolean hasUncollectedBuyOfferForItem(int itemId)
+	{
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == itemId && offer.isBuy() && offer.isCompleted())
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	/**
 	 * Check if there are available GE slots for new offers.
 	 */

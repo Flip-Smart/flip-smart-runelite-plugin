@@ -330,6 +330,11 @@ public class FlipSmartPlugin extends Plugin
 		return activeFlipTracker.getInventoryCountForItem(itemId);
 	}
 
+	public String getItemName(int itemId)
+	{
+		return ItemUtils.getItemName(itemManager, itemId);
+	}
+
 	/**
 	 * Store recommended sell price when user views/acts on a flip recommendation
 	 */

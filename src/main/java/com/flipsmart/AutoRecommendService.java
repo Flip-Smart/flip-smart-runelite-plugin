@@ -1920,7 +1920,7 @@ public class AutoRecommendService
 
 			if (sellPrice != null && sellPrice > 0)
 			{
-				String itemName = itemNames.getOrDefault(sellableItemId, "Item " + sellableItemId);
+				String itemName = itemNames.getOrDefault(sellableItemId, plugin.getItemName(sellableItemId));
 				int sellQuantity = resolveSellQuantity(sellableItemId);
 
 				int priceOffset = config.priceOffset();
@@ -1996,22 +1996,26 @@ public class AutoRecommendService
 	}
 
 	/**
-	 * Evaluate whether a collected item is sellable, stale, or waiting for collection.
-	 * Returns the item ID if sellable, or -1 to continue searching.
+	 * Returns itemId if sellable now, else -1. Items in inventory are sellable.
+	 * Active/completed buys are skipped (promptCollection routes the message).
+	 * Cancelled partial buys (no tracked offer, but collectedQuantity > 0) are
+	 * treated as sellable so the user gets a sell prompt for the partial fill.
 	 */
 	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
 	{
-		boolean inInventory = isItemInInventory(itemId);
-		boolean hasBuyOffer = session.hasActiveBuySlotForItem(itemId);
-
-		if (inInventory || hasBuyOffer)
+		if (isItemInInventory(itemId))
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
-
-		// Not in inventory and no active buy offer — item is no longer accessible.
-		// Even if collectedQuantity > 0, the tracking is stale (item was already
-		// collected and sold/used, or the state got out of sync). Mark for cleanup.
+		if (session.hasInFlightBuyOfferForItem(itemId)
+			|| session.hasUncollectedBuyOfferForItem(itemId))
+		{
+			return -1;
+		}
+		if (session.getCollectedQuantity(itemId) > 0)
+		{
+			return hasSellPrice(itemId) ? itemId : -1;
+		}
 		staleItems.add(itemId);
 		return -1;
 	}
