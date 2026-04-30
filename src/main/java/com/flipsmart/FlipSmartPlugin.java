@@ -100,6 +100,9 @@ public class FlipSmartPlugin extends Plugin
 	private DumpAlertService dumpAlertService;
 
 	@Inject
+	private MotdService motdService;
+
+	@Inject
 	private OfflineSyncService offlineSyncService;
 
 	@Inject
@@ -549,6 +552,7 @@ public class FlipSmartPlugin extends Plugin
 
 		// Start dump alert service
 		dumpAlertService.start();
+		motdService.start();
 
 		// Sync webhook config to backend if configured
 		webhookSyncService.syncIfChanged();
@@ -792,6 +796,7 @@ public class FlipSmartPlugin extends Plugin
 
 		// Stop dump alert service
 		dumpAlertService.stop();
+		motdService.stop();
 
 		// Stop auto-recommend service and timer
 		stopAutoRecommendRefreshTimer();
@@ -857,6 +862,7 @@ public class FlipSmartPlugin extends Plugin
 		if (gameState == GameState.LOGGED_IN)
 		{
 			handleLoggedInState();
+			motdService.onLogin();
 		}
 	}
 
