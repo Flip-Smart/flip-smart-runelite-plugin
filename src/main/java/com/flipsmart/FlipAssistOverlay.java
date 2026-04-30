@@ -86,6 +86,7 @@ public class FlipAssistOverlay extends Overlay
 	private final ClientThread clientThread;
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
+	private final TradeActivityLog tradeActivityLog;
 	
 	@Getter
 	private FocusedFlip focusedFlip;
@@ -147,13 +148,14 @@ public class FlipAssistOverlay extends Overlay
 	}
 
 	@Inject
-	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager)
+	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager, TradeActivityLog tradeActivityLog)
 	{
 		this.flipSmartPlugin = flipSmartPlugin;
 		this.client = client;
 		this.clientThread = clientThread;
 		this.config = config;
 		this.itemManager = itemManager;
+		this.tradeActivityLog = tradeActivityLog;
 		
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -357,6 +359,11 @@ public class FlipAssistOverlay extends Overlay
 		int maxTextWidth = HINT_PANEL_WIDTH - textPadding * 2;
 		java.util.List<String> wrappedLines = null;
 
+		// Activity log: shown in idle assist states (waiting/monitoring) (AC4)
+		java.util.List<TradeActivityLog.Entry> activityEntries =
+			isIdleAssistMessage(message) ? tradeActivityLog.snapshot() : java.util.Collections.emptyList();
+		int activityLogHeight = computeActivityLogHeight(activityEntries, smallMetrics);
+
 		int panelHeight;
 		if (hasIcon)
 		{
@@ -376,6 +383,7 @@ public class FlipAssistOverlay extends Overlay
 			panelHeight = 20 + 8 + lineHeight * wrappedLines.size() + 8;
 			panelHeight = Math.max(panelHeight, HINT_PANEL_HEIGHT);
 		}
+		panelHeight += activityLogHeight;
 
 		// Calculate pulse animation
 		long elapsed = System.currentTimeMillis() - animationStartTime;
@@ -459,7 +467,66 @@ public class FlipAssistOverlay extends Overlay
 			}
 		}
 
+		if (!activityEntries.isEmpty())
+		{
+			int activityTop = panelHeight - activityLogHeight;
+			renderActivityLog(graphics, activityEntries, activityTop, smallMetrics);
+		}
+
 		return new Dimension(HINT_PANEL_WIDTH, panelHeight);
+	}
+
+	private boolean isIdleAssistMessage(String message)
+	{
+		if (message == null)
+		{
+			return false;
+		}
+		return message.startsWith("Waiting for flips")
+			|| message.startsWith("Monitoring active offers");
+	}
+
+	private int computeActivityLogHeight(java.util.List<TradeActivityLog.Entry> entries, FontMetrics fm)
+	{
+		if (entries.isEmpty())
+		{
+			return 0;
+		}
+		// gap above divider (4) + divider line (1) + gap below (4) + entries + bottom padding (4)
+		return 4 + 1 + 4 + fm.getHeight() * entries.size() + 4;
+	}
+
+	private void renderActivityLog(Graphics2D graphics, java.util.List<TradeActivityLog.Entry> entries, int top, FontMetrics fm)
+	{
+		int dividerY = top + 4;
+		graphics.setColor(COLOR_STEP_PENDING);
+		graphics.setStroke(new BasicStroke(1f));
+		graphics.drawLine(10, dividerY, HINT_PANEL_WIDTH - 10, dividerY);
+
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		int lineHeight = fm.getHeight();
+		int textY = dividerY + 4 + fm.getAscent();
+		int leftX = 10;
+		int rightEdge = HINT_PANEL_WIDTH - 10;
+		for (TradeActivityLog.Entry entry : entries)
+		{
+			String ago = TimeUtils.formatRelativeAgo(entry.getTimestampMs());
+			int agoWidth = fm.stringWidth(ago);
+			int agoX = rightEdge - agoWidth;
+
+			String prefix = entry.isBuy() ? "Buy" : "Sell";
+			String head = String.format("%s %dx ", prefix, entry.getQuantity());
+			int nameMaxWidth = agoX - leftX - fm.stringWidth(head) - 4;
+			String name = truncateString(entry.getItemName(), Math.max(0, nameMaxWidth), fm);
+
+			graphics.setColor(entry.isBuy() ? COLOR_BUY : COLOR_SELL);
+			graphics.drawString(head + name, leftX, textY);
+
+			graphics.setColor(COLOR_TEXT_DIM);
+			graphics.drawString(ago, agoX, textY);
+
+			textY += lineHeight;
+		}
 	}
 
 	private Color getHintLineColor(String line)

@@ -99,4 +99,34 @@ public final class TimeUtils
 		}
 		return minutes + "m";
 	}
+
+	/**
+	 * Format elapsed time as a relative "ago" string (e.g., "just now", "5m ago", "2h 15m ago").
+	 */
+	public static String formatRelativeAgo(long pastMillis)
+	{
+		long elapsed = Math.max(0, System.currentTimeMillis() - pastMillis);
+		long seconds = elapsed / 1000;
+		long minutes = elapsed / 60000;
+		long hours = elapsed / 3600000;
+
+		if (seconds < 5)
+		{
+			return "just now";
+		}
+		if (minutes < 1)
+		{
+			return seconds + "s ago";
+		}
+		if (hours < 1)
+		{
+			return minutes + "m ago";
+		}
+		long remMinutes = minutes - hours * 60;
+		if (remMinutes == 0)
+		{
+			return hours + "h ago";
+		}
+		return hours + "h " + remMinutes + "m ago";
+	}
 }
