@@ -29,6 +29,7 @@ public class GrandExchangeTracker
 	private final FlipSmartApiClient apiClient;
 	private final ActiveFlipTracker activeFlipTracker;
 	private final ItemManager itemManager;
+	private final TradeActivityLog tradeActivityLog;
 
 	// Set after construction (created in plugin startUp)
 	private AutoRecommendService autoRecommendService;
@@ -73,12 +74,14 @@ public class GrandExchangeTracker
 		PlayerSession session,
 		FlipSmartApiClient apiClient,
 		ActiveFlipTracker activeFlipTracker,
-		ItemManager itemManager)
+		ItemManager itemManager,
+		TradeActivityLog tradeActivityLog)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
 		this.activeFlipTracker = activeFlipTracker;
 		this.itemManager = itemManager;
+		this.tradeActivityLog = tradeActivityLog;
 	}
 
 	// =====================
@@ -579,6 +582,8 @@ public class GrandExchangeTracker
 			.rsn(getRsn().orElse(null))
 			.totalQuantity(ctx.totalQuantity)
 			.build());
+
+		tradeActivityLog.record(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity);
 
 		if (!ctx.isBuy)
 		{
