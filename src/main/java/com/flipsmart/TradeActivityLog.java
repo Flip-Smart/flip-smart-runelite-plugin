@@ -35,7 +35,7 @@ public class TradeActivityLog
 
 	private final Deque<Entry> entries = new ConcurrentLinkedDeque<>();
 
-	public void record(int itemId, String itemName, boolean isBuy, int quantity)
+	public void addEntry(int itemId, String itemName, boolean isBuy, int quantity)
 	{
 		if (quantity <= 0 || itemName == null)
 		{

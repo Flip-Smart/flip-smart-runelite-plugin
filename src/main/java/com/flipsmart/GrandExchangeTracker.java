@@ -583,7 +583,7 @@ public class GrandExchangeTracker
 			.totalQuantity(ctx.totalQuantity)
 			.build());
 
-		tradeActivityLog.record(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity);
+		tradeActivityLog.addEntry(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity);
 
 		if (!ctx.isBuy)
 		{
