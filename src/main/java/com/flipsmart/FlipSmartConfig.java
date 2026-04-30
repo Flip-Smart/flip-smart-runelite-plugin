@@ -511,6 +511,18 @@ public interface FlipSmartConfig extends Config
 		return true;
 	}
 
+	@ConfigItem(
+		keyName = "motdEnabled",
+		name = "Enable MOTD",
+		description = "Show Message of the Day notifications in the chatbox.",
+		section = generalSection,
+		position = 1
+	)
+	default boolean motdEnabled()
+	{
+		return true;
+	}
+
 	// ============================================
 	// Notifications Section
 	// ============================================
