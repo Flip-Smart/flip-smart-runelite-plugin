@@ -8,6 +8,8 @@ import net.runelite.client.config.ConfigManager;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.concurrent.CompletableFuture;
+
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -47,6 +49,7 @@ public class MotdServiceTest
 		when(config.motdEnabled()).thenReturn(true);
 		when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
 		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn(null);
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(null));
 
 		service = new MotdService(client, config, apiClient, chatMessageManager, clientThread, configManager);
 	}
@@ -127,11 +130,14 @@ public class MotdServiceTest
 	@Test
 	public void onLoginPostsEveryTimeRegardlessOfPersistedVersion()
 	{
+		FlipSmartApiClient.MotdResponse resp = buildResponse("Welcome back", true, "v1");
+
 		when(client.getGameState()).thenReturn(GameState.LOGIN_SCREEN);
-		service.handleResponse(buildResponse("Welcome back", true, "v1"));
+		service.handleResponse(resp);
 		verify(chatMessageManager, never()).queue(any());
 
 		when(client.getGameState()).thenReturn(GameState.LOGGED_IN);
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
 		verify(chatMessageManager, times(1)).queue(any());
 
@@ -144,11 +150,11 @@ public class MotdServiceTest
 	@Test
 	public void onLoginDoesNotUpdatePersistedVersion()
 	{
-		service.handleResponse(buildResponse("Hi", true, "v1"));
-		// First poll already wrote v1 to lastShownVersion. Reset the mock so the
-		// counter here only reflects the upcoming onLogin() call.
+		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", true, "v1");
+		service.handleResponse(resp);
 		org.mockito.Mockito.clearInvocations(configManager);
 		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
 		verify(configManager, never()).setConfiguration(any(), any(), (String) any());
 	}
@@ -156,7 +162,9 @@ public class MotdServiceTest
 	@Test
 	public void onLoginNoOpWhenChannelDisabled()
 	{
-		service.handleResponse(buildResponse("Hi", false, "v1"));
+		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", false, "v1");
+		service.handleResponse(resp);
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
 		verify(chatMessageManager, never()).queue(any());
 	}
@@ -165,7 +173,23 @@ public class MotdServiceTest
 	public void onLoginNoOpWhenConfigToggleOff()
 	{
 		when(config.motdEnabled()).thenReturn(false);
-		service.handleResponse(buildResponse("Hi", true, "v1"));
+		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", true, "v1");
+		service.handleResponse(resp);
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
+		service.onLogin();
+		verify(chatMessageManager, never()).queue(any());
+	}
+
+	@Test
+	public void onLoginUsesFreshFetchEvenWhenCachedSaysEnabled()
+	{
+		FlipSmartApiClient.MotdResponse cachedEnabled = buildResponse("Old hi", true, "v1");
+		service.handleResponse(cachedEnabled);
+		org.mockito.Mockito.clearInvocations(chatMessageManager);
+
+		FlipSmartApiClient.MotdResponse freshDisabled = buildResponse("Old hi", false, "v1");
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(freshDisabled));
+
 		service.onLogin();
 		verify(chatMessageManager, never()).queue(any());
 	}

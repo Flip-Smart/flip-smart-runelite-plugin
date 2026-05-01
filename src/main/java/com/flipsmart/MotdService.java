@@ -107,7 +107,14 @@ public class MotdService
 	/** Subscribed in FlipSmartPlugin on game-state LOGGED_IN. */
 	public void onLogin()
 	{
-		maybeShow(true);
+		apiClient.getMotdAsync().thenAccept(response ->
+		{
+			if (response != null)
+			{
+				latest = response;
+			}
+			maybeShow(true);
+		});
 	}
 
 	private void maybeShow(boolean force)
