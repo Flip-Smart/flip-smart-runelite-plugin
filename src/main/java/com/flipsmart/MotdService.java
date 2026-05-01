@@ -101,16 +101,16 @@ public class MotdService
 	{
 		if (response == null) return;
 		latest = response;
-		maybeShow();
+		maybeShow(false);
 	}
 
 	/** Subscribed in FlipSmartPlugin on game-state LOGGED_IN. */
 	public void onLogin()
 	{
-		maybeShow();
+		maybeShow(true);
 	}
 
-	private void maybeShow()
+	private void maybeShow(boolean force)
 	{
 		if (!config.motdEnabled()) return;
 		if (latest == null) return;
@@ -123,11 +123,18 @@ public class MotdService
 		if (version == null) return;
 		if (client.getGameState() != GameState.LOGGED_IN) return;
 
-		String lastShown = configManager.getConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY);
-		if (version.equals(lastShown)) return;
+		if (!force)
+		{
+			String lastShown = configManager.getConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY);
+			if (version.equals(lastShown)) return;
+		}
 
 		clientThread.invokeLater(() -> postChat(message));
-		configManager.setConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY, version);
+
+		if (!force)
+		{
+			configManager.setConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY, version);
+		}
 	}
 
 	private void postChat(String message)

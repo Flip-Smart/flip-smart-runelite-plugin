@@ -125,7 +125,7 @@ public class MotdServiceTest
 	}
 
 	@Test
-	public void onLoginShowsCachedMotdOnce()
+	public void onLoginPostsEveryTimeRegardlessOfPersistedVersion()
 	{
 		when(client.getGameState()).thenReturn(GameState.LOGIN_SCREEN);
 		service.handleResponse(buildResponse("Welcome back", true, "v1"));
@@ -135,9 +135,38 @@ public class MotdServiceTest
 		service.onLogin();
 		verify(chatMessageManager, times(1)).queue(any());
 
-		// A second login event with the same persisted version should not re-post.
+		// A second login event with the same persisted version SHOULD now re-post.
 		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
 		service.onLogin();
-		verify(chatMessageManager, times(1)).queue(any());
+		verify(chatMessageManager, times(2)).queue(any());
+	}
+
+	@Test
+	public void onLoginDoesNotUpdatePersistedVersion()
+	{
+		service.handleResponse(buildResponse("Hi", true, "v1"));
+		// First poll already wrote v1 to lastShownVersion. Reset the mock so the
+		// counter here only reflects the upcoming onLogin() call.
+		org.mockito.Mockito.clearInvocations(configManager);
+		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
+		service.onLogin();
+		verify(configManager, never()).setConfiguration(any(), any(), (String) any());
+	}
+
+	@Test
+	public void onLoginNoOpWhenChannelDisabled()
+	{
+		service.handleResponse(buildResponse("Hi", false, "v1"));
+		service.onLogin();
+		verify(chatMessageManager, never()).queue(any());
+	}
+
+	@Test
+	public void onLoginNoOpWhenConfigToggleOff()
+	{
+		when(config.motdEnabled()).thenReturn(false);
+		service.handleResponse(buildResponse("Hi", true, "v1"));
+		service.onLogin();
+		verify(chatMessageManager, never()).queue(any());
 	}
 }
