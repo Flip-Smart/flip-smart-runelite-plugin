@@ -56,10 +56,16 @@ public class MotdServiceTest
 
 	private FlipSmartApiClient.MotdResponse buildResponse(String pluginMessage, boolean enabled, String version)
 	{
+		return buildResponse(pluginMessage, enabled, version, "normal");
+	}
+
+	private FlipSmartApiClient.MotdResponse buildResponse(String pluginMessage, boolean enabled, String version, String severity)
+	{
 		FlipSmartApiClient.MotdChannelData plugin = mock(FlipSmartApiClient.MotdChannelData.class);
 		when(plugin.getMessage()).thenReturn(pluginMessage);
 		when(plugin.isEnabled()).thenReturn(enabled);
 		when(plugin.getVersion()).thenReturn(version);
+		when(plugin.getSeverity()).thenReturn(severity);
 
 		FlipSmartApiClient.MotdChannelData web = mock(FlipSmartApiClient.MotdChannelData.class);
 		FlipSmartApiClient.MotdResponse resp = mock(FlipSmartApiClient.MotdResponse.class);
@@ -192,5 +198,33 @@ public class MotdServiceTest
 
 		service.onLogin();
 		verify(chatMessageManager, never()).queue(any());
+	}
+
+	@Test
+	public void postsSuccessfullyForNormalSeverity()
+	{
+		service.handleResponse(buildResponse("Normal msg", true, "v1", "normal"));
+		verify(chatMessageManager, times(1)).queue(any());
+	}
+
+	@Test
+	public void postsSuccessfullyForWarningSeverity()
+	{
+		service.handleResponse(buildResponse("Warning msg", true, "v1", "warning"));
+		verify(chatMessageManager, times(1)).queue(any());
+	}
+
+	@Test
+	public void postsSuccessfullyForAlertSeverity()
+	{
+		service.handleResponse(buildResponse("Alert msg", true, "v1", "alert"));
+		verify(chatMessageManager, times(1)).queue(any());
+	}
+
+	@Test
+	public void postsSuccessfullyForUnknownSeverityFallingBackToNormal()
+	{
+		service.handleResponse(buildResponse("Unknown msg", true, "v1", "neon"));
+		verify(chatMessageManager, times(1)).queue(any());
 	}
 }

@@ -12,6 +12,7 @@ import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.config.ConfigManager;
 
 import javax.inject.Inject;
+import java.awt.Color;
 import javax.inject.Singleton;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -136,7 +137,8 @@ public class MotdService
 			if (version.equals(lastShown)) return;
 		}
 
-		clientThread.invokeLater(() -> postChat(message));
+		String severity = plugin.getSeverity();
+		clientThread.invokeLater(() -> postChat(message, severity));
 
 		if (!force)
 		{
@@ -144,18 +146,30 @@ public class MotdService
 		}
 	}
 
-	private void postChat(String message)
+	private void postChat(String message, String severity)
 	{
-		String formatted = new ChatMessageBuilder()
+		ChatMessageBuilder builder = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[FlipSmart MOTD] ")
-			.append(ChatColorType.NORMAL)
-			.append(message)
-			.build();
+			.append("[Flip Smart] ");
+
+		if ("alert".equalsIgnoreCase(severity))
+		{
+			builder.append(Color.RED, message);
+		}
+		else if ("warning".equalsIgnoreCase(severity))
+		{
+			builder.append(Color.ORANGE, message);
+		}
+		else
+		{
+			// "normal" or unknown — fall back to the theme's default text color so the
+			// message remains readable in both opaque and transparent chatbox modes.
+			builder.append(ChatColorType.NORMAL).append(message);
+		}
 
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.GAMEMESSAGE)
-			.runeLiteFormattedMessage(formatted)
+			.runeLiteFormattedMessage(builder.build())
 			.build());
 	}
 }
