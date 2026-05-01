@@ -140,10 +140,10 @@ public class MotdService
 		String severity = plugin.getSeverity();
 		clientThread.invokeLater(() -> postChat(message, severity));
 
-		if (!force)
-		{
-			configManager.setConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY, version);
-		}
+		// Always record the version we just showed so subsequent polls dedup
+		// against it. Login posts unconditionally (force=true), but we still
+		// record so the next 60s poll doesn't re-post the same announcement.
+		configManager.setConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY, version);
 	}
 
 	private void postChat(String message, String severity)

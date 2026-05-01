@@ -154,15 +154,20 @@ public class MotdServiceTest
 	}
 
 	@Test
-	public void onLoginDoesNotUpdatePersistedVersion()
+	public void onLoginUpdatesPersistedVersionSoNextPollDedups()
 	{
 		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", true, "v1");
-		service.handleResponse(resp);
-		org.mockito.Mockito.clearInvocations(configManager);
-		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
-		verify(configManager, never()).setConfiguration(any(), any(), (String) any());
+		// Login posted; the version it just showed must be recorded so a poll on
+		// the same version does not re-post.
+		verify(configManager, times(1))
+			.setConfiguration(eq("flipsmart"), eq("motd.lastShownVersion"), eq("v1"));
+
+		// Subsequent poll with the same response now sees lastShown==v1 and skips.
+		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
+		service.handleResponse(resp);
+		verify(chatMessageManager, times(1)).queue(any());
 	}
 
 	@Test
