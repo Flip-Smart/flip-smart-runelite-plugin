@@ -234,7 +234,7 @@ public class DumpAlertService
 			.build();
 
 		chatMessageManager.queue(QueuedMessage.builder()
-			.type(ChatMessageType.CONSOLE)
+			.type(ChatMessageType.GAMEMESSAGE)
 			.runeLiteFormattedMessage(message)
 			.build());
 
