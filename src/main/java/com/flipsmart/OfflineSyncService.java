@@ -13,6 +13,7 @@ import net.runelite.client.config.ConfigManager;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.lang.reflect.Type;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -278,15 +279,89 @@ public class OfflineSyncService
 			handleEmptyPersistedSlots(persistedOffers);
 		}
 
-		// Re-persist the current merged state so timestamps survive unexpected shutdowns
-		// (e.g., client crash, force close where shutDown() doesn't run)
-		persistOfferState();
-
-		log.debug("Offline sync completed for {}", session.getRsn());
-
-		if (onSyncComplete != null)
+		// Drop persisted collectedItems entries that no longer match real state, then re-persist
+		// the cleaned set so stale entries don't survive to the next session (issue #451).
+		// Must run on the client thread — the inventory check reads ItemContainer state.
+		clientThread.invokeLater(() ->
 		{
-			onSyncComplete.run();
+			int pruned = pruneStaleCollectedItems();
+			if (pruned > 0)
+			{
+				log.debug("Offline sync pruned {} stale collectedItems for {}", pruned, session.getRsn());
+			}
+
+			// Re-persist the current merged state so timestamps survive unexpected shutdowns
+			// (e.g., client crash, force close where shutDown() doesn't run)
+			persistOfferState();
+
+			log.debug("Offline sync completed for {}", session.getRsn());
+
+			if (onSyncComplete != null)
+			{
+				onSyncComplete.run();
+			}
+		});
+	}
+
+	/**
+	 * Drop collectedItems entries that don't match real state — not in inventory,
+	 * no in-flight or uncollected buy offer, and no active sell slot. Mirrors the
+	 * runtime cleanup in {@link AutoRecommendService#evaluateCollectedItem} but
+	 * runs proactively at offline-sync time so persisted entries from a prior
+	 * session can't keep firing stuck "sell X" prompts (issue #451).
+	 *
+	 * <p>Must be called from the client thread; the inventory check reads
+	 * ItemContainer state.
+	 *
+	 * @return number of entries removed
+	 */
+	int pruneStaleCollectedItems()
+	{
+		Set<Integer> currentIds = session.getCollectedItemIds();
+		if (currentIds.isEmpty())
+		{
+			return 0;
+		}
+
+		List<Integer> toRemove = new ArrayList<>();
+		for (int itemId : currentIds)
+		{
+			if (isItemKnownPresent(itemId))
+			{
+				continue;
+			}
+			toRemove.add(itemId);
+		}
+
+		for (int itemId : toRemove)
+		{
+			log.debug("Pruning stale collectedItem {} for {} (no inventory or GE evidence)",
+				itemId, session.getRsn());
+			session.removeCollectedItem(itemId);
+		}
+		return toRemove.size();
+	}
+
+	/** Inventory presence or any active GE offer counts as evidence to keep tracking. */
+	private boolean isItemKnownPresent(int itemId)
+	{
+		if (session.hasInFlightBuyOfferForItem(itemId)
+			|| session.hasUncollectedBuyOfferForItem(itemId)
+			|| session.hasActiveSellSlotForItem(itemId))
+		{
+			return true;
+		}
+		try
+		{
+			return activeFlipTracker.getInventoryCountForItem(itemId) > 0;
+		}
+		catch (Exception | AssertionError e)
+		{
+			// Inventory not accessible (off client thread or container missing).
+			// Be conservative and treat as present so a legitimate sell candidate
+			// is not wrongly pruned.
+			log.debug("Inventory unavailable when validating collectedItem {}; keeping", itemId);
+			return true;
 		}
 	}
 
