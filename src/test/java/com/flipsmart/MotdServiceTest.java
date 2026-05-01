@@ -80,7 +80,7 @@ public class MotdServiceTest
 		service.handleResponse(buildResponse("Hello world", true, "v1"));
 		verify(chatMessageManager, times(1)).queue(any());
 		verify(configManager, times(1))
-			.setConfiguration(eq("flipsmart"), eq("motd.lastShownVersion"), eq("v1"));
+			.setConfiguration("flipsmart", "motd.lastShownVersion", "v1");
 	}
 
 	@Test
@@ -147,7 +147,7 @@ public class MotdServiceTest
 		service.onLogin();
 		verify(chatMessageManager, times(1)).queue(any());
 		verify(configManager, times(1))
-			.setConfiguration(eq("flipsmart"), eq("motd.lastShownVersion"), eq("v1"));
+			.setConfiguration("flipsmart", "motd.lastShownVersion", "v1");
 
 		// A second login event with the same persisted version must NOT re-post —
 		// users who log in/out repeatedly should not be spammed.
