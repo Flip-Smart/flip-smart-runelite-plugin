@@ -102,7 +102,7 @@ public class MotdService
 	{
 		if (response == null) return;
 		latest = response;
-		maybeShow(false);
+		maybeShow();
 	}
 
 	/** Subscribed in FlipSmartPlugin on game-state LOGGED_IN. */
@@ -114,11 +114,11 @@ public class MotdService
 			{
 				latest = response;
 			}
-			maybeShow(true);
+			maybeShow();
 		});
 	}
 
-	private void maybeShow(boolean force)
+	private void maybeShow()
 	{
 		if (!config.motdEnabled()) return;
 		if (latest == null) return;
@@ -131,18 +131,14 @@ public class MotdService
 		if (version == null) return;
 		if (client.getGameState() != GameState.LOGGED_IN) return;
 
-		if (!force)
-		{
-			String lastShown = configManager.getConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY);
-			if (version.equals(lastShown)) return;
-		}
+		// Show at most once per (client, version) — both login and poll paths
+		// dedup against the persisted lastShownVersion to avoid spamming users
+		// who log in/out repeatedly during one announcement.
+		String lastShown = configManager.getConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY);
+		if (version.equals(lastShown)) return;
 
 		String severity = plugin.getSeverity();
 		clientThread.invokeLater(() -> postChat(message, severity));
-
-		// Always record the version we just showed so subsequent polls dedup
-		// against it. Login posts unconditionally (force=true), but we still
-		// record so the next 60s poll doesn't re-post the same announcement.
 		configManager.setConfiguration(CONFIG_GROUP, LAST_SHOWN_KEY, version);
 	}
 

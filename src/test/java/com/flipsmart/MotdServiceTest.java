@@ -134,7 +134,7 @@ public class MotdServiceTest
 	}
 
 	@Test
-	public void onLoginPostsEveryTimeRegardlessOfPersistedVersion()
+	public void onLoginShowsOnceAndDedupsOnSameVersion()
 	{
 		FlipSmartApiClient.MotdResponse resp = buildResponse("Welcome back", true, "v1");
 
@@ -146,28 +146,29 @@ public class MotdServiceTest
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
 		verify(chatMessageManager, times(1)).queue(any());
-
-		// A second login event with the same persisted version SHOULD now re-post.
-		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
-		service.onLogin();
-		verify(chatMessageManager, times(2)).queue(any());
-	}
-
-	@Test
-	public void onLoginUpdatesPersistedVersionSoNextPollDedups()
-	{
-		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", true, "v1");
-		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
-		service.onLogin();
-		// Login posted; the version it just showed must be recorded so a poll on
-		// the same version does not re-post.
 		verify(configManager, times(1))
 			.setConfiguration(eq("flipsmart"), eq("motd.lastShownVersion"), eq("v1"));
 
-		// Subsequent poll with the same response now sees lastShown==v1 and skips.
+		// A second login event with the same persisted version must NOT re-post —
+		// users who log in/out repeatedly should not be spammed.
 		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
-		service.handleResponse(resp);
+		service.onLogin();
 		verify(chatMessageManager, times(1)).queue(any());
+	}
+
+	@Test
+	public void onLoginPostsAgainOnNewVersion()
+	{
+		FlipSmartApiClient.MotdResponse v1 = buildResponse("Hi", true, "v1");
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(v1));
+		service.onLogin();
+		verify(chatMessageManager, times(1)).queue(any());
+
+		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
+		FlipSmartApiClient.MotdResponse v2 = buildResponse("Hi updated", true, "v2");
+		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(v2));
+		service.onLogin();
+		verify(chatMessageManager, times(2)).queue(any());
 	}
 
 	@Test
