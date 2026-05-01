@@ -936,7 +936,35 @@ public class FlipSmartApiClient
 		public String getRefreshToken() { return refreshToken; }
 		public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
 	}
-	
+
+	/**
+	 * Per-channel MOTD payload returned by GET /motd.
+	 */
+	public static class MotdChannelData
+	{
+		private String message;
+		private boolean enabled;
+		private String version;
+		private String severity;
+
+		public String getMessage() { return message; }
+		public boolean isEnabled() { return enabled; }
+		public String getVersion() { return version; }
+		public String getSeverity() { return severity; }
+	}
+
+	/**
+	 * Response shape for GET /motd.
+	 */
+	public static class MotdResponse
+	{
+		private MotdChannelData web;
+		private MotdChannelData plugin;
+
+		public MotdChannelData getWeb() { return web; }
+		public MotdChannelData getPlugin() { return plugin; }
+	}
+
 	/**
 	 * Start the device authorization flow for Discord login.
 	 * Returns a device code and verification URL that the user should open in their browser.
@@ -2364,5 +2392,26 @@ public class FlipSmartApiClient
 			.build();
 
 		executeWebhookCall(request, "delete", onSuccess, onError);
+	}
+
+	/**
+	 * Fetch the current Message of the Day for both web and plugin channels.
+	 * Public endpoint — no authentication required.
+	 *
+	 * @return CompletableFuture resolving to the parsed response, or null on error.
+	 */
+	public CompletableFuture<MotdResponse> getMotdAsync()
+	{
+		Request request = new Request.Builder()
+			.url(getApiUrl() + "/motd")
+			.get()
+			.build();
+
+		return executeAsync(
+			request,
+			body -> gson.fromJson(body, MotdResponse.class),
+			null,
+			false // public endpoint — do not retry on 401
+		);
 	}
 }
