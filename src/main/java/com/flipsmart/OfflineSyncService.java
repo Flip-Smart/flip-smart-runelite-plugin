@@ -262,39 +262,25 @@ public class OfflineSyncService
 		}
 		session.setOfflineSyncCompleted(true);
 
-		// Load persisted offers from last session to compare against current state
 		Map<Integer, TrackedOffer> persistedOffers = loadPersistedOffers();
 		log.debug("Loaded {} persisted offers, comparing with {} current offers",
 			persistedOffers.size(), session.getTrackedOffers().size());
 
-		// Always sync current offers
 		if (!session.getTrackedOffers().isEmpty())
 		{
 			syncCurrentOffersWithPersisted(persistedOffers);
 		}
 
-		// Handle slots that became empty while offline
 		if (!persistedOffers.isEmpty())
 		{
 			handleEmptyPersistedSlots(persistedOffers);
 		}
 
-		// Drop persisted collectedItems entries that no longer match real state, then re-persist
-		// the cleaned set so stale entries don't survive to the next session (issue #451).
-		// Must run on the client thread — the inventory check reads ItemContainer state.
+		// Inventory check requires the client thread.
 		clientThread.invokeLater(() ->
 		{
-			int pruned = pruneStaleCollectedItems();
-			if (pruned > 0)
-			{
-				log.debug("Offline sync pruned {} stale collectedItems for {}", pruned, session.getRsn());
-			}
-
-			// Re-persist the current merged state so timestamps survive unexpected shutdowns
-			// (e.g., client crash, force close where shutDown() doesn't run)
+			pruneStaleCollectedItems();
 			persistOfferState();
-
-			log.debug("Offline sync completed for {}", session.getRsn());
 
 			if (onSyncComplete != null)
 			{
@@ -304,16 +290,9 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Drop collectedItems entries that don't match real state — not in inventory,
-	 * no in-flight or uncollected buy offer, and no active sell slot. Mirrors the
-	 * runtime cleanup in {@link AutoRecommendService#evaluateCollectedItem} but
-	 * runs proactively at offline-sync time so persisted entries from a prior
-	 * session can't keep firing stuck "sell X" prompts (issue #451).
-	 *
-	 * <p>Must be called from the client thread; the inventory check reads
-	 * ItemContainer state.
-	 *
-	 * @return number of entries removed
+	 * Drop collectedItems entries with no inventory, in-flight/uncollected buy,
+	 * or active sell — they are "phantom" sell prompts from prior sessions (#451).
+	 * Must be called from the client thread.
 	 */
 	int pruneStaleCollectedItems()
 	{
@@ -326,23 +305,19 @@ public class OfflineSyncService
 		List<Integer> toRemove = new ArrayList<>();
 		for (int itemId : currentIds)
 		{
-			if (isItemKnownPresent(itemId))
+			if (!isItemKnownPresent(itemId))
 			{
-				continue;
+				toRemove.add(itemId);
 			}
-			toRemove.add(itemId);
 		}
-
 		for (int itemId : toRemove)
 		{
-			log.debug("Pruning stale collectedItem {} for {} (no inventory or GE evidence)",
-				itemId, session.getRsn());
 			session.removeCollectedItem(itemId);
 		}
 		return toRemove.size();
 	}
 
-	/** Inventory presence or any active GE offer counts as evidence to keep tracking. */
+
 	private boolean isItemKnownPresent(int itemId)
 	{
 		if (session.hasInFlightBuyOfferForItem(itemId)
@@ -357,17 +332,11 @@ public class OfflineSyncService
 		}
 		catch (Exception | AssertionError e)
 		{
-			// Inventory not accessible (off client thread or container missing).
-			// Be conservative and treat as present so a legitimate sell candidate
-			// is not wrongly pruned.
-			log.debug("Inventory unavailable when validating collectedItem {}; keeping", itemId);
+			// Conservative on inventory-unavailable: never wrongly prune.
 			return true;
 		}
 	}
 
-	/**
-	 * Sync current GE offers against persisted state to detect offline fills.
-	 */
 	private void syncCurrentOffersWithPersisted(Map<Integer, TrackedOffer> persistedOffers)
 	{
 		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
