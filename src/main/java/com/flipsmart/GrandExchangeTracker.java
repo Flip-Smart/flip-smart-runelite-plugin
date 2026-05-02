@@ -348,7 +348,6 @@ public class GrandExchangeTracker
 			handleEmptyBuyWithZeroFills(collectedOffer);
 		}
 
-		ensureFallbackSellPrice(collectedOffer);
 		notifyAutoRecommendCollection(collectedOffer);
 		schedulePanelRefresh();
 	}
@@ -411,21 +410,6 @@ public class GrandExchangeTracker
 			log.debug("Buy order for {} went empty but found {} items in inventory - may have filled offline",
 				collectedOffer.getItemName(), inventoryCount);
 			session.addCollectedItem(collectedOffer.getItemId(), inventoryCount);
-		}
-	}
-
-	private void ensureFallbackSellPrice(TrackedOffer collectedOffer)
-	{
-		if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0
-			&& session.getRecommendedPrice(collectedOffer.getItemId()) == null)
-		{
-			int buyPrice = (collectedOffer.getPreviousSpent() > 0 && collectedOffer.getPreviousQuantitySold() > 0)
-				? (int)(collectedOffer.getPreviousSpent() / collectedOffer.getPreviousQuantitySold())
-				: collectedOffer.getPrice();
-			int fallbackSellPrice = (int) Math.ceil((buyPrice + 1) / 0.98);
-			session.setRecommendedPrice(collectedOffer.getItemId(), fallbackSellPrice);
-			log.debug("No recommended sell price for {} - using fallback {} gp (bought at {} gp)",
-				collectedOffer.getItemName(), fallbackSellPrice, buyPrice);
 		}
 	}
 

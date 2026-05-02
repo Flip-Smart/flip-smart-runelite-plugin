@@ -1313,7 +1313,6 @@ public class FlipSmartApiClient
 		public final Integer recommendedSellPrice;
 		public final String rsn;
 		public final Integer totalQuantity;
-		public final boolean isOfflineFill;
 
 		private TransactionRequest(Builder builder)
 		{
@@ -1326,7 +1325,6 @@ public class FlipSmartApiClient
 			this.recommendedSellPrice = builder.recommendedSellPrice;
 			this.rsn = builder.rsn;
 			this.totalQuantity = builder.totalQuantity;
-			this.isOfflineFill = builder.isOfflineFill;
 		}
 
 		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
@@ -1345,7 +1343,6 @@ public class FlipSmartApiClient
 			private Integer recommendedSellPrice;
 			private String rsn;
 			private Integer totalQuantity;
-			private boolean isOfflineFill = false;
 
 			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
 			{
@@ -1360,7 +1357,6 @@ public class FlipSmartApiClient
 			public Builder recommendedSellPrice(Integer price) { this.recommendedSellPrice = price; return this; }
 			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
 			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
-			public Builder isOfflineFill(boolean value) { this.isOfflineFill = value; return this; }
 
 			public TransactionRequest build() { return new TransactionRequest(this); }
 		}
@@ -1397,7 +1393,6 @@ public class FlipSmartApiClient
 		{
 			jsonBody.addProperty("total_quantity", request.totalQuantity);
 		}
-		jsonBody.addProperty("is_offline_fill", request.isOfflineFill);
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 		
