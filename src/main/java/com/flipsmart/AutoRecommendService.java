@@ -1996,10 +1996,10 @@ public class AutoRecommendService
 	}
 
 	/**
-	 * Returns itemId if sellable now, else -1. Items in inventory are sellable.
-	 * Active/completed buys are skipped (promptCollection routes the message).
-	 * Cancelled partial buys (no tracked offer, but collectedQuantity > 0) are
-	 * treated as sellable so the user gets a sell prompt for the partial fill.
+	 * Returns itemId if sellable now, else -1. An entry is sellable only when the
+	 * item is actually present in inventory. Active or uncollected buys fall through
+	 * to promptCollection. Anything else is stale — collectedQuantity alone does not
+	 * keep an entry alive (that fallback was the root cause of stuck sell prompts).
 	 */
 	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
 	{
@@ -2011,10 +2011,6 @@ public class AutoRecommendService
 			|| session.hasUncollectedBuyOfferForItem(itemId))
 		{
 			return -1;
-		}
-		if (session.getCollectedQuantity(itemId) > 0)
-		{
-			return hasSellPrice(itemId) ? itemId : -1;
 		}
 		staleItems.add(itemId);
 		return -1;

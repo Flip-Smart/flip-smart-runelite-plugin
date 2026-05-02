@@ -348,11 +348,12 @@ public class OfflineSyncService
 			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
 			{
 				restoreTimestampIfOlder(currentOffer, persistedOffer);
-				recordOfflineFillsIfAny(slot, currentOffer, persistedOffer);
 			}
-			else if (currentOffer.getTotalQuantity() > 0)
+			else if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
 			{
-				recordNewOfferFromSync(slot, currentOffer);
+				// Track inventory locally so a sell can be queued; backend rejects
+				// is_offline_fill submissions after #597, so no transaction is recorded.
+				session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
 			}
 		}
 	}
@@ -364,82 +365,6 @@ public class OfflineSyncService
 		{
 			current.setCreatedAtMillis(persisted.getCreatedAtMillis());
 		}
-	}
-
-	private void recordNewOfferFromSync(int slot, TrackedOffer offer)
-	{
-		log.debug("Recording GE order for {} {} (slot {}): {}/{} items at {} gp",
-			offer.isBuy() ? "BUY" : "SELL",
-			offer.getItemName(), slot, offer.getPreviousQuantitySold(),
-			offer.getTotalQuantity(), offer.getPrice());
-
-		Integer recommendedSellPrice = offer.isBuy()
-			? session.getRecommendedPrice(offer.getItemId()) : null;
-
-		int actualPrice = (offer.getPreviousSpent() > 0 && offer.getPreviousQuantitySold() > 0)
-			? (int)(offer.getPreviousSpent() / offer.getPreviousQuantitySold())
-			: offer.getPrice();
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-			.builder(offer.getItemId(), offer.getItemName(), offer.isBuy(),
-				offer.getPreviousQuantitySold(), actualPrice)
-			.geSlot(slot)
-			.recommendedSellPrice(recommendedSellPrice)
-			.rsn(getRsnSafe().orElse(null))
-			.totalQuantity(offer.getTotalQuantity())
-			.isOfflineFill(true)
-			.build());
-
-		if (offer.isBuy() && offer.getPreviousQuantitySold() > 0)
-		{
-			session.addCollectedItem(offer.getItemId(), offer.getPreviousQuantitySold());
-		}
-	}
-
-	/**
-	 * Record offline fills if the current offer has more fills than persisted.
-	 */
-	private void recordOfflineFillsIfAny(int slot, TrackedOffer currentOffer, TrackedOffer persistedOffer)
-	{
-		int offlineFills = currentOffer.getPreviousQuantitySold() - persistedOffer.getPreviousQuantitySold();
-		if (offlineFills <= 0)
-		{
-			return;
-		}
-
-		log.debug("Detected {} offline fills for {} (slot {}): {} -> {} (order size: {})",
-			offlineFills, currentOffer.getItemName(), slot,
-			persistedOffer.getPreviousQuantitySold(), currentOffer.getPreviousQuantitySold(),
-			currentOffer.getTotalQuantity());
-
-		Integer recommendedSellPrice = currentOffer.isBuy() ? session.getRecommendedPrice(currentOffer.getItemId()) : null;
-
-		// Compute exact price for offline fills using spent delta:
-		// (currentSpent - persistedSpent) / offlineFills gives the avg price of just the offline fills
-		long spentDelta = currentOffer.getPreviousSpent() - persistedOffer.getPreviousSpent();
-		int fillPrice;
-		if (spentDelta > 0 && offlineFills > 0)
-		{
-			fillPrice = (int)(spentDelta / offlineFills);
-		}
-		else if (currentOffer.getPreviousSpent() > 0 && currentOffer.getPreviousQuantitySold() > 0)
-		{
-			// Fallback: cumulative average (e.g. if persistedOffer predates previousSpent tracking)
-			fillPrice = (int)(currentOffer.getPreviousSpent() / currentOffer.getPreviousQuantitySold());
-		}
-		else
-		{
-			// Last-resort fallback: offer price
-			fillPrice = currentOffer.getPrice();
-		}
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-			.builder(currentOffer.getItemId(), currentOffer.getItemName(), currentOffer.isBuy(),
-				offlineFills, fillPrice)
-			.geSlot(slot)
-			.recommendedSellPrice(recommendedSellPrice)
-			.rsn(getRsnSafe().orElse(null))
-			.totalQuantity(currentOffer.getTotalQuantity())
-			.isOfflineFill(true)
-			.build());
 	}
 
 	/**
@@ -472,68 +397,21 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Handle an empty slot that was previously a sell order.
+	 * Handle an empty slot that was previously a sell order. Backend rejects offline-fill
+	 * submissions (#597), so we only dismiss the local flip tracking when inventory is empty.
 	 */
 	private void handleEmptySellSlot(TrackedOffer persistedOffer)
 	{
-		int persistedSoldQty = persistedOffer.getPreviousQuantitySold();
-		int totalQty = persistedOffer.getTotalQuantity();
-
-		// Only record fills that happened AFTER the last logout (offline fills).
-		// persistedSoldQty fills were already recorded as online transactions in the previous session.
-		// If the order was fully sold before logout, only collection happened offline — don't re-record.
-		if (persistedSoldQty >= totalQty && totalQty > 0)
-		{
-			log.debug("Sell order for {} was complete before logout ({}/{}). Collection happened offline — no offline sells to record.",
-				persistedOffer.getItemName(), persistedSoldQty, totalQty);
-		}
-		else
-		{
-			int offlineSells = totalQty - persistedSoldQty;
-			if (offlineSells > 0)
-			{
-				log.debug("Detected {} {} sold offline (total: {}, tracked before logout: {}). Recording SELL transaction.",
-					offlineSells, persistedOffer.getItemName(), totalQty, persistedSoldQty);
-				recordOfflineSellTransaction(persistedOffer, offlineSells);
-			}
-			else
-			{
-				log.debug("Sell order for {} was cancelled or no items sold.", persistedOffer.getItemName());
-			}
-		}
-
-		// Inventory check must run on the client thread (getItemContainer requires it)
 		clientThread.invokeLater(() ->
 		{
 			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
 			if (inventoryCount == 0)
 			{
-				log.debug("No {} in inventory after offline sell - dismissing active flip", persistedOffer.getItemName());
+				log.debug("Sell slot empty for {} and no inventory - dismissing active flip",
+					persistedOffer.getItemName());
 				activeFlipTracker.dismissFlip(persistedOffer.getItemId());
 			}
 		});
-	}
-
-	/**
-	 * Record a SELL transaction for items that sold while offline.
-	 */
-	private void recordOfflineSellTransaction(TrackedOffer persistedOffer, int soldQuantity)
-	{
-		String rsn = getRsnSafe().orElse(null);
-		if (rsn == null)
-		{
-			log.warn("Cannot record offline sell - no RSN available");
-			return;
-		}
-
-		int sellPrice = (persistedOffer.getPreviousSpent() > 0 && persistedOffer.getPreviousQuantitySold() > 0)
-			? (int)(persistedOffer.getPreviousSpent() / persistedOffer.getPreviousQuantitySold())
-			: persistedOffer.getPrice();
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-			.builder(persistedOffer.getItemId(), persistedOffer.getItemName(), false, soldQuantity, sellPrice)
-			.rsn(rsn)
-			.isOfflineFill(true)
-			.build());
 	}
 
 	/**

@@ -273,8 +273,11 @@ public class ActiveFlipTracker
 
 		if (actualQty == 0)
 		{
-			log.debug("No items found for {} during validation - dismissing active flip", flip.getItemName());
-			dismissFlip(itemId);
+			// Backend now soft-deletes via 30-day grace (#602); the plugin no longer
+			// dismisses here. GE state may not yet be loaded 17s post-login, and a
+			// hard dismiss races offline-collect items that have not yet repopulated.
+			log.debug("No items found for {} during validation - leaving for backend grace period",
+				flip.getItemName());
 			return;
 		}
 
