@@ -219,7 +219,7 @@ public class GEHistoryService
 			int parsed = parseDigits(text);
 			if (parsed > 0) acc.price = parsed;
 		}
-		else if (acc.quantity <= 0 && text.matches(".*\\d+.*"))
+		else if (acc.quantity <= 0 && containsDigit(text))
 		{
 			int parsed = parseDigits(text);
 			if (parsed > 0) acc.quantity = parsed;
@@ -330,6 +330,15 @@ public class GEHistoryService
 		for (int c : SELL_COLORS)
 		{
 			if (color == c) return true;
+		}
+		return false;
+	}
+
+	private static boolean containsDigit(String text)
+	{
+		for (int i = 0; i < text.length(); i++)
+		{
+			if (Character.isDigit(text.charAt(i))) return true;
 		}
 		return false;
 	}
