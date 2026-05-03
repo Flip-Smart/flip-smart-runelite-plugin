@@ -334,36 +334,37 @@ public class GEHistoryService
 		for (int i = 0; i < children.length; i++)
 		{
 			Widget rowWidget = children[i];
-			if (rowWidget == null || rowWidget.isHidden())
+			if (rowWidget != null && !rowWidget.isHidden())
 			{
-				continue;
-			}
-
-			Widget[] subChildren = rowWidget.getDynamicChildren();
-			if (subChildren == null || subChildren.length == 0)
-			{
-				subChildren = rowWidget.getChildren();
-			}
-			if (subChildren == null || subChildren.length < 3)
-			{
-				continue;
-			}
-
-			try
-			{
-				GEHistoryEntry entry = parseRowFromSubChildren(subChildren);
-				if (entry != null)
+				Widget[] subChildren = rowWidget.getDynamicChildren();
+				if (subChildren == null || subChildren.length == 0)
 				{
-					entries.add(entry);
+					subChildren = rowWidget.getChildren();
 				}
-			}
-			catch (Exception e)
-			{
-				log.debug("Failed to parse container row {}: {}", i, e.getMessage());
+				if (subChildren != null && subChildren.length >= 3)
+				{
+					tryParseContainerRow(i, subChildren, entries);
+				}
 			}
 		}
 
 		return entries;
+	}
+
+	private void tryParseContainerRow(int rowIndex, Widget[] subChildren, List<GEHistoryEntry> entries)
+	{
+		try
+		{
+			GEHistoryEntry entry = parseRowFromSubChildren(subChildren);
+			if (entry != null)
+			{
+				entries.add(entry);
+			}
+		}
+		catch (Exception e)
+		{
+			log.debug("Failed to parse container row {}: {}", rowIndex, e.getMessage());
+		}
 	}
 
 	private GEHistoryEntry parseRowFromSubChildren(Widget[] subChildren)
