@@ -269,6 +269,11 @@ public class OfflineSyncService
 		log.debug("Loaded {} persisted offers, comparing with {} current offers",
 			persistedOffers.size(), session.getTrackedOffers().size());
 
+		// Hand the snapshot to GEHistoryService so fully-completed offline trades
+		// (whose live TrackedOffer no longer exists post-sync) can still be
+		// matched and backfilled when the user opens the History tab.
+		geHistoryService.setRecentlyPersistedOffers(persistedOffers);
+
 		if (!session.getTrackedOffers().isEmpty())
 		{
 			syncCurrentOffersWithPersisted(persistedOffers);

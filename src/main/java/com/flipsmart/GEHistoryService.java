@@ -8,6 +8,7 @@ import net.runelite.api.widgets.Widget;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,7 @@ public class GEHistoryService
 	private final PlayerSession session;
 
 	private final Set<Integer> pendingOfflineFillItemIds = ConcurrentHashMap.newKeySet();
+	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
 	private volatile boolean historyReadThisSession = false;
 
 	@Inject
@@ -77,6 +79,21 @@ public class GEHistoryService
 		}
 	}
 
+	/**
+	 * Snapshot of offers persisted at the previous session's logout — used as
+	 * additional anchors when backfilling, so fully-completed offline trades
+	 * (whose live TrackedOffer no longer exists) can still be matched by
+	 * itemId + isBuy and have their estimated price replaced.
+	 */
+	public void setRecentlyPersistedOffers(Map<Integer, TrackedOffer> offers)
+	{
+		recentlyPersistedOffers.clear();
+		if (offers != null)
+		{
+			recentlyPersistedOffers.putAll(offers);
+		}
+	}
+
 	public boolean hasUnverifiedOfflineFills()
 	{
 		return !historyReadThisSession && !pendingOfflineFillItemIds.isEmpty();
@@ -85,6 +102,7 @@ public class GEHistoryService
 	public void reset()
 	{
 		pendingOfflineFillItemIds.clear();
+		recentlyPersistedOffers.clear();
 		historyReadThisSession = false;
 	}
 
@@ -251,12 +269,13 @@ public class GEHistoryService
 			return;
 		}
 		String rsn = rsnOpt.get();
-		Map<Integer, TrackedOffer> trackedOffers = session.getTrackedOffers();
+		List<TrackedOffer> candidates = new ArrayList<>(session.getTrackedOffers().values());
+		candidates.addAll(recentlyPersistedOffers.values());
 		Map<Integer, TrackedOffer> matchedOffers = new HashMap<>();
 
 		for (GEHistoryEntry entry : entries)
 		{
-			tryBackfillEntry(entry, trackedOffers, matchedOffers, rsn);
+			tryBackfillEntry(entry, candidates, matchedOffers, rsn);
 		}
 		if (!matchedOffers.isEmpty())
 		{
@@ -266,7 +285,7 @@ public class GEHistoryService
 
 	private void tryBackfillEntry(
 		GEHistoryEntry entry,
-		Map<Integer, TrackedOffer> trackedOffers,
+		Collection<TrackedOffer> candidates,
 		Map<Integer, TrackedOffer> matchedOffers,
 		String rsn)
 	{
@@ -274,7 +293,7 @@ public class GEHistoryService
 		{
 			return;
 		}
-		for (TrackedOffer offer : trackedOffers.values())
+		for (TrackedOffer offer : candidates)
 		{
 			if (offer.getItemId() == entry.getItemId()
 				&& offer.isBuy() == entry.isBuy()
