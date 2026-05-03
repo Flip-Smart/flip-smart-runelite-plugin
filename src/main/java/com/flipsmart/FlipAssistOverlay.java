@@ -66,6 +66,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
+	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to improve offline fill accuracy";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -87,7 +88,8 @@ public class FlipAssistOverlay extends Overlay
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
 	private final TradeActivityLog tradeActivityLog;
-	
+	private final GEHistoryService geHistoryService;
+
 	@Getter
 	private FocusedFlip focusedFlip;
 
@@ -148,7 +150,7 @@ public class FlipAssistOverlay extends Overlay
 	}
 
 	@Inject
-	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager, TradeActivityLog tradeActivityLog)
+	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager, TradeActivityLog tradeActivityLog, GEHistoryService geHistoryService)
 	{
 		this.flipSmartPlugin = flipSmartPlugin;
 		this.client = client;
@@ -156,6 +158,7 @@ public class FlipAssistOverlay extends Overlay
 		this.config = config;
 		this.itemManager = itemManager;
 		this.tradeActivityLog = tradeActivityLog;
+		this.geHistoryService = geHistoryService;
 		
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -275,6 +278,10 @@ public class FlipAssistOverlay extends Overlay
 			if (!flipSmartPlugin.getApiClient().isAuthenticated())
 			{
 				return renderHintBox(graphics, LOGIN_MESSAGE);
+			}
+			if (isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills())
+			{
+				return renderHintBox(graphics, HISTORY_PROMPT_MESSAGE);
 			}
 			return renderHintBox(graphics, HINT_MESSAGE);
 		}
@@ -532,6 +539,10 @@ public class FlipAssistOverlay extends Overlay
 	private Color getHintLineColor(String line)
 	{
 		String trimmed = line.trim();
+		if (trimmed.startsWith("Open GE History"))
+		{
+			return COLOR_BUY;
+		}
 		if (trimmed.endsWith("gp"))
 		{
 			return COLOR_BUY;

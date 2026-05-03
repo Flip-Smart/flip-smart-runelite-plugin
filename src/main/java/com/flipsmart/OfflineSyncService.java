@@ -47,6 +47,7 @@ public class OfflineSyncService
 	private final Client client;
 	private final ClientThread clientThread;
 	private final ActiveFlipTracker activeFlipTracker;
+	private final GEHistoryService geHistoryService;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
 	private Runnable onSyncComplete;
@@ -59,7 +60,8 @@ public class OfflineSyncService
 		Gson gson,
 		Client client,
 		ClientThread clientThread,
-		ActiveFlipTracker activeFlipTracker)
+		ActiveFlipTracker activeFlipTracker,
+		GEHistoryService geHistoryService)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
@@ -68,6 +70,7 @@ public class OfflineSyncService
 		this.client = client;
 		this.clientThread = clientThread;
 		this.activeFlipTracker = activeFlipTracker;
+		this.geHistoryService = geHistoryService;
 	}
 
 	public void setOnSyncComplete(Runnable onSyncComplete)
@@ -354,6 +357,7 @@ public class OfflineSyncService
 				// Track inventory locally so a sell can be queued; backend rejects
 				// is_offline_fill submissions after #597, so no transaction is recorded.
 				session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
+				geHistoryService.registerOfflineFill(currentOffer.getItemId());
 			}
 		}
 	}
@@ -410,6 +414,7 @@ public class OfflineSyncService
 				log.debug("Sell slot empty for {} and no inventory - dismissing active flip",
 					persistedOffer.getItemName());
 				activeFlipTracker.dismissFlip(persistedOffer.getItemId());
+				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 			}
 		});
 	}
@@ -433,6 +438,7 @@ public class OfflineSyncService
 			{
 				log.debug("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
 					persistedOffer.getItemName(), trackedFills);
+				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 			}
 		});
 	}
@@ -448,6 +454,7 @@ public class OfflineSyncService
 		if (actualFills > trackedFills)
 		{
 			syncOfflineCompletedOrder(persistedOffer, inventoryCount, trackedFills, actualFills);
+			geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 		}
 		else
 		{
