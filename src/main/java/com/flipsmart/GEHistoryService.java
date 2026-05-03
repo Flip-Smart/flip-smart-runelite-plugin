@@ -180,45 +180,63 @@ public class GEHistoryService
 
 	private GEHistoryEntry parseRowFromSubChildren(Widget[] subChildren)
 	{
+		RowAcc acc = new RowAcc();
+		for (Widget sub : subChildren)
+		{
+			if (sub != null)
+			{
+				absorbSub(sub, acc);
+			}
+		}
+		return acc.toEntry();
+	}
+
+	private void absorbSub(Widget sub, RowAcc acc)
+	{
+		if (sub.getItemId() > 0 && acc.itemId <= 0)
+		{
+			acc.itemId = sub.getItemId();
+			if (sub.getItemQuantity() > 0)
+			{
+				acc.quantity = sub.getItemQuantity();
+			}
+		}
+		absorbText(sub.getText(), acc);
+		if (isSellColor(sub.getTextColor()))
+		{
+			acc.isBuy = false;
+		}
+	}
+
+	private static void absorbText(String text, RowAcc acc)
+	{
+		if (text == null || text.isEmpty())
+		{
+			return;
+		}
+		if (text.contains("gp") || text.contains("coin") || text.contains(","))
+		{
+			int parsed = parseDigits(text);
+			if (parsed > 0) acc.price = parsed;
+		}
+		else if (acc.quantity <= 0 && text.matches(".*\\d+.*"))
+		{
+			int parsed = parseDigits(text);
+			if (parsed > 0) acc.quantity = parsed;
+		}
+	}
+
+	private static final class RowAcc
+	{
 		int itemId = -1;
 		int quantity = -1;
 		int price = -1;
 		boolean isBuy = true;
 
-		for (Widget sub : subChildren)
+		GEHistoryEntry toEntry()
 		{
-			if (sub == null)
-			{
-				continue;
-			}
-			if (sub.getItemId() > 0 && itemId <= 0)
-			{
-				itemId = sub.getItemId();
-				if (sub.getItemQuantity() > 0)
-				{
-					quantity = sub.getItemQuantity();
-				}
-			}
-			String text = sub.getText();
-			if (text != null && !text.isEmpty())
-			{
-				if (text.contains("gp") || text.contains("coin") || text.contains(","))
-				{
-					int parsed = parseDigits(text);
-					if (parsed > 0) price = parsed;
-				}
-				else if (quantity <= 0 && text.matches(".*\\d+.*"))
-				{
-					int parsed = parseDigits(text);
-					if (parsed > 0) quantity = parsed;
-				}
-			}
-			if (isSellColor(sub.getTextColor()))
-			{
-				isBuy = false;
-			}
+			return (itemId > 0 && quantity > 0 && price > 0) ? new GEHistoryEntry(itemId, isBuy, quantity, price) : null;
 		}
-		return (itemId > 0 && quantity > 0 && price > 0) ? new GEHistoryEntry(itemId, isBuy, quantity, price) : null;
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
@@ -238,31 +256,48 @@ public class GEHistoryService
 
 		for (GEHistoryEntry entry : entries)
 		{
-			for (TrackedOffer offer : trackedOffers.values())
-			{
-				if (offer.getItemId() != entry.getItemId() || offer.isBuy() != entry.isBuy())
-				{
-					continue;
-				}
-				int actualPrice = entry.getPricePerItem();
-				if (offer.getPrice() != actualPrice && !matchedOffers.containsKey(entry.getItemId()))
-				{
-					matchedOffers.put(entry.getItemId(), offer);
-					log.info("GE History backfill: {} {} — estimated {}gp, actual {}gp",
-						entry.isBuy() ? "BUY" : "SELL", offer.getItemName(), offer.getPrice(), actualPrice);
-					apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-						.builder(entry.getItemId(), offer.getItemName(), entry.isBuy(), entry.getQuantity(), actualPrice)
-						.rsn(rsn)
-						.totalQuantity(offer.getTotalQuantity())
-						.isHistoryBackfill(true)
-						.build());
-				}
-			}
+			tryBackfillEntry(entry, trackedOffers, matchedOffers, rsn);
 		}
 		if (!matchedOffers.isEmpty())
 		{
 			log.info("Backfilled {} offline fills with actual prices from GE history", matchedOffers.size());
 		}
+	}
+
+	private void tryBackfillEntry(
+		GEHistoryEntry entry,
+		Map<Integer, TrackedOffer> trackedOffers,
+		Map<Integer, TrackedOffer> matchedOffers,
+		String rsn)
+	{
+		if (matchedOffers.containsKey(entry.getItemId()))
+		{
+			return;
+		}
+		for (TrackedOffer offer : trackedOffers.values())
+		{
+			if (offer.getItemId() == entry.getItemId()
+				&& offer.isBuy() == entry.isBuy()
+				&& offer.getPrice() != entry.getPricePerItem())
+			{
+				matchedOffers.put(entry.getItemId(), offer);
+				postBackfill(entry, offer, rsn);
+				return;
+			}
+		}
+	}
+
+	private void postBackfill(GEHistoryEntry entry, TrackedOffer offer, String rsn)
+	{
+		int actualPrice = entry.getPricePerItem();
+		log.info("GE History backfill: {} {} — estimated {}gp, actual {}gp",
+			entry.isBuy() ? "BUY" : "SELL", offer.getItemName(), offer.getPrice(), actualPrice);
+		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			.builder(entry.getItemId(), offer.getItemName(), entry.isBuy(), entry.getQuantity(), actualPrice)
+			.rsn(rsn)
+			.totalQuantity(offer.getTotalQuantity())
+			.isHistoryBackfill(true)
+			.build());
 	}
 
 	private int parseQuantity(Widget widget)
@@ -302,7 +337,7 @@ public class GEHistoryService
 	private static int parseDigits(String text)
 	{
 		if (text == null) return -1;
-		String cleaned = text.replaceAll("[^0-9]", "");
+		String cleaned = text.replaceAll("\\D", "");
 		if (cleaned.isEmpty()) return -1;
 		try
 		{
