@@ -895,6 +895,8 @@ public class FlipSmartPlugin extends Plugin
 		{
 			syncRSN();
 		}
+
+		geHistoryService.onGameTick();
 	}
 
 	private void handleLogoutState()

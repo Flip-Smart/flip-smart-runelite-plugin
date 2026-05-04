@@ -42,6 +42,7 @@ public class GEHistoryService
 	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
 	private volatile boolean historyReadThisSession = false;
 	private volatile boolean widgetStructureLogged = false;
+	private volatile int pendingHistoryReadTicks = 0;
 
 	@Inject
 	public GEHistoryService(Client client, FlipSmartApiClient apiClient, PlayerSession session)
@@ -54,26 +55,53 @@ public class GEHistoryService
 	public void onHistoryWidgetLoaded()
 	{
 		log.info("GE History widget loaded (group {})", InterfaceID.GE_HISTORY);
-		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
-		if (listWidget == null || listWidget.isHidden())
+		// WidgetLoaded fires when the interface is *created*, but list rows are
+		// populated by clientscripts that run afterward. Defer two ticks so the
+		// scripts have time to write the row widgets before we scan them.
+		pendingHistoryReadTicks = 2;
+	}
+
+	/**
+	 * Called from FlipSmartPlugin.onGameTick. Counts down ticks after WidgetLoaded
+	 * to give clientscripts time to populate the list rows before we read them.
+	 */
+	public void onGameTick()
+	{
+		if (pendingHistoryReadTicks <= 0)
 		{
-			log.info("GE History list widget at child {} is null or hidden — skipping", GE_HISTORY_LIST_CHILD);
 			return;
 		}
+		pendingHistoryReadTicks--;
+		if (pendingHistoryReadTicks > 0)
+		{
+			return;
+		}
+		readHistoryNow();
+	}
 
+	private void readHistoryNow()
+	{
 		historyReadThisSession = true;
 		pendingOfflineFillItemIds.clear();
 
 		if (!widgetStructureLogged)
 		{
-			logWidgetStructure(listWidget);
+			dumpHistoryGroup();
 			widgetStructureLogged = true;
+		}
+
+		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
+		if (listWidget == null)
+		{
+			log.info("Deferred read: list widget at child {} still null", GE_HISTORY_LIST_CHILD);
+			return;
 		}
 
 		List<GEHistoryEntry> entries = parseHistoryEntries(listWidget);
 		if (entries.isEmpty())
 		{
-			log.info("Parsed 0 history entries — widget offsets likely need calibration. See structure dump above.");
+			log.info("Deferred read: parsed 0 history entries from child {} — see group dump above to recalibrate offsets",
+				GE_HISTORY_LIST_CHILD);
 			return;
 		}
 
@@ -83,6 +111,43 @@ public class GEHistoryService
 			log.debug("  parsed: {}", entry);
 		}
 		backfillOfflineFills(entries);
+	}
+
+	/** Dump every child index 0..47 of group GE_HISTORY so we can see where row data actually lives. */
+	private void dumpHistoryGroup()
+	{
+		log.info("=== Dumping all children of GE_HISTORY group {} ===", InterfaceID.GE_HISTORY);
+		for (int idx = 0; idx < 48; idx++)
+		{
+			Widget w = client.getWidget(InterfaceID.GE_HISTORY, idx);
+			if (w == null) continue;
+			Widget[] dyn = w.getDynamicChildren();
+			Widget[] kid = w.getChildren();
+			Widget[] nest = w.getNestedChildren();
+			int dynN = dyn == null ? 0 : dyn.length;
+			int kidN = kid == null ? -1 : kid.length;
+			int nestN = nest == null ? 0 : nest.length;
+			log.info("  child[{}]: type={} w={} h={} hidden={} text='{}' itemId={} sprite={} dyn={} kid={} nest={}",
+				idx, w.getType(), w.getWidth(), w.getHeight(), w.isHidden(),
+				w.getText() == null ? "" : w.getText(),
+				w.getItemId(), w.getSpriteId(),
+				dynN, kidN, nestN);
+			Widget[] sample = firstNonEmpty(dyn, kid, nest);
+			if (sample != null && sample.length > 0)
+			{
+				int max = Math.min(sample.length, 8);
+				for (int j = 0; j < max; j++)
+				{
+					Widget c = sample[j];
+					if (c == null) continue;
+					log.info("    [{}.{}]: type={} itemId={} qty={} text='{}' color={}",
+						idx, j, c.getType(), c.getItemId(), c.getItemQuantity(),
+						c.getText() == null ? "" : c.getText(),
+						Integer.toHexString(c.getTextColor()));
+				}
+			}
+		}
+		log.info("=== end group dump ===");
 	}
 
 	public void registerOfflineFill(int itemId)
@@ -125,6 +190,7 @@ public class GEHistoryService
 		recentlyPersistedOffers.clear();
 		historyReadThisSession = false;
 		widgetStructureLogged = false;
+		pendingHistoryReadTicks = 0;
 	}
 
 	private List<GEHistoryEntry> parseHistoryEntries(Widget listWidget)
