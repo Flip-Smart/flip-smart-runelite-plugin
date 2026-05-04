@@ -341,11 +341,17 @@ public class GEHistoryService
 			return;
 		}
 		String rsn = rsnOpt.get();
+		if (pendingOfflineFillItemIds.isEmpty())
+		{
+			log.info("Backfill skipped: no offline fills registered this session");
+			return;
+		}
 		List<TrackedOffer> candidates = new ArrayList<>(session.getTrackedOffers().values());
 		candidates.addAll(recentlyPersistedOffers.values());
-		log.info("Backfill: {} history entries vs {} candidate offers ({} live + {} persisted)",
+		log.info("Backfill: {} history entries vs {} candidate offers ({} live + {} persisted), {} pending item ids",
 			entries.size(), candidates.size(),
-			session.getTrackedOffers().size(), recentlyPersistedOffers.size());
+			session.getTrackedOffers().size(), recentlyPersistedOffers.size(),
+			pendingOfflineFillItemIds.size());
 		Map<Integer, TrackedOffer> matchedOffers = new HashMap<>();
 
 		for (GEHistoryEntry entry : entries)
@@ -354,7 +360,7 @@ public class GEHistoryService
 		}
 		if (matchedOffers.isEmpty())
 		{
-			log.info("Backfill: no history entries matched a tracked or persisted offer");
+			log.info("Backfill: no history entries matched a registered offline fill");
 		}
 		else
 		{
@@ -368,15 +374,20 @@ public class GEHistoryService
 		Map<Integer, TrackedOffer> matchedOffers,
 		String rsn)
 	{
+		// Only backfill items we registered as offline-completed this session.
+		// Without this gate, opening the History tab would replay every visible
+		// row (up to 30 entries spanning prior sessions) on every read.
+		if (!pendingOfflineFillItemIds.contains(entry.getItemId()))
+		{
+			return;
+		}
 		if (matchedOffers.containsKey(entry.getItemId()))
 		{
 			return;
 		}
 		for (TrackedOffer offer : candidates)
 		{
-			if (offer.getItemId() == entry.getItemId()
-				&& offer.isBuy() == entry.isBuy()
-				&& offer.getPrice() != entry.getPricePerItem())
+			if (offer.getItemId() == entry.getItemId() && offer.isBuy() == entry.isBuy())
 			{
 				matchedOffers.put(entry.getItemId(), offer);
 				postBackfill(entry, offer, rsn);
