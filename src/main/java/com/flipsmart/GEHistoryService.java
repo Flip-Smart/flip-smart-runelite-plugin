@@ -29,15 +29,16 @@ import java.util.concurrent.ConcurrentHashMap;
 @Singleton
 public class GEHistoryService
 {
+	// Confirmed via in-game widget dump: list at child 3 has 240 dynamic
+	// children laid out as 30 rows × 8 children each.
+	//   offset 2: "Bought:" / "Sold:" header (type=4, text-only)
+	//   offset 4: item sprite (type=5, carries itemId + itemQuantity natively)
+	//   offset 5: price text "<col=...>X coins</col><br>= Y each"
 	private static final int GE_HISTORY_LIST_CHILD = 3;
-	private static final int CHILDREN_PER_ROW = 6;
-	private static final int ITEM_SPRITE_OFFSET = 2;
-	private static final int QUANTITY_TEXT_OFFSET = 4;
+	private static final int CHILDREN_PER_ROW = 8;
+	private static final int BUY_SELL_INDICATOR_OFFSET = 2;
+	private static final int ITEM_SPRITE_OFFSET = 4;
 	private static final int PRICE_TEXT_OFFSET = 5;
-	private static final int BUY_SELL_INDICATOR_OFFSET = 1;
-
-	// Sell-side text colors observed on the History widget
-	private static final int[] SELL_COLORS = {0xff0000, 0xd40000, 0xff981f};
 
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
@@ -240,11 +241,11 @@ public class GEHistoryService
 		}
 		log.debug("GE History parser: found {} children to scan", children.length);
 
-		List<GEHistoryEntry> entries = (children.length >= CHILDREN_PER_ROW) ? parseFlatLayout(children) : new ArrayList<>();
-		if (entries.isEmpty())
+		List<GEHistoryEntry> entries = new ArrayList<>();
+		int rowCount = children.length / CHILDREN_PER_ROW;
+		for (int row = 0; row < rowCount; row++)
 		{
-			log.debug("Flat-layout parse returned 0 entries; falling back to container layout");
-			entries = parseContainerLayout(children);
+			tryParseFlatRow(row, children, row * CHILDREN_PER_ROW, entries);
 		}
 		return entries;
 	}
@@ -283,31 +284,19 @@ public class GEHistoryService
 		log.info("=== end widget structure ===");
 	}
 
-	private List<GEHistoryEntry> parseFlatLayout(Widget[] children)
-	{
-		List<GEHistoryEntry> entries = new ArrayList<>();
-		int rowCount = children.length / CHILDREN_PER_ROW;
-		for (int row = 0; row < rowCount; row++)
-		{
-			int base = row * CHILDREN_PER_ROW;
-			tryParseFlatRow(row, children, base, entries);
-		}
-		return entries;
-	}
-
 	private void tryParseFlatRow(int row, Widget[] children, int base, List<GEHistoryEntry> entries)
 	{
 		try
 		{
 			Widget itemWidget = safeGet(children, base + ITEM_SPRITE_OFFSET);
-			int itemId = (itemWidget != null) ? itemWidget.getItemId() : -1;
-			if (itemId <= 0)
+			if (itemWidget == null || itemWidget.getItemId() <= 0)
 			{
 				return;
 			}
-			int quantity = parseQuantity(safeGet(children, base + QUANTITY_TEXT_OFFSET));
-			int price = parsePrice(safeGet(children, base + PRICE_TEXT_OFFSET));
-			boolean isBuy = parseBuySell(safeGet(children, base + BUY_SELL_INDICATOR_OFFSET));
+			int itemId = itemWidget.getItemId();
+			int quantity = itemWidget.getItemQuantity();
+			int price = parsePerItemPrice(safeGet(children, base + PRICE_TEXT_OFFSET));
+			boolean isBuy = parseBoughtSold(safeGet(children, base + BUY_SELL_INDICATOR_OFFSET));
 			if (quantity > 0 && price > 0)
 			{
 				entries.add(new GEHistoryEntry(itemId, isBuy, quantity, price));
@@ -319,103 +308,23 @@ public class GEHistoryService
 		}
 	}
 
-	private List<GEHistoryEntry> parseContainerLayout(Widget[] children)
+	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
+	private static int parsePerItemPrice(Widget widget)
 	{
-		List<GEHistoryEntry> entries = new ArrayList<>();
-		for (int i = 0; i < children.length; i++)
-		{
-			Widget rowWidget = children[i];
-			if (rowWidget != null && !rowWidget.isHidden())
-			{
-				Widget[] subChildren = rowWidget.getDynamicChildren();
-				if (subChildren == null || subChildren.length == 0)
-				{
-					subChildren = rowWidget.getChildren();
-				}
-				if (subChildren != null && subChildren.length >= 3)
-				{
-					tryParseContainerRow(i, subChildren, entries);
-				}
-			}
-		}
-		return entries;
+		if (widget == null) return -1;
+		String text = widget.getText();
+		if (text == null || text.isEmpty()) return -1;
+		int eqIdx = text.lastIndexOf('=');
+		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
+		return parseDigits(slice);
 	}
 
-	private void tryParseContainerRow(int rowIndex, Widget[] subChildren, List<GEHistoryEntry> entries)
+	/** Header widget reads "Bought:" or "Sold:". */
+	private static boolean parseBoughtSold(Widget widget)
 	{
-		try
-		{
-			GEHistoryEntry entry = parseRowFromSubChildren(subChildren);
-			if (entry != null)
-			{
-				entries.add(entry);
-			}
-		}
-		catch (Exception e)
-		{
-			log.debug("Failed to parse container row {}: {}", rowIndex, e.getMessage());
-		}
-	}
-
-	private GEHistoryEntry parseRowFromSubChildren(Widget[] subChildren)
-	{
-		RowAcc acc = new RowAcc();
-		for (Widget sub : subChildren)
-		{
-			if (sub != null)
-			{
-				absorbSub(sub, acc);
-			}
-		}
-		return acc.toEntry();
-	}
-
-	private void absorbSub(Widget sub, RowAcc acc)
-	{
-		if (sub.getItemId() > 0 && acc.itemId <= 0)
-		{
-			acc.itemId = sub.getItemId();
-			if (sub.getItemQuantity() > 0)
-			{
-				acc.quantity = sub.getItemQuantity();
-			}
-		}
-		absorbText(sub.getText(), acc);
-		if (isSellColor(sub.getTextColor()))
-		{
-			acc.isBuy = false;
-		}
-	}
-
-	private static void absorbText(String text, RowAcc acc)
-	{
-		if (text == null || text.isEmpty())
-		{
-			return;
-		}
-		if (text.contains("gp") || text.contains("coin") || text.contains(","))
-		{
-			int parsed = parseDigits(text);
-			if (parsed > 0) acc.price = parsed;
-		}
-		else if (acc.quantity <= 0 && containsDigit(text))
-		{
-			int parsed = parseDigits(text);
-			if (parsed > 0) acc.quantity = parsed;
-		}
-	}
-
-	private static final class RowAcc
-	{
-		int itemId = -1;
-		int quantity = -1;
-		int price = -1;
-		boolean isBuy = true;
-
-		GEHistoryEntry toEntry()
-		{
-			return (itemId > 0 && quantity > 0 && price > 0) ? new GEHistoryEntry(itemId, isBuy, quantity, price) : null;
-		}
+		if (widget == null) return true;
+		String text = widget.getText();
+		return text == null || !text.toLowerCase().startsWith("sold");
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
@@ -487,49 +396,6 @@ public class GEHistoryService
 			.totalQuantity(offer.getTotalQuantity())
 			.isHistoryBackfill(true)
 			.build());
-	}
-
-	private int parseQuantity(Widget widget)
-	{
-		if (widget == null) return -1;
-		if (widget.getItemQuantity() > 0) return widget.getItemQuantity();
-		return parseDigits(widget.getText());
-	}
-
-	private int parsePrice(Widget widget)
-	{
-		return (widget == null) ? -1 : parseDigits(widget.getText());
-	}
-
-	private boolean parseBuySell(Widget widget)
-	{
-		if (widget == null) return true;
-		if (isSellColor(widget.getTextColor())) return false;
-		String text = widget.getText();
-		if (text != null)
-		{
-			String lower = text.toLowerCase();
-			if (lower.contains("sold") || lower.contains("sell")) return false;
-		}
-		return true;
-	}
-
-	private static boolean isSellColor(int color)
-	{
-		for (int c : SELL_COLORS)
-		{
-			if (color == c) return true;
-		}
-		return false;
-	}
-
-	private static boolean containsDigit(String text)
-	{
-		for (int i = 0; i < text.length(); i++)
-		{
-			if (Character.isDigit(text.charAt(i))) return true;
-		}
-		return false;
 	}
 
 	private static int parseDigits(String text)
