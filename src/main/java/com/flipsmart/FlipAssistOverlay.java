@@ -253,7 +253,38 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return null;
 		}
-		
+
+		// Stacked GE-History banner: shown above whatever else the overlay
+		// renders, whenever offline fills are pending and GE is open. Lets
+		// the prompt survive autoStatusMessage / focused-flip states that
+		// otherwise suppress the idle hint box.
+		Dimension bannerSize = null;
+		boolean showHistoryBanner = isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills();
+		if (showHistoryBanner)
+		{
+			bannerSize = renderHistoryPromptBanner(graphics);
+			graphics.translate(0, bannerSize.height + 4);
+		}
+
+		Dimension mainSize = renderMain(graphics);
+
+		if (showHistoryBanner)
+		{
+			graphics.translate(0, -(bannerSize.height + 4));
+			if (mainSize == null)
+			{
+				return new Dimension(bannerSize.width, bannerSize.height);
+			}
+			return new Dimension(
+				Math.max(mainSize.width, bannerSize.width),
+				mainSize.height + bannerSize.height + 4
+			);
+		}
+		return mainSize;
+	}
+
+	private Dimension renderMain(Graphics2D graphics)
+	{
 		// If no flip is focused, show hint box only when GE is open (or showAssistantAlways)
 		if (focusedFlip == null)
 		{
@@ -342,6 +373,53 @@ public class FlipAssistOverlay extends Overlay
 		return new Dimension(PANEL_WIDTH, panelHeight);
 	}
 	
+	/**
+	 * Standalone green "Open GE History" banner. Renders above whatever else
+	 * the overlay shows so the prompt isn't hidden by autoStatusMessage or
+	 * focused-flip states.
+	 */
+	private Dimension renderHistoryPromptBanner(Graphics2D graphics)
+	{
+		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+		graphics.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+		graphics.setFont(FontManager.getRunescapeSmallFont());
+		FontMetrics fm = graphics.getFontMetrics();
+
+		String message = "Open GE History tab — recover offline trade prices";
+		int padding = 8;
+		int lineHeight = fm.getHeight();
+		int width = HINT_PANEL_WIDTH;
+		int height = lineHeight + padding * 2;
+
+		// Pulsing green-tinted glow to draw the eye
+		long elapsed = System.currentTimeMillis() - animationStartTime;
+		double pulsePhase = (elapsed % PULSE_DURATION) / (double) PULSE_DURATION;
+		float pulseAlpha = (float) (0.5 + 0.5 * Math.sin(pulsePhase * 2 * Math.PI));
+
+		Color glow = new Color(COLOR_BUY.getRed(), COLOR_BUY.getGreen(), COLOR_BUY.getBlue(), (int)(60 * pulseAlpha));
+		graphics.setColor(glow);
+		graphics.fillRoundRect(-3, -3, width + 6, height + 6, 10, 10);
+
+		// Body
+		graphics.setColor(COLOR_BG_DARK);
+		graphics.fillRoundRect(0, 0, width, height, 8, 8);
+
+		// Green border
+		Color border = new Color(COLOR_BUY.getRed(), COLOR_BUY.getGreen(), COLOR_BUY.getBlue(),
+			(int)(150 + 100 * pulseAlpha));
+		graphics.setColor(border);
+		graphics.setStroke(new BasicStroke(1.5f));
+		graphics.drawRoundRect(0, 0, width, height, 8, 8);
+
+		// Text in green
+		graphics.setColor(COLOR_PROFIT);
+		int textX = padding;
+		int textY = padding + fm.getAscent();
+		graphics.drawString(message, textX, textY);
+
+		return new Dimension(width, height);
+	}
+
 	/**
 	 * Render a small hint box with a title and message.
 	 * When an item icon is present, shows a two-line layout:
