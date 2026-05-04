@@ -1,9 +1,14 @@
 package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -37,19 +42,26 @@ public class GEHistoryService
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
+	private final ChatMessageManager chatMessageManager;
 
 	private final Set<Integer> pendingOfflineFillItemIds = ConcurrentHashMap.newKeySet();
 	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
 	private volatile boolean historyReadThisSession = false;
 	private volatile boolean widgetStructureLogged = false;
 	private volatile int pendingHistoryReadTicks = 0;
+	private volatile boolean chatPromptSent = false;
 
 	@Inject
-	public GEHistoryService(Client client, FlipSmartApiClient apiClient, PlayerSession session)
+	public GEHistoryService(
+		Client client,
+		FlipSmartApiClient apiClient,
+		PlayerSession session,
+		ChatMessageManager chatMessageManager)
 	{
 		this.client = client;
 		this.apiClient = apiClient;
 		this.session = session;
+		this.chatMessageManager = chatMessageManager;
 	}
 
 	public void onHistoryWidgetLoaded()
@@ -159,8 +171,32 @@ public class GEHistoryService
 			{
 				log.info("GE History: registered offline fill for itemId={} (pending count {})",
 					itemId, pendingOfflineFillItemIds.size());
+				maybeSendChatPrompt();
 			}
 		}
+	}
+
+	private void maybeSendChatPrompt()
+	{
+		if (chatPromptSent)
+		{
+			return;
+		}
+		chatPromptSent = true;
+		String msg = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[Flip Smart] ")
+			.append(ChatColorType.NORMAL)
+			.append("Offline trades detected. Open the Grand Exchange and click the ")
+			.append(ChatColorType.HIGHLIGHT)
+			.append("History")
+			.append(ChatColorType.NORMAL)
+			.append(" tab to recover their actual fill prices.")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(msg)
+			.build());
 	}
 
 	/**
@@ -191,6 +227,7 @@ public class GEHistoryService
 		historyReadThisSession = false;
 		widgetStructureLogged = false;
 		pendingHistoryReadTicks = 0;
+		chatPromptSent = false;
 	}
 
 	private List<GEHistoryEntry> parseHistoryEntries(Widget listWidget)
