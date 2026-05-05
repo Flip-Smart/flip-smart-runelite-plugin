@@ -431,9 +431,13 @@ public class OfflineSyncService
 			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
 			if (inventoryCount == 0)
 			{
-				log.debug("Sell slot empty for {} and no inventory - dismissing active flip",
+				// Register for History backfill instead of dismissing the local flip.
+				// dismissFlip marks the buy is_manually_closed=true and bumps
+				// quantity_sold=quantity on the API side, which then prevents the
+				// backfill SELL from pairing with the buy. Let the backfill close
+				// the flip naturally; the panel will refresh once it posts.
+				log.debug("Sell slot empty for {} with no inventory — flagging for History backfill",
 					persistedOffer.getItemName());
-				activeFlipTracker.dismissFlip(persistedOffer.getItemId());
 				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 			}
 		});
