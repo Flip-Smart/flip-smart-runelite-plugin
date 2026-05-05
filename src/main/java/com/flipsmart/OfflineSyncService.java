@@ -320,6 +320,10 @@ public class OfflineSyncService
 		}
 		for (int itemId : toRemove)
 		{
+			// A collected item disappearing without a tracked sell having
+			// happened in this session means it was sold offline. Register
+			// it for History backfill before we drop it from local state.
+			geHistoryService.registerOfflineFill(itemId);
 			session.removeCollectedItem(itemId);
 		}
 		return toRemove.size();
@@ -357,12 +361,23 @@ public class OfflineSyncService
 			{
 				restoreTimestampIfOlder(currentOffer, persistedOffer);
 			}
-			else if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
+			else
 			{
-				// Track inventory locally so a sell can be queued; backend rejects
-				// is_offline_fill submissions after #597, so no transaction is recorded.
-				session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
-				geHistoryService.registerOfflineFill(currentOffer.getItemId());
+				if (persistedOffer != null && persistedOffer.getItemId() != currentOffer.getItemId())
+				{
+					// Slot reused with a different item — the persisted offer must
+					// have completed offline (or been cancelled). Register it so
+					// the History backfill can disambiguate via the History tab,
+					// which only shows actual completions.
+					geHistoryService.registerOfflineFill(persistedOffer.getItemId());
+				}
+				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
+				{
+					// Track inventory locally so a sell can be queued; backend rejects
+					// is_offline_fill submissions after #597, so no transaction is recorded.
+					session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
+					geHistoryService.registerOfflineFill(currentOffer.getItemId());
+				}
 			}
 		}
 	}
