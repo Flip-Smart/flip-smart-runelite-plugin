@@ -13,13 +13,11 @@ import net.runelite.client.chat.QueuedMessage;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -380,37 +378,39 @@ public class GEHistoryService
 			log.info("Backfill skipped: no RSN available on session");
 			return;
 		}
+		if (entries.isEmpty())
+		{
+			return;
+		}
 		String rsn = rsnOpt.get();
-		if (pendingOfflineFillItemIds.isEmpty())
-		{
-			log.info("Backfill skipped: no offline fills registered this session");
-			return;
-		}
-		List<TrackedOffer> candidates = new ArrayList<>(session.getTrackedOffers().values());
-		candidates.addAll(recentlyPersistedOffers.values());
-		log.info("Backfill: {} history entries vs {} candidate offers ({} live + {} persisted), {} pending item ids",
-			entries.size(), candidates.size(),
-			session.getTrackedOffers().size(), recentlyPersistedOffers.size(),
-			pendingOfflineFillItemIds.size());
-		Map<Integer, TrackedOffer> matchedOffers = new HashMap<>();
-		List<CompletableFuture<Void>> postFutures = new ArrayList<>();
 
-		for (GEHistoryEntry entry : entries)
-		{
-			tryBackfillEntry(entry, candidates, matchedOffers, rsn, postFutures);
-		}
-		if (matchedOffers.isEmpty())
-		{
-			log.info("Backfill: no history entries matched a registered offline fill");
-			return;
-		}
-		log.info("Backfilled {} offline fills with actual prices from GE history", matchedOffers.size());
+		// Resolve item names from live + persisted-offer state when available.
+		// History rows don't carry the resolved item name on their own widget
+		// data — only the sprite + a free-text label that includes color tags.
+		// The backend tolerates a null item_name; this just gives nicer logs.
+		Map<Integer, String> nameByItem = new HashMap<>();
+		for (TrackedOffer o : session.getTrackedOffers().values()) nameByItem.put(o.getItemId(), o.getItemName());
+		for (TrackedOffer o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
 
-		// After all backfill posts complete, ping the panel so newly-paired
-		// flips appear in Active/Completed without the user reloading.
-		CompletableFuture.allOf(postFutures.toArray(new CompletableFuture[0]))
+		List<FlipSmartApiClient.HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
+		for (GEHistoryEntry e : entries)
+		{
+			batch.add(new FlipSmartApiClient.HistoryBackfillEntry(
+				e.getItemId(), nameByItem.get(e.getItemId()),
+				e.isBuy(), e.getQuantity(), e.getPricePerItem()
+			));
+		}
+
+		log.info("Backfill: posting {} GE history rows for batch reconciliation (server applies sum-and-delta dedup)",
+			batch.size());
+		apiClient.recordHistoryBackfillBatchAsync(rsn, batch)
 			.whenComplete((v, ex) ->
 			{
+				if (ex != null)
+				{
+					log.warn("History backfill batch failed: {}", ex.getMessage());
+					return;
+				}
 				Runnable cb = onBackfillComplete;
 				if (cb != null)
 				{
@@ -418,48 +418,6 @@ public class GEHistoryService
 					catch (Exception e) { log.debug("onBackfillComplete callback threw: {}", e.getMessage()); }
 				}
 			});
-	}
-
-	private void tryBackfillEntry(
-		GEHistoryEntry entry,
-		Collection<TrackedOffer> candidates,
-		Map<Integer, TrackedOffer> matchedOffers,
-		String rsn,
-		List<CompletableFuture<Void>> postFutures)
-	{
-		// Only backfill items we registered as offline-completed this session.
-		// Without this gate, opening the History tab would replay every visible
-		// row (up to 30 entries spanning prior sessions) on every read.
-		if (!pendingOfflineFillItemIds.contains(entry.getItemId()))
-		{
-			return;
-		}
-		if (matchedOffers.containsKey(entry.getItemId()))
-		{
-			return;
-		}
-		for (TrackedOffer offer : candidates)
-		{
-			if (offer.getItemId() == entry.getItemId() && offer.isBuy() == entry.isBuy())
-			{
-				matchedOffers.put(entry.getItemId(), offer);
-				postFutures.add(postBackfill(entry, offer, rsn));
-				return;
-			}
-		}
-	}
-
-	private CompletableFuture<Void> postBackfill(GEHistoryEntry entry, TrackedOffer offer, String rsn)
-	{
-		int actualPrice = entry.getPricePerItem();
-		log.info("GE History backfill: {} {} — estimated {}gp, actual {}gp",
-			entry.isBuy() ? "BUY" : "SELL", offer.getItemName(), offer.getPrice(), actualPrice);
-		return apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
-			.builder(entry.getItemId(), offer.getItemName(), entry.isBuy(), entry.getQuantity(), actualPrice)
-			.rsn(rsn)
-			.totalQuantity(offer.getTotalQuantity())
-			.isHistoryBackfill(true)
-			.build());
 	}
 
 	private static int parseDigits(String text)
