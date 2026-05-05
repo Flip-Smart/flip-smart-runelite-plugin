@@ -261,6 +261,15 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return null;
 			}
+			// History-backfill prompt takes priority over auto-recommend status
+			// messages ("Monitoring active offers", "Collect profit from GE", etc.).
+			// Offline trade recovery is one-shot per session — once the user
+			// closes the History tab the data is gone — so the prompt has to
+			// surface even when the auto-recommend overlay is otherwise active.
+			if (isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills())
+			{
+				return renderHintBox(graphics, HISTORY_PROMPT_MESSAGE);
+			}
 			if (autoStatusMessage != null)
 			{
 				return renderHintBox(graphics, autoStatusMessage);
@@ -278,10 +287,6 @@ public class FlipAssistOverlay extends Overlay
 			if (!flipSmartPlugin.getApiClient().isAuthenticated())
 			{
 				return renderHintBox(graphics, LOGIN_MESSAGE);
-			}
-			if (isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills())
-			{
-				return renderHintBox(graphics, HISTORY_PROMPT_MESSAGE);
 			}
 			return renderHintBox(graphics, HINT_MESSAGE);
 		}
