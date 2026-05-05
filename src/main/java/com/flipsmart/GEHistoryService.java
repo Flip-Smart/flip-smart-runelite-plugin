@@ -29,16 +29,13 @@ import java.util.concurrent.ConcurrentHashMap;
 @Singleton
 public class GEHistoryService
 {
-	// Confirmed via in-game widget dump: list at child 3 has 240 dynamic
-	// children laid out as 30 rows × 8 children each.
-	//   offset 2: "Bought:" / "Sold:" header (type=4, text-only)
-	//   offset 4: item sprite (type=5, carries itemId + itemQuantity natively)
-	//   offset 5: price text "<col=...>X coins</col><br>= Y each"
+	// Row layout in the GE History list (child 3 of group 383): each entry
+	// is anchored by a "Bought:" / "Sold:" header widget; the next item
+	// sprite (carries itemId + itemQuantity natively) and the next text
+	// containing "each" (the per-item price) within the following ~6
+	// children belong to that header. We walk children rather than
+	// fixed-stride to handle variable-width rows.
 	private static final int GE_HISTORY_LIST_CHILD = 3;
-	private static final int CHILDREN_PER_ROW = 8;
-	private static final int BUY_SELL_INDICATOR_OFFSET = 2;
-	private static final int ITEM_SPRITE_OFFSET = 4;
-	private static final int PRICE_TEXT_OFFSET = 5;
 
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
@@ -152,7 +149,10 @@ public class GEHistoryService
 			Widget[] sample = firstNonEmpty(dyn, kid, nest);
 			if (sample != null && sample.length > 0)
 			{
-				int max = Math.min(sample.length, 8);
+				// Cap at 80 children for the row-list child (idx==3) so we see
+				// 10+ rows and can spot variable-stride layouts. Other children
+				// stay at 8 to keep noise down.
+				int max = Math.min(sample.length, idx == GE_HISTORY_LIST_CHILD ? 80 : 8);
 				for (int j = 0; j < max; j++)
 				{
 					Widget c = sample[j];
@@ -245,13 +245,69 @@ public class GEHistoryService
 		}
 		log.debug("GE History parser: found {} children to scan", children.length);
 
+		// Walk the children looking for "Bought:" / "Sold:" header markers.
+		// Each header anchors a row; the item sprite (carries itemId+qty) and
+		// the price text follow within the next ~6 widgets. This is robust to
+		// variable per-row stride that breaks fixed-offset indexing.
 		List<GEHistoryEntry> entries = new ArrayList<>();
-		int rowCount = children.length / CHILDREN_PER_ROW;
-		for (int row = 0; row < rowCount; row++)
+		for (int i = 0; i < children.length; i++)
 		{
-			tryParseFlatRow(row, children, row * CHILDREN_PER_ROW, entries);
+			Widget w = children[i];
+			if (w == null) continue;
+			String text = w.getText();
+			if (text == null) continue;
+			boolean isBuy;
+			if ("Bought:".equals(text)) isBuy = true;
+			else if ("Sold:".equals(text)) isBuy = false;
+			else continue;
+			tryParseRowAt(children, i, isBuy, entries);
 		}
 		return entries;
+	}
+
+	private void tryParseRowAt(Widget[] children, int headerIdx, boolean isBuy, List<GEHistoryEntry> entries)
+	{
+		Widget itemWidget = null;
+		Widget priceWidget = null;
+		// Scan the next several widgets after the header; stop early at the
+		// next header marker so we never bleed into the following row.
+		int end = Math.min(children.length, headerIdx + 8);
+		for (int j = headerIdx + 1; j < end; j++)
+		{
+			Widget w = children[j];
+			if (w == null) continue;
+			String text = w.getText();
+			if (text != null && ("Bought:".equals(text) || "Sold:".equals(text)))
+			{
+				break;
+			}
+			if (itemWidget == null && w.getItemId() > 0)
+			{
+				itemWidget = w;
+			}
+			if (priceWidget == null && text != null && text.contains("each"))
+			{
+				priceWidget = w;
+			}
+		}
+		if (itemWidget == null || priceWidget == null)
+		{
+			log.debug("Row at {} ({}): missing itemWidget={} priceWidget={}",
+				headerIdx, isBuy ? "Bought" : "Sold", itemWidget != null, priceWidget != null);
+			return;
+		}
+		int itemId = itemWidget.getItemId();
+		int qty = itemWidget.getItemQuantity();
+		int price = parsePerItemPrice(priceWidget);
+		if (qty > 0 && price > 0)
+		{
+			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
+		}
+		else
+		{
+			log.debug("Row at {} ({}): id={} qty={} price={} — dropped",
+				headerIdx, isBuy ? "Bought" : "Sold", itemId, qty, price);
+		}
 	}
 
 	private void logWidgetStructure(Widget listWidget)
@@ -288,30 +344,6 @@ public class GEHistoryService
 		log.info("=== end widget structure ===");
 	}
 
-	private void tryParseFlatRow(int row, Widget[] children, int base, List<GEHistoryEntry> entries)
-	{
-		try
-		{
-			Widget itemWidget = safeGet(children, base + ITEM_SPRITE_OFFSET);
-			if (itemWidget == null || itemWidget.getItemId() <= 0)
-			{
-				return;
-			}
-			int itemId = itemWidget.getItemId();
-			int quantity = itemWidget.getItemQuantity();
-			int price = parsePerItemPrice(safeGet(children, base + PRICE_TEXT_OFFSET));
-			boolean isBuy = parseBoughtSold(safeGet(children, base + BUY_SELL_INDICATOR_OFFSET));
-			if (quantity > 0 && price > 0)
-			{
-				entries.add(new GEHistoryEntry(itemId, isBuy, quantity, price));
-			}
-		}
-		catch (Exception e)
-		{
-			log.debug("Failed to parse flat row {}: {}", row, e.getMessage());
-		}
-	}
-
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
 	private static int parsePerItemPrice(Widget widget)
 	{
@@ -321,14 +353,6 @@ public class GEHistoryService
 		int eqIdx = text.lastIndexOf('=');
 		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
 		return parseDigits(slice);
-	}
-
-	/** Header widget reads "Bought:" or "Sold:". */
-	private static boolean parseBoughtSold(Widget widget)
-	{
-		if (widget == null) return true;
-		String text = widget.getText();
-		return text == null || !text.toLowerCase().startsWith("sold");
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
@@ -427,11 +451,6 @@ public class GEHistoryService
 		{
 			return -1;
 		}
-	}
-
-	private static Widget safeGet(Widget[] array, int index)
-	{
-		return (index >= 0 && index < array.length) ? array[index] : null;
 	}
 
 	@SafeVarargs
