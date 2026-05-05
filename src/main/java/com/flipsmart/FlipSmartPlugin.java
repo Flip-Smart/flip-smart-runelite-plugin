@@ -701,6 +701,13 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(this::scheduleOneShot);
+
+		geHistoryService.setOnBackfillComplete(() -> {
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(flipFinderPanel::refresh);
+			}
+		});
 	}
 
 	private void handleGETrackerFocusChanged(FocusedFlip focus)

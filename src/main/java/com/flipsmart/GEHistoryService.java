@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -48,6 +49,7 @@ public class GEHistoryService
 	private volatile boolean widgetStructureLogged = false;
 	private volatile int pendingHistoryReadTicks = 0;
 	private volatile boolean chatPromptSent = false;
+	private volatile Runnable onBackfillComplete;
 
 	@Inject
 	public GEHistoryService(
@@ -210,6 +212,16 @@ public class GEHistoryService
 	 * (whose live TrackedOffer no longer exists) can still be matched by
 	 * itemId + isBuy and have their estimated price replaced.
 	 */
+	/**
+	 * Runs after a History-backfill batch lands on the API. Used by the
+	 * plugin to refresh Active Flips / Completed panels so backfilled trades
+	 * appear without the user having to manually reload.
+	 */
+	public void setOnBackfillComplete(Runnable callback)
+	{
+		this.onBackfillComplete = callback;
+	}
+
 	public void setRecentlyPersistedOffers(Map<Integer, TrackedOffer> offers)
 	{
 		recentlyPersistedOffers.clear();
@@ -381,26 +393,39 @@ public class GEHistoryService
 			session.getTrackedOffers().size(), recentlyPersistedOffers.size(),
 			pendingOfflineFillItemIds.size());
 		Map<Integer, TrackedOffer> matchedOffers = new HashMap<>();
+		List<CompletableFuture<Void>> postFutures = new ArrayList<>();
 
 		for (GEHistoryEntry entry : entries)
 		{
-			tryBackfillEntry(entry, candidates, matchedOffers, rsn);
+			tryBackfillEntry(entry, candidates, matchedOffers, rsn, postFutures);
 		}
 		if (matchedOffers.isEmpty())
 		{
 			log.info("Backfill: no history entries matched a registered offline fill");
+			return;
 		}
-		else
-		{
-			log.info("Backfilled {} offline fills with actual prices from GE history", matchedOffers.size());
-		}
+		log.info("Backfilled {} offline fills with actual prices from GE history", matchedOffers.size());
+
+		// After all backfill posts complete, ping the panel so newly-paired
+		// flips appear in Active/Completed without the user reloading.
+		CompletableFuture.allOf(postFutures.toArray(new CompletableFuture[0]))
+			.whenComplete((v, ex) ->
+			{
+				Runnable cb = onBackfillComplete;
+				if (cb != null)
+				{
+					try { cb.run(); }
+					catch (Exception e) { log.debug("onBackfillComplete callback threw: {}", e.getMessage()); }
+				}
+			});
 	}
 
 	private void tryBackfillEntry(
 		GEHistoryEntry entry,
 		Collection<TrackedOffer> candidates,
 		Map<Integer, TrackedOffer> matchedOffers,
-		String rsn)
+		String rsn,
+		List<CompletableFuture<Void>> postFutures)
 	{
 		// Only backfill items we registered as offline-completed this session.
 		// Without this gate, opening the History tab would replay every visible
@@ -418,18 +443,18 @@ public class GEHistoryService
 			if (offer.getItemId() == entry.getItemId() && offer.isBuy() == entry.isBuy())
 			{
 				matchedOffers.put(entry.getItemId(), offer);
-				postBackfill(entry, offer, rsn);
+				postFutures.add(postBackfill(entry, offer, rsn));
 				return;
 			}
 		}
 	}
 
-	private void postBackfill(GEHistoryEntry entry, TrackedOffer offer, String rsn)
+	private CompletableFuture<Void> postBackfill(GEHistoryEntry entry, TrackedOffer offer, String rsn)
 	{
 		int actualPrice = entry.getPricePerItem();
 		log.info("GE History backfill: {} {} — estimated {}gp, actual {}gp",
 			entry.isBuy() ? "BUY" : "SELL", offer.getItemName(), offer.getPrice(), actualPrice);
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+		return apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
 			.builder(entry.getItemId(), offer.getItemName(), entry.isBuy(), entry.getQuantity(), actualPrice)
 			.rsn(rsn)
 			.totalQuantity(offer.getTotalQuantity())
