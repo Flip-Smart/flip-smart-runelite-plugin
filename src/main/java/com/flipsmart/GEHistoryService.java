@@ -94,8 +94,12 @@ public class GEHistoryService
 
 	private void readHistoryNow()
 	{
+		// Don't clear pendingOfflineFillItemIds yet — backfillOfflineFills
+		// reads from it to decide which History rows to post. Clearing too
+		// early skips every match. historyReadThisSession alone is enough
+		// to flip hasUnverifiedOfflineFills() to false (it ANDs both) and
+		// to gate further registerOfflineFill calls.
 		historyReadThisSession = true;
-		pendingOfflineFillItemIds.clear();
 
 		if (!widgetStructureLogged)
 		{
