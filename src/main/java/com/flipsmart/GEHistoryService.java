@@ -207,55 +207,81 @@ public class GEHistoryService
 		List<GEHistoryEntry> entries = new ArrayList<>();
 		for (int i = 0; i < children.length; i++)
 		{
-			Widget w = children[i];
-			if (w == null) continue;
-			String text = w.getText();
-			if (text == null) continue;
-			boolean isBuy;
-			if ("Bought:".equals(text)) isBuy = true;
-			else if ("Sold:".equals(text)) isBuy = false;
-			else continue;
-			tryParseRowAt(children, i, isBuy, entries);
+			Boolean isBuy = headerToIsBuy(children[i]);
+			if (isBuy != null)
+			{
+				tryParseRowAt(children, i, isBuy, entries);
+			}
 		}
 		return entries;
 	}
 
+	/** Returns TRUE for "Bought:", FALSE for "Sold:", null otherwise. */
+	private static Boolean headerToIsBuy(Widget w)
+	{
+		if (w == null) return null;
+		String text = w.getText();
+		if ("Bought:".equals(text)) return Boolean.TRUE;
+		if ("Sold:".equals(text)) return Boolean.FALSE;
+		return null;
+	}
+
 	private void tryParseRowAt(Widget[] children, int headerIdx, boolean isBuy, List<GEHistoryEntry> entries)
 	{
-		Widget itemWidget = null;
-		Widget priceWidget = null;
-		// Scan the next several widgets after the header; stop early at the
-		// next header marker so we never bleed into the following row.
-		int end = Math.min(children.length, headerIdx + 8);
-		for (int j = headerIdx + 1; j < end; j++)
-		{
-			Widget w = children[j];
-			if (w == null) continue;
-			String text = w.getText();
-			if (text != null && ("Bought:".equals(text) || "Sold:".equals(text)))
-			{
-				break;
-			}
-			if (itemWidget == null && w.getItemId() > 0)
-			{
-				itemWidget = w;
-			}
-			if (priceWidget == null && text != null && text.contains("each"))
-			{
-				priceWidget = w;
-			}
-		}
-		if (itemWidget == null || priceWidget == null)
-		{
-			return;
-		}
-		int itemId = itemWidget.getItemId();
-		int qty = itemWidget.getItemQuantity();
-		int price = parsePerItemPrice(priceWidget);
+		RowScan scan = scanRowFrom(children, headerIdx);
+		if (scan.itemWidget == null || scan.priceWidget == null) return;
+		int itemId = scan.itemWidget.getItemId();
+		int qty = scan.itemWidget.getItemQuantity();
+		int price = parsePerItemPrice(scan.priceWidget);
 		if (qty > 0 && price > 0)
 		{
 			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
 		}
+	}
+
+	/**
+	 * Scan the children starting just after a header, capturing the first
+	 * item-bearing widget and the first "X each" price text. Stops at the
+	 * next header so we never bleed into the following row.
+	 */
+	private static RowScan scanRowFrom(Widget[] children, int headerIdx)
+	{
+		RowScan scan = new RowScan();
+		int end = Math.min(children.length, headerIdx + 8);
+		for (int j = headerIdx + 1; j < end; j++)
+		{
+			Widget w = children[j];
+			if (w != null && !absorbWidget(w, scan))
+			{
+				break;
+			}
+		}
+		return scan;
+	}
+
+	/** Returns false if the next-header marker is hit (caller should stop). */
+	private static boolean absorbWidget(Widget w, RowScan scan)
+	{
+		String text = w.getText();
+		if ("Bought:".equals(text) || "Sold:".equals(text))
+		{
+			return false;
+		}
+		if (scan.itemWidget == null && w.getItemId() > 0)
+		{
+			scan.itemWidget = w;
+		}
+		if (scan.priceWidget == null && text != null && text.contains("each"))
+		{
+			scan.priceWidget = w;
+		}
+		return true;
+	}
+
+	private static final class RowScan
+	{
+		Widget itemWidget;
+		Widget priceWidget;
 	}
 
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */

@@ -28,6 +28,7 @@ public class FlipSmartApiClient
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 	private static final String JSON_KEY_QUANTITY = "quantity";
+	private static final String JSON_KEY_PRICE_PER_ITEM = "price_per_item";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
 	private static final String JSON_KEY_STATUS = "status";
@@ -1376,7 +1377,7 @@ public class FlipSmartApiClient
 		jsonBody.addProperty("item_name", request.itemName);
 		jsonBody.addProperty("is_buy", request.isBuy);
 		jsonBody.addProperty(JSON_KEY_QUANTITY, request.quantity);
-		jsonBody.addProperty("price_per_item", request.pricePerItem);
+		jsonBody.addProperty(JSON_KEY_PRICE_PER_ITEM,request.pricePerItem);
 		if (request.geSlot != null)
 		{
 			jsonBody.addProperty("ge_slot", request.geSlot);
@@ -1473,7 +1474,7 @@ public class FlipSmartApiClient
 			if (e.itemName != null) o.addProperty("item_name", e.itemName);
 			o.addProperty("is_buy", e.isBuy);
 			o.addProperty(JSON_KEY_QUANTITY, e.quantity);
-			o.addProperty("price_per_item", e.pricePerItem);
+			o.addProperty(JSON_KEY_PRICE_PER_ITEM,e.pricePerItem);
 			arr.add(o);
 		}
 		body.add("entries", arr);
@@ -1645,7 +1646,7 @@ public class FlipSmartApiClient
 		requestBody.addProperty(JSON_KEY_ITEM_ID, itemId);
 		requestBody.addProperty("filled_quantity", filledQuantity);
 		requestBody.addProperty("order_quantity", orderQuantity);
-		requestBody.addProperty("price_per_item", pricePerItem);
+		requestBody.addProperty(JSON_KEY_PRICE_PER_ITEM,pricePerItem);
 		requestBody.addProperty("rsn", rsn);
 		
 		RequestBody body = RequestBody.create(JSON, requestBody.toString());
