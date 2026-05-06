@@ -28,6 +28,7 @@ public class FlipSmartApiClient
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 	private static final String JSON_KEY_QUANTITY = "quantity";
+	private static final String JSON_KEY_PRICE_PER_ITEM = "price_per_item";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
 	private static final String JSON_KEY_STATUS = "status";
@@ -1376,7 +1377,7 @@ public class FlipSmartApiClient
 		jsonBody.addProperty("item_name", request.itemName);
 		jsonBody.addProperty("is_buy", request.isBuy);
 		jsonBody.addProperty(JSON_KEY_QUANTITY, request.quantity);
-		jsonBody.addProperty("price_per_item", request.pricePerItem);
+		jsonBody.addProperty(JSON_KEY_PRICE_PER_ITEM,request.pricePerItem);
 		if (request.geSlot != null)
 		{
 			jsonBody.addProperty("ge_slot", request.geSlot);
@@ -1429,6 +1430,66 @@ public class FlipSmartApiClient
 			.build();
 		
 		return recordTransactionAsync(request);
+	}
+
+	/**
+	 * Single GE History row, used by recordHistoryBackfillBatchAsync.
+	 */
+	public static class HistoryBackfillEntry
+	{
+		public final int itemId;
+		public final String itemName;
+		public final boolean isBuy;
+		public final int quantity;
+		public final int pricePerItem;
+
+		public HistoryBackfillEntry(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+		{
+			this.itemId = itemId;
+			this.itemName = itemName;
+			this.isBuy = isBuy;
+			this.quantity = quantity;
+			this.pricePerItem = pricePerItem;
+		}
+	}
+
+	/**
+	 * Post every visible GE History row in a single batch. The server reconciles
+	 * each row against the player's recent transactions via sum-and-delta dedup,
+	 * inserting only the missing quantity per row (or skipping if real-time
+	 * already captured the trade).
+	 */
+	public CompletableFuture<Void> recordHistoryBackfillBatchAsync(String rsn, java.util.List<HistoryBackfillEntry> entries)
+	{
+		String apiUrl = getApiUrl();
+		String url = String.format("%s/transactions/history-backfill-batch", apiUrl);
+
+		JsonObject body = new JsonObject();
+		body.addProperty("rsn", rsn);
+		com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+		for (HistoryBackfillEntry e : entries)
+		{
+			JsonObject o = new JsonObject();
+			o.addProperty(JSON_KEY_ITEM_ID, e.itemId);
+			if (e.itemName != null) o.addProperty("item_name", e.itemName);
+			o.addProperty("is_buy", e.isBuy);
+			o.addProperty(JSON_KEY_QUANTITY, e.quantity);
+			o.addProperty(JSON_KEY_PRICE_PER_ITEM,e.pricePerItem);
+			arr.add(o);
+		}
+		body.add("entries", arr);
+
+		RequestBody rb = RequestBody.create(JSON, body.toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			JsonObject resp = gson.fromJson(jsonData, JsonObject.class);
+			log.info("History backfill batch: inserted={} deduped={}",
+				resp.has("inserted") ? resp.get("inserted").getAsInt() : 0,
+				resp.has("deduped") ? resp.get("deduped").getAsInt() : 0);
+			return null;
+		}).thenApply(v -> null);
 	}
 
 	/**
@@ -1585,7 +1646,7 @@ public class FlipSmartApiClient
 		requestBody.addProperty(JSON_KEY_ITEM_ID, itemId);
 		requestBody.addProperty("filled_quantity", filledQuantity);
 		requestBody.addProperty("order_quantity", orderQuantity);
-		requestBody.addProperty("price_per_item", pricePerItem);
+		requestBody.addProperty(JSON_KEY_PRICE_PER_ITEM,pricePerItem);
 		requestBody.addProperty("rsn", rsn);
 		
 		RequestBody body = RequestBody.create(JSON, requestBody.toString());

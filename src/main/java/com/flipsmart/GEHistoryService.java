@@ -1,0 +1,370 @@
+package com.flipsmart;
+
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.Client;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.Widget;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
+
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+
+/**
+ * Reads the in-game GE History tab to recover actual fill prices for trades
+ * completed while offline, then posts them to the API as is_history_backfill.
+ */
+@Slf4j
+@Singleton
+public class GEHistoryService
+{
+	// Row layout in the GE History list (child 3 of group 383): each entry
+	// is anchored by a "Bought:" / "Sold:" header widget; the next item
+	// sprite (carries itemId + itemQuantity natively) and the next text
+	// containing "each" (the per-item price) within the following ~6
+	// children belong to that header. We walk children rather than
+	// fixed-stride to handle variable-width rows.
+	private static final int GE_HISTORY_LIST_CHILD = 3;
+
+	private final Client client;
+	private final FlipSmartApiClient apiClient;
+	private final PlayerSession session;
+	private final ChatMessageManager chatMessageManager;
+
+	private final Set<Integer> pendingOfflineFillItemIds = ConcurrentHashMap.newKeySet();
+	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
+	private final AtomicInteger pendingHistoryReadTicks = new AtomicInteger(0);
+	private volatile boolean historyReadThisSession = false;
+	private volatile boolean chatPromptSent = false;
+	private volatile Runnable onBackfillComplete;
+
+	@Inject
+	public GEHistoryService(
+		Client client,
+		FlipSmartApiClient apiClient,
+		PlayerSession session,
+		ChatMessageManager chatMessageManager)
+	{
+		this.client = client;
+		this.apiClient = apiClient;
+		this.session = session;
+		this.chatMessageManager = chatMessageManager;
+	}
+
+	public void onHistoryWidgetLoaded()
+	{
+		// WidgetLoaded fires when the interface is *created*, but list rows are
+		// populated by clientscripts that run afterward. Defer two ticks so the
+		// scripts have time to write the row widgets before we scan them.
+		pendingHistoryReadTicks.set(2);
+	}
+
+	/** Called from FlipSmartPlugin.onGameTick. */
+	public void onGameTick()
+	{
+		int prev = pendingHistoryReadTicks.get();
+		if (prev <= 0)
+		{
+			return;
+		}
+		if (pendingHistoryReadTicks.decrementAndGet() == 0)
+		{
+			readHistoryNow();
+		}
+	}
+
+	private void readHistoryNow()
+	{
+		// historyReadThisSession alone gates hasUnverifiedOfflineFills() and
+		// further registerOfflineFill calls; pendingOfflineFillItemIds is
+		// allowed to stay populated until reset() so future reads (e.g. user
+		// reopens History) can still see what we'd registered.
+		historyReadThisSession = true;
+
+		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
+		if (listWidget == null)
+		{
+			return;
+		}
+
+		List<GEHistoryEntry> entries = parseHistoryEntries(listWidget);
+		if (entries.isEmpty())
+		{
+			return;
+		}
+
+		log.debug("Read {} GE history entries", entries.size());
+		backfillOfflineFills(entries);
+	}
+
+	public void registerOfflineFill(int itemId)
+	{
+		if (!historyReadThisSession && pendingOfflineFillItemIds.add(itemId))
+		{
+			log.debug("Registered offline fill for itemId={} (pending count {})",
+				itemId, pendingOfflineFillItemIds.size());
+			maybeSendChatPrompt();
+		}
+	}
+
+	private void maybeSendChatPrompt()
+	{
+		if (chatPromptSent)
+		{
+			return;
+		}
+		chatPromptSent = true;
+		String msg = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[Flip Smart] ")
+			.append(ChatColorType.NORMAL)
+			.append("Offline trades detected. Open the Grand Exchange and click the ")
+			.append(ChatColorType.HIGHLIGHT)
+			.append("History")
+			.append(ChatColorType.NORMAL)
+			.append(" tab to recover their actual fill prices.")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(msg)
+			.build());
+	}
+
+	/**
+	 * Runs after a History-backfill batch lands on the API. Used by the
+	 * plugin to refresh Active Flips / Completed panels so backfilled trades
+	 * appear without the user having to manually reload.
+	 */
+	public void setOnBackfillComplete(Runnable callback)
+	{
+		this.onBackfillComplete = callback;
+	}
+
+	/**
+	 * Snapshot of offers persisted at the previous session's logout — used
+	 * for item-name resolution in the backfill payload, and as the trigger
+	 * for the chat prompt (any persisted state means there might be offline
+	 * activity worth backfilling).
+	 */
+	public void setRecentlyPersistedOffers(Map<Integer, TrackedOffer> offers)
+	{
+		recentlyPersistedOffers.clear();
+		if (offers != null)
+		{
+			recentlyPersistedOffers.putAll(offers);
+		}
+		// Any prior-session activity is reason enough to prompt the user to
+		// open History. Backend dedup makes the backfill safe regardless:
+		// covered rows dedupe, missing ones get inserted.
+		if (!recentlyPersistedOffers.isEmpty())
+		{
+			maybeSendChatPrompt();
+		}
+	}
+
+	public boolean hasUnverifiedOfflineFills()
+	{
+		// Prompt the overlay banner whenever we haven't yet read the History
+		// this session and there's *any* signal that offline activity might
+		// have happened — either the narrow per-item detection registered
+		// something, or the user simply had persisted offer state from the
+		// prior session.
+		return !historyReadThisSession && (!pendingOfflineFillItemIds.isEmpty() || !recentlyPersistedOffers.isEmpty());
+	}
+
+	public void reset()
+	{
+		pendingOfflineFillItemIds.clear();
+		recentlyPersistedOffers.clear();
+		historyReadThisSession = false;
+		pendingHistoryReadTicks.set(0);
+		chatPromptSent = false;
+	}
+
+	private List<GEHistoryEntry> parseHistoryEntries(Widget listWidget)
+	{
+		Widget[] children = firstNonEmpty(listWidget.getDynamicChildren(), listWidget.getChildren(), listWidget.getNestedChildren());
+		if (children == null)
+		{
+			return new ArrayList<>();
+		}
+
+		// Walk the children looking for "Bought:" / "Sold:" header markers.
+		// Each header anchors a row; the item sprite (carries itemId+qty) and
+		// the price text follow within the next ~6 widgets. This is robust to
+		// variable per-row stride that breaks fixed-offset indexing.
+		List<GEHistoryEntry> entries = new ArrayList<>();
+		for (int i = 0; i < children.length; i++)
+		{
+			Boolean isBuy = headerToIsBuy(children[i]);
+			if (isBuy != null)
+			{
+				tryParseRowAt(children, i, isBuy, entries);
+			}
+		}
+		return entries;
+	}
+
+	/** Returns TRUE for "Bought:", FALSE for "Sold:", null otherwise. */
+	private static Boolean headerToIsBuy(Widget w)
+	{
+		if (w == null) return null;
+		String text = w.getText();
+		if ("Bought:".equals(text)) return Boolean.TRUE;
+		if ("Sold:".equals(text)) return Boolean.FALSE;
+		return null;
+	}
+
+	private void tryParseRowAt(Widget[] children, int headerIdx, boolean isBuy, List<GEHistoryEntry> entries)
+	{
+		RowScan scan = scanRowFrom(children, headerIdx);
+		if (scan.itemWidget == null || scan.priceWidget == null) return;
+		int itemId = scan.itemWidget.getItemId();
+		int qty = scan.itemWidget.getItemQuantity();
+		int price = parsePerItemPrice(scan.priceWidget);
+		if (qty > 0 && price > 0)
+		{
+			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
+		}
+	}
+
+	/**
+	 * Scan the children starting just after a header, capturing the first
+	 * item-bearing widget and the first "X each" price text. Stops at the
+	 * next header so we never bleed into the following row.
+	 */
+	private static RowScan scanRowFrom(Widget[] children, int headerIdx)
+	{
+		RowScan scan = new RowScan();
+		int end = Math.min(children.length, headerIdx + 8);
+		for (int j = headerIdx + 1; j < end; j++)
+		{
+			Widget w = children[j];
+			if (w != null && !absorbWidget(w, scan))
+			{
+				break;
+			}
+		}
+		return scan;
+	}
+
+	/** Returns false if the next-header marker is hit (caller should stop). */
+	private static boolean absorbWidget(Widget w, RowScan scan)
+	{
+		String text = w.getText();
+		if ("Bought:".equals(text) || "Sold:".equals(text))
+		{
+			return false;
+		}
+		if (scan.itemWidget == null && w.getItemId() > 0)
+		{
+			scan.itemWidget = w;
+		}
+		if (scan.priceWidget == null && text != null && text.contains("each"))
+		{
+			scan.priceWidget = w;
+		}
+		return true;
+	}
+
+	private static final class RowScan
+	{
+		Widget itemWidget;
+		Widget priceWidget;
+	}
+
+	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
+	private static int parsePerItemPrice(Widget widget)
+	{
+		if (widget == null) return -1;
+		String text = widget.getText();
+		if (text == null || text.isEmpty()) return -1;
+		int eqIdx = text.lastIndexOf('=');
+		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
+		return parseDigits(slice);
+	}
+
+	private void backfillOfflineFills(List<GEHistoryEntry> entries)
+	{
+		if (!session.isOfflineSyncCompleted() || entries.isEmpty())
+		{
+			return;
+		}
+		Optional<String> rsnOpt = session.getRsnSafe();
+		if (rsnOpt.isEmpty())
+		{
+			return;
+		}
+		String rsn = rsnOpt.get();
+
+		// Resolve item names from live + persisted-offer state when available.
+		// The backend tolerates null but resolves from prior transactions on
+		// its side too; this just gives nicer logs.
+		Map<Integer, String> nameByItem = new HashMap<>();
+		for (TrackedOffer o : session.getTrackedOffers().values()) nameByItem.put(o.getItemId(), o.getItemName());
+		for (TrackedOffer o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
+
+		List<FlipSmartApiClient.HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
+		for (GEHistoryEntry e : entries)
+		{
+			batch.add(new FlipSmartApiClient.HistoryBackfillEntry(
+				e.getItemId(), nameByItem.get(e.getItemId()),
+				e.isBuy(), e.getQuantity(), e.getPricePerItem()
+			));
+		}
+
+		log.debug("Posting {} GE history rows for batch reconciliation", batch.size());
+		apiClient.recordHistoryBackfillBatchAsync(rsn, batch)
+			.whenComplete((v, ex) ->
+			{
+				if (ex != null)
+				{
+					log.warn("History backfill batch failed: {}", ex.getMessage());
+					return;
+				}
+				Runnable cb = onBackfillComplete;
+				if (cb != null)
+				{
+					try { cb.run(); }
+					catch (Exception e) { log.debug("onBackfillComplete callback threw: {}", e.getMessage()); }
+				}
+			});
+	}
+
+	private static int parseDigits(String text)
+	{
+		if (text == null) return -1;
+		String cleaned = text.replaceAll("\\D", "");
+		if (cleaned.isEmpty()) return -1;
+		try
+		{
+			long val = Long.parseLong(cleaned);
+			return (val > Integer.MAX_VALUE) ? -1 : (int) val;
+		}
+		catch (NumberFormatException e)
+		{
+			return -1;
+		}
+	}
+
+	@SafeVarargs
+	private static Widget[] firstNonEmpty(Widget[]... candidates)
+	{
+		for (Widget[] c : candidates)
+		{
+			if (c != null && c.length > 0) return c;
+		}
+		return null;
+	}
+}

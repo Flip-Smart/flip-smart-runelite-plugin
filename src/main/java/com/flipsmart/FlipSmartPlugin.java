@@ -20,7 +20,9 @@ import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
+import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.client.callback.ClientThread;
@@ -116,6 +118,9 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private WebhookSyncService webhookSyncService;
+
+	@Inject
+	private GEHistoryService geHistoryService;
 
 	@Inject
 	private Gson gson;
@@ -696,6 +701,13 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(this::scheduleOneShot);
+
+		geHistoryService.setOnBackfillComplete(() -> {
+			if (flipFinderPanel != null)
+			{
+				javax.swing.SwingUtilities.invokeLater(flipFinderPanel::refresh);
+			}
+		});
 	}
 
 	private void handleGETrackerFocusChanged(FocusedFlip focus)
@@ -890,12 +902,15 @@ public class FlipSmartPlugin extends Plugin
 		{
 			syncRSN();
 		}
+
+		geHistoryService.onGameTick();
 	}
 
 	private void handleLogoutState()
 	{
 		session.onLogout();
 		offlineSyncService.persistOfferState();
+		geHistoryService.reset();
 		persistAutoRecommendState();
 
 		// Stop auto-recommend on logout
@@ -1307,6 +1322,15 @@ public class FlipSmartPlugin extends Plugin
 		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TYPE && flipAssistInputListener != null)
 		{
 			flipAssistInputListener.updateInputType(client.getVarcIntValue(FlipAssistInputListener.VARCLIENT_INPUT_TYPE));
+		}
+	}
+
+	@Subscribe
+	public void onWidgetLoaded(WidgetLoaded event)
+	{
+		if (event.getGroupId() == InterfaceID.GE_HISTORY)
+		{
+			geHistoryService.onHistoryWidgetLoaded();
 		}
 	}
 

@@ -47,6 +47,7 @@ public class OfflineSyncService
 	private final Client client;
 	private final ClientThread clientThread;
 	private final ActiveFlipTracker activeFlipTracker;
+	private final GEHistoryService geHistoryService;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
 	private Runnable onSyncComplete;
@@ -59,7 +60,8 @@ public class OfflineSyncService
 		Gson gson,
 		Client client,
 		ClientThread clientThread,
-		ActiveFlipTracker activeFlipTracker)
+		ActiveFlipTracker activeFlipTracker,
+		GEHistoryService geHistoryService)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
@@ -68,6 +70,7 @@ public class OfflineSyncService
 		this.client = client;
 		this.clientThread = clientThread;
 		this.activeFlipTracker = activeFlipTracker;
+		this.geHistoryService = geHistoryService;
 	}
 
 	public void setOnSyncComplete(Runnable onSyncComplete)
@@ -266,6 +269,11 @@ public class OfflineSyncService
 		log.debug("Loaded {} persisted offers, comparing with {} current offers",
 			persistedOffers.size(), session.getTrackedOffers().size());
 
+		// Hand the snapshot to GEHistoryService so fully-completed offline trades
+		// (whose live TrackedOffer no longer exists post-sync) can still be
+		// matched and backfilled when the user opens the History tab.
+		geHistoryService.setRecentlyPersistedOffers(persistedOffers);
+
 		if (!session.getTrackedOffers().isEmpty())
 		{
 			syncCurrentOffersWithPersisted(persistedOffers);
@@ -312,6 +320,10 @@ public class OfflineSyncService
 		}
 		for (int itemId : toRemove)
 		{
+			// A collected item disappearing without a tracked sell having
+			// happened in this session means it was sold offline. Register
+			// it for History backfill before we drop it from local state.
+			geHistoryService.registerOfflineFill(itemId);
 			session.removeCollectedItem(itemId);
 		}
 		return toRemove.size();
@@ -349,11 +361,23 @@ public class OfflineSyncService
 			{
 				restoreTimestampIfOlder(currentOffer, persistedOffer);
 			}
-			else if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
+			else
 			{
-				// Track inventory locally so a sell can be queued; backend rejects
-				// is_offline_fill submissions after #597, so no transaction is recorded.
-				session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
+				if (persistedOffer != null && persistedOffer.getItemId() != currentOffer.getItemId())
+				{
+					// Slot reused with a different item — the persisted offer must
+					// have completed offline (or been cancelled). Register it so
+					// the History backfill can disambiguate via the History tab,
+					// which only shows actual completions.
+					geHistoryService.registerOfflineFill(persistedOffer.getItemId());
+				}
+				if (currentOffer.isBuy() && currentOffer.getPreviousQuantitySold() > 0)
+				{
+					// Track inventory locally so a sell can be queued; backend rejects
+					// is_offline_fill submissions after #597, so no transaction is recorded.
+					session.addCollectedItem(currentOffer.getItemId(), currentOffer.getPreviousQuantitySold());
+					geHistoryService.registerOfflineFill(currentOffer.getItemId());
+				}
 			}
 		}
 	}
@@ -407,9 +431,14 @@ public class OfflineSyncService
 			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
 			if (inventoryCount == 0)
 			{
-				log.debug("Sell slot empty for {} and no inventory - dismissing active flip",
+				// Register for History backfill instead of dismissing the local flip.
+				// dismissFlip marks the buy is_manually_closed=true and bumps
+				// quantity_sold=quantity on the API side, which then prevents the
+				// backfill SELL from pairing with the buy. Let the backfill close
+				// the flip naturally; the panel will refresh once it posts.
+				log.debug("Sell slot empty for {} with no inventory — flagging for History backfill",
 					persistedOffer.getItemName());
-				activeFlipTracker.dismissFlip(persistedOffer.getItemId());
+				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 			}
 		});
 	}
@@ -433,6 +462,7 @@ public class OfflineSyncService
 			{
 				log.debug("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
 					persistedOffer.getItemName(), trackedFills);
+				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 			}
 		});
 	}
@@ -448,6 +478,7 @@ public class OfflineSyncService
 		if (actualFills > trackedFills)
 		{
 			syncOfflineCompletedOrder(persistedOffer, inventoryCount, trackedFills, actualFills);
+			geHistoryService.registerOfflineFill(persistedOffer.getItemId());
 		}
 		else
 		{
