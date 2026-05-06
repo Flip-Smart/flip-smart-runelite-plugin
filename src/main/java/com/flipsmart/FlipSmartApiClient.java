@@ -1313,7 +1313,6 @@ public class FlipSmartApiClient
 		public final Integer recommendedSellPrice;
 		public final String rsn;
 		public final Integer totalQuantity;
-		public final boolean isHistoryBackfill;
 
 		private TransactionRequest(Builder builder)
 		{
@@ -1326,7 +1325,6 @@ public class FlipSmartApiClient
 			this.recommendedSellPrice = builder.recommendedSellPrice;
 			this.rsn = builder.rsn;
 			this.totalQuantity = builder.totalQuantity;
-			this.isHistoryBackfill = builder.isHistoryBackfill;
 		}
 
 		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
@@ -1345,7 +1343,6 @@ public class FlipSmartApiClient
 			private Integer recommendedSellPrice;
 			private String rsn;
 			private Integer totalQuantity;
-			private boolean isHistoryBackfill = false;
 
 			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
 			{
@@ -1360,7 +1357,6 @@ public class FlipSmartApiClient
 			public Builder recommendedSellPrice(Integer price) { this.recommendedSellPrice = price; return this; }
 			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
 			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
-			public Builder isHistoryBackfill(boolean value) { this.isHistoryBackfill = value; return this; }
 
 			public TransactionRequest build() { return new TransactionRequest(this); }
 		}
@@ -1396,10 +1392,6 @@ public class FlipSmartApiClient
 		if (request.totalQuantity != null && request.totalQuantity > 0)
 		{
 			jsonBody.addProperty("total_quantity", request.totalQuantity);
-		}
-		if (request.isHistoryBackfill)
-		{
-			jsonBody.addProperty("is_history_backfill", true);
 		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());

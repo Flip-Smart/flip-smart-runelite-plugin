@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Reads the in-game GE History tab to recover actual fill prices for trades
@@ -43,9 +44,8 @@ public class GEHistoryService
 
 	private final Set<Integer> pendingOfflineFillItemIds = ConcurrentHashMap.newKeySet();
 	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
+	private final AtomicInteger pendingHistoryReadTicks = new AtomicInteger(0);
 	private volatile boolean historyReadThisSession = false;
-	private volatile boolean widgetStructureLogged = false;
-	private volatile int pendingHistoryReadTicks = 0;
 	private volatile boolean chatPromptSent = false;
 	private volatile Runnable onBackfillComplete;
 
@@ -64,120 +64,57 @@ public class GEHistoryService
 
 	public void onHistoryWidgetLoaded()
 	{
-		log.info("GE History widget loaded (group {})", InterfaceID.GE_HISTORY);
 		// WidgetLoaded fires when the interface is *created*, but list rows are
 		// populated by clientscripts that run afterward. Defer two ticks so the
 		// scripts have time to write the row widgets before we scan them.
-		pendingHistoryReadTicks = 2;
+		pendingHistoryReadTicks.set(2);
 	}
 
-	/**
-	 * Called from FlipSmartPlugin.onGameTick. Counts down ticks after WidgetLoaded
-	 * to give clientscripts time to populate the list rows before we read them.
-	 */
+	/** Called from FlipSmartPlugin.onGameTick. */
 	public void onGameTick()
 	{
-		if (pendingHistoryReadTicks <= 0)
+		int prev = pendingHistoryReadTicks.get();
+		if (prev <= 0)
 		{
 			return;
 		}
-		pendingHistoryReadTicks--;
-		if (pendingHistoryReadTicks > 0)
+		if (pendingHistoryReadTicks.decrementAndGet() == 0)
 		{
-			return;
+			readHistoryNow();
 		}
-		readHistoryNow();
 	}
 
 	private void readHistoryNow()
 	{
-		// Don't clear pendingOfflineFillItemIds yet — backfillOfflineFills
-		// reads from it to decide which History rows to post. Clearing too
-		// early skips every match. historyReadThisSession alone is enough
-		// to flip hasUnverifiedOfflineFills() to false (it ANDs both) and
-		// to gate further registerOfflineFill calls.
+		// historyReadThisSession alone gates hasUnverifiedOfflineFills() and
+		// further registerOfflineFill calls; pendingOfflineFillItemIds is
+		// allowed to stay populated until reset() so future reads (e.g. user
+		// reopens History) can still see what we'd registered.
 		historyReadThisSession = true;
-
-		if (!widgetStructureLogged)
-		{
-			dumpHistoryGroup();
-			widgetStructureLogged = true;
-		}
 
 		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
 		if (listWidget == null)
 		{
-			log.info("Deferred read: list widget at child {} still null", GE_HISTORY_LIST_CHILD);
 			return;
 		}
 
 		List<GEHistoryEntry> entries = parseHistoryEntries(listWidget);
 		if (entries.isEmpty())
 		{
-			log.info("Deferred read: parsed 0 history entries from child {} — see group dump above to recalibrate offsets",
-				GE_HISTORY_LIST_CHILD);
 			return;
 		}
 
-		log.info("Read {} GE history entries", entries.size());
-		for (GEHistoryEntry entry : entries)
-		{
-			log.debug("  parsed: {}", entry);
-		}
+		log.debug("Read {} GE history entries", entries.size());
 		backfillOfflineFills(entries);
-	}
-
-	/** Dump every child index 0..47 of group GE_HISTORY so we can see where row data actually lives. */
-	private void dumpHistoryGroup()
-	{
-		log.info("=== Dumping all children of GE_HISTORY group {} ===", InterfaceID.GE_HISTORY);
-		for (int idx = 0; idx < 48; idx++)
-		{
-			Widget w = client.getWidget(InterfaceID.GE_HISTORY, idx);
-			if (w == null) continue;
-			Widget[] dyn = w.getDynamicChildren();
-			Widget[] kid = w.getChildren();
-			Widget[] nest = w.getNestedChildren();
-			int dynN = dyn == null ? 0 : dyn.length;
-			int kidN = kid == null ? -1 : kid.length;
-			int nestN = nest == null ? 0 : nest.length;
-			log.info("  child[{}]: type={} w={} h={} hidden={} text='{}' itemId={} sprite={} dyn={} kid={} nest={}",
-				idx, w.getType(), w.getWidth(), w.getHeight(), w.isHidden(),
-				w.getText() == null ? "" : w.getText(),
-				w.getItemId(), w.getSpriteId(),
-				dynN, kidN, nestN);
-			Widget[] sample = firstNonEmpty(dyn, kid, nest);
-			if (sample != null && sample.length > 0)
-			{
-				// Cap at 80 children for the row-list child (idx==3) so we see
-				// 10+ rows and can spot variable-stride layouts. Other children
-				// stay at 8 to keep noise down.
-				int max = Math.min(sample.length, idx == GE_HISTORY_LIST_CHILD ? 80 : 8);
-				for (int j = 0; j < max; j++)
-				{
-					Widget c = sample[j];
-					if (c == null) continue;
-					log.info("    [{}.{}]: type={} itemId={} qty={} text='{}' color={}",
-						idx, j, c.getType(), c.getItemId(), c.getItemQuantity(),
-						c.getText() == null ? "" : c.getText(),
-						Integer.toHexString(c.getTextColor()));
-				}
-			}
-		}
-		log.info("=== end group dump ===");
 	}
 
 	public void registerOfflineFill(int itemId)
 	{
-		if (!historyReadThisSession)
+		if (!historyReadThisSession && pendingOfflineFillItemIds.add(itemId))
 		{
-			boolean added = pendingOfflineFillItemIds.add(itemId);
-			if (added)
-			{
-				log.info("GE History: registered offline fill for itemId={} (pending count {})",
-					itemId, pendingOfflineFillItemIds.size());
-				maybeSendChatPrompt();
-			}
+			log.debug("Registered offline fill for itemId={} (pending count {})",
+				itemId, pendingOfflineFillItemIds.size());
+			maybeSendChatPrompt();
 		}
 	}
 
@@ -205,12 +142,6 @@ public class GEHistoryService
 	}
 
 	/**
-	 * Snapshot of offers persisted at the previous session's logout — used as
-	 * additional anchors when backfilling, so fully-completed offline trades
-	 * (whose live TrackedOffer no longer exists) can still be matched by
-	 * itemId + isBuy and have their estimated price replaced.
-	 */
-	/**
 	 * Runs after a History-backfill batch lands on the API. Used by the
 	 * plugin to refresh Active Flips / Completed panels so backfilled trades
 	 * appear without the user having to manually reload.
@@ -220,6 +151,12 @@ public class GEHistoryService
 		this.onBackfillComplete = callback;
 	}
 
+	/**
+	 * Snapshot of offers persisted at the previous session's logout — used
+	 * for item-name resolution in the backfill payload, and as the trigger
+	 * for the chat prompt (any persisted state means there might be offline
+	 * activity worth backfilling).
+	 */
 	public void setRecentlyPersistedOffers(Map<Integer, TrackedOffer> offers)
 	{
 		recentlyPersistedOffers.clear();
@@ -227,11 +164,9 @@ public class GEHistoryService
 		{
 			recentlyPersistedOffers.putAll(offers);
 		}
-		log.info("GE History: snapshot loaded with {} persisted offers", recentlyPersistedOffers.size());
 		// Any prior-session activity is reason enough to prompt the user to
-		// open History — the slot-diff and stale-collected-item detections
-		// only catch a subset of cases. Backend dedup makes the backfill safe
-		// regardless: covered rows dedupe, missing ones get inserted.
+		// open History. Backend dedup makes the backfill safe regardless:
+		// covered rows dedupe, missing ones get inserted.
 		if (!recentlyPersistedOffers.isEmpty())
 		{
 			maybeSendChatPrompt();
@@ -253,8 +188,7 @@ public class GEHistoryService
 		pendingOfflineFillItemIds.clear();
 		recentlyPersistedOffers.clear();
 		historyReadThisSession = false;
-		widgetStructureLogged = false;
-		pendingHistoryReadTicks = 0;
+		pendingHistoryReadTicks.set(0);
 		chatPromptSent = false;
 	}
 
@@ -263,10 +197,8 @@ public class GEHistoryService
 		Widget[] children = firstNonEmpty(listWidget.getDynamicChildren(), listWidget.getChildren(), listWidget.getNestedChildren());
 		if (children == null)
 		{
-			log.info("GE History list widget has no dynamic/child/nested children at all");
 			return new ArrayList<>();
 		}
-		log.debug("GE History parser: found {} children to scan", children.length);
 
 		// Walk the children looking for "Bought:" / "Sold:" header markers.
 		// Each header anchors a row; the item sprite (carries itemId+qty) and
@@ -315,8 +247,6 @@ public class GEHistoryService
 		}
 		if (itemWidget == null || priceWidget == null)
 		{
-			log.debug("Row at {} ({}): missing itemWidget={} priceWidget={}",
-				headerIdx, isBuy ? "Bought" : "Sold", itemWidget != null, priceWidget != null);
 			return;
 		}
 		int itemId = itemWidget.getItemId();
@@ -326,45 +256,6 @@ public class GEHistoryService
 		{
 			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
 		}
-		else
-		{
-			log.debug("Row at {} ({}): id={} qty={} price={} — dropped",
-				headerIdx, isBuy ? "Bought" : "Sold", itemId, qty, price);
-		}
-	}
-
-	private void logWidgetStructure(Widget listWidget)
-	{
-		log.info("=== GE History widget structure (group {}, child {}) ===",
-			InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
-		log.info("List widget: type={}, w={}, h={}, hidden={}",
-			listWidget.getType(), listWidget.getWidth(), listWidget.getHeight(), listWidget.isHidden());
-
-		Widget[] dyn = listWidget.getDynamicChildren();
-		Widget[] kid = listWidget.getChildren();
-		Widget[] nest = listWidget.getNestedChildren();
-		log.info("dynamicChildren={}, getChildren()={}, nestedChildren={}",
-			dyn == null ? "null" : dyn.length,
-			kid == null ? "null" : kid.length,
-			nest == null ? "null" : nest.length);
-
-		Widget[] sample = firstNonEmpty(dyn, kid, nest);
-		if (sample == null)
-		{
-			log.info("No children to dump.");
-			return;
-		}
-		int max = Math.min(sample.length, 24);
-		for (int i = 0; i < max; i++)
-		{
-			Widget c = sample[i];
-			if (c == null) continue;
-			log.info("  [{}]: type={} itemId={} qty={} text='{}' spriteId={} color={}",
-				i, c.getType(), c.getItemId(), c.getItemQuantity(),
-				c.getText() == null ? "" : c.getText(),
-				c.getSpriteId(), Integer.toHexString(c.getTextColor()));
-		}
-		log.info("=== end widget structure ===");
 	}
 
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
@@ -380,27 +271,20 @@ public class GEHistoryService
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
 	{
-		if (!session.isOfflineSyncCompleted())
+		if (!session.isOfflineSyncCompleted() || entries.isEmpty())
 		{
-			log.info("Backfill skipped: offline sync has not completed yet");
 			return;
 		}
 		Optional<String> rsnOpt = session.getRsnSafe();
 		if (rsnOpt.isEmpty())
-		{
-			log.info("Backfill skipped: no RSN available on session");
-			return;
-		}
-		if (entries.isEmpty())
 		{
 			return;
 		}
 		String rsn = rsnOpt.get();
 
 		// Resolve item names from live + persisted-offer state when available.
-		// History rows don't carry the resolved item name on their own widget
-		// data — only the sprite + a free-text label that includes color tags.
-		// The backend tolerates a null item_name; this just gives nicer logs.
+		// The backend tolerates null but resolves from prior transactions on
+		// its side too; this just gives nicer logs.
 		Map<Integer, String> nameByItem = new HashMap<>();
 		for (TrackedOffer o : session.getTrackedOffers().values()) nameByItem.put(o.getItemId(), o.getItemName());
 		for (TrackedOffer o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
@@ -414,8 +298,7 @@ public class GEHistoryService
 			));
 		}
 
-		log.info("Backfill: posting {} GE history rows for batch reconciliation (server applies sum-and-delta dedup)",
-			batch.size());
+		log.debug("Posting {} GE history rows for batch reconciliation", batch.size());
 		apiClient.recordHistoryBackfillBatchAsync(rsn, batch)
 			.whenComplete((v, ex) ->
 			{
