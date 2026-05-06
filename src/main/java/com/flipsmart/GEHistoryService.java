@@ -228,11 +228,24 @@ public class GEHistoryService
 			recentlyPersistedOffers.putAll(offers);
 		}
 		log.info("GE History: snapshot loaded with {} persisted offers", recentlyPersistedOffers.size());
+		// Any prior-session activity is reason enough to prompt the user to
+		// open History — the slot-diff and stale-collected-item detections
+		// only catch a subset of cases. Backend dedup makes the backfill safe
+		// regardless: covered rows dedupe, missing ones get inserted.
+		if (!recentlyPersistedOffers.isEmpty())
+		{
+			maybeSendChatPrompt();
+		}
 	}
 
 	public boolean hasUnverifiedOfflineFills()
 	{
-		return !historyReadThisSession && !pendingOfflineFillItemIds.isEmpty();
+		// Prompt the overlay banner whenever we haven't yet read the History
+		// this session and there's *any* signal that offline activity might
+		// have happened — either the narrow per-item detection registered
+		// something, or the user simply had persisted offer state from the
+		// prior session.
+		return !historyReadThisSession && (!pendingOfflineFillItemIds.isEmpty() || !recentlyPersistedOffers.isEmpty());
 	}
 
 	public void reset()
