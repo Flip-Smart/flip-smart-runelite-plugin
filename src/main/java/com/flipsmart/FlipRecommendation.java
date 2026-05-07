@@ -78,6 +78,15 @@ public class FlipRecommendation
 	@SerializedName("total_cost")
 	private int totalCost;
 
+	/**
+	 * True when this recommendation came from the API's curated-pool random
+	 * fallback (issue #617). These items are "force-recommend" picks that fill
+	 * empty slots regardless of margin, so the plugin's local minimumProfit
+	 * filter must not hide them.
+	 */
+	@SerializedName("is_curated_pool_fallback")
+	private boolean curatedPoolFallback;
+
 	// Deprecated fields (kept for backwards compatibility)
 	@SerializedName("buy_price")
 	private Integer buyPrice;

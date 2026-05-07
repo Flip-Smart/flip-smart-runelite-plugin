@@ -1854,9 +1854,19 @@ public class FlipFinderPanel extends PluginPanel
 		}
 	}
 
-	/** Returns true if a recommendation passes the current profit filter. */
+	/** Returns true if a recommendation passes the current profit filter.
+	 *
+	 * Curated-pool fallback items (sub-25M cashstack / F2P "always-fill" picks
+	 * from API issue #617) bypass the user's minimumProfit threshold — they're
+	 * force-recommended slot fillers, and hiding them would re-introduce the
+	 * "API only returned 5 recommendations" complaint we just fixed.
+	 */
 	private boolean shouldDisplay(FlipRecommendation rec)
 	{
+		if (rec.isCuratedPoolFallback())
+		{
+			return true;
+		}
 		return FocusedFlip.calculateAdjustedProfit(rec, config.priceOffset()) >= config.minimumProfit();
 	}
 
