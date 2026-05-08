@@ -3,15 +3,12 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
-import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.Keybind;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
-import java.awt.Canvas;
-import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -42,7 +39,6 @@ public class FlipAssistInputListener implements KeyListener
 	
 	// Input type values
 	private static final int INPUT_TYPE_NUMERIC = 7;
-	private static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 	
 	// Chat message prefix - cyan color for visibility
 	private static final String CHAT_MESSAGE_PREFIX = "<col=00e5ff>[FlipSmart]</col> ";
@@ -117,10 +113,11 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
-		// Only consume the hotkey when a GE input dialog is active (search, price, or quantity).
-		// This prevents the hotkey from blocking normal chat typing.
+		// Only consume the hotkey when a GE numeric input dialog is active (price/quantity).
+		// We deliberately do NOT consume in the GE item search input — players need to
+		// type characters (including the hotkey character) to search for items.
 		int cachedInputType = currentInputType.get();
-		if (cachedInputType != INPUT_TYPE_NUMERIC && cachedInputType != INPUT_TYPE_GE_ITEM_SEARCH)
+		if (cachedInputType != INPUT_TYPE_NUMERIC)
 		{
 			return;
 		}
@@ -148,26 +145,8 @@ public class FlipAssistInputListener implements KeyListener
 
 		int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
 
-		// Handle GE item search - press hotkey to select the first result
-		// (Item name is auto-populated via GE_LAST_SEARCHED when flip is focused)
-		if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
-		{
-			// Only auto-select if the search text matches the focused item
-			// This prevents the hotkey from interfering when user is manually typing
-			if (!isSearchTextMatchingFocusedItem(focusedFlip))
-			{
-				return;
-			}
-
-			if (hasSearchResults())
-			{
-				selectFirstSearchResult();
-				flipAssistOverlay.updateStep();
-			}
-			return;
-		}
-
-		// Handle numeric input (price/quantity)
+		// Handle numeric input (price/quantity). The EDT guard prevents this from
+		// firing for any other input type, including GE item search.
 		if (inputType == INPUT_TYPE_NUMERIC)
 		{
 			handleFlipAssistAction(focusedFlip);
@@ -403,102 +382,5 @@ public class FlipAssistInputListener implements KeyListener
 		);
 	}
 	
-	/**
-	 * Check if the current search text matches the focused item name.
-	 * This prevents the hotkey from triggering while the user is manually typing.
-	 * MUST be called on client thread.
-	 */
-	private boolean isSearchTextMatchingFocusedItem(FocusedFlip focusedFlip)
-	{
-		String searchText = client.getVarcStrValue(VARCLIENT_INPUT_TEXT);
-		if (searchText == null || searchText.isEmpty())
-		{
-			// Empty search box - allow hotkey (item will be auto-populated)
-			return true;
-		}
-
-		String itemName = focusedFlip.getItemName();
-		if (itemName == null)
-		{
-			return false;
-		}
-
-		// Normalize both strings for comparison (case-insensitive)
-		String normalizedSearch = searchText.toLowerCase().trim();
-		String normalizedItem = itemName.toLowerCase().trim();
-
-		// Match if search text equals the item name or is a prefix of it
-		// This allows the hotkey to work when GE_LAST_SEARCHED auto-populates the search
-		return normalizedItem.equals(normalizedSearch) || normalizedItem.startsWith(normalizedSearch);
-	}
-
-	/**
-	 * Check if there are GE search results displayed.
-	 * MUST be called on client thread.
-	 */
-	private boolean hasSearchResults()
-	{
-		// Check if the search results widget exists and has children
-		Widget searchResults = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
-		if (searchResults == null || searchResults.isHidden())
-		{
-			return false;
-		}
-		
-		Widget[] children = searchResults.getDynamicChildren();
-		// Each search result has 3 children (icon, name, ?)
-		return children != null && children.length >= 3;
-	}
-	
-	/**
-	 * Select the first item in the GE search results by dispatching Enter key.
-	 * This simulates the user pressing Enter to confirm their search selection.
-	 * MUST be called on client thread.
-	 */
-	private void selectFirstSearchResult()
-	{
-		// Get the game canvas to dispatch the key event to
-		Canvas canvas = client.getCanvas();
-		if (canvas == null)
-		{
-			return;
-		}
-		
-		// Create and dispatch Enter key press event
-		KeyEvent enterPressed = new KeyEvent(
-			canvas,
-			KeyEvent.KEY_PRESSED,
-			System.currentTimeMillis(),
-			0,  // no modifiers
-			KeyEvent.VK_ENTER,
-			KeyEvent.CHAR_UNDEFINED
-		);
-		
-		// Create and dispatch Enter key typed event
-		KeyEvent enterTyped = new KeyEvent(
-			canvas,
-			KeyEvent.KEY_TYPED,
-			System.currentTimeMillis(),
-			0,  // no modifiers
-			KeyEvent.VK_UNDEFINED,
-			'\n'
-		);
-		
-		// Create and dispatch Enter key released event
-		KeyEvent enterReleased = new KeyEvent(
-			canvas,
-			KeyEvent.KEY_RELEASED,
-			System.currentTimeMillis(),
-			0,  // no modifiers
-			KeyEvent.VK_ENTER,
-			KeyEvent.CHAR_UNDEFINED
-		);
-		
-		// Dispatch through the keyboard focus manager to properly route to the game
-		KeyboardFocusManager focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
-		focusManager.dispatchKeyEvent(enterPressed);
-		focusManager.dispatchKeyEvent(enterTyped);
-		focusManager.dispatchKeyEvent(enterReleased);
-	}
 }
 
