@@ -828,7 +828,11 @@ public class AutoRecommendService
 	{
 		recommendationQueue.clear();
 		currentIndex = 0;
-		if (currentRec == null)
+		// If currentRec is now on the GE, don't preserve it across the refresh —
+		// otherwise it would survive the filter and resurface at index 0.
+		boolean currentRecActive = currentRec != null
+			&& plugin.getActiveFlipItemIds().contains(currentRec.getItemId());
+		if (currentRec == null || currentRecActive)
 		{
 			recommendationQueue.addAll(filtered);
 			return;
@@ -1852,6 +1856,18 @@ public class AutoRecommendService
 		FlipRecommendation rec = getCurrentRecommendation();
 		if (rec == null)
 		{
+			return;
+		}
+
+		// Re-validate against active GE state. The queue can carry an already-listed
+		// item into focus via paths that bypass advanceToNext()'s skip-loop:
+		// rebuildQueue() preserving currentRec across a refresh, restoreState() on
+		// relogin, or focusCurrent() callers when slots free up. Catch them all here
+		// so we never recommend an item the player already has on the GE.
+		if (plugin.getActiveFlipItemIds().contains(rec.getItemId()))
+		{
+			log.debug("Auto-recommend: Current rec {} is already on GE - advancing", rec.getItemName());
+			advanceToNext();
 			return;
 		}
 
