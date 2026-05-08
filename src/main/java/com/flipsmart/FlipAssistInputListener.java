@@ -3,12 +3,15 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.Keybind;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
+import java.awt.Canvas;
+import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -35,10 +38,11 @@ public class FlipAssistInputListener implements KeyListener
 	
 	// VarClient IDs (raw values to avoid deprecated API)
 	static final int VARCLIENT_INPUT_TYPE = 5;
-	private static final int VARCLIENT_INPUT_TEXT = 359;
-	
+	static final int VARCLIENT_INPUT_TEXT = 359;
+
 	// Input type values
 	private static final int INPUT_TYPE_NUMERIC = 7;
+	private static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 	
 	// Chat message prefix - cyan color for visibility
 	private static final String CHAT_MESSAGE_PREFIX = "<col=00e5ff>[FlipSmart]</col> ";
@@ -68,12 +72,27 @@ public class FlipAssistInputListener implements KeyListener
 	// Used on EDT to decide whether to consume the hotkey before clientThread runs.
 	private final AtomicInteger currentInputType = new AtomicInteger(0);
 
+	// Cached input text from VarClientStr, updated via event from FlipSmartPlugin.
+	// Used on EDT to gate hotkey consumption in the GE item search dialog: we
+	// only consume when the search box is empty or the user-typed text is a
+	// prefix of the focused item name. Otherwise the player is searching for a
+	// different item and the hotkey character must reach the search field.
+	private final AtomicReference<String> currentInputText = new AtomicReference<>("");
+
 	/**
 	 * Update the cached input type. Called from FlipSmartPlugin on VarClientIntChanged.
 	 */
 	public void updateInputType(int inputType)
 	{
 		currentInputType.set(inputType);
+	}
+
+	/**
+	 * Update the cached input text. Called from FlipSmartPlugin on VarClientStrChanged.
+	 */
+	public void updateInputText(String inputText)
+	{
+		currentInputText.set(inputText == null ? "" : inputText);
 	}
 	
 	@Override
@@ -113,11 +132,19 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
-		// Only consume the hotkey when a GE numeric input dialog is active (price/quantity).
-		// We deliberately do NOT consume in the GE item search input — players need to
-		// type characters (including the hotkey character) to search for items.
+		// Only consume the hotkey when a GE input dialog is active.
 		int cachedInputType = currentInputType.get();
-		if (cachedInputType != INPUT_TYPE_NUMERIC)
+		if (cachedInputType != INPUT_TYPE_NUMERIC && cachedInputType != INPUT_TYPE_GE_ITEM_SEARCH)
+		{
+			return;
+		}
+
+		// In the GE item search dialog, only consume the hotkey when the search
+		// box is empty or the user is on track to find the focused item. If the
+		// player is typing a different item name, let the character through to
+		// the search field — this is the fix for #616.
+		if (cachedInputType == INPUT_TYPE_GE_ITEM_SEARCH
+			&& !searchTextMatchesFocusedItem(focusedFlip))
 		{
 			return;
 		}
@@ -129,6 +156,34 @@ public class FlipAssistInputListener implements KeyListener
 		e.consume();
 
 		clientThread.invoke(() -> handleHotkeyOnClientThread(focusedFlip));
+	}
+
+	/**
+	 * Decide on the EDT whether the cached search text indicates the player is
+	 * still searching for the focused item (empty box or a prefix of the item
+	 * name). Returns false when the player has typed something the focused item
+	 * does not start with — in that case the hotkey must not consume the key.
+	 */
+	private boolean searchTextMatchesFocusedItem(FocusedFlip focusedFlip)
+	{
+		String searchText = currentInputText.get();
+		if (searchText.isEmpty())
+		{
+			// Empty search box — the focused item will be auto-populated by
+			// the GE_LAST_SEARCHED varp, so the hotkey can confirm it.
+			return true;
+		}
+
+		String itemName = focusedFlip.getItemName();
+		if (itemName == null)
+		{
+			return false;
+		}
+
+		String normalizedSearch = searchText.toLowerCase().trim();
+		String normalizedItem = itemName.toLowerCase().trim();
+
+		return normalizedItem.startsWith(normalizedSearch);
 	}
 
 	/**
@@ -145,8 +200,20 @@ public class FlipAssistInputListener implements KeyListener
 
 		int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
 
-		// Handle numeric input (price/quantity). The EDT guard prevents this from
-		// firing for any other input type, including GE item search.
+		// Handle GE item search — press hotkey to select the first result.
+		// The EDT guard already verified the search text matches the focused
+		// item (or is empty), so the player expects auto-selection here.
+		if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
+		{
+			if (hasSearchResults())
+			{
+				selectFirstSearchResult();
+				flipAssistOverlay.updateStep();
+			}
+			return;
+		}
+
+		// Handle numeric input (price/quantity)
 		if (inputType == INPUT_TYPE_NUMERIC)
 		{
 			handleFlipAssistAction(focusedFlip);
@@ -381,6 +448,45 @@ public class FlipAssistInputListener implements KeyListener
 			null
 		);
 	}
-	
+
+	/**
+	 * Check if there are GE search results displayed.
+	 * MUST be called on client thread.
+	 */
+	private boolean hasSearchResults()
+	{
+		Widget searchResults = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
+		if (searchResults == null || searchResults.isHidden())
+		{
+			return false;
+		}
+
+		Widget[] children = searchResults.getDynamicChildren();
+		// Each search result has 3 children (icon, name, ?)
+		return children != null && children.length >= 3;
+	}
+
+	/**
+	 * Select the first item in the GE search results by dispatching Enter key.
+	 * MUST be called on client thread.
+	 */
+	private void selectFirstSearchResult()
+	{
+		Canvas canvas = client.getCanvas();
+		if (canvas == null)
+		{
+			return;
+		}
+
+		long now = System.currentTimeMillis();
+		KeyEvent enterPressed = new KeyEvent(canvas, KeyEvent.KEY_PRESSED, now, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED);
+		KeyEvent enterTyped = new KeyEvent(canvas, KeyEvent.KEY_TYPED, now, 0, KeyEvent.VK_UNDEFINED, '\n');
+		KeyEvent enterReleased = new KeyEvent(canvas, KeyEvent.KEY_RELEASED, now, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED);
+
+		KeyboardFocusManager focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
+		focusManager.dispatchKeyEvent(enterPressed);
+		focusManager.dispatchKeyEvent(enterTyped);
+		focusManager.dispatchKeyEvent(enterReleased);
+	}
 }
 

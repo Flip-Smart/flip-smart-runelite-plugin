@@ -20,6 +20,7 @@ import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
+import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.InterfaceID;
@@ -1322,6 +1323,15 @@ public class FlipSmartPlugin extends Plugin
 		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TYPE && flipAssistInputListener != null)
 		{
 			flipAssistInputListener.updateInputType(client.getVarcIntValue(FlipAssistInputListener.VARCLIENT_INPUT_TYPE));
+		}
+	}
+
+	@Subscribe
+	public void onVarClientStrChanged(VarClientStrChanged event)
+	{
+		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TEXT && flipAssistInputListener != null)
+		{
+			flipAssistInputListener.updateInputText(client.getVarcStrValue(FlipAssistInputListener.VARCLIENT_INPUT_TEXT));
 		}
 	}
 
