@@ -1,0 +1,22 @@
+# Codacy analysis configuration for the FlipSmart RuneLite plugin.
+#
+# Scope: ignore Gradle build output, vendored wrappers, generated class
+# files, and any image/asset directories so the issue list reflects
+# handwritten Java under src/main and src/test.
+#
+# See https://docs.codacy.com/repositories-configure/codacy-configuration-file/
+
+exclude_paths:
+  # Gradle build output and caches
+  - "build/**"
+  - ".gradle/**"
+  # Compiled artifacts
+  - "**/*.class"
+  - "**/*.jar"
+  # Vendored Gradle wrapper scripts (upstream-maintained)
+  - "gradlew"
+  - "gradlew.bat"
+  - "gradle/wrapper/**"
+  # Static assets — image/icon directories carry no code
+  - "images/**"
+  - "src/main/resources/**"
