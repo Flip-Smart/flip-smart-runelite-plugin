@@ -4,6 +4,10 @@
 # files, and any image/asset directories so the issue list reflects
 # handwritten Java under src/main and src/test.
 #
+# Note: src/main/resources is intentionally NOT excluded so secret-detection
+# scans .properties/.xml/.fxml. Image files there are already covered by
+# the **/*.png and **/*.jpg patterns below.
+#
 # See https://docs.codacy.com/repositories-configure/codacy-configuration-file/
 
 exclude_paths:
@@ -17,6 +21,11 @@ exclude_paths:
   - "gradlew"
   - "gradlew.bat"
   - "gradle/wrapper/**"
-  # Static assets — image/icon directories carry no code
+  # Static assets — image/icon files carry no code
   - "images/**"
-  - "src/main/resources/**"
+  - "**/*.png"
+  - "**/*.jpg"
+  - "**/*.jpeg"
+  - "**/*.gif"
+  - "**/*.ico"
+  - "**/*.svg"
