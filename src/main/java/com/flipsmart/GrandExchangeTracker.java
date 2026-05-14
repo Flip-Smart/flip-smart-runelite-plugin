@@ -553,8 +553,9 @@ public class GrandExchangeTracker
 		// allocation (slot reuse, plugin reload, world hop, login-burst miss), the
 		// recorded pricePerItem will equal the *placed* price of that earlier order
 		// rather than the actual fill. Surface the conditions so we can correlate
-		// to a specific code path. See Flip-Smart/flip-smart#648.
-		if (previousOffer == null)
+		// to a specific code path. Restricted to newQuantity > 0 so we only log
+		// real fills (placements have newQuantity == 0 and would otherwise spam).
+		if (previousOffer == null && newQuantity > 0)
 		{
 			log.warn("[FlipSmart][previousOffer==null] Recording fill with no baseline state — "
 					+ "slot={} item={} ({}) newQty={} ctxSpent={} placedPrice={} qtySold={} totalQty={} state={} pricePerItem={}",
