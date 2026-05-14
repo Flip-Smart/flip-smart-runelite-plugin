@@ -378,8 +378,10 @@ public class AutoRecommendService
 
 	/**
 	 * Called when a buy order completes (fully bought).
-	 * Prompts user to collect items. Sell price is already stored in session
-	 * via setRecommendedSellPrice() when the buy order was placed.
+	 * Routes through focusNextAvailableAction so the collect prompt is surfaced
+	 * immediately regardless of slot availability. Sell price is already stored
+	 * in session via setRecommendedSellPrice() when the buy order was placed.
+	 * onOfferCollected will transition to sell when user actually collects.
 	 */
 	public synchronized void onBuyOrderCompleted(int itemId, String itemName)
 	{
@@ -389,17 +391,8 @@ public class AutoRecommendService
 		}
 
 		clearAdjustmentTimer(itemId);
-		log.debug("Auto-recommend: Buy complete for {} - collect from GE to sell", itemName);
-		updateStatus("Auto: Collect " + itemName + " from GE");
-
-		// When no GE slots are available, clear the buy focus and show collect overlay.
-		// The hint box only displays when focusedFlip is null.
-		// onOfferCollected will transition to sell when user actually collects.
-		if (!hasAvailableGESlots())
-		{
-			invokeFocusCallback(null);
-			invokeOverlayMessageCallback(itemName, itemId);
-		}
+		log.debug("Auto-recommend: Buy complete for {} - routing for collect", itemName);
+		focusNextAvailableAction();
 	}
 
 	/**
@@ -668,11 +661,26 @@ public class AutoRecommendService
 
 	/**
 	 * Determine the next action based on current state.
-	 * Priority: sell collected items > buy next from queue > wait.
+	 * Priority: collect completed GE offers > sell collected items > resolve
+	 * stale offers > buy next from queue > wait.
 	 */
 	private void focusNextAvailableAction()
 	{
 		focusedCollectedItemId = -1;
+
+		// Highest priority: any GE slot with a completed (BOUGHT/SOLD) offer
+		// awaiting collection must be surfaced before anything else. Otherwise
+		// auto-mode could advance to a new buy on a different slot while the
+		// completed slot sits uncollected — and may even recommend a flip for
+		// an item the user has already sold, because the slot has not been
+		// freed. See issue #621.
+		PlayerSession session = plugin.getSession();
+		if (session != null && !session.getCompletedOffers().isEmpty())
+		{
+			promptCollection();
+			return;
+		}
+
 		if (hasCollectedItemsToSell())
 		{
 			focusNextCollectedItemSell();
