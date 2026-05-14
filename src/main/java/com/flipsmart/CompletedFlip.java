@@ -56,8 +56,5 @@ public class CompletedFlip
 
 	@SerializedName("is_successful")
 	private boolean isSuccessful;
-
-	@SerializedName("is_estimated")
-	private boolean isEstimated;
 }
 

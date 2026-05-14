@@ -3731,31 +3731,6 @@ public class FlipFinderPanel extends PluginPanel
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
 		JPanel topPanel = header.topPanel;
 
-		// If this flip's data may be incomplete (offline fills), add a warning icon to the header
-		if (flip.isEstimated())
-		{
-			JLabel warningLabel = new JLabel("\u26A0");
-			warningLabel.setForeground(new Color(255, 200, 0)); // yellow
-			warningLabel.setFont(FONT_BOLD_13);
-			warningLabel.setToolTipText(
-				"<html>Profit may be approximate.<br>"
-				+ "Some fills for this flip were recorded from offline sync<br>"
-				+ "(e.g. trades completed on OSRS Mobile).</html>");
-			warningLabel.setBorder(new EmptyBorder(0, 0, 0, 4));
-
-			// Insert warning into the EAST icons panel of the top header
-			Component eastComponent = ((BorderLayout) header.topPanel.getLayout()).getLayoutComponent(BorderLayout.EAST);
-			if (eastComponent instanceof JPanel)
-			{
-				((JPanel) eastComponent).add(warningLabel, 0);  // add at index 0 = leftmost in the icons row
-			}
-			else
-			{
-				// Fallback: add to topPanel directly
-				header.topPanel.add(warningLabel, BorderLayout.EAST);
-			}
-		}
-
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
 		JPanel detailsPanel = new JPanel(new GridBagLayout());
 		detailsPanel.setBackground(backgroundColor);
