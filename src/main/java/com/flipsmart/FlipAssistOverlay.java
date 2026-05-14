@@ -66,7 +66,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
-	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to improve offline fill accuracy";
+	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to backfill recent trades";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
