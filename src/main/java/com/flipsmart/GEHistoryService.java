@@ -254,10 +254,9 @@ public class GEHistoryService
 			// there's nothing to break out — the displayed total IS the per-item
 			// price. Fall back to the "X,XXX coins" widget and divide by qty.
 			// See Flip-Smart/flip-smart#650.
-			String rawCoinsText = scan.coinsWidget.getText();
 			int total = parseLeadingTotal(scan.coinsWidget);
 			price = (total > 0) ? total / qty : -1;
-			pricePath = "coins-fallback(total=" + total + ", rawText=[" + rawCoinsText + "])";
+			pricePath = "coins-fallback(total=" + total + ")";
 		}
 		else
 		{
