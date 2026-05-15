@@ -342,7 +342,7 @@ public class GEHistoryService
 		if (text == null || text.isEmpty()) return -1;
 		int eqIdx = text.lastIndexOf('=');
 		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
-		return parseDigits(slice);
+		return parseDigits(stripHtmlTags(slice));
 	}
 
 	/** Leading total from a "X,XXX coins[(gross - tax)]" widget, ignoring any
@@ -354,7 +354,16 @@ public class GEHistoryService
 		if (text == null || text.isEmpty()) return -1;
 		int parenIdx = text.indexOf('(');
 		String head = (parenIdx >= 0) ? text.substring(0, parenIdx) : text;
-		return parseDigits(head);
+		return parseDigits(stripHtmlTags(head));
+	}
+
+	/** Strip HTML-like tags (e.g. {@code <col=ffb83f>}, {@code <br>}, {@code </col>})
+	 *  before parsing digits, so hex characters inside color codes don't pollute
+	 *  the result. parseDigits is digit-greedy and would otherwise concatenate
+	 *  digits found inside attribute values like "ff<b>83</b>f" into the price. */
+	private static String stripHtmlTags(String text)
+	{
+		return (text == null) ? "" : text.replaceAll("<[^>]*>", "");
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
