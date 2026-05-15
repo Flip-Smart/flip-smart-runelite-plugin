@@ -229,13 +229,52 @@ public class GEHistoryService
 	private void tryParseRowAt(Widget[] children, int headerIdx, boolean isBuy, List<GEHistoryEntry> entries)
 	{
 		RowScan scan = scanRowFrom(children, headerIdx);
-		if (scan.itemWidget == null || scan.priceWidget == null) return;
+		if (scan.itemWidget == null)
+		{
+			log.debug("[GEHistory] dropped row at headerIdx={} isBuy={} — no itemWidget", headerIdx, isBuy);
+			return;
+		}
 		int itemId = scan.itemWidget.getItemId();
-		int qty = scan.itemWidget.getItemQuantity();
-		int price = parsePerItemPrice(scan.priceWidget);
+		// RuneLite's Widget.getItemQuantity() returns 0 for single-item sprites
+		// because the GE clientscript does not write a quantity badge when qty
+		// would visually be "1". Default to 1 when we have a valid itemId but
+		// no reported quantity — that is the only context this triggers.
+		int rawQty = scan.itemWidget.getItemQuantity();
+		int qty = (rawQty > 0) ? rawQty : (itemId > 0 ? 1 : 0);
+		int price;
+		String pricePath;
+		if (scan.priceWidget != null)
+		{
+			price = parsePerItemPrice(scan.priceWidget);
+			pricePath = "each";
+		}
+		else if (scan.coinsWidget != null && qty > 0)
+		{
+			// Single-quantity GE History rows omit the "= N each" line because
+			// there's nothing to break out — the displayed total IS the per-item
+			// price. Fall back to the "X,XXX coins" widget and divide by qty.
+			// See Flip-Smart/flip-smart#650.
+			int total = parseLeadingTotal(scan.coinsWidget);
+			price = (total > 0) ? total / qty : -1;
+			pricePath = "coins-fallback(total=" + total + ")";
+		}
+		else
+		{
+			log.debug("[GEHistory] dropped row at headerIdx={} isBuy={} itemId={} rawQty={} — "
+					+ "no priceWidget AND (no coinsWidget OR qty<=0)",
+				headerIdx, isBuy, itemId, rawQty);
+			return;
+		}
 		if (qty > 0 && price > 0)
 		{
 			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
+			log.debug("[GEHistory] parsed row isBuy={} itemId={} qty={} price={} via {}",
+				isBuy, itemId, qty, price, pricePath);
+		}
+		else
+		{
+			log.debug("[GEHistory] dropped row at headerIdx={} isBuy={} itemId={} qty={} price={} via {}",
+				headerIdx, isBuy, itemId, qty, price, pricePath);
 		}
 	}
 
@@ -271,9 +310,18 @@ public class GEHistoryService
 		{
 			scan.itemWidget = w;
 		}
-		if (scan.priceWidget == null && text != null && text.contains("each"))
+		if (text != null)
 		{
-			scan.priceWidget = w;
+			if (scan.priceWidget == null && text.contains("each"))
+			{
+				scan.priceWidget = w;
+			}
+			else if (scan.coinsWidget == null && text.contains("coins"))
+			{
+				// Single-qty rows have a "X,XXX coins" widget but no "each" line.
+				// Captured for the qty=1 fallback in tryParseRowAt.
+				scan.coinsWidget = w;
+			}
 		}
 		return true;
 	}
@@ -282,6 +330,7 @@ public class GEHistoryService
 	{
 		Widget itemWidget;
 		Widget priceWidget;
+		Widget coinsWidget;
 	}
 
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
@@ -292,7 +341,28 @@ public class GEHistoryService
 		if (text == null || text.isEmpty()) return -1;
 		int eqIdx = text.lastIndexOf('=');
 		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
-		return parseDigits(slice);
+		return parseDigits(stripHtmlTags(slice));
+	}
+
+	/** Leading total from a "X,XXX coins[(gross - tax)]" widget, ignoring any
+	 *  parenthesized tax breakdown so parseDigits doesn't concatenate them. */
+	private static int parseLeadingTotal(Widget widget)
+	{
+		if (widget == null) return -1;
+		String text = widget.getText();
+		if (text == null || text.isEmpty()) return -1;
+		int parenIdx = text.indexOf('(');
+		String head = (parenIdx >= 0) ? text.substring(0, parenIdx) : text;
+		return parseDigits(stripHtmlTags(head));
+	}
+
+	/** Strip HTML-like tags (e.g. {@code <col=ffb83f>}, {@code <br>}, {@code </col>})
+	 *  before parsing digits, so hex characters inside color codes don't pollute
+	 *  the result. parseDigits is digit-greedy and would otherwise concatenate
+	 *  digits found inside attribute values like "ff<b>83</b>f" into the price. */
+	private static String stripHtmlTags(String text)
+	{
+		return (text == null) ? "" : text.replaceAll("<[^>]*>", "");
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)

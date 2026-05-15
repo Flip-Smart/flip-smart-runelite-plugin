@@ -548,6 +548,21 @@ public class GrandExchangeTracker
 		long incrementalSpent = ctx.spent - previousSpent;
 		int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
+		// Diagnostic: when previousOffer is null we have no baseline to subtract,
+		// so incrementalSpent == ctx.spent. If ctx.spent reflects an earlier order's
+		// allocation (slot reuse, plugin reload, world hop, login-burst miss), the
+		// recorded pricePerItem will equal the *placed* price of that earlier order
+		// rather than the actual fill. Surface the conditions so we can correlate
+		// to a specific code path. Restricted to newQuantity > 0 so we only log
+		// real fills (placements have newQuantity == 0 and would otherwise spam).
+		if (previousOffer == null && newQuantity > 0)
+		{
+			log.warn("[FlipSmart][previousOffer==null] Recording fill with no baseline state — "
+					+ "slot={} item={} ({}) newQty={} ctxSpent={} placedPrice={} qtySold={} totalQty={} state={} pricePerItem={}",
+				ctx.slot, ctx.itemId, ctx.itemName, newQuantity, ctx.spent, ctx.price,
+				ctx.quantitySold, ctx.totalQuantity, ctx.state, pricePerItem);
+		}
+
 		log.debug("Recording transaction: {} {} x{} @ {} gp each (slot {}, {}/{} filled)",
 			ctx.isBuy ? "BUY" : "SELL",
 			ctx.itemName,
