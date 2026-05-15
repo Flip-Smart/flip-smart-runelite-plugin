@@ -229,13 +229,24 @@ public class GEHistoryService
 	private void tryParseRowAt(Widget[] children, int headerIdx, boolean isBuy, List<GEHistoryEntry> entries)
 	{
 		RowScan scan = scanRowFrom(children, headerIdx);
-		if (scan.itemWidget == null) return;
+		if (scan.itemWidget == null)
+		{
+			log.debug("[GEHistory] dropped row at headerIdx={} isBuy={} — no itemWidget", headerIdx, isBuy);
+			return;
+		}
 		int itemId = scan.itemWidget.getItemId();
-		int qty = scan.itemWidget.getItemQuantity();
+		// RuneLite's Widget.getItemQuantity() returns 0 for single-item sprites
+		// because the GE clientscript does not write a quantity badge when qty
+		// would visually be "1". Default to 1 when we have a valid itemId but
+		// no reported quantity — that is the only context this triggers.
+		int rawQty = scan.itemWidget.getItemQuantity();
+		int qty = (rawQty > 0) ? rawQty : (itemId > 0 ? 1 : 0);
 		int price;
+		String pricePath;
 		if (scan.priceWidget != null)
 		{
 			price = parsePerItemPrice(scan.priceWidget);
+			pricePath = "each";
 		}
 		else if (scan.coinsWidget != null && qty > 0)
 		{
@@ -245,14 +256,25 @@ public class GEHistoryService
 			// See Flip-Smart/flip-smart#650.
 			int total = parseLeadingTotal(scan.coinsWidget);
 			price = (total > 0) ? total / qty : -1;
+			pricePath = "coins-fallback(total=" + total + ")";
 		}
 		else
 		{
+			log.debug("[GEHistory] dropped row at headerIdx={} isBuy={} itemId={} rawQty={} — "
+					+ "no priceWidget AND (no coinsWidget OR qty<=0)",
+				headerIdx, isBuy, itemId, rawQty);
 			return;
 		}
 		if (qty > 0 && price > 0)
 		{
 			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
+			log.debug("[GEHistory] parsed row isBuy={} itemId={} qty={} price={} via {}",
+				isBuy, itemId, qty, price, pricePath);
+		}
+		else
+		{
+			log.debug("[GEHistory] dropped row at headerIdx={} isBuy={} itemId={} qty={} price={} via {}",
+				headerIdx, isBuy, itemId, qty, price, pricePath);
 		}
 	}
 
