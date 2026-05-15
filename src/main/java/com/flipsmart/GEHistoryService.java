@@ -229,10 +229,27 @@ public class GEHistoryService
 	private void tryParseRowAt(Widget[] children, int headerIdx, boolean isBuy, List<GEHistoryEntry> entries)
 	{
 		RowScan scan = scanRowFrom(children, headerIdx);
-		if (scan.itemWidget == null || scan.priceWidget == null) return;
+		if (scan.itemWidget == null) return;
 		int itemId = scan.itemWidget.getItemId();
 		int qty = scan.itemWidget.getItemQuantity();
-		int price = parsePerItemPrice(scan.priceWidget);
+		int price;
+		if (scan.priceWidget != null)
+		{
+			price = parsePerItemPrice(scan.priceWidget);
+		}
+		else if (scan.coinsWidget != null && qty > 0)
+		{
+			// Single-quantity GE History rows omit the "= N each" line because
+			// there's nothing to break out — the displayed total IS the per-item
+			// price. Fall back to the "X,XXX coins" widget and divide by qty.
+			// See Flip-Smart/flip-smart#650.
+			int total = parseLeadingTotal(scan.coinsWidget);
+			price = (total > 0) ? total / qty : -1;
+		}
+		else
+		{
+			return;
+		}
 		if (qty > 0 && price > 0)
 		{
 			entries.add(new GEHistoryEntry(itemId, isBuy, qty, price));
@@ -271,9 +288,18 @@ public class GEHistoryService
 		{
 			scan.itemWidget = w;
 		}
-		if (scan.priceWidget == null && text != null && text.contains("each"))
+		if (text != null)
 		{
-			scan.priceWidget = w;
+			if (scan.priceWidget == null && text.contains("each"))
+			{
+				scan.priceWidget = w;
+			}
+			else if (scan.coinsWidget == null && text.contains("coins"))
+			{
+				// Single-qty rows have a "X,XXX coins" widget but no "each" line.
+				// Captured for the qty=1 fallback in tryParseRowAt.
+				scan.coinsWidget = w;
+			}
 		}
 		return true;
 	}
@@ -282,6 +308,7 @@ public class GEHistoryService
 	{
 		Widget itemWidget;
 		Widget priceWidget;
+		Widget coinsWidget;
 	}
 
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
@@ -293,6 +320,18 @@ public class GEHistoryService
 		int eqIdx = text.lastIndexOf('=');
 		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
 		return parseDigits(slice);
+	}
+
+	/** Leading total from a "X,XXX coins[(gross - tax)]" widget, ignoring any
+	 *  parenthesized tax breakdown so parseDigits doesn't concatenate them. */
+	private static int parseLeadingTotal(Widget widget)
+	{
+		if (widget == null) return -1;
+		String text = widget.getText();
+		if (text == null || text.isEmpty()) return -1;
+		int parenIdx = text.indexOf('(');
+		String head = (parenIdx >= 0) ? text.substring(0, parenIdx) : text;
+		return parseDigits(head);
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
