@@ -639,8 +639,16 @@ public class GrandExchangeTracker
 
 	private void handleNewOfferNoFills(OfferContext ctx, TrackedOffer previousOffer)
 	{
-		// Preserve timestamps from existing offer if same item (avoids timer reset on re-sent events)
-		if (previousOffer != null && previousOffer.getItemId() == ctx.itemId && previousOffer.getCreatedAtMillis() > 0)
+		// Preserve timestamps only when this looks like a re-sent event for
+		// the SAME offer (same item, same price). A different price means the
+		// player cancelled and relisted — that's a fresh timer baseline (per
+		// issue #608 AC6/AC7: timeout timer restarts when a new sell price is
+		// set after the player acts on an adjustment recommendation).
+		boolean isSameOfferReSend = previousOffer != null
+			&& previousOffer.getItemId() == ctx.itemId
+			&& previousOffer.getPrice() == ctx.price
+			&& previousOffer.getCreatedAtMillis() > 0;
+		if (isSameOfferReSend)
 		{
 			TrackedOffer preserved = new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
 				ctx.totalQuantity, ctx.price, 0, previousOffer.getCreatedAtMillis());
