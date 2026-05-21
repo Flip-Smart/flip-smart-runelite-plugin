@@ -639,8 +639,14 @@ public class GrandExchangeTracker
 
 	private void handleNewOfferNoFills(OfferContext ctx, TrackedOffer previousOffer)
 	{
-		// Preserve timestamps from existing offer if same item (avoids timer reset on re-sent events)
-		if (previousOffer != null && previousOffer.getItemId() == ctx.itemId && previousOffer.getCreatedAtMillis() > 0)
+		// Preserve timestamps from existing offer if same item AND same price.
+		// Same price = re-sent state event for an unchanged offer, so the timer
+		// must NOT restart. Different price = user relisted at a new price, so
+		// the offer is effectively brand new and the timer should reset (fall
+		// through to the else branch, which creates a fresh TrackedOffer).
+		if (previousOffer != null && previousOffer.getItemId() == ctx.itemId
+			&& previousOffer.getCreatedAtMillis() > 0
+			&& previousOffer.getPrice() == ctx.price)
 		{
 			TrackedOffer preserved = new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
 				ctx.totalQuantity, ctx.price, 0, previousOffer.getCreatedAtMillis());
