@@ -17,6 +17,8 @@ import static org.junit.Assert.assertTrue;
 public class GeOfferDescriptionFormatterTest
 {
 	private static final String LABEL_BUY = "<col=ffb83f>Daily Volume: </col>";
+	private static final String LABEL_LIMIT = "<col=ffb83f>Buy limit: </col>";
+	private static final String LABEL_WIKI_BUY = "<col=ffb83f>Wiki insta-buy: </col>";
 	private static final String LABEL_BREAKEVEN = "<col=ffb83f>Breakeven: </col>";
 	private static final String LABEL_TAX = "<col=ffb83f>Tax applied: </col>";
 	private static final String LABEL_PROFIT = "<col=ffb83f>Your profit: </col>";
@@ -27,16 +29,16 @@ public class GeOfferDescriptionFormatterTest
 	// ---------------------------------------------------------------- AC2 — Buy
 
 	@Test
-	public void buyDescription_withVolume_formatsWithCommas()
+	public void buyDescription_volumeOnly_singleLine()
 	{
-		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300);
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300, null, null);
 		assertEquals(LABEL_BUY + "142,300", result);
 	}
 
 	@Test
 	public void buyDescription_nullVolume_showsNA()
 	{
-		String result = GeOfferDescriptionFormatter.formatBuyDescription(null);
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(null, null, null);
 		assertEquals(LABEL_BUY + "N/A", result);
 	}
 
@@ -44,8 +46,61 @@ public class GeOfferDescriptionFormatterTest
 	public void buyDescription_zeroVolume_showsZero()
 	{
 		// Zero is a valid (if surprising) value — not the same as missing.
-		String result = GeOfferDescriptionFormatter.formatBuyDescription(0);
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(0, null, null);
 		assertEquals(LABEL_BUY + "0", result);
+	}
+
+	@Test
+	public void buyDescription_allThreeLinesPresent_separatedByBr()
+	{
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300, 70, 167_200);
+		String[] lines = result.split("<br>");
+		assertEquals(3, lines.length);
+		assertEquals(LABEL_BUY + "142,300", lines[0]);
+		assertEquals(LABEL_LIMIT + "70 / 4h", lines[1]);
+		assertEquals(LABEL_WIKI_BUY + "167,200gp", lines[2]);
+	}
+
+	@Test
+	public void buyDescription_zeroLimit_omitsLimitLine()
+	{
+		// ItemManager returns 0 for items with no published buy limit — omit
+		// rather than rendering a misleading "Buy limit: 0 / 4h".
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300, 0, 167_200);
+		assertFalse("limit line must not render when limit is 0: " + result, result.contains("Buy limit"));
+		assertTrue(result.contains("Wiki insta-buy"));
+	}
+
+	@Test
+	public void buyDescription_nullLimit_omitsLimitLine()
+	{
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300, null, 167_200);
+		assertFalse(result.contains("Buy limit"));
+		assertTrue(result.contains("Wiki insta-buy"));
+	}
+
+	@Test
+	public void buyDescription_zeroWikiPrice_omitsWikiLine()
+	{
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300, 70, 0);
+		assertTrue(result.contains("Buy limit"));
+		assertFalse(result.contains("Wiki"));
+	}
+
+	@Test
+	public void buyDescription_nullWikiPrice_omitsWikiLine()
+	{
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(142_300, 70, null);
+		assertTrue(result.contains("Buy limit"));
+		assertFalse(result.contains("Wiki"));
+	}
+
+	@Test
+	public void buyDescription_largeBuyLimit_usesCommas()
+	{
+		// Some items have very large buy limits (e.g. 13,000 for nature runes)
+		String result = GeOfferDescriptionFormatter.formatBuyDescription(0, 13_000, null);
+		assertTrue("comma-formatted limit expected: " + result, result.contains("Buy limit: </col>13,000 / 4h"));
 	}
 
 	// ---------------------------------------------------------------- AC3 — Breakeven

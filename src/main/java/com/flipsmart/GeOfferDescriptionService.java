@@ -5,6 +5,8 @@ import net.runelite.api.Client;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemStats;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -31,13 +33,19 @@ public class GeOfferDescriptionService
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartPlugin plugin;
+	private final ItemManager itemManager;
 
 	@Inject
-	public GeOfferDescriptionService(Client client, FlipSmartApiClient apiClient, FlipSmartPlugin plugin)
+	public GeOfferDescriptionService(
+		Client client,
+		FlipSmartApiClient apiClient,
+		FlipSmartPlugin plugin,
+		ItemManager itemManager)
 	{
 		this.client = client;
 		this.apiClient = apiClient;
 		this.plugin = plugin;
+		this.itemManager = itemManager;
 	}
 
 	/**
@@ -100,7 +108,31 @@ public class GeOfferDescriptionService
 				}
 			});
 		}
-		return GeOfferDescriptionFormatter.formatBuyDescription(dailyVolume);
+
+		Integer buyLimit = lookupBuyLimit(itemId);
+		Integer wikiInstaBuy = lookupWikiInstaBuy(itemId);
+
+		return GeOfferDescriptionFormatter.formatBuyDescription(dailyVolume, buyLimit, wikiInstaBuy);
+	}
+
+	private Integer lookupBuyLimit(int itemId)
+	{
+		try
+		{
+			ItemStats stats = itemManager.getItemStats(itemId);
+			return (stats != null && stats.getGeLimit() > 0) ? stats.getGeLimit() : null;
+		}
+		catch (Exception e)
+		{
+			log.debug("Failed to read ItemStats for item {}: {}", itemId, e.getMessage());
+			return null;
+		}
+	}
+
+	private Integer lookupWikiInstaBuy(int itemId)
+	{
+		FlipSmartApiClient.WikiPrice price = apiClient.getWikiPrice(itemId);
+		return (price != null && price.instaBuy > 0) ? price.instaBuy : null;
 	}
 
 	private String buildSellDescription(int itemId)

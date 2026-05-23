@@ -30,15 +30,57 @@ public final class GeOfferDescriptionFormatter
 	}
 
 	/**
-	 * Build the description text for a buy offer (AC2).
+	 * Build the description text for a buy offer.
 	 *
-	 * @param dailyVolume Daily traded volume, or {@code null} when no data.
-	 * @return RuneScript-formatted description string, single line.
+	 * <p>Original AC2 just specified Daily Volume; the buy window has been
+	 * extended to also surface buy limit and current wiki insta-buy price
+	 * because those are the other two decision-relevant numbers a player
+	 * looks for at trade-construction time. Each line is gracefully omitted
+	 * when the underlying datum is unavailable (limit &le; 0, price &le; 0).</p>
+	 *
+	 * @param dailyVolume  Daily traded volume, or {@code null} when no data.
+	 * @param buyLimit     4h GE buy limit from {@code ItemStats.getGeLimit()},
+	 *                     or {@code null}/0 when unknown — line omitted then.
+	 * @param wikiInstaBuy Wiki high price (what buyers pay to insta-buy right
+	 *                     now — the price-to-match for fast fills), or
+	 *                     {@code null}/0 when unknown — line omitted then.
+	 * @return RuneScript-formatted description string. Lines separated by
+	 *         {@code <br>}. Daily Volume line is always present (rendering
+	 *         "N/A" when needed); the other two lines are conditionally
+	 *         appended.
 	 */
-	public static String formatBuyDescription(Integer dailyVolume)
+	public static String formatBuyDescription(Integer dailyVolume, Integer buyLimit, Integer wikiInstaBuy)
+	{
+		StringBuilder sb = new StringBuilder();
+		sb.append(formatDailyVolumeLine(dailyVolume));
+
+		if (buyLimit != null && buyLimit > 0)
+		{
+			sb.append("<br>").append(formatBuyLimitLine(buyLimit));
+		}
+
+		if (wikiInstaBuy != null && wikiInstaBuy > 0)
+		{
+			sb.append("<br>").append(formatWikiInstaBuyLine(wikiInstaBuy));
+		}
+
+		return sb.toString();
+	}
+
+	static String formatDailyVolumeLine(Integer dailyVolume)
 	{
 		String volumeStr = (dailyVolume == null) ? "N/A" : formatExact(dailyVolume);
 		return colorTag(COLOR_LABEL) + "Daily Volume: </col>" + volumeStr;
+	}
+
+	static String formatBuyLimitLine(int buyLimit)
+	{
+		return colorTag(COLOR_LABEL) + "Buy limit: </col>" + formatExact(buyLimit) + " / 4h";
+	}
+
+	static String formatWikiInstaBuyLine(int wikiInstaBuy)
+	{
+		return colorTag(COLOR_LABEL) + "Wiki insta-buy: </col>" + formatExact(wikiInstaBuy) + "gp";
 	}
 
 	/**
