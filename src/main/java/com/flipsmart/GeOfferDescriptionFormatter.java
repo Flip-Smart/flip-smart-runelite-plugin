@@ -216,7 +216,7 @@ public final class GeOfferDescriptionFormatter
 	/** Comma-separated exact gp count: {@code 1234567} -> {@code "1,234,567"}. */
 	static String formatExact(long value)
 	{
-		return String.format("%,d", value);
+		return String.format(Locale.ROOT, "%,d", value);
 	}
 
 	/**
