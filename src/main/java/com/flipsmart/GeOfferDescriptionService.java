@@ -152,34 +152,30 @@ public class GeOfferDescriptionService
 		clientThread.invoke(() ->
 		{
 			int currentItem = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-			int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
-			log.debug("[GE desc] repaint exec itemId={} currentItem={} offerType={} desc={}",
-				itemId, currentItem, offerType, desc == null ? "null" : "present");
+			log.debug("[GE desc] repaint exec itemId={} currentItem={} desc={}",
+				itemId, currentItem, desc == null ? "null" : "present");
 
 			if (currentItem != itemId)
 			{
 				log.debug("[GE desc] repaint SKIPPED: item changed ({} -> {})", itemId, currentItem);
 				return;
 			}
-			// Sell-side type is 2; we only want to repaint when the buy setup
-			// screen is the one currently rendered (a stale fetch from a recent
-			// buy could otherwise land while the player is now constructing a
-			// sell and clobber the sell description).
-			if (offerType != 1)
-			{
-				log.debug("[GE desc] repaint SKIPPED: offerType={} not buy", offerType);
-				return;
-			}
 			if (desc == null)
 			{
+				// Widget destroyed — player closed the window between the fetch
+				// firing and completing. Nothing to repaint.
 				log.debug("[GE desc] repaint SKIPPED: widget null");
 				return;
 			}
-			// Intentionally not checking desc.isHidden() — that walks the whole
-			// ancestor chain and can return true for visually-visible widgets
-			// during in-flight script execution. If the player has truly closed
-			// the window, the widget is destroyed (null) and we bail above.
+			// We intentionally do NOT gate on VarbitID.GE_NEWOFFER_TYPE here.
+			// That varbit is only meaningful while GE_OFFERS_SETUP_BUILD is
+			// executing — it resets to 0 by the time our async callback runs
+			// on the next client tick, so checking it would always skip the
+			// repaint. The currentItem and widget-existence guards above are
+			// sufficient. Worst case if the player switched buy→sell for the
+			// same item within the fetch window: a brief flash of buy data
+			// that the next geSellExamineText callback corrects.
 			String newText = buildBuyDescription(itemId);
 			desc.setText(newText);
 			log.debug("[GE desc] repaint setText DONE for itemId={}", itemId);
