@@ -18,6 +18,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
@@ -122,6 +123,9 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private GEHistoryService geHistoryService;
+
+	@Inject
+	private GeOfferDescriptionService geOfferDescriptionService;
 
 	@Inject
 	private Gson gson;
@@ -1341,6 +1345,19 @@ public class FlipSmartPlugin extends Plugin
 		if (event.getGroupId() == InterfaceID.GE_HISTORY)
 		{
 			geHistoryService.onHistoryWidgetLoaded();
+		}
+	}
+
+	@Subscribe
+	public void onScriptCallbackEvent(ScriptCallbackEvent event)
+	{
+		// Issue #665 — replace GE buy/sell window description text with FlipSmart
+		// contextual data. The runelite-injected GeExamineInfoText script fires
+		// geBuyExamineText / geSellExamineText every time the description rebuilds,
+		// so dynamic updates on price/qty edits are free.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onScriptCallbackEvent(event);
 		}
 	}
 

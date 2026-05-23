@@ -2470,4 +2470,71 @@ public class FlipSmartApiClient
 			false // public endpoint — do not retry on 401
 		);
 	}
+
+	// In-memory cache of per-item 24h daily volume — short TTL so price-volume swings
+	// are picked up the next time the user opens a buy window, but long enough to
+	// avoid hitting the API on every offer-screen rebuild as the player adjusts qty.
+	private static final long DAILY_VOLUME_CACHE_TTL_MS = 300_000;  // 5 minutes
+	private final Map<Integer, CachedDailyVolume> dailyVolumeCache = new ConcurrentHashMap<>();
+
+	/**
+	 * Fetch the 24h daily trading volume for a single item.
+	 * Cached in-memory for {@link #DAILY_VOLUME_CACHE_TTL_MS}; cached value may
+	 * be null (the API returned no data for the item).
+	 *
+	 * @return CompletableFuture resolving to the daily volume, or null when no data exists.
+	 */
+	public CompletableFuture<Integer> getDailyVolumeAsync(int itemId)
+	{
+		CachedDailyVolume cached = dailyVolumeCache.get(itemId);
+		if (cached != null && !cached.isExpired())
+		{
+			return CompletableFuture.completedFuture(cached.getVolume());
+		}
+
+		String url = String.format("%s/items/%d/daily-volume", getApiUrl(), itemId);
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		{
+			JsonObject obj = gson.fromJson(jsonData, JsonObject.class);
+			Integer volume = (obj != null && obj.has("daily_volume") && !obj.get("daily_volume").isJsonNull())
+				? obj.get("daily_volume").getAsInt()
+				: null;
+			dailyVolumeCache.put(itemId, new CachedDailyVolume(volume));
+			return volume;
+		});
+	}
+
+	/**
+	 * Non-blocking peek into the daily-volume cache. Returns a completed future
+	 * with the cached value when fresh, or {@code null} when not cached / expired.
+	 * Safe to call from the RuneLite client thread (no network I/O, no locks).
+	 */
+	public CompletableFuture<Integer> peekCachedDailyVolume(int itemId)
+	{
+		CachedDailyVolume cached = dailyVolumeCache.get(itemId);
+		if (cached == null || cached.isExpired())
+		{
+			return null;
+		}
+		return CompletableFuture.completedFuture(cached.getVolume());
+	}
+
+	private static class CachedDailyVolume
+	{
+		private final Integer volume;
+		private final long fetchedAt;
+
+		CachedDailyVolume(Integer volume)
+		{
+			this.volume = volume;
+			this.fetchedAt = System.currentTimeMillis();
+		}
+
+		Integer getVolume() { return volume; }
+		boolean isExpired() { return System.currentTimeMillis() - fetchedAt > DAILY_VOLUME_CACHE_TTL_MS; }
+	}
 }

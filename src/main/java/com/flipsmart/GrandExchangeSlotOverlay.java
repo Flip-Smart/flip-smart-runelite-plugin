@@ -393,19 +393,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 	private Integer getBuyPriceForItem(int itemId)
 	{
-		java.util.List<ActiveFlip> activeFlips = plugin.getCurrentActiveFlips();
-		if (activeFlips == null)
-		{
-			return null;
-		}
-		for (ActiveFlip flip : activeFlips)
-		{
-			if (flip.getItemId() == itemId && flip.getAverageBuyPrice() > 0)
-			{
-				return flip.getAverageBuyPrice();
-			}
-		}
-		return null;
+		return BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
 	}
 
 	/**
