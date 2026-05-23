@@ -1,5 +1,7 @@
 package com.flipsmart;
 
+import java.util.Locale;
+
 /**
  * Pure-function formatters for the GE buy/sell window description replacement
  * (issue #665). Kept separate from {@link GeOfferDescriptionService} so the
@@ -185,11 +187,11 @@ public final class GeOfferDescriptionFormatter
 		String sign = value < 0 ? "-" : "";
 		if (abs >= 1_000_000)
 		{
-			return sign + stripTrailingZero(String.format("%.1f", abs / 1_000_000.0)) + "M";
+			return sign + stripTrailingZero(String.format(Locale.ROOT, "%.1f", abs / 1_000_000.0)) + "M";
 		}
 		if (abs >= 1_000)
 		{
-			return sign + stripTrailingZero(String.format("%.1f", abs / 1_000.0)) + "k";
+			return sign + stripTrailingZero(String.format(Locale.ROOT, "%.1f", abs / 1_000.0)) + "k";
 		}
 		return Long.toString(value);
 	}
