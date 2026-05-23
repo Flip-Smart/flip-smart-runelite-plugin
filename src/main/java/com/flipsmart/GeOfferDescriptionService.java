@@ -3,8 +3,11 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.events.ScriptCallbackEvent;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
+import net.runelite.api.widgets.Widget;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
@@ -20,8 +23,16 @@ import javax.inject.Singleton;
  * id 5730) fires this callback every time the offer-setup description is
  * rebuilt, including after the player adjusts the entered price or quantity.
  * Writing our replacement string into the object stack's return slot (index
- * {@code sz-1}) is sufficient — no widget mutation, no re-render races, no
- * cleanup on close (AC7, AC8, AC9 all satisfied by construction).</p>
+ * {@code sz-1}) handles every render after the daily-volume cache is warm.
+ * AC9 (no paint overlay) is satisfied by construction.</p>
+ *
+ * <p>One narrow path mutates the {@code SETUP_DESC} widget directly: when the
+ * first render for a fresh item lands with a cold daily-volume cache, the
+ * synchronous render writes "N/A" and kicks off the async fetch. When the
+ * fetch completes we repaint the widget on the client thread so the player
+ * sees the real volume without having to reopen — the script-callback alone
+ * cannot recover from this because it won't fire again until the player
+ * edits the price or reopens the window.</p>
  */
 @Slf4j
 @Singleton
@@ -31,6 +42,7 @@ public class GeOfferDescriptionService
 	static final String EVENT_SELL_EXAMINE = "geSellExamineText";
 
 	private final Client client;
+	private final ClientThread clientThread;
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartPlugin plugin;
 	private final ItemManager itemManager;
@@ -38,11 +50,13 @@ public class GeOfferDescriptionService
 	@Inject
 	public GeOfferDescriptionService(
 		Client client,
+		ClientThread clientThread,
 		FlipSmartApiClient apiClient,
 		FlipSmartPlugin plugin,
 		ItemManager itemManager)
 	{
 		this.client = client;
+		this.clientThread = clientThread;
 		this.apiClient = apiClient;
 		this.plugin = plugin;
 		this.itemManager = itemManager;
@@ -96,8 +110,11 @@ public class GeOfferDescriptionService
 	private String buildBuyDescription(int itemId)
 	{
 		Integer dailyVolume = getCachedDailyVolume(itemId);
-		// Kick off async fetch — once the cache is warm, subsequent rebuilds of
-		// the description (same item or other items) will pick up the value.
+		// Kick off async fetch on cache miss. When the value lands, repaint the
+		// SETUP_DESC widget so the user sees the real volume without having to
+		// reopen the window — the first sync render rendered "N/A" because the
+		// cache was cold, and the script-callback won't refire until the player
+		// edits the price or reopens, so we have to do it ourselves.
 		if (dailyVolume == null)
 		{
 			apiClient.getDailyVolumeAsync(itemId).whenComplete((v, ex) ->
@@ -105,6 +122,11 @@ public class GeOfferDescriptionService
 				if (ex != null)
 				{
 					log.debug("Failed to fetch daily volume for item {}: {}", itemId, ex.getMessage());
+					return;
+				}
+				if (v != null)
+				{
+					refreshBuyDescriptionFor(itemId);
 				}
 			});
 		}
@@ -113,6 +135,39 @@ public class GeOfferDescriptionService
 		Integer wikiInstaBuy = lookupWikiInstaBuy(itemId);
 
 		return GeOfferDescriptionFormatter.formatBuyDescription(dailyVolume, buyLimit, wikiInstaBuy);
+	}
+
+	/**
+	 * Recompute the buy-description string with whatever's now in cache and
+	 * write it directly to the SETUP_DESC widget. Scheduled on the client thread
+	 * because Widget mutations must happen there. Guarded against the user
+	 * having switched items between the fetch firing and completing — we no-op
+	 * if the currently-selected item is no longer the one we fetched for.
+	 */
+	private void refreshBuyDescriptionFor(int itemId)
+	{
+		clientThread.invoke(() ->
+		{
+			int currentItem = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+			if (currentItem != itemId)
+			{
+				return;
+			}
+			// Sell-side type is 2; we only want to repaint when the buy setup
+			// screen is the one currently rendered (a stale fetch from a recent
+			// buy could otherwise land while the player is now constructing a
+			// sell and clobber the sell description).
+			if (client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) != 1)
+			{
+				return;
+			}
+			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+			if (desc == null || desc.isHidden())
+			{
+				return;
+			}
+			desc.setText(buildBuyDescription(itemId));
+		});
 	}
 
 	private Integer lookupBuyLimit(int itemId)
