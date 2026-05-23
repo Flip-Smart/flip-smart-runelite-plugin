@@ -117,13 +117,15 @@ public class GeOfferDescriptionService
 		// edits the price or reopens, so we have to do it ourselves.
 		if (dailyVolume == null)
 		{
+			log.debug("[GE desc] cold cache for itemId={}, kicking off async fetch", itemId);
 			apiClient.getDailyVolumeAsync(itemId).whenComplete((v, ex) ->
 			{
 				if (ex != null)
 				{
-					log.debug("Failed to fetch daily volume for item {}: {}", itemId, ex.getMessage());
+					log.debug("[GE desc] async fetch FAILED for itemId={}: {}", itemId, ex.getMessage());
 					return;
 				}
+				log.debug("[GE desc] async fetch completed for itemId={} value={}", itemId, v);
 				if (v != null)
 				{
 					refreshBuyDescriptionFor(itemId);
@@ -146,27 +148,41 @@ public class GeOfferDescriptionService
 	 */
 	private void refreshBuyDescriptionFor(int itemId)
 	{
+		log.debug("[GE desc] scheduling repaint for itemId={}", itemId);
 		clientThread.invoke(() ->
 		{
 			int currentItem = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+			int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
+			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+			log.debug("[GE desc] repaint exec itemId={} currentItem={} offerType={} desc={}",
+				itemId, currentItem, offerType, desc == null ? "null" : "present");
+
 			if (currentItem != itemId)
 			{
+				log.debug("[GE desc] repaint SKIPPED: item changed ({} -> {})", itemId, currentItem);
 				return;
 			}
 			// Sell-side type is 2; we only want to repaint when the buy setup
 			// screen is the one currently rendered (a stale fetch from a recent
 			// buy could otherwise land while the player is now constructing a
 			// sell and clobber the sell description).
-			if (client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE) != 1)
+			if (offerType != 1)
 			{
+				log.debug("[GE desc] repaint SKIPPED: offerType={} not buy", offerType);
 				return;
 			}
-			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
-			if (desc == null || desc.isHidden())
+			if (desc == null)
 			{
+				log.debug("[GE desc] repaint SKIPPED: widget null");
 				return;
 			}
-			desc.setText(buildBuyDescription(itemId));
+			// Intentionally not checking desc.isHidden() — that walks the whole
+			// ancestor chain and can return true for visually-visible widgets
+			// during in-flight script execution. If the player has truly closed
+			// the window, the widget is destroyed (null) and we bail above.
+			String newText = buildBuyDescription(itemId);
+			desc.setText(newText);
+			log.debug("[GE desc] repaint setText DONE for itemId={}", itemId);
 		});
 	}
 
