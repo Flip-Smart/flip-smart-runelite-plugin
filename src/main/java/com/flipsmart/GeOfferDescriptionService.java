@@ -2,7 +2,10 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.ScriptCallbackEvent;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -84,6 +87,32 @@ public class GeOfferDescriptionService
 		return false;
 	}
 
+	/**
+	 * Handle GE slot-selection varbit changes. When the player clicks an
+	 * in-flight slot, the Offer status (details) panel becomes visible with
+	 * a generic examine string in {@code DETAILS_DESC}. There is no RuneLite-
+	 * injected script callback for this widget — only the setup-screen one —
+	 * so we mutate it directly on the next client tick, reusing the same
+	 * formatters as the setup-screen flow with the offer's listed price and
+	 * total quantity (the listed price is locked once the offer is live, so
+	 * no dynamic recalc is needed).
+	 */
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		if (event.getVarbitId() != VarbitID.GE_SELECTEDSLOT)
+		{
+			return;
+		}
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		if (slot < 0 || slot >= MAX_GE_SLOTS)
+		{
+			return;
+		}
+		refreshDetailsFor(slot);
+	}
+
+	private static final int MAX_GE_SLOTS = 8;
+
 	private void handleExamine(boolean isBuy)
 	{
 		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
@@ -146,6 +175,62 @@ public class GeOfferDescriptionService
 	 * having switched items between the fetch firing and completing — we no-op
 	 * if the currently-selected item is no longer the one we fetched for.
 	 */
+	/**
+	 * Mutate the Offer status (in-flight) panel's description with our
+	 * contextual data. Same lines as the setup screen — uses the offer's
+	 * locked price + total quantity for the sell-side breakeven/tax/profit
+	 * calc (no dynamic recalc needed; the price is fixed once submitted).
+	 * Cold-cache repaint hook is reused via refreshBuyDescriptionFor when
+	 * the daily-volume fetch lands.
+	 */
+	private void refreshDetailsFor(int slot)
+	{
+		log.debug("[GE desc] scheduling details repaint for slot={}", slot);
+		clientThread.invoke(() ->
+		{
+			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+			if (offers == null || slot >= offers.length)
+			{
+				log.debug("[GE desc] details SKIPPED: no offers array or slot OOB ({} >= {})",
+					slot, offers == null ? -1 : offers.length);
+				return;
+			}
+			GrandExchangeOffer offer = offers[slot];
+			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
+			{
+				log.debug("[GE desc] details SKIPPED: slot {} is empty", slot);
+				return;
+			}
+			Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
+			if (desc == null)
+			{
+				log.debug("[GE desc] details SKIPPED: DETAILS_DESC widget null");
+				return;
+			}
+
+			int itemId = offer.getItemId();
+			boolean isBuy = TrackedOffer.isBuyState(offer.getState());
+			String text = isBuy
+				? buildBuyDescription(itemId)
+				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
+			desc.setText(text);
+			log.debug("[GE desc] details setText DONE for slot={} itemId={} isBuy={}", slot, itemId, isBuy);
+		});
+	}
+
+	/**
+	 * Sell description for an already-submitted offer — listed price + total
+	 * quantity, both locked. Cannot reuse {@link #buildSellDescription} which
+	 * reads live varbits that are only meaningful during setup.
+	 */
+	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
+	{
+		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
+		int price = Math.max(listedPrice, 0);
+		int qty = Math.max(totalQuantity, 0);
+		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
+	}
+
 	private void refreshBuyDescriptionFor(int itemId)
 	{
 		log.debug("[GE desc] scheduling repaint for itemId={}", itemId);

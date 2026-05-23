@@ -22,6 +22,7 @@ import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
+import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.InterfaceID;
@@ -1358,6 +1359,19 @@ public class FlipSmartPlugin extends Plugin
 		if (geOfferDescriptionService != null)
 		{
 			geOfferDescriptionService.onScriptCallbackEvent(event);
+		}
+	}
+
+	@Subscribe
+	public void onVarbitChanged(VarbitChanged event)
+	{
+		// Issue #665 — in-flight Offer status (details) panel. Fires when the
+		// player clicks an active slot; the description widget there is
+		// DETAILS_DESC (no script-callback hook). Handler filters internally on
+		// GE_SELECTEDSLOT so the firehose of varbit changes stays cheap.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onVarbitChanged(event);
 		}
 	}
 
