@@ -1254,6 +1254,13 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired event)
 	{
+		// Issue #665 — re-apply Offer status (DETAILS_DESC) text after GE
+		// slot-redraw scripts overwrite it. Handler filters internally.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onScriptPostFired(event);
+		}
+
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
 		{
 			return;

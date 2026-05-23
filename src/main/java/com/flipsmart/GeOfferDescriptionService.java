@@ -5,6 +5,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.ScriptCallbackEvent;
+import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
@@ -19,23 +20,30 @@ import javax.inject.Singleton;
 
 /**
  * Replaces the GE buy/sell window description text with contextual FlipSmart
- * data (issue #665) by intercepting the {@code geBuyExamineText} /
- * {@code geSellExamineText} script callbacks injected by the RuneLite client.
+ * data (issue #665). Covers two surfaces:
  *
- * <p>The RuneLite-injected runescript ({@code GeExamineInfoText.rs2asm}, script
- * id 5730) fires this callback every time the offer-setup description is
- * rebuilt, including after the player adjusts the entered price or quantity.
- * Writing our replacement string into the object stack's return slot (index
- * {@code sz-1}) handles every render after the daily-volume cache is warm.
- * AC9 (no paint overlay) is satisfied by construction.</p>
+ * <ul>
+ *   <li><b>Set up offer screen</b> ({@code SETUP_DESC}): handled via the
+ *   RuneLite-injected {@code geBuyExamineText} / {@code geSellExamineText}
+ *   script callbacks ({@code GeExamineInfoText.rs2asm}, script id 5730).
+ *   Writing into the object stack's return slot lets the client own the
+ *   widget mutation. No race, no flicker.</li>
  *
- * <p>One narrow path mutates the {@code SETUP_DESC} widget directly: when the
- * first render for a fresh item lands with a cold daily-volume cache, the
- * synchronous render writes "N/A" and kicks off the async fetch. When the
- * fetch completes we repaint the widget on the client thread so the player
- * sees the real volume without having to reopen — the script-callback alone
- * cannot recover from this because it won't fire again until the player
- * edits the price or reopens the window.</p>
+ *   <li><b>Offer status screen</b> ({@code DETAILS_DESC}): no script callback
+ *   exists. We mutate the widget directly after the OSRS GE-slot redraw
+ *   scripts fire (IDs 782 and 804 per Flipping-Utilities prior art) and on
+ *   {@code GE_SELECTEDSLOT} varbit changes. Both hooks coalesce into the same
+ *   idempotent {@link #refreshDetailsFor} method — re-firing is cheap.</li>
+ * </ul>
+ *
+ * <p>Cold-cache repaint: when the daily-volume cache misses on the first
+ * render for an item, the synchronous render writes "N/A" and kicks off the
+ * async fetch. When the fetch lands we try to repaint both SETUP_DESC and
+ * DETAILS_DESC — the player can only be on one of the two screens, the
+ * other path's guards skip silently.</p>
+ *
+ * <p>AC9 (no paint overlay) is satisfied by construction — all rendering
+ * goes through widget text mutation, never an overlay.</p>
  */
 @Slf4j
 @Singleton
@@ -43,6 +51,15 @@ public class GeOfferDescriptionService
 {
 	static final String EVENT_BUY_EXAMINE = "geBuyExamineText";
 	static final String EVENT_SELL_EXAMINE = "geSellExamineText";
+
+	private static final int MAX_GE_SLOTS = 8;
+
+	// Empirically these OSRS scripts reset GE slot / details widgets and so
+	// overwrite our setText if we apply it before they fire. Identified by
+	// Flipping-Utilities as the GE slot-state-drawer redraw triggers. We
+	// re-apply our setText AFTER each fires.
+	private static final int SCRIPT_GE_SLOT_REDRAW_A = 782;
+	private static final int SCRIPT_GE_SLOT_REDRAW_B = 804;
 
 	private final Client client;
 	private final ClientThread clientThread;
@@ -66,10 +83,9 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Handle a {@link ScriptCallbackEvent} from the plugin's dispatcher.
-	 * Returns true when the event was a GE examine callback (handled, regardless
-	 * of whether we wrote a replacement); false when the event was unrelated and
-	 * the dispatcher should treat it as a no-op.
+	 * Handle a {@link ScriptCallbackEvent} for the setup-screen description.
+	 * Returns true when the event was a GE examine callback (handled regardless
+	 * of whether we wrote a replacement); false when the event was unrelated.
 	 */
 	public boolean onScriptCallbackEvent(ScriptCallbackEvent event)
 	{
@@ -88,14 +104,9 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Handle GE slot-selection varbit changes. When the player clicks an
-	 * in-flight slot, the Offer status (details) panel becomes visible with
-	 * a generic examine string in {@code DETAILS_DESC}. There is no RuneLite-
-	 * injected script callback for this widget — only the setup-screen one —
-	 * so we mutate it directly on the next client tick, reusing the same
-	 * formatters as the setup-screen flow with the offer's listed price and
-	 * total quantity (the listed price is locked once the offer is live, so
-	 * no dynamic recalc is needed).
+	 * Handle VarbitChanged for GE_SELECTEDSLOT — fires immediately when the
+	 * player clicks an in-flight slot. Filters internally; harmless to call
+	 * with any varbit event.
 	 */
 	public void onVarbitChanged(VarbitChanged event)
 	{
@@ -108,10 +119,29 @@ public class GeOfferDescriptionService
 		{
 			return;
 		}
-		refreshDetailsFor(slot);
+		refreshDetailsFor(slot, "varbit");
 	}
 
-	private static final int MAX_GE_SLOTS = 8;
+	/**
+	 * Handle ScriptPostFired for the OSRS GE slot/details redraw scripts.
+	 * These are what overwrite our VarbitChanged-driven setText if we apply
+	 * it too early. Re-applying after each script fire ensures we win the
+	 * race on every render cycle.
+	 */
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		int id = event.getScriptId();
+		if (id != SCRIPT_GE_SLOT_REDRAW_A && id != SCRIPT_GE_SLOT_REDRAW_B)
+		{
+			return;
+		}
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		if (slot < 0 || slot >= MAX_GE_SLOTS)
+		{
+			return;
+		}
+		refreshDetailsFor(slot, "script:" + id);
+	}
 
 	private void handleExamine(boolean isBuy)
 	{
@@ -139,11 +169,10 @@ public class GeOfferDescriptionService
 	private String buildBuyDescription(int itemId)
 	{
 		Integer dailyVolume = getCachedDailyVolume(itemId);
-		// Kick off async fetch on cache miss. When the value lands, repaint the
-		// SETUP_DESC widget so the user sees the real volume without having to
-		// reopen the window — the first sync render rendered "N/A" because the
-		// cache was cold, and the script-callback won't refire until the player
-		// edits the price or reopens, so we have to do it ourselves.
+		// Kick off async fetch on cache miss. When the value lands, repaint
+		// whichever description widget is currently showing this item — could
+		// be SETUP_DESC (player constructing a new offer) or DETAILS_DESC
+		// (player viewing an in-flight slot holding this item).
 		if (dailyVolume == null)
 		{
 			log.debug("[GE desc] cold cache for itemId={}, kicking off async fetch", itemId);
@@ -157,7 +186,7 @@ public class GeOfferDescriptionService
 				log.debug("[GE desc] async fetch completed for itemId={} value={}", itemId, v);
 				if (v != null)
 				{
-					refreshBuyDescriptionFor(itemId);
+					refreshAnyDescriptionFor(itemId);
 				}
 			});
 		}
@@ -169,42 +198,29 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Recompute the buy-description string with whatever's now in cache and
-	 * write it directly to the SETUP_DESC widget. Scheduled on the client thread
-	 * because Widget mutations must happen there. Guarded against the user
-	 * having switched items between the fetch firing and completing — we no-op
-	 * if the currently-selected item is no longer the one we fetched for.
-	 */
-	/**
 	 * Mutate the Offer status (in-flight) panel's description with our
-	 * contextual data. Same lines as the setup screen — uses the offer's
-	 * locked price + total quantity for the sell-side breakeven/tax/profit
-	 * calc (no dynamic recalc needed; the price is fixed once submitted).
-	 * Cold-cache repaint hook is reused via refreshBuyDescriptionFor when
-	 * the daily-volume fetch lands.
+	 * contextual data. Same lines as the setup screen; sell-side uses the
+	 * offer's locked listed price + total quantity (no dynamic recalc
+	 * needed since price is fixed once submitted). Idempotent — safe to
+	 * re-call from multiple triggers (varbit, script-post).
 	 */
-	private void refreshDetailsFor(int slot)
+	private void refreshDetailsFor(int slot, String trigger)
 	{
-		log.debug("[GE desc] scheduling details repaint for slot={}", slot);
 		clientThread.invoke(() ->
 		{
 			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 			if (offers == null || slot >= offers.length)
 			{
-				log.debug("[GE desc] details SKIPPED: no offers array or slot OOB ({} >= {})",
-					slot, offers == null ? -1 : offers.length);
 				return;
 			}
 			GrandExchangeOffer offer = offers[slot];
 			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
 			{
-				log.debug("[GE desc] details SKIPPED: slot {} is empty", slot);
 				return;
 			}
 			Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 			if (desc == null)
 			{
-				log.debug("[GE desc] details SKIPPED: DETAILS_DESC widget null");
 				return;
 			}
 
@@ -214,7 +230,8 @@ public class GeOfferDescriptionService
 				? buildBuyDescription(itemId)
 				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 			desc.setText(text);
-			log.debug("[GE desc] details setText DONE for slot={} itemId={} isBuy={}", slot, itemId, isBuy);
+			log.debug("[GE desc] details setText via {} slot={} itemId={} isBuy={}",
+				trigger, slot, itemId, isBuy);
 		});
 	}
 
@@ -231,40 +248,65 @@ public class GeOfferDescriptionService
 		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
 	}
 
-	private void refreshBuyDescriptionFor(int itemId)
+	/**
+	 * Post-async-fetch repaint. The player can be on the SETUP screen for
+	 * this item OR on the DETAILS panel for a slot holding this item.
+	 * We try both — the wrong path silently skips (its identity guard fails).
+	 */
+	private void refreshAnyDescriptionFor(int itemId)
 	{
 		log.debug("[GE desc] scheduling repaint for itemId={}", itemId);
 		clientThread.invoke(() ->
 		{
-			int currentItem = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
-			log.debug("[GE desc] repaint exec itemId={} currentItem={} desc={}",
-				itemId, currentItem, desc == null ? "null" : "present");
-
-			if (currentItem != itemId)
-			{
-				log.debug("[GE desc] repaint SKIPPED: item changed ({} -> {})", itemId, currentItem);
-				return;
-			}
-			if (desc == null)
-			{
-				// Widget destroyed — player closed the window between the fetch
-				// firing and completing. Nothing to repaint.
-				log.debug("[GE desc] repaint SKIPPED: widget null");
-				return;
-			}
-			// We intentionally do NOT gate on VarbitID.GE_NEWOFFER_TYPE here.
-			// That varbit is only meaningful while GE_OFFERS_SETUP_BUILD is
-			// executing — it resets to 0 by the time our async callback runs
-			// on the next client tick, so checking it would always skip the
-			// repaint. The currentItem and widget-existence guards above are
-			// sufficient. Worst case if the player switched buy→sell for the
-			// same item within the fetch window: a brief flash of buy data
-			// that the next geSellExamineText callback corrects.
-			String newText = buildBuyDescription(itemId);
-			desc.setText(newText);
-			log.debug("[GE desc] repaint setText DONE for itemId={}", itemId);
+			boolean setup = tryRepaintSetupDesc(itemId);
+			boolean details = tryRepaintDetailsDesc(itemId);
+			log.debug("[GE desc] repaint result itemId={} setup={} details={}", itemId, setup, details);
 		});
+	}
+
+	private boolean tryRepaintSetupDesc(int itemId)
+	{
+		if (client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH) != itemId)
+		{
+			return false;
+		}
+		Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+		if (desc == null)
+		{
+			return false;
+		}
+		desc.setText(buildBuyDescription(itemId));
+		return true;
+	}
+
+	private boolean tryRepaintDetailsDesc(int itemId)
+	{
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		if (slot < 0 || slot >= MAX_GE_SLOTS)
+		{
+			return false;
+		}
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null || slot >= offers.length)
+		{
+			return false;
+		}
+		GrandExchangeOffer offer = offers[slot];
+		if (offer == null || offer.getItemId() != itemId
+			|| offer.getState() == GrandExchangeOfferState.EMPTY)
+		{
+			return false;
+		}
+		Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
+		if (desc == null)
+		{
+			return false;
+		}
+		boolean isBuy = TrackedOffer.isBuyState(offer.getState());
+		desc.setText(isBuy
+			? buildBuyDescription(itemId)
+			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity()));
+		return true;
 	}
 
 	private Integer lookupBuyLimit(int itemId)
