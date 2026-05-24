@@ -187,16 +187,16 @@ public class GeOfferDescriptionService
 		boolean wroteSetup = writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
 		if (wroteDetails || wroteSetup)
 		{
-			log.debug("[GE desc] slot={} GE_SELECTEDSLOT-varbit-raw={} offer-itemId={} ui-itemName=\"{}\""
-					+ " offer-state={} ui-direction={} resolved-isBuy={} desc-len={}",
-				slot,
-				client.getVarbitValue(VarbitID.GE_SELECTEDSLOT),
-				itemId,
-				itemNameFromUi == null ? "?" : itemNameFromUi,
-				offer.getState(),
-				uiIsBuy == null ? "null" : uiIsBuy,
-				isBuy,
-				desired.length());
+			// Also dump the raw lookup values so we can see what's being
+			// rendered. User reported Trouver parchment showing buy limit
+			// 10000 (actual 500) and wiki insta-buy 3,228 (actual ~800k) —
+			// data sources are returning wrong values for some itemIds.
+			Integer rawBuyLimit = lookupBuyLimit(itemId);
+			Integer rawWikiInstaBuy = lookupWikiInstaBuy(itemId);
+			Integer rawDailyVolume = getCachedDailyVolume(itemId);
+			log.debug("[GE desc] slot={} offer-itemId={} ui-name=\"{}\" isBuy={} lookups: dailyVol={} buyLimit={} wikiInstaBuy={}",
+				slot, itemId, itemNameFromUi == null ? "?" : itemNameFromUi, isBuy,
+				rawDailyVolume, rawBuyLimit, rawWikiInstaBuy);
 		}
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
@@ -224,6 +224,83 @@ public class GeOfferDescriptionService
 			if (best == null || text.length() > best.length()) best = text;
 		}
 		return best;
+	}
+
+	// One-shot per-slot scan: find the visible widget that displays the
+	// item-name text on the offer-status panel. That's the description
+	// widget we actually need to target.
+	private int findVisibleScanLastSlot = -999;
+	private int findVisibleScanRemaining = 0;
+
+	private void findVisibleDescriptionWidget(int slot, int itemId, String itemName)
+	{
+		if (itemName == null || itemName.isEmpty())
+		{
+			return;
+		}
+		log.debug("[GE find] === searching for widget displaying \"{}\" on slot={} ===", itemName, slot);
+		int hits = 0;
+		// Scan groups 162 (main GE interface) and 465 (GeOffers). Walk both
+		// top-level and one level of static + dynamic children.
+		for (int group : new int[]{162, 465})
+		{
+			for (int child = 0; child < 100; child++)
+			{
+				int packedId = (group << 16) | child;
+				Widget w = client.getWidget(packedId);
+				if (w == null) continue;
+				hits += scanWidgetForName(w, group, child, itemName);
+			}
+		}
+		log.debug("[GE find] === scan done, hits={} ===", hits);
+	}
+
+	private int scanWidgetForName(Widget w, int group, int child, String itemName)
+	{
+		int hits = 0;
+		String text = w.getText();
+		if (text != null && text.contains(itemName))
+		{
+			log.debug("[GE find] HIT group={} child={} id={} hidden={} text=\"{}\"",
+				group, child, w.getId(), w.isSelfHidden(),
+				text.replace("\n", "\\n"));
+			hits++;
+		}
+		Widget[] statics = w.getStaticChildren();
+		if (statics != null)
+		{
+			for (int i = 0; i < statics.length && i < 50; i++)
+			{
+				Widget c = statics[i];
+				if (c == null) continue;
+				String ctext = c.getText();
+				if (ctext != null && ctext.contains(itemName))
+				{
+					log.debug("[GE find] HIT group={} child={}.s{} id={} hidden={} text=\"{}\"",
+						group, child, i, c.getId(), c.isSelfHidden(),
+						ctext.replace("\n", "\\n"));
+					hits++;
+				}
+			}
+		}
+		Widget[] dyn = w.getDynamicChildren();
+		if (dyn != null)
+		{
+			for (int i = 0; i < dyn.length && i < 50; i++)
+			{
+				Widget c = dyn[i];
+				if (c == null) continue;
+				String ctext = c.getText();
+				if (ctext != null && ctext.contains(itemName))
+				{
+					log.debug("[GE find] HIT group={} child={}.d{} id={} hidden={} text=\"{}\"",
+						group, child, i, c.getId(), c.isSelfHidden(),
+						ctext.replace("\n", "\\n"));
+					hits++;
+				}
+			}
+		}
+		return hits;
 	}
 
 	/**
