@@ -122,15 +122,17 @@ public class GeOfferDescriptionService
 	 *       ours) free.</li>
 	 * </ul>
 	 */
+	// One-shot widget enumeration counter — dump GeOffers widget tree the
+	// first N times BeforeRender fires with a slot selected, so we can
+	// identify which widget is actually visible on the offer-status panel.
+	// The DETAILS_DESC widget we've been writing to doesn't appear to be
+	// the visible one — user reports original examine text remains.
+	private int diagWidgetDumpRemaining = 5;
+
 	public void onBeforeRender(BeforeRender event)
 	{
 		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
 		if (slot < 0 || slot >= MAX_GE_SLOTS)
-		{
-			return;
-		}
-		Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
-		if (desc == null)
 		{
 			return;
 		}
@@ -153,16 +155,95 @@ public class GeOfferDescriptionService
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 
-		if (desired.equals(desc.getText()))
+		// Belt-and-suspenders: write to BOTH candidate widget IDs. If DETAILS_DESC
+		// isn't the visible one, SETUP_DESC (reused for both screens by some
+		// interfaces) might be.
+		int writeCount = 0;
+		writeCount += writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired, "DETAILS_DESC");
+		writeCount += writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired, "SETUP_DESC");
+
+		if (writeCount > 0)
+		{
+			hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+			hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
+			log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} qty={} price={} spent={} writes={}",
+				slot, itemId, state, isBuy, offer.getTotalQuantity(), offer.getPrice(), offer.getSpent(), writeCount);
+		}
+
+		// One-shot widget tree dump — find which widget actually shows the
+		// visible description text on the offer-status panel.
+		if (diagWidgetDumpRemaining > 0)
+		{
+			diagWidgetDumpRemaining--;
+			dumpGeOffersWidgetTree(slot);
+		}
+	}
+
+	private int writeIfNeeded(int widgetId, String desired, String label)
+	{
+		Widget w = client.getWidget(widgetId);
+		if (w == null)
+		{
+			return 0;
+		}
+		String current = w.getText();
+		if (desired.equals(current))
+		{
+			return 0;
+		}
+		w.setText(desired);
+		log.debug("[GE desc] wrote {} (id={}) was-len={} now-len={}",
+			label, widgetId, current == null ? -1 : current.length(), desired.length());
+		return 1;
+	}
+
+	/**
+	 * Walk every widget in the GeOffers interface group and log anything with
+	 * visible text. Identifies which widget actually shows the description on
+	 * the offer-status panel.
+	 */
+	private void dumpGeOffersWidgetTree(int slot)
+	{
+		Widget root = client.getWidget(InterfaceID.GeOffers.UNIVERSE);
+		if (root == null)
+		{
+			log.debug("[GE diag] UNIVERSE widget null");
+			return;
+		}
+		log.debug("[GE diag] === widget dump for slot={} ===", slot);
+		dumpWidgetRecursive(root, 0, 0);
+	}
+
+	private static final int MAX_WIDGET_DUMP_DEPTH = 4;
+
+	private void dumpWidgetRecursive(Widget w, int depth, int siblingIdx)
+	{
+		if (w == null || depth > MAX_WIDGET_DUMP_DEPTH)
 		{
 			return;
 		}
-
-		desc.setText(desired);
-		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
-		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
-		log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} qty={} price={} spent={}",
-			slot, itemId, state, isBuy, offer.getTotalQuantity(), offer.getPrice(), offer.getSpent());
+		String text = w.getText();
+		if (text != null && !text.isEmpty() && text.length() < 200)
+		{
+			log.debug("[GE diag]   id={} hidden={} text=\"{}\"",
+				w.getId(), w.isSelfHidden(), text.replace("\n", "\\n").replace("\r", ""));
+		}
+		Widget[] children = w.getStaticChildren();
+		if (children != null)
+		{
+			for (int i = 0; i < children.length; i++)
+			{
+				dumpWidgetRecursive(children[i], depth + 1, i);
+			}
+		}
+		Widget[] dyn = w.getDynamicChildren();
+		if (dyn != null)
+		{
+			for (int i = 0; i < dyn.length; i++)
+			{
+				dumpWidgetRecursive(dyn[i], depth + 1, i);
+			}
+		}
 	}
 
 	/**
