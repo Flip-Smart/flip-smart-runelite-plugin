@@ -2,7 +2,6 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.FontID;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.BeforeRender;
@@ -12,10 +11,6 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
-import net.runelite.api.widgets.WidgetPositionMode;
-import net.runelite.api.widgets.WidgetSizeMode;
-import net.runelite.api.widgets.WidgetTextAlignment;
-import net.runelite.api.widgets.WidgetType;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
@@ -24,27 +19,26 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 
 /**
- * Replaces / augments the GE buy/sell window description text with contextual
- * FlipSmart data (issue #665). Covers two surfaces with two distinct
- * rendering strategies, both chosen so we never fight OSRS scripts.
+ * Replaces the GE buy/sell window description text with contextual FlipSmart
+ * data (issue #665). Two surfaces:
  *
- * <h3>Setup screen (constructing a new offer)</h3>
- * Intercepts the RuneLite-injected {@code geBuyExamineText} /
- * {@code geSellExamineText} script callbacks and writes our description into
- * the runescript's return slot. The OSRS client then writes that value into
- * its own description widget. No race — we let the client own the widget,
- * we just override what string it renders.
+ * <h3>Setup screen</h3>
+ * Intercepts the {@code geBuyExamineText} / {@code geSellExamineText} script
+ * callbacks and writes our description into the runescript's return slot.
  *
  * <h3>In-flight Offer status panel</h3>
- * Different approach: create our OWN child widget inside the offer-status
- * container via {@link Widget#createChild}. OSRS scripts only mutate widgets
- * they know about (their own); since we created this widget, it's invisible
- * to their redraw cycle. No race, no flicker, no constant fighting. This is
- * the same pattern Flipping Copilot uses for its chatbox suggestion widget.
+ * On each BeforeRender frame: write our description to both SETUP_DESC and
+ * DETAILS_DESC (one of the two is the visible widget per earlier diagnosis,
+ * depending on slot state). Short-circuits when widget text already matches
+ * so the steady-state cost is one string-compare per frame.
  *
- * <p>This keeps the original OSRS examine text in place (e.g.,
- * "Small shiny scales.") and adds our breakeven / tax / profit lines as
- * additional rendered text alongside it.</p>
+ * <h3>Direction (buy vs sell) is read from the UI, not the offer state</h3>
+ * The OSRS slot tile widget (INDEX_0..INDEX_7) displays "Buy" or "Sell" text
+ * — that's what the player actually sees on screen. Using offer.getState()
+ * led to wrong-window mismatches because the script callback fires with the
+ * same name (geBuyExamineText) for both panels regardless of direction, and
+ * offer state can lag the visible UI. The UI text is the absolute source of
+ * truth for what the player is looking at.
  */
 @Slf4j
 @Singleton
@@ -55,25 +49,11 @@ public class GeOfferDescriptionService
 
 	private static final int MAX_GE_SLOTS = 8;
 
-	// Where to position our custom text widget inside the DETAILS container.
-	// X = right of the item icon (~80px). Y = below the original examine
-	// text area (~38px). Sized to fit the remaining width of the container.
-	private static final int CUSTOM_TEXT_X = 80;
-	private static final int CUSTOM_TEXT_Y = 38;
-	private static final int CUSTOM_TEXT_HEIGHT = 90;
-	private static final int CUSTOM_TEXT_RIGHT_PADDING = 10;
-	private static final int CUSTOM_TEXT_COLOR_RGB = 0xFFB83F; // GE description amber
-
 	private final Client client;
 	private final ClientThread clientThread;
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartPlugin plugin;
 	private final ItemManager itemManager;
-
-	// Our owned-by-us text widget inside the offer-status DETAILS container.
-	// Persists across frames once created; we re-check validity each frame
-	// because the OSRS client recreates the container on certain transitions.
-	private Widget detailsCustomText;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -91,7 +71,7 @@ public class GeOfferDescriptionService
 	}
 
 	// ---------------------------------------------------------------------
-	// Setup screen — script-callback override
+	// Setup screen
 	// ---------------------------------------------------------------------
 
 	public boolean onScriptCallbackEvent(ScriptCallbackEvent event)
@@ -112,10 +92,8 @@ public class GeOfferDescriptionService
 
 	private void handleExamine(boolean callbackIsBuy)
 	{
-		// Offer-status panel fires the SAME geBuyExamineText callback as the
-		// setup screen. Skip the override for offer-status so we don't write
-		// junk into the runescript return slot — the createChild path
-		// (onBeforeRender) handles offer-status separately.
+		// Offer-status panel fires the same callback as setup. Skip when an
+		// in-flight slot is selected — BeforeRender handles that screen.
 		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
 		if (slot >= 0 && slot < MAX_GE_SLOTS)
 		{
@@ -149,10 +127,6 @@ public class GeOfferDescriptionService
 		stack[sz - 1] = replacement;
 	}
 
-	// ---------------------------------------------------------------------
-	// Hook the plugin's existing GE_OFFERS_SETUP_BUILD handler for icon hide
-	// ---------------------------------------------------------------------
-
 	public void onScriptPostFired(ScriptPostFired event)
 	{
 		// no-op — reserved
@@ -165,14 +139,9 @@ public class GeOfferDescriptionService
 	}
 
 	// ---------------------------------------------------------------------
-	// Offer status panel — createChild owned widget
+	// Offer status panel — multi-write per frame, UI-based direction
 	// ---------------------------------------------------------------------
 
-	/**
-	 * Fires once per visual frame. Ensures our owned text widget exists inside
-	 * the DETAILS container, then keeps its text in sync with the currently
-	 * viewed slot's offer state.
-	 */
 	public void onBeforeRender(BeforeRender event)
 	{
 		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
@@ -181,13 +150,13 @@ public class GeOfferDescriptionService
 			return;
 		}
 
-		Widget detailsContainer = client.getWidget(InterfaceID.GeOffers.DETAILS);
-		if (detailsContainer == null || detailsContainer.isHidden())
+		// Direction signal #1: read the UI text on the slot tile. This is
+		// the same "Buy"/"Sell" label the player sees, so it's definitionally
+		// correct for the screen they're looking at.
+		Boolean uiIsBuy = readSlotDirectionFromUi(slot);
+		if (uiIsBuy == null)
 		{
-			// Offer-status panel is not visible — leave our widget alone, it
-			// will get garbage-collected with the container.
-			detailsCustomText = null;
-			return;
+			// Slot tile not loaded — fall back to offer state below.
 		}
 
 		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
@@ -201,65 +170,64 @@ public class GeOfferDescriptionService
 			return;
 		}
 
+		// Prefer the UI signal; fall back to offer state when UI not readable.
+		boolean isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
+
 		int itemId = offer.getItemId();
-		GrandExchangeOfferState state = offer.getState();
-		boolean isBuy = TrackedOffer.isBuyState(state);
 		String desired = isBuy
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 
-		// Ensure our owned widget exists inside the DETAILS container. If the
-		// container was recreated since we last cached the widget, our cached
-		// reference is stale — re-create.
-		if (detailsCustomText == null || !isChildOf(detailsContainer, detailsCustomText))
-		{
-			detailsCustomText = detailsContainer.createChild(-1, WidgetType.TEXT);
-			configureCustomTextWidget(detailsContainer, detailsCustomText);
-		}
-
-		if (!desired.equals(detailsCustomText.getText()))
-		{
-			detailsCustomText.setText(desired);
-		}
+		// Multi-write — one of SETUP_DESC / DETAILS_DESC is visible depending
+		// on screen state. Short-circuits via text-equality so steady-state
+		// frames are cheap.
+		writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
+		writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
+		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
 	}
 
-	private boolean isChildOf(Widget container, Widget candidate)
+	/**
+	 * Reads the buy/sell direction from the OSRS slot tile widget for the given
+	 * slot. The tile displays "Buy" or "Sell" text in its first text child;
+	 * returns {@code true} for buy, {@code false} for sell, {@code null} if
+	 * the widget isn't loaded or doesn't have a matching label.
+	 */
+	private Boolean readSlotDirectionFromUi(int slot)
 	{
-		Widget[] dyn = container.getDynamicChildren();
+		int indexWidgetId = InterfaceID.GeOffers.INDEX_0 + slot;
+		Widget tile = client.getWidget(indexWidgetId);
+		if (tile == null)
+		{
+			return null;
+		}
+		Widget[] dyn = tile.getDynamicChildren();
 		if (dyn == null)
 		{
-			return false;
+			return null;
 		}
-		for (Widget w : dyn)
+		for (Widget child : dyn)
 		{
-			if (w == candidate)
-			{
-				return true;
-			}
+			if (child == null) continue;
+			String text = child.getText();
+			if ("Buy".equals(text)) return Boolean.TRUE;
+			if ("Sell".equals(text)) return Boolean.FALSE;
 		}
-		return false;
+		return null;
 	}
 
-	private void configureCustomTextWidget(Widget container, Widget w)
+	private void writeIfNeeded(int widgetId, String desired)
 	{
-		int containerWidth = container.getOriginalWidth();
-		int textWidth = Math.max(160, containerWidth - CUSTOM_TEXT_X - CUSTOM_TEXT_RIGHT_PADDING);
-
-		w.setFontId(FontID.PLAIN_11);
-		w.setTextColor(CUSTOM_TEXT_COLOR_RGB);
-		w.setTextShadowed(true);
-		w.setXPositionMode(WidgetPositionMode.ABSOLUTE_LEFT);
-		w.setYPositionMode(WidgetPositionMode.ABSOLUTE_TOP);
-		w.setOriginalX(CUSTOM_TEXT_X);
-		w.setOriginalY(CUSTOM_TEXT_Y);
-		w.setOriginalWidth(textWidth);
-		w.setOriginalHeight(CUSTOM_TEXT_HEIGHT);
-		w.setWidthMode(WidgetSizeMode.ABSOLUTE);
-		w.setHeightMode(WidgetSizeMode.ABSOLUTE);
-		w.setXTextAlignment(WidgetTextAlignment.LEFT);
-		w.setYTextAlignment(WidgetTextAlignment.TOP);
-		w.setHasListener(false);
-		w.revalidate();
+		Widget w = client.getWidget(widgetId);
+		if (w == null)
+		{
+			return;
+		}
+		if (desired.equals(w.getText()))
+		{
+			return;
+		}
+		w.setText(desired);
 	}
 
 	// ---------------------------------------------------------------------
@@ -291,7 +259,6 @@ public class GeOfferDescriptionService
 		return GeOfferDescriptionFormatter.formatBuyDescription(dailyVolume, buyLimit, wikiInstaBuy);
 	}
 
-	/** Post-fetch repaint for SETUP_DESC when daily volume cache lands. */
 	private void refreshSetupBuyDescription(int itemId)
 	{
 		clientThread.invoke(() ->
@@ -319,11 +286,6 @@ public class GeOfferDescriptionService
 		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, sellPrice, quantity);
 	}
 
-	/**
-	 * Sell description for an already-submitted offer — listed price + total
-	 * quantity, both locked. Cannot reuse {@link #buildSellDescription} which
-	 * reads live varbits that are only meaningful during setup.
-	 */
 	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
 	{
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
