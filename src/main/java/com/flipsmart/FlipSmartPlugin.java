@@ -1266,6 +1266,14 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
+		// Issue #665 — hide the convenience-fee info icon (SETUP_GRAPHIC4) so it
+		// doesn't overlap our multi-line description. Fires for both buy and
+		// sell, not just the auto-focus path below.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onSetupBuildScriptPostFired();
+		}
+
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 		if (offerType != 1)
 		{

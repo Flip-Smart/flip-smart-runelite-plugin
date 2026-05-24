@@ -143,6 +143,19 @@ public class GeOfferDescriptionService
 		refreshDetailsFor(slot, "script:" + id);
 	}
 
+	/**
+	 * Called by the plugin's existing onScriptPostFired handler after a
+	 * GE_OFFERS_SETUP_BUILD has fired. Hides the convenience-fee info icon
+	 * (SETUP_GRAPHIC4) — our description already shows the tax explicitly
+	 * so the icon is redundant, AND it gets positioned by the runescript
+	 * based on the original (now-replaced) description text, which makes
+	 * it overlap our multi-line content.
+	 */
+	public void onSetupBuildScriptPostFired()
+	{
+		hideWidgetSafe(InterfaceID.GeOffers.SETUP_GRAPHIC4);
+	}
+
 	private void handleExamine(boolean isBuy)
 	{
 		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
@@ -230,9 +243,24 @@ public class GeOfferDescriptionService
 				? buildBuyDescription(itemId)
 				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 			desc.setText(text);
+			hideWidgetSafe(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 			log.debug("[GE desc] details setText via {} slot={} itemId={} isBuy={}",
 				trigger, slot, itemId, isBuy);
 		});
+	}
+
+	/**
+	 * Best-effort widget hide. Mutations must happen on the client thread —
+	 * all callers in this service are already there. Safe to call repeatedly;
+	 * setHidden(true) on an already-hidden widget is a no-op.
+	 */
+	private void hideWidgetSafe(int widgetId)
+	{
+		Widget w = client.getWidget(widgetId);
+		if (w != null && !w.isSelfHidden())
+		{
+			w.setHidden(true);
+		}
 	}
 
 	/**
@@ -306,6 +334,7 @@ public class GeOfferDescriptionService
 		desc.setText(isBuy
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity()));
+		hideWidgetSafe(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		return true;
 	}
 
