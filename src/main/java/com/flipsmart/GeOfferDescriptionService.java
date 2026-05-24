@@ -127,7 +127,10 @@ public class GeOfferDescriptionService
 	// identify which widget is actually visible on the offer-status panel.
 	// The DETAILS_DESC widget we've been writing to doesn't appear to be
 	// the visible one — user reports original examine text remains.
-	private int diagWidgetDumpRemaining = 5;
+	// Dump widgets on the first 3 frames after each unique slot is selected.
+	// Tracks last-dumped slot so we get fresh data per slot navigation.
+	private int diagDumpsRemainingForSlot = 0;
+	private int diagLastSlotDumped = -999;
 
 	public void onBeforeRender(BeforeRender event)
 	{
@@ -170,11 +173,16 @@ public class GeOfferDescriptionService
 				slot, itemId, state, isBuy, offer.getTotalQuantity(), offer.getPrice(), offer.getSpent(), writeCount);
 		}
 
-		// One-shot widget tree dump — find which widget actually shows the
-		// visible description text on the offer-status panel.
-		if (diagWidgetDumpRemaining > 0)
+		// Per-slot widget tree dump — first 3 frames per unique slot click.
+		// Identifies the actually-visible description widget by content.
+		if (slot != diagLastSlotDumped)
 		{
-			diagWidgetDumpRemaining--;
+			diagLastSlotDumped = slot;
+			diagDumpsRemainingForSlot = 3;
+		}
+		if (diagDumpsRemainingForSlot > 0)
+		{
+			diagDumpsRemainingForSlot--;
 			dumpGeOffersWidgetTree(slot);
 		}
 	}
@@ -198,67 +206,111 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Brute-force walk: try child IDs 0..MAX of the GE_OFFERS group (465).
-	 * For each widget that exists and has text, log it. Then recurse into
-	 * its children. The visible description widget on the offer-status panel
-	 * will appear here with text "Small shiny scales." or similar examine.
+	 * Walk every known GeOffers widget by packed id and log anything with
+	 * non-empty visible text. Identifies the actually-visible description
+	 * widget on the offer-status panel — neither DETAILS_DESC nor SETUP_DESC
+	 * is the one OSRS draws the examine text into per prior testing.
 	 */
 	private void dumpGeOffersWidgetTree(int slot)
 	{
-		log.debug("[GE diag] === widget dump for slot={} ===", slot);
-		final int GE_OFFERS_GROUP = 465;
+		log.debug("[GE diag] === widget dump slot={} ===", slot);
+		int[] candidates = {
+			InterfaceID.GeOffers.UNIVERSE,
+			InterfaceID.GeOffers.CONTENTS,
+			InterfaceID.GeOffers.FRAME,
+			InterfaceID.GeOffers.HISTORY,
+			InterfaceID.GeOffers.BACK,
+			InterfaceID.GeOffers.INDEX,
+			InterfaceID.GeOffers.COLLECTALL,
+			InterfaceID.GeOffers.INDEX_0,
+			InterfaceID.GeOffers.INDEX_1,
+			InterfaceID.GeOffers.INDEX_2,
+			InterfaceID.GeOffers.INDEX_3,
+			InterfaceID.GeOffers.INDEX_4,
+			InterfaceID.GeOffers.INDEX_5,
+			InterfaceID.GeOffers.INDEX_6,
+			InterfaceID.GeOffers.INDEX_7,
+			InterfaceID.GeOffers.DETAILS,
+			InterfaceID.GeOffers.DETAILS_DESC,
+			InterfaceID.GeOffers.DETAILS_MARKETPRICE,
+			InterfaceID.GeOffers.DETAILS_FEE,
+			InterfaceID.GeOffers.DETAILS_GRAPHIC3,
+			InterfaceID.GeOffers.DETAILS_GRAPHIC4,
+			InterfaceID.GeOffers.DETAILS_GRAPHIC5,
+			InterfaceID.GeOffers.DETAILS_GRAPHIC6,
+			InterfaceID.GeOffers.DETAILS_STATUS,
+			InterfaceID.GeOffers.DETAILS_COLLECT,
+			InterfaceID.GeOffers.DETAILS_MODIFY,
+			InterfaceID.GeOffers.SETUP,
+			InterfaceID.GeOffers.SETUP_DESC,
+			InterfaceID.GeOffers.SETUP_MARKETPRICE,
+			InterfaceID.GeOffers.SETUP_FEE,
+			InterfaceID.GeOffers.SETUP_CONFIRM,
+			InterfaceID.GeOffers.SETUP_GRAPHIC4,
+			InterfaceID.GeOffers.POPUP,
+			InterfaceID.GeOffers.TOOLTIP,
+		};
+
 		int found = 0;
-		for (int child = 0; child < 60; child++)
+		for (int id : candidates)
 		{
-			Widget w = client.getWidget(GE_OFFERS_GROUP, child);
+			Widget w = client.getWidget(id);
 			if (w == null)
 			{
 				continue;
 			}
-			String text = w.getText();
-			if (text != null && !text.isEmpty() && text.length() < 200)
+			found += dumpWidgetAndChildren(id, w, "");
+		}
+		log.debug("[GE diag] === found {} widgets with text slot={} ===", found, slot);
+	}
+
+	/** Returns count of widgets with text logged (self + children). */
+	private int dumpWidgetAndChildren(int id, Widget w, String prefix)
+	{
+		int count = 0;
+		String text = w.getText();
+		if (text != null && !text.isEmpty() && text.length() < 200)
+		{
+			log.debug("[GE diag] {}id={} ({}.{}) hidden={} text=\"{}\"",
+				prefix, id, id >>> 16, id & 0xFFFF, w.isSelfHidden(),
+				text.replace("\n", "\\n").replace("\r", ""));
+			count++;
+		}
+		Widget[] statics = w.getStaticChildren();
+		if (statics != null)
+		{
+			for (int i = 0; i < statics.length && i < 50; i++)
 			{
-				log.debug("[GE diag]   child={} hidden={} text=\"{}\"",
-					child, w.isSelfHidden(), text.replace("\n", "\\n").replace("\r", ""));
-				found++;
-			}
-			// Recurse one level into children
-			Widget[] grandchildren = w.getStaticChildren();
-			if (grandchildren != null)
-			{
-				for (int gi = 0; gi < grandchildren.length; gi++)
+				Widget c = statics[i];
+				if (c == null) continue;
+				String ctext = c.getText();
+				if (ctext != null && !ctext.isEmpty() && ctext.length() < 200)
 				{
-					Widget gc = grandchildren[gi];
-					if (gc == null) continue;
-					String gtext = gc.getText();
-					if (gtext != null && !gtext.isEmpty() && gtext.length() < 200)
-					{
-						log.debug("[GE diag]     child={}.{} hidden={} text=\"{}\"",
-							child, gi, gc.isSelfHidden(),
-							gtext.replace("\n", "\\n").replace("\r", ""));
-						found++;
-					}
-				}
-			}
-			Widget[] dynChildren = w.getDynamicChildren();
-			if (dynChildren != null)
-			{
-				for (int gi = 0; gi < dynChildren.length; gi++)
-				{
-					Widget gc = dynChildren[gi];
-					if (gc == null) continue;
-					String gtext = gc.getText();
-					if (gtext != null && !gtext.isEmpty() && gtext.length() < 200)
-					{
-						log.debug("[GE diag]     dyn-child={}.{} hidden={} text=\"{}\"",
-							child, gi, gc.isSelfHidden(),
-							gtext.replace("\n", "\\n").replace("\r", ""));
-						found++;
-					}
+					log.debug("[GE diag] {}  static[{}] id={} hidden={} text=\"{}\"",
+						prefix, i, c.getId(), c.isSelfHidden(),
+						ctext.replace("\n", "\\n").replace("\r", ""));
+					count++;
 				}
 			}
 		}
-		log.debug("[GE diag] === found {} widgets with text in slot={} ===", found, slot);
+		Widget[] dyn = w.getDynamicChildren();
+		if (dyn != null)
+		{
+			for (int i = 0; i < dyn.length && i < 50; i++)
+			{
+				Widget c = dyn[i];
+				if (c == null) continue;
+				String ctext = c.getText();
+				if (ctext != null && !ctext.isEmpty() && ctext.length() < 200)
+				{
+					log.debug("[GE diag] {}  dyn[{}] id={} hidden={} text=\"{}\"",
+						prefix, i, c.getId(), c.isSelfHidden(),
+						ctext.replace("\n", "\\n").replace("\r", ""));
+					count++;
+				}
+			}
+		}
+		return count;
 	}
 
 	/**
