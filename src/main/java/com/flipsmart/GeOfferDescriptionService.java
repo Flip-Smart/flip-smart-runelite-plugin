@@ -171,9 +171,11 @@ public class GeOfferDescriptionService
 		}
 
 		// Prefer the UI signal; fall back to offer state when UI not readable.
-		boolean isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
+		boolean offerStateIsBuy = TrackedOffer.isBuyState(offer.getState());
+		boolean isBuy = uiIsBuy != null ? uiIsBuy : offerStateIsBuy;
 
 		int itemId = offer.getItemId();
+		String itemNameFromUi = readSlotItemNameFromUi(slot);
 		String desired = isBuy
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
@@ -181,10 +183,47 @@ public class GeOfferDescriptionService
 		// Multi-write — one of SETUP_DESC / DETAILS_DESC is visible depending
 		// on screen state. Short-circuits via text-equality so steady-state
 		// frames are cheap.
-		writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
-		writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
+		boolean wroteDetails = writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
+		boolean wroteSetup = writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
+		if (wroteDetails || wroteSetup)
+		{
+			log.debug("[GE desc] slot={} GE_SELECTEDSLOT-varbit-raw={} offer-itemId={} ui-itemName=\"{}\""
+					+ " offer-state={} ui-direction={} resolved-isBuy={} desc-len={}",
+				slot,
+				client.getVarbitValue(VarbitID.GE_SELECTEDSLOT),
+				itemId,
+				itemNameFromUi == null ? "?" : itemNameFromUi,
+				offer.getState(),
+				uiIsBuy == null ? "null" : uiIsBuy,
+				isBuy,
+				desired.length());
+		}
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
+	}
+
+	/** Reads the item-name text from the slot tile. Useful to cross-check slot indexing. */
+	private String readSlotItemNameFromUi(int slot)
+	{
+		int indexWidgetId = InterfaceID.GeOffers.INDEX_0 + slot;
+		Widget tile = client.getWidget(indexWidgetId);
+		if (tile == null) return null;
+		Widget[] dyn = tile.getDynamicChildren();
+		if (dyn == null) return null;
+		// Per earlier diagnostic dumps, dyn[19] is the item-name text. Find the
+		// longest "name-shaped" string (not "Buy"/"Sell"/contains "coins") as
+		// a robust fallback.
+		String best = null;
+		for (Widget child : dyn)
+		{
+			if (child == null) continue;
+			String text = child.getText();
+			if (text == null || text.isEmpty()) continue;
+			if ("Buy".equals(text) || "Sell".equals(text)) continue;
+			if (text.contains("coin")) continue;
+			if (best == null || text.length() > best.length()) best = text;
+		}
+		return best;
 	}
 
 	/**
@@ -216,18 +255,19 @@ public class GeOfferDescriptionService
 		return null;
 	}
 
-	private void writeIfNeeded(int widgetId, String desired)
+	private boolean writeIfNeeded(int widgetId, String desired)
 	{
 		Widget w = client.getWidget(widgetId);
 		if (w == null)
 		{
-			return;
+			return false;
 		}
 		if (desired.equals(w.getText()))
 		{
-			return;
+			return false;
 		}
 		w.setText(desired);
+		return true;
 	}
 
 	// ---------------------------------------------------------------------
