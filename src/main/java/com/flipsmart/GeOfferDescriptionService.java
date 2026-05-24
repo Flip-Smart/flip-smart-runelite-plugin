@@ -2,16 +2,21 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.FontID;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetPositionMode;
+import net.runelite.api.widgets.WidgetSizeMode;
+import net.runelite.api.widgets.WidgetTextAlignment;
+import net.runelite.api.widgets.WidgetType;
 import net.runelite.client.callback.ClientThread;
-import net.runelite.api.events.BeforeRender;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
@@ -19,32 +24,27 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 
 /**
- * Replaces the GE buy/sell SETUP window description text with contextual
- * FlipSmart data (issue #665) by intercepting the {@code geBuyExamineText} /
- * {@code geSellExamineText} script callbacks injected by the RuneLite client.
+ * Replaces / augments the GE buy/sell window description text with contextual
+ * FlipSmart data (issue #665). Covers two surfaces with two distinct
+ * rendering strategies, both chosen so we never fight OSRS scripts.
  *
- * <p>The RuneLite-injected runescript ({@code GeExamineInfoText.rs2asm}, script
- * id 5730) fires this callback every time the offer-setup description is
- * rebuilt, including after the player adjusts the entered price or quantity.
- * Writing our replacement string into the object stack's return slot (index
- * {@code sz-1}) handles every render after the daily-volume cache is warm.
- * AC9 (no paint overlay) is satisfied by construction.</p>
+ * <h3>Setup screen (constructing a new offer)</h3>
+ * Intercepts the RuneLite-injected {@code geBuyExamineText} /
+ * {@code geSellExamineText} script callbacks and writes our description into
+ * the runescript's return slot. The OSRS client then writes that value into
+ * its own description widget. No race — we let the client own the widget,
+ * we just override what string it renders.
  *
- * <p>One narrow path mutates the {@code SETUP_DESC} widget directly: when the
- * first render for a fresh item lands with a cold daily-volume cache, the
- * synchronous render writes "N/A" and kicks off the async fetch. When the
- * fetch completes we repaint the widget on the client thread so the player
- * sees the real volume without having to reopen — the script-callback alone
- * cannot recover from this because it won't fire again until the player
- * edits the price or reopens the window.</p>
+ * <h3>In-flight Offer status panel</h3>
+ * Different approach: create our OWN child widget inside the offer-status
+ * container via {@link Widget#createChild}. OSRS scripts only mutate widgets
+ * they know about (their own); since we created this widget, it's invisible
+ * to their redraw cycle. No race, no flicker, no constant fighting. This is
+ * the same pattern Flipping Copilot uses for its chatbox suggestion widget.
  *
- * <p><b>Scope note:</b> the in-flight Offer status panel ({@code DETAILS_DESC})
- * is NOT covered. RuneLite does not inject a script callback for that widget,
- * and the OSRS client rebuilds {@code DETAILS_DESC} on every game tick from
- * ~30 different scripts — direct widget mutation gets immediately overwritten,
- * creating an unwinnable fight. Surfacing FlipSmart context on that screen
- * would need a different rendering primitive (likely a paint overlay, which
- * would violate AC9) and is deferred to a follow-up ticket.</p>
+ * <p>This keeps the original OSRS examine text in place (e.g.,
+ * "Small shiny scales.") and adds our breakeven / tax / profit lines as
+ * additional rendered text alongside it.</p>
  */
 @Slf4j
 @Singleton
@@ -55,11 +55,25 @@ public class GeOfferDescriptionService
 
 	private static final int MAX_GE_SLOTS = 8;
 
+	// Where to position our custom text widget inside the DETAILS container.
+	// X = right of the item icon (~80px). Y = below the original examine
+	// text area (~38px). Sized to fit the remaining width of the container.
+	private static final int CUSTOM_TEXT_X = 80;
+	private static final int CUSTOM_TEXT_Y = 38;
+	private static final int CUSTOM_TEXT_HEIGHT = 90;
+	private static final int CUSTOM_TEXT_RIGHT_PADDING = 10;
+	private static final int CUSTOM_TEXT_COLOR_RGB = 0xFFB83F; // GE description amber
+
 	private final Client client;
 	private final ClientThread clientThread;
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartPlugin plugin;
 	private final ItemManager itemManager;
+
+	// Our owned-by-us text widget inside the offer-status DETAILS container.
+	// Persists across frames once created; we re-check validity each frame
+	// because the OSRS client recreates the container on certain transitions.
+	private Widget detailsCustomText;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -76,11 +90,10 @@ public class GeOfferDescriptionService
 		this.itemManager = itemManager;
 	}
 
-	/**
-	 * Handle a {@link ScriptCallbackEvent} for the setup-screen description.
-	 * Returns true when the event was a GE examine callback (handled regardless
-	 * of whether we wrote a replacement); false when the event was unrelated.
-	 */
+	// ---------------------------------------------------------------------
+	// Setup screen — script-callback override
+	// ---------------------------------------------------------------------
+
 	public boolean onScriptCallbackEvent(ScriptCallbackEvent event)
 	{
 		String name = event.getEventName();
@@ -97,46 +110,83 @@ public class GeOfferDescriptionService
 		return false;
 	}
 
-	/**
-	 * No-op hook retained so the existing FlipSmartPlugin wiring still compiles.
-	 * The setup-screen flow does not need ScriptPostFired — the script-callback
-	 * path is sufficient. Reserved for future extension.
-	 */
-	public void onScriptPostFired(ScriptPostFired event)
+	private void handleExamine(boolean callbackIsBuy)
 	{
-		// intentionally empty
+		// Offer-status panel fires the SAME geBuyExamineText callback as the
+		// setup screen. Skip the override for offer-status so we don't write
+		// junk into the runescript return slot — the createChild path
+		// (onBeforeRender) handles offer-status separately.
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		if (slot >= 0 && slot < MAX_GE_SLOTS)
+		{
+			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+			if (offers != null && slot < offers.length
+				&& offers[slot] != null
+				&& offers[slot].getState() != GrandExchangeOfferState.EMPTY)
+			{
+				return;
+			}
+		}
+
+		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (itemId <= 0)
+		{
+			return;
+		}
+
+		String replacement = callbackIsBuy ? buildBuyDescription(itemId) : buildSellDescription(itemId);
+		if (replacement == null)
+		{
+			return;
+		}
+
+		Object[] stack = client.getObjectStack();
+		int sz = client.getObjectStackSize();
+		if (sz <= 0 || stack == null || stack.length < sz)
+		{
+			return;
+		}
+		stack[sz - 1] = replacement;
 	}
 
-	/**
-	 * Render the in-flight Offer status (DETAILS_DESC) panel once per visual
-	 * frame. This is the right hook because:
-	 *
-	 * <ul>
-	 *   <li>OSRS rebuilds DETAILS_DESC from ~30 different scripts per game tick
-	 *       — reacting after each (via ScriptPostFired) is an unwinnable race.</li>
-	 *   <li>BeforeRender fires once per visual frame AFTER all per-tick scripts
-	 *       have settled but BEFORE the paint. We get the final say each frame,
-	 *       so the user never sees the original examine.</li>
-	 *   <li>Already on the client thread — no clientThread.invoke needed.</li>
-	 *   <li>String-equality short-circuit makes the common case (text already
-	 *       ours) free.</li>
-	 * </ul>
-	 */
-	// One-shot widget enumeration counter — dump GeOffers widget tree the
-	// first N times BeforeRender fires with a slot selected, so we can
-	// identify which widget is actually visible on the offer-status panel.
-	// The DETAILS_DESC widget we've been writing to doesn't appear to be
-	// the visible one — user reports original examine text remains.
-	// Dump widgets on the first 3 frames after each unique slot is selected.
-	// Tracks last-dumped slot so we get fresh data per slot navigation.
-	private int diagDumpsRemainingForSlot = 0;
-	private int diagLastSlotDumped = -999;
+	// ---------------------------------------------------------------------
+	// Hook the plugin's existing GE_OFFERS_SETUP_BUILD handler for icon hide
+	// ---------------------------------------------------------------------
 
+	public void onScriptPostFired(ScriptPostFired event)
+	{
+		// no-op — reserved
+	}
+
+	public void onSetupBuildScriptPostFired()
+	{
+		hideAndTransparent(InterfaceID.GeOffers.SETUP_GRAPHIC4);
+		hideAndTransparent(InterfaceID.GeOffers.SETUP_FEE);
+	}
+
+	// ---------------------------------------------------------------------
+	// Offer status panel — createChild owned widget
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Fires once per visual frame. Ensures our owned text widget exists inside
+	 * the DETAILS container, then keeps its text in sync with the currently
+	 * viewed slot's offer state.
+	 */
 	public void onBeforeRender(BeforeRender event)
 	{
 		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
 		if (slot < 0 || slot >= MAX_GE_SLOTS)
 		{
+			return;
+		}
+
+		Widget detailsContainer = client.getWidget(InterfaceID.GeOffers.DETAILS);
+		if (detailsContainer == null || detailsContainer.isHidden())
+		{
+			// Offer-status panel is not visible — leave our widget alone, it
+			// will get garbage-collected with the container.
+			detailsCustomText = null;
 			return;
 		}
 
@@ -158,275 +208,63 @@ public class GeOfferDescriptionService
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 
-		// Belt-and-suspenders: write to BOTH candidate widget IDs. If DETAILS_DESC
-		// isn't the visible one, SETUP_DESC (reused for both screens by some
-		// interfaces) might be.
-		int writeCount = 0;
-		writeCount += writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired, "DETAILS_DESC");
-		writeCount += writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired, "SETUP_DESC");
-
-		if (writeCount > 0)
+		// Ensure our owned widget exists inside the DETAILS container. If the
+		// container was recreated since we last cached the widget, our cached
+		// reference is stale — re-create.
+		if (detailsCustomText == null || !isChildOf(detailsContainer, detailsCustomText))
 		{
-			hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
-			hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
-			log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} qty={} price={} spent={} writes={}",
-				slot, itemId, state, isBuy, offer.getTotalQuantity(), offer.getPrice(), offer.getSpent(), writeCount);
+			detailsCustomText = detailsContainer.createChild(-1, WidgetType.TEXT);
+			configureCustomTextWidget(detailsContainer, detailsCustomText);
 		}
 
-		// Per-slot widget tree dump — first 3 frames per unique slot click.
-		// Identifies the actually-visible description widget by content.
-		if (slot != diagLastSlotDumped)
+		if (!desired.equals(detailsCustomText.getText()))
 		{
-			diagLastSlotDumped = slot;
-			diagDumpsRemainingForSlot = 3;
-		}
-		if (diagDumpsRemainingForSlot > 0)
-		{
-			diagDumpsRemainingForSlot--;
-			dumpGeOffersWidgetTree(slot);
+			detailsCustomText.setText(desired);
 		}
 	}
 
-	private int writeIfNeeded(int widgetId, String desired, String label)
+	private boolean isChildOf(Widget container, Widget candidate)
 	{
-		Widget w = client.getWidget(widgetId);
-		if (w == null)
+		Widget[] dyn = container.getDynamicChildren();
+		if (dyn == null)
 		{
-			return 0;
+			return false;
 		}
-		String current = w.getText();
-		if (desired.equals(current))
+		for (Widget w : dyn)
 		{
-			return 0;
-		}
-		w.setText(desired);
-		log.debug("[GE desc] wrote {} (id={}) was-len={} now-len={}",
-			label, widgetId, current == null ? -1 : current.length(), desired.length());
-		return 1;
-	}
-
-	/**
-	 * Walk every known GeOffers widget by packed id and log anything with
-	 * non-empty visible text. Identifies the actually-visible description
-	 * widget on the offer-status panel — neither DETAILS_DESC nor SETUP_DESC
-	 * is the one OSRS draws the examine text into per prior testing.
-	 */
-	private void dumpGeOffersWidgetTree(int slot)
-	{
-		log.debug("[GE diag] === widget dump slot={} ===", slot);
-		int[] candidates = {
-			InterfaceID.GeOffers.UNIVERSE,
-			InterfaceID.GeOffers.CONTENTS,
-			InterfaceID.GeOffers.FRAME,
-			InterfaceID.GeOffers.HISTORY,
-			InterfaceID.GeOffers.BACK,
-			InterfaceID.GeOffers.INDEX,
-			InterfaceID.GeOffers.COLLECTALL,
-			InterfaceID.GeOffers.INDEX_0,
-			InterfaceID.GeOffers.INDEX_1,
-			InterfaceID.GeOffers.INDEX_2,
-			InterfaceID.GeOffers.INDEX_3,
-			InterfaceID.GeOffers.INDEX_4,
-			InterfaceID.GeOffers.INDEX_5,
-			InterfaceID.GeOffers.INDEX_6,
-			InterfaceID.GeOffers.INDEX_7,
-			InterfaceID.GeOffers.DETAILS,
-			InterfaceID.GeOffers.DETAILS_DESC,
-			InterfaceID.GeOffers.DETAILS_MARKETPRICE,
-			InterfaceID.GeOffers.DETAILS_FEE,
-			InterfaceID.GeOffers.DETAILS_GRAPHIC3,
-			InterfaceID.GeOffers.DETAILS_GRAPHIC4,
-			InterfaceID.GeOffers.DETAILS_GRAPHIC5,
-			InterfaceID.GeOffers.DETAILS_GRAPHIC6,
-			InterfaceID.GeOffers.DETAILS_STATUS,
-			InterfaceID.GeOffers.DETAILS_COLLECT,
-			InterfaceID.GeOffers.DETAILS_MODIFY,
-			InterfaceID.GeOffers.SETUP,
-			InterfaceID.GeOffers.SETUP_DESC,
-			InterfaceID.GeOffers.SETUP_MARKETPRICE,
-			InterfaceID.GeOffers.SETUP_FEE,
-			InterfaceID.GeOffers.SETUP_CONFIRM,
-			InterfaceID.GeOffers.SETUP_GRAPHIC4,
-			InterfaceID.GeOffers.POPUP,
-			InterfaceID.GeOffers.TOOLTIP,
-		};
-
-		int nonNull = 0;
-		int withText = 0;
-		StringBuilder presence = new StringBuilder();
-		for (int id : candidates)
-		{
-			Widget w = client.getWidget(id);
-			if (w == null)
+			if (w == candidate)
 			{
-				continue;
-			}
-			nonNull++;
-			presence.append(id & 0xFFFF).append(' ');
-			withText += dumpWidgetAndChildren(id, w, "");
-		}
-		log.debug("[GE diag] === group 465: nonNull={} withText={} children=[{}] slot={} ===",
-			nonNull, withText, presence.toString().trim(), slot);
-
-		// Also enumerate group 162 (the main GE interface group) — the
-		// offer-status visible description widget might live here, not in
-		// group 465 (GeOffers). The plugin's existing GE constants like
-		// GE_OFFER_CONTAINER (162, child 26) confirm group 162 is used.
-		log.debug("[GE diag] === group 162 dump slot={} ===", slot);
-		int g162nonNull = 0;
-		int g162withText = 0;
-		StringBuilder g162presence = new StringBuilder();
-		for (int child = 0; child < 100; child++)
-		{
-			int packedId = (162 << 16) | child;
-			Widget w = client.getWidget(packedId);
-			if (w == null)
-			{
-				continue;
-			}
-			g162nonNull++;
-			g162presence.append(child).append(' ');
-			g162withText += dumpWidgetAndChildren(packedId, w, "g162 ");
-		}
-		log.debug("[GE diag] === group 162: nonNull={} withText={} children=[{}] slot={} ===",
-			g162nonNull, g162withText, g162presence.toString().trim(), slot);
-	}
-
-	/** Returns count of widgets with text logged (self + children). */
-	private int dumpWidgetAndChildren(int id, Widget w, String prefix)
-	{
-		int count = 0;
-		String text = w.getText();
-		if (text != null && !text.isEmpty() && text.length() < 200)
-		{
-			log.debug("[GE diag] {}id={} ({}.{}) hidden={} text=\"{}\"",
-				prefix, id, id >>> 16, id & 0xFFFF, w.isSelfHidden(),
-				text.replace("\n", "\\n").replace("\r", ""));
-			count++;
-		}
-		Widget[] statics = w.getStaticChildren();
-		if (statics != null)
-		{
-			for (int i = 0; i < statics.length && i < 50; i++)
-			{
-				Widget c = statics[i];
-				if (c == null) continue;
-				String ctext = c.getText();
-				if (ctext != null && !ctext.isEmpty() && ctext.length() < 200)
-				{
-					log.debug("[GE diag] {}  static[{}] id={} hidden={} text=\"{}\"",
-						prefix, i, c.getId(), c.isSelfHidden(),
-						ctext.replace("\n", "\\n").replace("\r", ""));
-					count++;
-				}
+				return true;
 			}
 		}
-		Widget[] dyn = w.getDynamicChildren();
-		if (dyn != null)
-		{
-			for (int i = 0; i < dyn.length && i < 50; i++)
-			{
-				Widget c = dyn[i];
-				if (c == null) continue;
-				String ctext = c.getText();
-				if (ctext != null && !ctext.isEmpty() && ctext.length() < 200)
-				{
-					log.debug("[GE diag] {}  dyn[{}] id={} hidden={} text=\"{}\"",
-						prefix, i, c.getId(), c.isSelfHidden(),
-						ctext.replace("\n", "\\n").replace("\r", ""));
-					count++;
-				}
-			}
-		}
-		return count;
+		return false;
 	}
 
-	/**
-	 * Sell description for an already-submitted offer — listed price + total
-	 * quantity, both locked. Cannot reuse {@link #buildSellDescription} which
-	 * reads live varbits that are only meaningful during setup.
-	 */
-	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
+	private void configureCustomTextWidget(Widget container, Widget w)
 	{
-		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
-		int price = Math.max(listedPrice, 0);
-		int qty = Math.max(totalQuantity, 0);
-		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
+		int containerWidth = container.getOriginalWidth();
+		int textWidth = Math.max(160, containerWidth - CUSTOM_TEXT_X - CUSTOM_TEXT_RIGHT_PADDING);
+
+		w.setFontId(FontID.PLAIN_11);
+		w.setTextColor(CUSTOM_TEXT_COLOR_RGB);
+		w.setTextShadowed(true);
+		w.setXPositionMode(WidgetPositionMode.ABSOLUTE_LEFT);
+		w.setYPositionMode(WidgetPositionMode.ABSOLUTE_TOP);
+		w.setOriginalX(CUSTOM_TEXT_X);
+		w.setOriginalY(CUSTOM_TEXT_Y);
+		w.setOriginalWidth(textWidth);
+		w.setOriginalHeight(CUSTOM_TEXT_HEIGHT);
+		w.setWidthMode(WidgetSizeMode.ABSOLUTE);
+		w.setHeightMode(WidgetSizeMode.ABSOLUTE);
+		w.setXTextAlignment(WidgetTextAlignment.LEFT);
+		w.setYTextAlignment(WidgetTextAlignment.TOP);
+		w.setHasListener(false);
+		w.revalidate();
 	}
 
-	/**
-	 * Called by the plugin's existing onScriptPostFired handler after a
-	 * GE_OFFERS_SETUP_BUILD has fired. Makes the convenience-fee info icon
-	 * (SETUP_GRAPHIC4) invisible — our description already shows the tax
-	 * explicitly so the icon is redundant, AND the runescript positions
-	 * it based on the original (now-replaced) text metrics, which makes
-	 * it overlap our multi-line content.
-	 */
-	public void onSetupBuildScriptPostFired()
-	{
-		hideAndTransparent(InterfaceID.GeOffers.SETUP_GRAPHIC4);
-		hideAndTransparent(InterfaceID.GeOffers.SETUP_FEE);
-	}
-
-	private void handleExamine(boolean callbackIsBuy)
-	{
-		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-		if (itemId <= 0)
-		{
-			return;
-		}
-
-		// OSRS fires geBuyExamineText for BOTH setup AND in-flight offer-status
-		// panels. The callback name reflects the script context, NOT the actual
-		// offer direction. For offer-status (a selected slot with a non-empty
-		// offer), the offer's real state (SELLING / BOUGHT / etc.) is the
-		// source of truth — trust that over the callback name.
-		boolean isBuy = callbackIsBuy;
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		if (slot >= 0 && slot < MAX_GE_SLOTS)
-		{
-			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-			if (offers != null && slot < offers.length
-				&& offers[slot] != null
-				&& offers[slot].getState() != GrandExchangeOfferState.EMPTY)
-			{
-				isBuy = TrackedOffer.isBuyState(offers[slot].getState());
-			}
-		}
-
-		String replacement = isBuy ? buildBuyDescription(itemId)
-			: (slot >= 0 && slot < MAX_GE_SLOTS
-				? buildSellDescriptionForSlot(slot, itemId)
-				: buildSellDescription(itemId));
-		if (replacement == null)
-		{
-			return;
-		}
-
-		Object[] stack = client.getObjectStack();
-		int sz = client.getObjectStackSize();
-		if (sz <= 0 || stack == null || stack.length < sz)
-		{
-			return;
-		}
-		stack[sz - 1] = replacement;
-	}
-
-	/**
-	 * Sell description for a script-callback context where we know which slot
-	 * the offer-status panel is showing. Uses the offer's locked price + total
-	 * quantity (not the live varbits, which only make sense during setup).
-	 */
-	private String buildSellDescriptionForSlot(int slot, int itemId)
-	{
-		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-		if (offers == null || slot >= offers.length || offers[slot] == null)
-		{
-			return buildSellDescription(itemId);
-		}
-		GrandExchangeOffer offer = offers[slot];
-		return buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
-	}
+	// ---------------------------------------------------------------------
+	// Description builders
+	// ---------------------------------------------------------------------
 
 	private String buildBuyDescription(int itemId)
 	{
@@ -453,11 +291,7 @@ public class GeOfferDescriptionService
 		return GeOfferDescriptionFormatter.formatBuyDescription(dailyVolume, buyLimit, wikiInstaBuy);
 	}
 
-	/**
-	 * Post-fetch repaint for the SETUP_DESC widget when the daily-volume cache
-	 * lands. Schedules on the client thread; guarded against the player having
-	 * switched items between the fetch firing and completing.
-	 */
+	/** Post-fetch repaint for SETUP_DESC when daily volume cache lands. */
 	private void refreshSetupBuyDescription(int itemId)
 	{
 		clientThread.invoke(() ->
@@ -473,6 +307,29 @@ public class GeOfferDescriptionService
 			}
 			desc.setText(buildBuyDescription(itemId));
 		});
+	}
+
+	private String buildSellDescription(int itemId)
+	{
+		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
+		int sellPrice = client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE);
+		int quantity = client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY);
+		if (sellPrice < 0) sellPrice = 0;
+		if (quantity < 0) quantity = 0;
+		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, sellPrice, quantity);
+	}
+
+	/**
+	 * Sell description for an already-submitted offer — listed price + total
+	 * quantity, both locked. Cannot reuse {@link #buildSellDescription} which
+	 * reads live varbits that are only meaningful during setup.
+	 */
+	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
+	{
+		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
+		int price = Math.max(listedPrice, 0);
+		int qty = Math.max(totalQuantity, 0);
+		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
 	}
 
 	private Integer lookupBuyLimit(int itemId)
@@ -495,29 +352,12 @@ public class GeOfferDescriptionService
 		return (price != null && price.instaBuy > 0) ? price.instaBuy : null;
 	}
 
-	private String buildSellDescription(int itemId)
-	{
-		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
-		int sellPrice = client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE);
-		int quantity = client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY);
-		if (sellPrice < 0) sellPrice = 0;
-		if (quantity < 0) quantity = 0;
-		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, sellPrice, quantity);
-	}
-
-	/** Read-only cache lookup; never blocks. */
 	private Integer getCachedDailyVolume(int itemId)
 	{
 		java.util.concurrent.CompletableFuture<Integer> f = apiClient.peekCachedDailyVolume(itemId);
 		return (f != null && f.isDone()) ? f.getNow(null) : null;
 	}
 
-	/**
-	 * Belt-and-suspenders widget invisibility — combine setHidden(true) with
-	 * fully-transparent opacity. We do both because setHidden() alone did not
-	 * stick on SETUP_GRAPHIC4 in user testing (likely overridden by a later
-	 * widget-config script).
-	 */
 	private void hideAndTransparent(int widgetId)
 	{
 		Widget w = client.getWidget(widgetId);
@@ -526,7 +366,6 @@ public class GeOfferDescriptionService
 			return;
 		}
 		w.setHidden(true);
-		// 0 = fully opaque, 255 = fully transparent
 		w.setOpacity(255);
 	}
 }
