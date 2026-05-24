@@ -54,6 +54,7 @@ public class GeOfferDescriptionService
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartPlugin plugin;
 	private final ItemManager itemManager;
+	private final FlipAssistOverlay flipAssistOverlay;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -61,13 +62,15 @@ public class GeOfferDescriptionService
 		ClientThread clientThread,
 		FlipSmartApiClient apiClient,
 		FlipSmartPlugin plugin,
-		ItemManager itemManager)
+		ItemManager itemManager,
+		FlipAssistOverlay flipAssistOverlay)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
 		this.apiClient = apiClient;
 		this.plugin = plugin;
 		this.itemManager = itemManager;
+		this.flipAssistOverlay = flipAssistOverlay;
 	}
 
 	// ---------------------------------------------------------------------
@@ -144,58 +147,46 @@ public class GeOfferDescriptionService
 
 	public void onBeforeRender(BeforeRender event)
 	{
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		if (slot < 0 || slot >= MAX_GE_SLOTS)
+		// SOURCE OF TRUTH: Flip Assist's focused flip. The OSRS GE widget
+		// indirection has been impossible to track reliably (multiple wrong-
+		// data screenshots from slot-state mismatches). Flip Assist already
+		// knows what item the player is being assisted with — use THAT as
+		// the data source. The user sees consistent stats for their focused
+		// item regardless of which OSRS slot widget is visible.
+		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
+		if (focus == null)
+		{
+			// No active focus — don't write anything. Leave OSRS native text.
+			return;
+		}
+
+		// Only show our description when the offer-status / setup panel is
+		// actually open. Cheap gate via SETUP_DESC widget existence.
+		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+		Widget detailsDesc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
+		if (setupDesc == null && detailsDesc == null)
 		{
 			return;
 		}
 
-		// Direction signal #1: read the UI text on the slot tile. This is
-		// the same "Buy"/"Sell" label the player sees, so it's definitionally
-		// correct for the screen they're looking at.
-		Boolean uiIsBuy = readSlotDirectionFromUi(slot);
-		if (uiIsBuy == null)
-		{
-			// Slot tile not loaded — fall back to offer state below.
-		}
+		int itemId = focus.getItemId();
+		boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
+		int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
+		int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
 
-		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-		if (offers == null || slot >= offers.length)
-		{
-			return;
-		}
-		GrandExchangeOffer offer = offers[slot];
-		if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
-		{
-			return;
-		}
-
-		// Prefer the UI signal; fall back to offer state when UI not readable.
-		boolean offerStateIsBuy = TrackedOffer.isBuyState(offer.getState());
-		boolean isBuy = uiIsBuy != null ? uiIsBuy : offerStateIsBuy;
-
-		int itemId = offer.getItemId();
-		String itemNameFromUi = readSlotItemNameFromUi(slot);
 		String desired = isBuy
 			? buildBuyDescription(itemId)
-			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
+			: buildSellDescriptionStatic(itemId, price, qty);
 
-		// Multi-write — one of SETUP_DESC / DETAILS_DESC is visible depending
-		// on screen state. Short-circuits via text-equality so steady-state
-		// frames are cheap.
 		boolean wroteDetails = writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
 		boolean wroteSetup = writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
 		if (wroteDetails || wroteSetup)
 		{
-			// Also dump the raw lookup values so we can see what's being
-			// rendered. User reported Trouver parchment showing buy limit
-			// 10000 (actual 500) and wiki insta-buy 3,228 (actual ~800k) —
-			// data sources are returning wrong values for some itemIds.
 			Integer rawBuyLimit = lookupBuyLimit(itemId);
 			Integer rawWikiInstaBuy = lookupWikiInstaBuy(itemId);
 			Integer rawDailyVolume = getCachedDailyVolume(itemId);
-			log.debug("[GE desc] slot={} offer-itemId={} ui-name=\"{}\" isBuy={} lookups: dailyVol={} buyLimit={} wikiInstaBuy={}",
-				slot, itemId, itemNameFromUi == null ? "?" : itemNameFromUi, isBuy,
+			log.debug("[GE desc] flip-assist focus itemId={} name=\"{}\" step={} isBuy={} lookups: dailyVol={} buyLimit={} wikiInstaBuy={}",
+				itemId, focus.getItemName(), focus.getStep(), isBuy,
 				rawDailyVolume, rawBuyLimit, rawWikiInstaBuy);
 		}
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
