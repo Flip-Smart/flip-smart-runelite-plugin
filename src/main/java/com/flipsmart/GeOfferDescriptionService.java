@@ -251,7 +251,9 @@ public class GeOfferDescriptionService
 			InterfaceID.GeOffers.TOOLTIP,
 		};
 
-		int found = 0;
+		int nonNull = 0;
+		int withText = 0;
+		StringBuilder presence = new StringBuilder();
 		for (int id : candidates)
 		{
 			Widget w = client.getWidget(id);
@@ -259,9 +261,35 @@ public class GeOfferDescriptionService
 			{
 				continue;
 			}
-			found += dumpWidgetAndChildren(id, w, "");
+			nonNull++;
+			presence.append(id & 0xFFFF).append(' ');
+			withText += dumpWidgetAndChildren(id, w, "");
 		}
-		log.debug("[GE diag] === found {} widgets with text slot={} ===", found, slot);
+		log.debug("[GE diag] === group 465: nonNull={} withText={} children=[{}] slot={} ===",
+			nonNull, withText, presence.toString().trim(), slot);
+
+		// Also enumerate group 162 (the main GE interface group) — the
+		// offer-status visible description widget might live here, not in
+		// group 465 (GeOffers). The plugin's existing GE constants like
+		// GE_OFFER_CONTAINER (162, child 26) confirm group 162 is used.
+		log.debug("[GE diag] === group 162 dump slot={} ===", slot);
+		int g162nonNull = 0;
+		int g162withText = 0;
+		StringBuilder g162presence = new StringBuilder();
+		for (int child = 0; child < 100; child++)
+		{
+			int packedId = (162 << 16) | child;
+			Widget w = client.getWidget(packedId);
+			if (w == null)
+			{
+				continue;
+			}
+			g162nonNull++;
+			g162presence.append(child).append(' ');
+			g162withText += dumpWidgetAndChildren(packedId, w, "g162 ");
+		}
+		log.debug("[GE diag] === group 162: nonNull={} withText={} children=[{}] slot={} ===",
+			g162nonNull, g162withText, g162presence.toString().trim(), slot);
 	}
 
 	/** Returns count of widgets with text logged (self + children). */
