@@ -130,62 +130,41 @@ public class GeOfferDescriptionService
 	 */
 	public void onScriptPostFired(ScriptPostFired event)
 	{
-		int id = event.getScriptId();
-		if (id != SCRIPT_GE_SLOT_REDRAW_A && id != SCRIPT_GE_SLOT_REDRAW_B)
-		{
-			return;
-		}
+		// Any script firing while DETAILS_DESC is alive can overwrite our text.
+		// Rather than enumerate the long tail of redraw scripts (per the earlier
+		// diag dump: 98, 6388, 811, 1972, 4731/4730, 4672/4671, 5939, 998,
+		// 2513/2512, 1004, 3351/3350, 191, ...), repaint after ANY script while
+		// DETAILS_DESC exists. Idempotent — setText with the same string is a
+		// no-op visually.
 		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
 		if (slot < 0 || slot >= MAX_GE_SLOTS)
 		{
 			return;
 		}
-		refreshDetailsFor(slot, "script:" + id);
-	}
-
-	/**
-	 * Called by the plugin's existing onScriptPostFired handler after a
-	 * GE_OFFERS_SETUP_BUILD has fired. Hides the convenience-fee info icon
-	 * (SETUP_GRAPHIC4) — our description already shows the tax explicitly
-	 * so the icon is redundant, AND it gets positioned by the runescript
-	 * based on the original (now-replaced) description text, which makes
-	 * it overlap our multi-line content.
-	 */
-	public void onSetupBuildScriptPostFired()
-	{
-		hideWidgetSafe(InterfaceID.GeOffers.SETUP_GRAPHIC4);
-		hideWidgetSafe(InterfaceID.GeOffers.SETUP_FEE);
-		logIconState("setup");
-	}
-
-	/**
-	 * Diagnostic: dump every script id that fires while DETAILS_DESC is alive.
-	 * Used to identify the sell-side details build script (not 782 or 804 —
-	 * the user-reported Shark in-flight sell shows zero of our text, meaning
-	 * neither hook fires for that path). Active only when the player is in
-	 * an offer-details context so it's cheap.
-	 */
-	public void onAnyScriptPostFiredForDiagnostic(int scriptId)
-	{
 		Widget details = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 		if (details == null)
 		{
 			return;
 		}
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		log.debug("[GE diag] script={} fired while DETAILS_DESC alive, slot={}", scriptId, slot);
+		refreshDetailsFor(slot, "script:" + event.getScriptId());
 	}
 
-	private void logIconState(String surface)
+	/**
+	 * Called by the plugin's existing onScriptPostFired handler after a
+	 * GE_OFFERS_SETUP_BUILD has fired. Makes the convenience-fee info icon
+	 * (SETUP_GRAPHIC4) invisible — our description already shows the tax
+	 * explicitly so the icon is redundant, AND the runescript positions
+	 * it based on the original (now-replaced) text metrics, which makes
+	 * it overlap our multi-line content.
+	 *
+	 * <p>setHidden() alone did not stick (likely overridden by a later
+	 * widget-config script) — combine hidden + fully-transparent opacity
+	 * for belt-and-suspenders invisibility.</p>
+	 */
+	public void onSetupBuildScriptPostFired()
 	{
-		Widget g4 = client.getWidget(InterfaceID.GeOffers.SETUP_GRAPHIC4);
-		Widget fee = client.getWidget(InterfaceID.GeOffers.SETUP_FEE);
-		log.debug("[GE diag] {} icon state: SETUP_GRAPHIC4 hidden={} selfHidden={} | SETUP_FEE hidden={} selfHidden={}",
-			surface,
-			g4 == null ? "null" : g4.isHidden(),
-			g4 == null ? "null" : g4.isSelfHidden(),
-			fee == null ? "null" : fee.isHidden(),
-			fee == null ? "null" : fee.isSelfHidden());
+		hideAndTransparent(InterfaceID.GeOffers.SETUP_GRAPHIC4);
+		hideAndTransparent(InterfaceID.GeOffers.SETUP_FEE);
 	}
 
 	private void handleExamine(boolean isBuy)
@@ -256,44 +235,56 @@ public class GeOfferDescriptionService
 			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 			if (offers == null || slot >= offers.length)
 			{
+				log.debug("[GE desc] details SKIP slot={} trigger={} reason=offers-array",
+					slot, trigger);
 				return;
 			}
 			GrandExchangeOffer offer = offers[slot];
 			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
 			{
+				log.debug("[GE desc] details SKIP slot={} trigger={} reason=offer-empty (offer={}, state={})",
+					slot, trigger, offer == null ? "null" : "non-null",
+					offer == null ? "?" : offer.getState());
 				return;
 			}
 			Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 			if (desc == null)
 			{
+				log.debug("[GE desc] details SKIP slot={} trigger={} reason=desc-null", slot, trigger);
 				return;
 			}
 
 			int itemId = offer.getItemId();
-			boolean isBuy = TrackedOffer.isBuyState(offer.getState());
+			GrandExchangeOfferState state = offer.getState();
+			boolean isBuy = TrackedOffer.isBuyState(state);
 			String text = isBuy
 				? buildBuyDescription(itemId)
 				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 			desc.setText(text);
-			hideWidgetSafe(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
-			hideWidgetSafe(InterfaceID.GeOffers.DETAILS_FEE);
-			log.debug("[GE desc] details setText via {} slot={} itemId={} isBuy={}",
-				trigger, slot, itemId, isBuy);
+			hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+			hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
+			log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} trigger={}",
+				slot, itemId, state, isBuy, trigger);
 		});
 	}
 
 	/**
-	 * Best-effort widget hide. Mutations must happen on the client thread —
-	 * all callers in this service are already there. Safe to call repeatedly;
-	 * setHidden(true) on an already-hidden widget is a no-op.
+	 * Belt-and-suspenders widget invisibility — combine setHidden(true) with
+	 * fully-transparent opacity. We do both because setHidden() alone did not
+	 * stick on SETUP_GRAPHIC4 in user testing (likely overridden by a later
+	 * widget-config script). Mutations must happen on the client thread —
+	 * all callers in this service are already there.
 	 */
-	private void hideWidgetSafe(int widgetId)
+	private void hideAndTransparent(int widgetId)
 	{
 		Widget w = client.getWidget(widgetId);
-		if (w != null && !w.isSelfHidden())
+		if (w == null)
 		{
-			w.setHidden(true);
+			return;
 		}
+		w.setHidden(true);
+		// 0 = fully opaque, 255 = fully transparent
+		w.setOpacity(255);
 	}
 
 	/**
@@ -367,7 +358,8 @@ public class GeOfferDescriptionService
 		desc.setText(isBuy
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity()));
-		hideWidgetSafe(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
 		return true;
 	}
 

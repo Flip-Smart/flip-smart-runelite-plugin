@@ -1254,15 +1254,11 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired event)
 	{
-		// Issue #665 — re-apply Offer status (DETAILS_DESC) text after GE
-		// slot-redraw scripts overwrite it. Handler filters internally.
+		// Issue #665 — re-apply Offer status (DETAILS_DESC) text after any
+		// script fires while DETAILS_DESC is alive. Service filters internally.
 		if (geOfferDescriptionService != null)
 		{
 			geOfferDescriptionService.onScriptPostFired(event);
-			// Temporary: log every script fired while a details panel is alive
-			// so we can identify the sell-side build script that's not in our
-			// hardcoded list (see issue #665 sell-details investigation).
-			geOfferDescriptionService.onAnyScriptPostFiredForDiagnostic(event.getScriptId());
 		}
 
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
