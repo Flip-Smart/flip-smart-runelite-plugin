@@ -235,32 +235,37 @@ public class GeOfferDescriptionService
 			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 			if (offers == null || slot >= offers.length)
 			{
-				log.debug("[GE desc] details SKIP slot={} trigger={} reason=offers-array",
-					slot, trigger);
 				return;
 			}
 			GrandExchangeOffer offer = offers[slot];
 			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
 			{
-				log.debug("[GE desc] details SKIP slot={} trigger={} reason=offer-empty (offer={}, state={})",
-					slot, trigger, offer == null ? "null" : "non-null",
-					offer == null ? "?" : offer.getState());
 				return;
 			}
 			Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 			if (desc == null)
 			{
-				log.debug("[GE desc] details SKIP slot={} trigger={} reason=desc-null", slot, trigger);
 				return;
 			}
 
 			int itemId = offer.getItemId();
 			GrandExchangeOfferState state = offer.getState();
 			boolean isBuy = TrackedOffer.isBuyState(state);
-			String text = isBuy
+			String desired = isBuy
 				? buildBuyDescription(itemId)
 				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
-			desc.setText(text);
+
+			// Short-circuit: if the widget already shows our text, no work needed.
+			// The broad script-post hook fires every game tick (many scripts per
+			// tick) — only the ones that actually overwrite DETAILS_DESC need our
+			// re-apply. Cuts log spam + widget mutation cost by ~99%.
+			String current = desc.getText();
+			if (desired.equals(current))
+			{
+				return;
+			}
+
+			desc.setText(desired);
 			hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 			hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
 			log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} trigger={}",
