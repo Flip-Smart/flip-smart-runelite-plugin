@@ -198,52 +198,67 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Walk every widget in the GeOffers interface group and log anything with
-	 * visible text. Identifies which widget actually shows the description on
-	 * the offer-status panel.
+	 * Brute-force walk: try child IDs 0..MAX of the GE_OFFERS group (465).
+	 * For each widget that exists and has text, log it. Then recurse into
+	 * its children. The visible description widget on the offer-status panel
+	 * will appear here with text "Small shiny scales." or similar examine.
 	 */
 	private void dumpGeOffersWidgetTree(int slot)
 	{
-		Widget root = client.getWidget(InterfaceID.GeOffers.UNIVERSE);
-		if (root == null)
-		{
-			log.debug("[GE diag] UNIVERSE widget null");
-			return;
-		}
 		log.debug("[GE diag] === widget dump for slot={} ===", slot);
-		dumpWidgetRecursive(root, 0, 0);
-	}
-
-	private static final int MAX_WIDGET_DUMP_DEPTH = 4;
-
-	private void dumpWidgetRecursive(Widget w, int depth, int siblingIdx)
-	{
-		if (w == null || depth > MAX_WIDGET_DUMP_DEPTH)
+		final int GE_OFFERS_GROUP = 465;
+		int found = 0;
+		for (int child = 0; child < 60; child++)
 		{
-			return;
-		}
-		String text = w.getText();
-		if (text != null && !text.isEmpty() && text.length() < 200)
-		{
-			log.debug("[GE diag]   id={} hidden={} text=\"{}\"",
-				w.getId(), w.isSelfHidden(), text.replace("\n", "\\n").replace("\r", ""));
-		}
-		Widget[] children = w.getStaticChildren();
-		if (children != null)
-		{
-			for (int i = 0; i < children.length; i++)
+			Widget w = client.getWidget(GE_OFFERS_GROUP, child);
+			if (w == null)
 			{
-				dumpWidgetRecursive(children[i], depth + 1, i);
+				continue;
+			}
+			String text = w.getText();
+			if (text != null && !text.isEmpty() && text.length() < 200)
+			{
+				log.debug("[GE diag]   child={} hidden={} text=\"{}\"",
+					child, w.isSelfHidden(), text.replace("\n", "\\n").replace("\r", ""));
+				found++;
+			}
+			// Recurse one level into children
+			Widget[] grandchildren = w.getStaticChildren();
+			if (grandchildren != null)
+			{
+				for (int gi = 0; gi < grandchildren.length; gi++)
+				{
+					Widget gc = grandchildren[gi];
+					if (gc == null) continue;
+					String gtext = gc.getText();
+					if (gtext != null && !gtext.isEmpty() && gtext.length() < 200)
+					{
+						log.debug("[GE diag]     child={}.{} hidden={} text=\"{}\"",
+							child, gi, gc.isSelfHidden(),
+							gtext.replace("\n", "\\n").replace("\r", ""));
+						found++;
+					}
+				}
+			}
+			Widget[] dynChildren = w.getDynamicChildren();
+			if (dynChildren != null)
+			{
+				for (int gi = 0; gi < dynChildren.length; gi++)
+				{
+					Widget gc = dynChildren[gi];
+					if (gc == null) continue;
+					String gtext = gc.getText();
+					if (gtext != null && !gtext.isEmpty() && gtext.length() < 200)
+					{
+						log.debug("[GE diag]     dyn-child={}.{} hidden={} text=\"{}\"",
+							child, gi, gc.isSelfHidden(),
+							gtext.replace("\n", "\\n").replace("\r", ""));
+						found++;
+					}
+				}
 			}
 		}
-		Widget[] dyn = w.getDynamicChildren();
-		if (dyn != null)
-		{
-			for (int i = 0; i < dyn.length; i++)
-			{
-				dumpWidgetRecursive(dyn[i], depth + 1, i);
-			}
-		}
+		log.debug("[GE diag] === found {} widgets with text in slot={} ===", found, slot);
 	}
 
 	/**
