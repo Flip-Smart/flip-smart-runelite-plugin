@@ -1259,6 +1259,10 @@ public class FlipSmartPlugin extends Plugin
 		if (geOfferDescriptionService != null)
 		{
 			geOfferDescriptionService.onScriptPostFired(event);
+			// Temporary: log every script fired while a details panel is alive
+			// so we can identify the sell-side build script that's not in our
+			// hardcoded list (see issue #665 sell-details investigation).
+			geOfferDescriptionService.onAnyScriptPostFiredForDiagnostic(event.getScriptId());
 		}
 
 		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)

@@ -154,6 +154,38 @@ public class GeOfferDescriptionService
 	public void onSetupBuildScriptPostFired()
 	{
 		hideWidgetSafe(InterfaceID.GeOffers.SETUP_GRAPHIC4);
+		hideWidgetSafe(InterfaceID.GeOffers.SETUP_FEE);
+		logIconState("setup");
+	}
+
+	/**
+	 * Diagnostic: dump every script id that fires while DETAILS_DESC is alive.
+	 * Used to identify the sell-side details build script (not 782 or 804 —
+	 * the user-reported Shark in-flight sell shows zero of our text, meaning
+	 * neither hook fires for that path). Active only when the player is in
+	 * an offer-details context so it's cheap.
+	 */
+	public void onAnyScriptPostFiredForDiagnostic(int scriptId)
+	{
+		Widget details = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
+		if (details == null)
+		{
+			return;
+		}
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		log.debug("[GE diag] script={} fired while DETAILS_DESC alive, slot={}", scriptId, slot);
+	}
+
+	private void logIconState(String surface)
+	{
+		Widget g4 = client.getWidget(InterfaceID.GeOffers.SETUP_GRAPHIC4);
+		Widget fee = client.getWidget(InterfaceID.GeOffers.SETUP_FEE);
+		log.debug("[GE diag] {} icon state: SETUP_GRAPHIC4 hidden={} selfHidden={} | SETUP_FEE hidden={} selfHidden={}",
+			surface,
+			g4 == null ? "null" : g4.isHidden(),
+			g4 == null ? "null" : g4.isSelfHidden(),
+			fee == null ? "null" : fee.isHidden(),
+			fee == null ? "null" : fee.isSelfHidden());
 	}
 
 	private void handleExamine(boolean isBuy)
@@ -244,6 +276,7 @@ public class GeOfferDescriptionService
 				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 			desc.setText(text);
 			hideWidgetSafe(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+			hideWidgetSafe(InterfaceID.GeOffers.DETAILS_FEE);
 			log.debug("[GE desc] details setText via {} slot={} itemId={} isBuy={}",
 				trigger, slot, itemId, isBuy);
 		});
