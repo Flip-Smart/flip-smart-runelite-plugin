@@ -2,6 +2,8 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
@@ -9,6 +11,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
@@ -49,6 +52,8 @@ public class GeOfferDescriptionService
 {
 	static final String EVENT_BUY_EXAMINE = "geBuyExamineText";
 	static final String EVENT_SELL_EXAMINE = "geSellExamineText";
+
+	private static final int MAX_GE_SLOTS = 8;
 
 	private final Client client;
 	private final ClientThread clientThread;
@@ -100,6 +105,77 @@ public class GeOfferDescriptionService
 	public void onScriptPostFired(ScriptPostFired event)
 	{
 		// intentionally empty
+	}
+
+	/**
+	 * Render the in-flight Offer status (DETAILS_DESC) panel once per visual
+	 * frame. This is the right hook because:
+	 *
+	 * <ul>
+	 *   <li>OSRS rebuilds DETAILS_DESC from ~30 different scripts per game tick
+	 *       — reacting after each (via ScriptPostFired) is an unwinnable race.</li>
+	 *   <li>BeforeRender fires once per visual frame AFTER all per-tick scripts
+	 *       have settled but BEFORE the paint. We get the final say each frame,
+	 *       so the user never sees the original examine.</li>
+	 *   <li>Already on the client thread — no clientThread.invoke needed.</li>
+	 *   <li>String-equality short-circuit makes the common case (text already
+	 *       ours) free.</li>
+	 * </ul>
+	 */
+	public void onBeforeRender(BeforeRender event)
+	{
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		if (slot < 0 || slot >= MAX_GE_SLOTS)
+		{
+			return;
+		}
+		Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
+		if (desc == null)
+		{
+			return;
+		}
+
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null || slot >= offers.length)
+		{
+			return;
+		}
+		GrandExchangeOffer offer = offers[slot];
+		if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
+		{
+			return;
+		}
+
+		int itemId = offer.getItemId();
+		GrandExchangeOfferState state = offer.getState();
+		boolean isBuy = TrackedOffer.isBuyState(state);
+		String desired = isBuy
+			? buildBuyDescription(itemId)
+			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
+
+		if (desired.equals(desc.getText()))
+		{
+			return;
+		}
+
+		desc.setText(desired);
+		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
+		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
+		log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} qty={} price={} spent={}",
+			slot, itemId, state, isBuy, offer.getTotalQuantity(), offer.getPrice(), offer.getSpent());
+	}
+
+	/**
+	 * Sell description for an already-submitted offer — listed price + total
+	 * quantity, both locked. Cannot reuse {@link #buildSellDescription} which
+	 * reads live varbits that are only meaningful during setup.
+	 */
+	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
+	{
+		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
+		int price = Math.max(listedPrice, 0);
+		int qty = Math.max(totalQuantity, 0);
+		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
 	}
 
 	/**

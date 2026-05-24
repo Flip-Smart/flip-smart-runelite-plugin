@@ -20,6 +20,7 @@ import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
@@ -1366,6 +1367,20 @@ public class FlipSmartPlugin extends Plugin
 		if (geOfferDescriptionService != null)
 		{
 			geOfferDescriptionService.onScriptCallbackEvent(event);
+		}
+	}
+
+	@Subscribe
+	public void onBeforeRender(BeforeRender event)
+	{
+		// Issue #665 — in-flight Offer status panel (DETAILS_DESC). Hooked at
+		// frame-render time (not script-fire) because OSRS rebuilds the widget
+		// from ~30 scripts per tick; reacting per-script is an unwinnable race.
+		// Once-per-frame check with text-equality short-circuit gives us the
+		// final say each frame without performance overhead.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onBeforeRender(event);
 		}
 	}
 
