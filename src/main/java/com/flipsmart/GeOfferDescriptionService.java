@@ -147,21 +147,7 @@ public class GeOfferDescriptionService
 
 	public void onBeforeRender(BeforeRender event)
 	{
-		// SOURCE OF TRUTH: Flip Assist's focused flip. The OSRS GE widget
-		// indirection has been impossible to track reliably (multiple wrong-
-		// data screenshots from slot-state mismatches). Flip Assist already
-		// knows what item the player is being assisted with — use THAT as
-		// the data source. The user sees consistent stats for their focused
-		// item regardless of which OSRS slot widget is visible.
-		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
-		if (focus == null)
-		{
-			// No active focus — don't write anything. Leave OSRS native text.
-			return;
-		}
-
-		// Only show our description when the offer-status / setup panel is
-		// actually open. Cheap gate via SETUP_DESC widget existence.
+		// Only operate when the offer-status / setup panel is open.
 		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
 		Widget detailsDesc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 		if (setupDesc == null && detailsDesc == null)
@@ -169,10 +155,53 @@ public class GeOfferDescriptionService
 			return;
 		}
 
-		int itemId = focus.getItemId();
-		boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
-		int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
-		int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
+		// Source of truth #1: Flip Assist focus. When the player has picked a
+		// recommendation in Flip Finder, this is the canonical itemId/direction
+		// — no slot-state guessing required.
+		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
+
+		int itemId;
+		boolean isBuy;
+		int price;
+		int qty;
+		String source;
+
+		if (focus != null)
+		{
+			itemId = focus.getItemId();
+			isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
+			price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
+			qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
+			source = "focus";
+		}
+		else
+		{
+			// Source of truth #2: slot state. Lower confidence (data lookups
+			// have sometimes returned stale values for certain itemIds), but
+			// covers the common case where the player opens GE without an
+			// active Flip Assist focus.
+			int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+			if (slot < 0 || slot >= MAX_GE_SLOTS)
+			{
+				return;
+			}
+			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+			if (offers == null || slot >= offers.length)
+			{
+				return;
+			}
+			GrandExchangeOffer offer = offers[slot];
+			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
+			{
+				return;
+			}
+			Boolean uiIsBuy = readSlotDirectionFromUi(slot);
+			isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
+			itemId = offer.getItemId();
+			price = offer.getPrice();
+			qty = offer.getTotalQuantity();
+			source = "slot:" + slot;
+		}
 
 		String desired = isBuy
 			? buildBuyDescription(itemId)
@@ -185,9 +214,8 @@ public class GeOfferDescriptionService
 			Integer rawBuyLimit = lookupBuyLimit(itemId);
 			Integer rawWikiInstaBuy = lookupWikiInstaBuy(itemId);
 			Integer rawDailyVolume = getCachedDailyVolume(itemId);
-			log.debug("[GE desc] flip-assist focus itemId={} name=\"{}\" step={} isBuy={} lookups: dailyVol={} buyLimit={} wikiInstaBuy={}",
-				itemId, focus.getItemName(), focus.getStep(), isBuy,
-				rawDailyVolume, rawBuyLimit, rawWikiInstaBuy);
+			log.debug("[GE desc] source={} itemId={} isBuy={} lookups: dailyVol={} buyLimit={} wikiInstaBuy={}",
+				source, itemId, isBuy, rawDailyVolume, rawBuyLimit, rawWikiInstaBuy);
 		}
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
