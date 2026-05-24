@@ -2,11 +2,8 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.GrandExchangeOffer;
-import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
-import net.runelite.api.events.VarbitChanged;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -19,31 +16,32 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 
 /**
- * Replaces the GE buy/sell window description text with contextual FlipSmart
- * data (issue #665). Covers two surfaces:
+ * Replaces the GE buy/sell SETUP window description text with contextual
+ * FlipSmart data (issue #665) by intercepting the {@code geBuyExamineText} /
+ * {@code geSellExamineText} script callbacks injected by the RuneLite client.
  *
- * <ul>
- *   <li><b>Set up offer screen</b> ({@code SETUP_DESC}): handled via the
- *   RuneLite-injected {@code geBuyExamineText} / {@code geSellExamineText}
- *   script callbacks ({@code GeExamineInfoText.rs2asm}, script id 5730).
- *   Writing into the object stack's return slot lets the client own the
- *   widget mutation. No race, no flicker.</li>
+ * <p>The RuneLite-injected runescript ({@code GeExamineInfoText.rs2asm}, script
+ * id 5730) fires this callback every time the offer-setup description is
+ * rebuilt, including after the player adjusts the entered price or quantity.
+ * Writing our replacement string into the object stack's return slot (index
+ * {@code sz-1}) handles every render after the daily-volume cache is warm.
+ * AC9 (no paint overlay) is satisfied by construction.</p>
  *
- *   <li><b>Offer status screen</b> ({@code DETAILS_DESC}): no script callback
- *   exists. We mutate the widget directly after the OSRS GE-slot redraw
- *   scripts fire (IDs 782 and 804 per Flipping-Utilities prior art) and on
- *   {@code GE_SELECTEDSLOT} varbit changes. Both hooks coalesce into the same
- *   idempotent {@link #refreshDetailsFor} method — re-firing is cheap.</li>
- * </ul>
+ * <p>One narrow path mutates the {@code SETUP_DESC} widget directly: when the
+ * first render for a fresh item lands with a cold daily-volume cache, the
+ * synchronous render writes "N/A" and kicks off the async fetch. When the
+ * fetch completes we repaint the widget on the client thread so the player
+ * sees the real volume without having to reopen — the script-callback alone
+ * cannot recover from this because it won't fire again until the player
+ * edits the price or reopens the window.</p>
  *
- * <p>Cold-cache repaint: when the daily-volume cache misses on the first
- * render for an item, the synchronous render writes "N/A" and kicks off the
- * async fetch. When the fetch lands we try to repaint both SETUP_DESC and
- * DETAILS_DESC — the player can only be on one of the two screens, the
- * other path's guards skip silently.</p>
- *
- * <p>AC9 (no paint overlay) is satisfied by construction — all rendering
- * goes through widget text mutation, never an overlay.</p>
+ * <p><b>Scope note:</b> the in-flight Offer status panel ({@code DETAILS_DESC})
+ * is NOT covered. RuneLite does not inject a script callback for that widget,
+ * and the OSRS client rebuilds {@code DETAILS_DESC} on every game tick from
+ * ~30 different scripts — direct widget mutation gets immediately overwritten,
+ * creating an unwinnable fight. Surfacing FlipSmart context on that screen
+ * would need a different rendering primitive (likely a paint overlay, which
+ * would violate AC9) and is deferred to a follow-up ticket.</p>
  */
 @Slf4j
 @Singleton
@@ -51,15 +49,6 @@ public class GeOfferDescriptionService
 {
 	static final String EVENT_BUY_EXAMINE = "geBuyExamineText";
 	static final String EVENT_SELL_EXAMINE = "geSellExamineText";
-
-	private static final int MAX_GE_SLOTS = 8;
-
-	// Empirically these OSRS scripts reset GE slot / details widgets and so
-	// overwrite our setText if we apply it before they fire. Identified by
-	// Flipping-Utilities as the GE slot-state-drawer redraw triggers. We
-	// re-apply our setText AFTER each fires.
-	private static final int SCRIPT_GE_SLOT_REDRAW_A = 782;
-	private static final int SCRIPT_GE_SLOT_REDRAW_B = 804;
 
 	private final Client client;
 	private final ClientThread clientThread;
@@ -104,49 +93,13 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Handle VarbitChanged for GE_SELECTEDSLOT — fires immediately when the
-	 * player clicks an in-flight slot. Filters internally; harmless to call
-	 * with any varbit event.
-	 */
-	public void onVarbitChanged(VarbitChanged event)
-	{
-		if (event.getVarbitId() != VarbitID.GE_SELECTEDSLOT)
-		{
-			return;
-		}
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		if (slot < 0 || slot >= MAX_GE_SLOTS)
-		{
-			return;
-		}
-		refreshDetailsFor(slot, "varbit");
-	}
-
-	/**
-	 * Handle ScriptPostFired for the OSRS GE slot/details redraw scripts.
-	 * These are what overwrite our VarbitChanged-driven setText if we apply
-	 * it too early. Re-applying after each script fire ensures we win the
-	 * race on every render cycle.
+	 * No-op hook retained so the existing FlipSmartPlugin wiring still compiles.
+	 * The setup-screen flow does not need ScriptPostFired — the script-callback
+	 * path is sufficient. Reserved for future extension.
 	 */
 	public void onScriptPostFired(ScriptPostFired event)
 	{
-		// Any script firing while DETAILS_DESC is alive can overwrite our text.
-		// Rather than enumerate the long tail of redraw scripts (per the earlier
-		// diag dump: 98, 6388, 811, 1972, 4731/4730, 4672/4671, 5939, 998,
-		// 2513/2512, 1004, 3351/3350, 191, ...), repaint after ANY script while
-		// DETAILS_DESC exists. Idempotent — setText with the same string is a
-		// no-op visually.
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		if (slot < 0 || slot >= MAX_GE_SLOTS)
-		{
-			return;
-		}
-		Widget details = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
-		if (details == null)
-		{
-			return;
-		}
-		refreshDetailsFor(slot, "script:" + event.getScriptId());
+		// intentionally empty
 	}
 
 	/**
@@ -156,10 +109,6 @@ public class GeOfferDescriptionService
 	 * explicitly so the icon is redundant, AND the runescript positions
 	 * it based on the original (now-replaced) text metrics, which makes
 	 * it overlap our multi-line content.
-	 *
-	 * <p>setHidden() alone did not stick (likely overridden by a later
-	 * widget-config script) — combine hidden + fully-transparent opacity
-	 * for belt-and-suspenders invisibility.</p>
 	 */
 	public void onSetupBuildScriptPostFired()
 	{
@@ -193,24 +142,18 @@ public class GeOfferDescriptionService
 	private String buildBuyDescription(int itemId)
 	{
 		Integer dailyVolume = getCachedDailyVolume(itemId);
-		// Kick off async fetch on cache miss. When the value lands, repaint
-		// whichever description widget is currently showing this item — could
-		// be SETUP_DESC (player constructing a new offer) or DETAILS_DESC
-		// (player viewing an in-flight slot holding this item).
 		if (dailyVolume == null)
 		{
-			log.debug("[GE desc] cold cache for itemId={}, kicking off async fetch", itemId);
 			apiClient.getDailyVolumeAsync(itemId).whenComplete((v, ex) ->
 			{
 				if (ex != null)
 				{
-					log.debug("[GE desc] async fetch FAILED for itemId={}: {}", itemId, ex.getMessage());
+					log.debug("Failed to fetch daily volume for item {}: {}", itemId, ex.getMessage());
 					return;
 				}
-				log.debug("[GE desc] async fetch completed for itemId={} value={}", itemId, v);
 				if (v != null)
 				{
-					refreshAnyDescriptionFor(itemId);
+					refreshSetupBuyDescription(itemId);
 				}
 			});
 		}
@@ -222,150 +165,25 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Mutate the Offer status (in-flight) panel's description with our
-	 * contextual data. Same lines as the setup screen; sell-side uses the
-	 * offer's locked listed price + total quantity (no dynamic recalc
-	 * needed since price is fixed once submitted). Idempotent — safe to
-	 * re-call from multiple triggers (varbit, script-post).
+	 * Post-fetch repaint for the SETUP_DESC widget when the daily-volume cache
+	 * lands. Schedules on the client thread; guarded against the player having
+	 * switched items between the fetch firing and completing.
 	 */
-	private void refreshDetailsFor(int slot, String trigger)
+	private void refreshSetupBuyDescription(int itemId)
 	{
 		clientThread.invoke(() ->
 		{
-			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-			if (offers == null || slot >= offers.length)
+			if (client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH) != itemId)
 			{
 				return;
 			}
-			GrandExchangeOffer offer = offers[slot];
-			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
-			{
-				return;
-			}
-			Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
+			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
 			if (desc == null)
 			{
 				return;
 			}
-
-			int itemId = offer.getItemId();
-			GrandExchangeOfferState state = offer.getState();
-			boolean isBuy = TrackedOffer.isBuyState(state);
-			String desired = isBuy
-				? buildBuyDescription(itemId)
-				: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
-
-			// Short-circuit: if the widget already shows our text, no work needed.
-			// The broad script-post hook fires every game tick (many scripts per
-			// tick) — only the ones that actually overwrite DETAILS_DESC need our
-			// re-apply. Cuts log spam + widget mutation cost by ~99%.
-			String current = desc.getText();
-			if (desired.equals(current))
-			{
-				return;
-			}
-
-			desc.setText(desired);
-			hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
-			hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
-			log.debug("[GE desc] details WROTE slot={} itemId={} state={} isBuy={} trigger={}",
-				slot, itemId, state, isBuy, trigger);
+			desc.setText(buildBuyDescription(itemId));
 		});
-	}
-
-	/**
-	 * Belt-and-suspenders widget invisibility — combine setHidden(true) with
-	 * fully-transparent opacity. We do both because setHidden() alone did not
-	 * stick on SETUP_GRAPHIC4 in user testing (likely overridden by a later
-	 * widget-config script). Mutations must happen on the client thread —
-	 * all callers in this service are already there.
-	 */
-	private void hideAndTransparent(int widgetId)
-	{
-		Widget w = client.getWidget(widgetId);
-		if (w == null)
-		{
-			return;
-		}
-		w.setHidden(true);
-		// 0 = fully opaque, 255 = fully transparent
-		w.setOpacity(255);
-	}
-
-	/**
-	 * Sell description for an already-submitted offer — listed price + total
-	 * quantity, both locked. Cannot reuse {@link #buildSellDescription} which
-	 * reads live varbits that are only meaningful during setup.
-	 */
-	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
-	{
-		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
-		int price = Math.max(listedPrice, 0);
-		int qty = Math.max(totalQuantity, 0);
-		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
-	}
-
-	/**
-	 * Post-async-fetch repaint. The player can be on the SETUP screen for
-	 * this item OR on the DETAILS panel for a slot holding this item.
-	 * We try both — the wrong path silently skips (its identity guard fails).
-	 */
-	private void refreshAnyDescriptionFor(int itemId)
-	{
-		log.debug("[GE desc] scheduling repaint for itemId={}", itemId);
-		clientThread.invoke(() ->
-		{
-			boolean setup = tryRepaintSetupDesc(itemId);
-			boolean details = tryRepaintDetailsDesc(itemId);
-			log.debug("[GE desc] repaint result itemId={} setup={} details={}", itemId, setup, details);
-		});
-	}
-
-	private boolean tryRepaintSetupDesc(int itemId)
-	{
-		if (client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH) != itemId)
-		{
-			return false;
-		}
-		Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
-		if (desc == null)
-		{
-			return false;
-		}
-		desc.setText(buildBuyDescription(itemId));
-		return true;
-	}
-
-	private boolean tryRepaintDetailsDesc(int itemId)
-	{
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		if (slot < 0 || slot >= MAX_GE_SLOTS)
-		{
-			return false;
-		}
-		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-		if (offers == null || slot >= offers.length)
-		{
-			return false;
-		}
-		GrandExchangeOffer offer = offers[slot];
-		if (offer == null || offer.getItemId() != itemId
-			|| offer.getState() == GrandExchangeOfferState.EMPTY)
-		{
-			return false;
-		}
-		Widget desc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
-		if (desc == null)
-		{
-			return false;
-		}
-		boolean isBuy = TrackedOffer.isBuyState(offer.getState());
-		desc.setText(isBuy
-			? buildBuyDescription(itemId)
-			: buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity()));
-		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
-		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
-		return true;
 	}
 
 	private Integer lookupBuyLimit(int itemId)
@@ -398,15 +216,28 @@ public class GeOfferDescriptionService
 		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, sellPrice, quantity);
 	}
 
-	/**
-	 * Read-only cache lookup; never blocks. {@link #buildBuyDescription} kicks
-	 * off the async fetch when this returns null.
-	 */
+	/** Read-only cache lookup; never blocks. */
 	private Integer getCachedDailyVolume(int itemId)
 	{
-		// Trampoline through the API client's getDailyVolumeAsync — when the
-		// value is cached it returns a completed future and getNow is safe.
 		java.util.concurrent.CompletableFuture<Integer> f = apiClient.peekCachedDailyVolume(itemId);
 		return (f != null && f.isDone()) ? f.getNow(null) : null;
+	}
+
+	/**
+	 * Belt-and-suspenders widget invisibility — combine setHidden(true) with
+	 * fully-transparent opacity. We do both because setHidden() alone did not
+	 * stick on SETUP_GRAPHIC4 in user testing (likely overridden by a later
+	 * widget-config script).
+	 */
+	private void hideAndTransparent(int widgetId)
+	{
+		Widget w = client.getWidget(widgetId);
+		if (w == null)
+		{
+			return;
+		}
+		w.setHidden(true);
+		// 0 = fully opaque, 255 = fully transparent
+		w.setOpacity(255);
 	}
 }
