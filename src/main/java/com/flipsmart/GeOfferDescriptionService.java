@@ -288,7 +288,7 @@ public class GeOfferDescriptionService
 		hideAndTransparent(InterfaceID.GeOffers.SETUP_FEE);
 	}
 
-	private void handleExamine(boolean isBuy)
+	private void handleExamine(boolean callbackIsBuy)
 	{
 		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		if (itemId <= 0)
@@ -296,7 +296,28 @@ public class GeOfferDescriptionService
 			return;
 		}
 
-		String replacement = isBuy ? buildBuyDescription(itemId) : buildSellDescription(itemId);
+		// OSRS fires geBuyExamineText for BOTH setup AND in-flight offer-status
+		// panels. The callback name reflects the script context, NOT the actual
+		// offer direction. For offer-status (a selected slot with a non-empty
+		// offer), the offer's real state (SELLING / BOUGHT / etc.) is the
+		// source of truth — trust that over the callback name.
+		boolean isBuy = callbackIsBuy;
+		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		if (slot >= 0 && slot < MAX_GE_SLOTS)
+		{
+			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+			if (offers != null && slot < offers.length
+				&& offers[slot] != null
+				&& offers[slot].getState() != GrandExchangeOfferState.EMPTY)
+			{
+				isBuy = TrackedOffer.isBuyState(offers[slot].getState());
+			}
+		}
+
+		String replacement = isBuy ? buildBuyDescription(itemId)
+			: (slot >= 0 && slot < MAX_GE_SLOTS
+				? buildSellDescriptionForSlot(slot, itemId)
+				: buildSellDescription(itemId));
 		if (replacement == null)
 		{
 			return;
@@ -309,6 +330,22 @@ public class GeOfferDescriptionService
 			return;
 		}
 		stack[sz - 1] = replacement;
+	}
+
+	/**
+	 * Sell description for a script-callback context where we know which slot
+	 * the offer-status panel is showing. Uses the offer's locked price + total
+	 * quantity (not the live varbits, which only make sense during setup).
+	 */
+	private String buildSellDescriptionForSlot(int slot, int itemId)
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null || slot >= offers.length || offers[slot] == null)
+		{
+			return buildSellDescription(itemId);
+		}
+		GrandExchangeOffer offer = offers[slot];
+		return buildSellDescriptionStatic(itemId, offer.getPrice(), offer.getTotalQuantity());
 	}
 
 	private String buildBuyDescription(int itemId)
