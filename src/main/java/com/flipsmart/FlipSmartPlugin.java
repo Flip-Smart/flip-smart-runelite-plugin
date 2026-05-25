@@ -18,7 +18,10 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
@@ -122,6 +125,9 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private GEHistoryService geHistoryService;
+
+	@Inject
+	private GeOfferDescriptionService geOfferDescriptionService;
 
 	@Inject
 	private Gson gson;
@@ -1254,6 +1260,14 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
+		// Issue #665 — hide the convenience-fee info icon (SETUP_GRAPHIC4) so it
+		// doesn't overlap our multi-line description. Fires for both buy and
+		// sell, not just the auto-focus path below.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onSetupBuildScriptPostFired();
+		}
+
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 		if (offerType != 1)
 		{
@@ -1343,6 +1357,46 @@ public class FlipSmartPlugin extends Plugin
 			geHistoryService.onHistoryWidgetLoaded();
 		}
 	}
+
+	@Subscribe
+	public void onScriptCallbackEvent(ScriptCallbackEvent event)
+	{
+		// Issue #665 — replace GE buy/sell window description text with FlipSmart
+		// contextual data. The runelite-injected GeExamineInfoText script fires
+		// geBuyExamineText / geSellExamineText every time the description rebuilds,
+		// so dynamic updates on price/qty edits are free.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onScriptCallbackEvent(event);
+		}
+	}
+
+	@Subscribe
+	public void onBeforeRender(BeforeRender event)
+	{
+		// Issue #665 — in-flight Offer status panel (DETAILS_DESC). Hooked at
+		// frame-render time (not script-fire) because OSRS rebuilds the widget
+		// from ~30 scripts per tick; reacting per-script is an unwinnable race.
+		// Once-per-frame check with text-equality short-circuit gives us the
+		// final say each frame without performance overhead.
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onBeforeRender(event);
+		}
+	}
+
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		// Issue #665 — record the GE slot the user clicks so the offer-status
+		// panel renders contextual data for the open panel rather than the
+		// hovered slot tile (which is what GE_SELECTEDSLOT tracks).
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onMenuOptionClicked(event);
+		}
+	}
+
 
 	/**
 	 * Initialize the Flip Finder panel and add it to the sidebar
