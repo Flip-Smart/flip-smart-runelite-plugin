@@ -237,14 +237,10 @@ public class GeOfferDescriptionService
 
 	private int[] resolveSlotContext()
 	{
-		int slot = lastClickedSlot;
+		int slot = resolveActiveSlot();
 		if (slot < 0)
 		{
-			slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-			if (slot < 0 || slot >= MAX_GE_SLOTS)
-			{
-				return null;
-			}
+			return null;
 		}
 		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		if (offers == null || slot >= offers.length)
@@ -259,6 +255,22 @@ public class GeOfferDescriptionService
 		Boolean uiIsBuy = readSlotDirectionFromUi(slot);
 		boolean isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
 		return new int[]{offer.getItemId(), isBuy ? 1 : 0, offer.getPrice(), offer.getTotalQuantity()};
+	}
+
+	/**
+	 * Returns the GE slot index to use for the offer-status panel. Prefers the
+	 * explicitly clicked slot (\`lastClickedSlot\`); falls back to the
+	 * \`GE_SELECTEDSLOT\` varbit on cold start. Returns -1 when no valid slot is
+	 * determinable.
+	 */
+	private int resolveActiveSlot()
+	{
+		if (lastClickedSlot >= 0)
+		{
+			return lastClickedSlot;
+		}
+		int varbitSlot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+		return (varbitSlot >= 0 && varbitSlot < MAX_GE_SLOTS) ? varbitSlot : -1;
 	}
 
 	/**
