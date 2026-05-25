@@ -5,6 +5,7 @@ import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.BeforeRender;
+import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
@@ -48,6 +49,17 @@ public class GeOfferDescriptionService
 	static final String EVENT_SELL_EXAMINE = "geSellExamineText";
 
 	private static final int MAX_GE_SLOTS = 8;
+
+	// GeOffers.INDEX_0 = 30474247 (group 465, child 7). INDEX_N is child 7+N.
+	private static final int GE_OFFERS_GROUP = 465;
+	private static final int INDEX_0_CHILD = 7;
+
+	// Slot the user explicitly clicked to open the offer-status panel.
+	// VarbitID.GE_SELECTEDSLOT alone is unreliable — it appears to track
+	// the slot tile under the cursor (hover), not the slot whose panel is
+	// open. We capture click events to know the authoritative current slot.
+	// -1 = no click recorded yet.
+	private int lastClickedSlot = -1;
 
 	private final Client client;
 	private final ClientThread clientThread;
@@ -135,6 +147,32 @@ public class GeOfferDescriptionService
 		// no-op — reserved
 	}
 
+	/**
+	 * Capture the slot the user actually clicked. The slot tile widgets are
+	 * children of group 465 at child indices 7..14 (INDEX_0..INDEX_7). When
+	 * the player left-clicks any of them, the offer-status panel opens for
+	 * that slot. Use this as the authoritative current-slot signal — the
+	 * GE_SELECTEDSLOT varbit appears to track the hovered slot tile, not
+	 * the open panel's slot.
+	 */
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		int widgetId = event.getParam1();
+		int group = widgetId >>> 16;
+		if (group != GE_OFFERS_GROUP)
+		{
+			return;
+		}
+		int child = widgetId & 0xFFFF;
+		int slotCandidate = child - INDEX_0_CHILD;
+		if (slotCandidate < 0 || slotCandidate >= MAX_GE_SLOTS)
+		{
+			return;
+		}
+		lastClickedSlot = slotCandidate;
+		log.debug("[GE click] slot={} (widgetChild={})", slotCandidate, child);
+	}
+
 	public void onSetupBuildScriptPostFired()
 	{
 		hideAndTransparent(InterfaceID.GeOffers.SETUP_GRAPHIC4);
@@ -176,15 +214,23 @@ public class GeOfferDescriptionService
 		}
 		else
 		{
-			// Source of truth #2: slot state. GE_SELECTEDSLOT has shown lag
-			// vs the visible panel — when the player clicks rapidly between
-			// slots, the varbit can report the PREVIOUS slot for several
-			// frames after the click. We cross-check by reading the UI's
-			// own slot-tile item name and validating it matches.
-			int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+			// Source of truth #2: the slot the user explicitly clicked to
+			// open this panel. We track clicks in onMenuOptionClicked rather
+			// than reading GE_SELECTEDSLOT — the varbit tracks the *hovered*
+			// slot tile and goes stale as soon as the cursor drifts to a
+			// different tile while the panel stays open. The click is the
+			// authoritative "this is the panel the user opened" signal.
+			int slot = lastClickedSlot;
 			if (slot < 0 || slot >= MAX_GE_SLOTS)
 			{
-				return;
+				// Cold-start fallback (haven't observed a click yet, e.g.
+				// the player opened the GE and clicked through before our
+				// service loaded).
+				slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+				if (slot < 0 || slot >= MAX_GE_SLOTS)
+				{
+					return;
+				}
 			}
 			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 			if (offers == null || slot >= offers.length)
@@ -202,7 +248,7 @@ public class GeOfferDescriptionService
 			itemId = offer.getItemId();
 			price = offer.getPrice();
 			qty = offer.getTotalQuantity();
-			source = "slot:" + slot;
+			source = (lastClickedSlot >= 0 ? "click-slot:" : "varbit-slot:") + slot;
 		}
 
 		String desired = isBuy

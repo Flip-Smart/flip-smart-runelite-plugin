@@ -1384,6 +1384,18 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
+	@Subscribe
+	public void onMenuOptionClicked(net.runelite.api.events.MenuOptionClicked event)
+	{
+		// Issue #665 — record the GE slot the user explicitly clicks so the
+		// offer-status panel renders contextual data for the open panel rather
+		// than the hovered slot tile (which is what GE_SELECTEDSLOT tracks).
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onMenuOptionClicked(event);
+		}
+	}
+
 
 	/**
 	 * Initialize the Flip Finder panel and add it to the sidebar
