@@ -95,18 +95,18 @@ public class GeOfferDescriptionService
 
 	private void handleExamine(boolean callbackIsBuy)
 	{
-		// Offer-status panel fires the same callback as setup. Skip when an
-		// in-flight slot is selected — BeforeRender handles that screen.
-		int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-		if (slot >= 0 && slot < MAX_GE_SLOTS)
+		// Skip when the offer-status (in-flight) panel is visible. Use the
+		// DETAILS container's visibility as the gate — a structural check that
+		// doesn't depend on GE_SELECTEDSLOT, which lags by several frames during
+		// rapid slot transitions. Previously gating on the varbit allowed
+		// handleExamine to fire with a stale TRADINGPOST_SEARCH itemId during
+		// the transition window, writing the PREVIOUS item's text to the
+		// callback return slot — which then rendered on the visible widget for
+		// the NEW slot's panel (the off-by-one symptom user reported).
+		Widget detailsContainer = client.getWidget(InterfaceID.GeOffers.DETAILS);
+		if (detailsContainer != null && !detailsContainer.isHidden())
 		{
-			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-			if (offers != null && slot < offers.length
-				&& offers[slot] != null
-				&& offers[slot].getState() != GrandExchangeOfferState.EMPTY)
-			{
-				return;
-			}
+			return;
 		}
 
 		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
@@ -176,10 +176,11 @@ public class GeOfferDescriptionService
 		}
 		else
 		{
-			// Source of truth #2: slot state. Lower confidence (data lookups
-			// have sometimes returned stale values for certain itemIds), but
-			// covers the common case where the player opens GE without an
-			// active Flip Assist focus.
+			// Source of truth #2: slot state. GE_SELECTEDSLOT has shown lag
+			// vs the visible panel — when the player clicks rapidly between
+			// slots, the varbit can report the PREVIOUS slot for several
+			// frames after the click. We cross-check by reading the UI's
+			// own slot-tile item name and validating it matches.
 			int slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
 			if (slot < 0 || slot >= MAX_GE_SLOTS)
 			{
@@ -195,6 +196,7 @@ public class GeOfferDescriptionService
 			{
 				return;
 			}
+
 			Boolean uiIsBuy = readSlotDirectionFromUi(slot);
 			isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
 			itemId = offer.getItemId();
