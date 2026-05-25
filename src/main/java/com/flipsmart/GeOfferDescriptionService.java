@@ -114,8 +114,7 @@ public class GeOfferDescriptionService
 		// surface is owned by onBeforeRender. Without this gate, the script
 		// callback fires with a stale TRADINGPOST_SEARCH itemId during slot
 		// transitions and bleeds the previous item's text onto the new panel.
-		Widget detailsContainer = client.getWidget(InterfaceID.GeOffers.DETAILS);
-		if (detailsContainer != null && !detailsContainer.isHidden())
+		if (isDetailsContainerVisible())
 		{
 			return;
 		}
@@ -132,13 +131,24 @@ public class GeOfferDescriptionService
 			return;
 		}
 
+		writeToObjectStack(replacement);
+	}
+
+	private boolean isDetailsContainerVisible()
+	{
+		Widget detailsContainer = client.getWidget(InterfaceID.GeOffers.DETAILS);
+		return detailsContainer != null && !detailsContainer.isHidden();
+	}
+
+	private void writeToObjectStack(String text)
+	{
 		Object[] stack = client.getObjectStack();
 		int sz = client.getObjectStackSize();
 		if (sz <= 0 || stack == null || stack.length < sz)
 		{
 			return;
 		}
-		stack[sz - 1] = replacement;
+		stack[sz - 1] = text;
 	}
 
 	public void onSetupBuildScriptPostFired()
@@ -178,50 +188,17 @@ public class GeOfferDescriptionService
 			return;
 		}
 
-		int itemId;
-		boolean isBuy;
-		int price;
-		int qty;
+		int[] ctx = resolveOfferContext();
+		if (ctx == null)
+		{
+			return;
+		}
 
-		// Source #1: Flip Assist focus. When the player has picked a
-		// recommendation, this is canonical — no slot guessing needed.
-		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
-		if (focus != null)
-		{
-			itemId = focus.getItemId();
-			isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
-			price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
-			qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
-		}
-		else
-		{
-			// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
-			// only used as a cold-start fallback (haven't seen a click yet).
-			int slot = lastClickedSlot;
-			if (slot < 0)
-			{
-				slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
-				if (slot < 0 || slot >= MAX_GE_SLOTS)
-				{
-					return;
-				}
-			}
-			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-			if (offers == null || slot >= offers.length)
-			{
-				return;
-			}
-			GrandExchangeOffer offer = offers[slot];
-			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
-			{
-				return;
-			}
-			Boolean uiIsBuy = readSlotDirectionFromUi(slot);
-			isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
-			itemId = offer.getItemId();
-			price = offer.getPrice();
-			qty = offer.getTotalQuantity();
-		}
+		// ctx: [itemId, isBuy (0/1), price, qty]
+		int itemId = ctx[0];
+		boolean isBuy = ctx[1] == 1;
+		int price = ctx[2];
+		int qty = ctx[3];
 
 		String desired = isBuy
 			? buildBuyDescription(itemId)
@@ -231,6 +208,57 @@ public class GeOfferDescriptionService
 		writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired, 0);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
+	}
+
+	/**
+	 * Resolves the offer context (itemId, direction, price, quantity) from either
+	 * the active Flip Assist recommendation or the GE slot the player clicked.
+	 *
+	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
+	 *         no actionable context can be determined.
+	 */
+	private int[] resolveOfferContext()
+	{
+		// Source #1: Flip Assist focus. When the player has picked a
+		// recommendation, this is canonical — no slot guessing needed.
+		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
+		if (focus != null)
+		{
+			boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
+			int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
+			int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
+			return new int[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
+		}
+
+		// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
+		// only used as a cold-start fallback (haven't seen a click yet).
+		return resolveSlotContext();
+	}
+
+	private int[] resolveSlotContext()
+	{
+		int slot = lastClickedSlot;
+		if (slot < 0)
+		{
+			slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
+			if (slot < 0 || slot >= MAX_GE_SLOTS)
+			{
+				return null;
+			}
+		}
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null || slot >= offers.length)
+		{
+			return null;
+		}
+		GrandExchangeOffer offer = offers[slot];
+		if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
+		{
+			return null;
+		}
+		Boolean uiIsBuy = readSlotDirectionFromUi(slot);
+		boolean isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
+		return new int[]{offer.getItemId(), isBuy ? 1 : 0, offer.getPrice(), offer.getTotalQuantity()};
 	}
 
 	/**
