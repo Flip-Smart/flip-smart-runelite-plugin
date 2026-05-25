@@ -11,12 +11,15 @@ import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetTextAlignment;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Replaces the GE buy/sell window description text with contextual FlipSmart
@@ -47,6 +50,13 @@ public class GeOfferDescriptionService
 	// GeOffers.INDEX_0 = group 465 child 7. INDEX_N is child 7+N.
 	private static final int GE_OFFERS_GROUP = 465;
 	private static final int INDEX_0_CHILD = 7;
+
+	// DETAILS_DESC sits 10px further left than SETUP_DESC in Jagex's
+	// hand-tuned layout, exposing a parent-background strip between the icon
+	// column and our text. Shift left to close the gap. Tracked per-widget so
+	// the mutation only fires once per panel build.
+	private static final int DETAILS_DESC_LEFT_SHIFT_PX = 10;
+	private final Set<Integer> shiftedDescIds = new HashSet<>();
 
 	// Slot the user explicitly clicked to open the offer-status panel.
 	// GE_SELECTEDSLOT tracks the *hovered* slot tile rather than the open
@@ -217,8 +227,8 @@ public class GeOfferDescriptionService
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, price, qty);
 
-		writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
-		writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
+		writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired, DETAILS_DESC_LEFT_SHIFT_PX);
+		writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired, 0);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
 	}
@@ -243,14 +253,27 @@ public class GeOfferDescriptionService
 		return null;
 	}
 
-	private void writeIfNeeded(int widgetId, String desired)
+	private void writeIfNeeded(int widgetId, String desired, int shiftLeftPx)
 	{
 		Widget w = client.getWidget(widgetId);
-		if (w == null || desired.equals(w.getText()))
+		if (w == null)
 		{
 			return;
 		}
-		w.setText(desired);
+		if (w.getXTextAlignment() != WidgetTextAlignment.LEFT)
+		{
+			w.setXTextAlignment(WidgetTextAlignment.LEFT);
+		}
+		if (shiftLeftPx > 0 && shiftedDescIds.add(widgetId))
+		{
+			w.setOriginalX(w.getOriginalX() - shiftLeftPx);
+			w.setOriginalWidth(w.getOriginalWidth() + shiftLeftPx);
+			w.revalidate();
+		}
+		if (!desired.equals(w.getText()))
+		{
+			w.setText(desired);
+		}
 	}
 
 	// ---------------------------------------------------------------------
