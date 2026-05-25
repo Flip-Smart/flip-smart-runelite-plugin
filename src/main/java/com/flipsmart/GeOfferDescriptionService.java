@@ -7,7 +7,6 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ScriptCallbackEvent;
-import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
@@ -21,25 +20,20 @@ import javax.inject.Singleton;
 
 /**
  * Replaces the GE buy/sell window description text with contextual FlipSmart
- * data (issue #665). Two surfaces:
+ * data (issue #665). Operates on two surfaces:
  *
- * <h3>Setup screen</h3>
- * Intercepts the {@code geBuyExamineText} / {@code geSellExamineText} script
- * callbacks and writes our description into the runescript's return slot.
+ * <ul>
+ *   <li><b>Setup screen</b> (placing a new offer) — intercepts the
+ *       {@code geBuyExamineText} / {@code geSellExamineText} script callbacks
+ *       and writes our description into the runescript return slot.</li>
+ *   <li><b>Offer status panel</b> (in-flight offer) — on each BeforeRender
+ *       frame writes our description to both SETUP_DESC and DETAILS_DESC,
+ *       short-circuiting when the text already matches.</li>
+ * </ul>
  *
- * <h3>In-flight Offer status panel</h3>
- * On each BeforeRender frame: write our description to both SETUP_DESC and
- * DETAILS_DESC (one of the two is the visible widget per earlier diagnosis,
- * depending on slot state). Short-circuits when widget text already matches
- * so the steady-state cost is one string-compare per frame.
- *
- * <h3>Direction (buy vs sell) is read from the UI, not the offer state</h3>
- * The OSRS slot tile widget (INDEX_0..INDEX_7) displays "Buy" or "Sell" text
- * — that's what the player actually sees on screen. Using offer.getState()
- * led to wrong-window mismatches because the script callback fires with the
- * same name (geBuyExamineText) for both panels regardless of direction, and
- * offer state can lag the visible UI. The UI text is the absolute source of
- * truth for what the player is looking at.
+ * Direction (buy vs sell) is read from the slot tile widget ("Buy"/"Sell"
+ * text) — what the player actually sees on screen — because offer.getState()
+ * can lag the UI during transitions.
  */
 @Slf4j
 @Singleton
@@ -50,15 +44,14 @@ public class GeOfferDescriptionService
 
 	private static final int MAX_GE_SLOTS = 8;
 
-	// GeOffers.INDEX_0 = 30474247 (group 465, child 7). INDEX_N is child 7+N.
+	// GeOffers.INDEX_0 = group 465 child 7. INDEX_N is child 7+N.
 	private static final int GE_OFFERS_GROUP = 465;
 	private static final int INDEX_0_CHILD = 7;
 
 	// Slot the user explicitly clicked to open the offer-status panel.
-	// VarbitID.GE_SELECTEDSLOT alone is unreliable — it appears to track
-	// the slot tile under the cursor (hover), not the slot whose panel is
-	// open. We capture click events to know the authoritative current slot.
-	// -1 = no click recorded yet.
+	// GE_SELECTEDSLOT tracks the *hovered* slot tile rather than the open
+	// panel, so we capture clicks via onMenuOptionClicked instead.
+	// -1 = no click recorded yet (cold start).
 	private int lastClickedSlot = -1;
 
 	private final Client client;
@@ -86,7 +79,7 @@ public class GeOfferDescriptionService
 	}
 
 	// ---------------------------------------------------------------------
-	// Setup screen
+	// Setup screen — script-callback driven
 	// ---------------------------------------------------------------------
 
 	public boolean onScriptCallbackEvent(ScriptCallbackEvent event)
@@ -107,14 +100,10 @@ public class GeOfferDescriptionService
 
 	private void handleExamine(boolean callbackIsBuy)
 	{
-		// Skip when the offer-status (in-flight) panel is visible. Use the
-		// DETAILS container's visibility as the gate — a structural check that
-		// doesn't depend on GE_SELECTEDSLOT, which lags by several frames during
-		// rapid slot transitions. Previously gating on the varbit allowed
-		// handleExamine to fire with a stale TRADINGPOST_SEARCH itemId during
-		// the transition window, writing the PREVIOUS item's text to the
-		// callback return slot — which then rendered on the visible widget for
-		// the NEW slot's panel (the off-by-one symptom user reported).
+		// Skip while the offer-status (in-flight) panel is visible — that
+		// surface is owned by onBeforeRender. Without this gate, the script
+		// callback fires with a stale TRADINGPOST_SEARCH itemId during slot
+		// transitions and bleeds the previous item's text onto the new panel.
 		Widget detailsContainer = client.getWidget(InterfaceID.GeOffers.DETAILS);
 		if (detailsContainer != null && !detailsContainer.isHidden())
 		{
@@ -142,37 +131,6 @@ public class GeOfferDescriptionService
 		stack[sz - 1] = replacement;
 	}
 
-	public void onScriptPostFired(ScriptPostFired event)
-	{
-		// no-op — reserved
-	}
-
-	/**
-	 * Capture the slot the user actually clicked. The slot tile widgets are
-	 * children of group 465 at child indices 7..14 (INDEX_0..INDEX_7). When
-	 * the player left-clicks any of them, the offer-status panel opens for
-	 * that slot. Use this as the authoritative current-slot signal — the
-	 * GE_SELECTEDSLOT varbit appears to track the hovered slot tile, not
-	 * the open panel's slot.
-	 */
-	public void onMenuOptionClicked(MenuOptionClicked event)
-	{
-		int widgetId = event.getParam1();
-		int group = widgetId >>> 16;
-		if (group != GE_OFFERS_GROUP)
-		{
-			return;
-		}
-		int child = widgetId & 0xFFFF;
-		int slotCandidate = child - INDEX_0_CHILD;
-		if (slotCandidate < 0 || slotCandidate >= MAX_GE_SLOTS)
-		{
-			return;
-		}
-		lastClickedSlot = slotCandidate;
-		log.debug("[GE click] slot={} (widgetChild={})", slotCandidate, child);
-	}
-
 	public void onSetupBuildScriptPostFired()
 	{
 		hideAndTransparent(InterfaceID.GeOffers.SETUP_GRAPHIC4);
@@ -180,12 +138,29 @@ public class GeOfferDescriptionService
 	}
 
 	// ---------------------------------------------------------------------
-	// Offer status panel — multi-write per frame, UI-based direction
+	// Click capture — authoritative source for the open-panel slot
+	// ---------------------------------------------------------------------
+
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		int widgetId = event.getParam1();
+		if ((widgetId >>> 16) != GE_OFFERS_GROUP)
+		{
+			return;
+		}
+		int slot = (widgetId & 0xFFFF) - INDEX_0_CHILD;
+		if (slot >= 0 && slot < MAX_GE_SLOTS)
+		{
+			lastClickedSlot = slot;
+		}
+	}
+
+	// ---------------------------------------------------------------------
+	// Offer status panel — per-frame
 	// ---------------------------------------------------------------------
 
 	public void onBeforeRender(BeforeRender event)
 	{
-		// Only operate when the offer-status / setup panel is open.
 		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
 		Widget detailsDesc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 		if (setupDesc == null && detailsDesc == null)
@@ -193,39 +168,28 @@ public class GeOfferDescriptionService
 			return;
 		}
 
-		// Source of truth #1: Flip Assist focus. When the player has picked a
-		// recommendation in Flip Finder, this is the canonical itemId/direction
-		// — no slot-state guessing required.
-		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
-
 		int itemId;
 		boolean isBuy;
 		int price;
 		int qty;
-		String source;
 
+		// Source #1: Flip Assist focus. When the player has picked a
+		// recommendation, this is canonical — no slot guessing needed.
+		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
 		if (focus != null)
 		{
 			itemId = focus.getItemId();
 			isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
 			price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
 			qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
-			source = "focus";
 		}
 		else
 		{
-			// Source of truth #2: the slot the user explicitly clicked to
-			// open this panel. We track clicks in onMenuOptionClicked rather
-			// than reading GE_SELECTEDSLOT — the varbit tracks the *hovered*
-			// slot tile and goes stale as soon as the cursor drifts to a
-			// different tile while the panel stays open. The click is the
-			// authoritative "this is the panel the user opened" signal.
+			// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
+			// only used as a cold-start fallback (haven't seen a click yet).
 			int slot = lastClickedSlot;
-			if (slot < 0 || slot >= MAX_GE_SLOTS)
+			if (slot < 0)
 			{
-				// Cold-start fallback (haven't observed a click yet, e.g.
-				// the player opened the GE and clicked through before our
-				// service loaded).
 				slot = client.getVarbitValue(VarbitID.GE_SELECTEDSLOT);
 				if (slot < 0 || slot >= MAX_GE_SLOTS)
 				{
@@ -242,153 +206,33 @@ public class GeOfferDescriptionService
 			{
 				return;
 			}
-
 			Boolean uiIsBuy = readSlotDirectionFromUi(slot);
 			isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
 			itemId = offer.getItemId();
 			price = offer.getPrice();
 			qty = offer.getTotalQuantity();
-			source = (lastClickedSlot >= 0 ? "click-slot:" : "varbit-slot:") + slot;
 		}
 
 		String desired = isBuy
 			? buildBuyDescription(itemId)
 			: buildSellDescriptionStatic(itemId, price, qty);
 
-		boolean wroteDetails = writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
-		boolean wroteSetup = writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
-		if (wroteDetails || wroteSetup)
-		{
-			Integer rawBuyLimit = lookupBuyLimit(itemId);
-			Integer rawWikiInstaBuy = lookupWikiInstaBuy(itemId);
-			Integer rawDailyVolume = getCachedDailyVolume(itemId);
-			log.debug("[GE desc] source={} itemId={} isBuy={} lookups: dailyVol={} buyLimit={} wikiInstaBuy={}",
-				source, itemId, isBuy, rawDailyVolume, rawBuyLimit, rawWikiInstaBuy);
-		}
+		writeIfNeeded(InterfaceID.GeOffers.DETAILS_DESC, desired);
+		writeIfNeeded(InterfaceID.GeOffers.SETUP_DESC, desired);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.DETAILS_FEE);
 	}
 
-	/** Reads the item-name text from the slot tile. Useful to cross-check slot indexing. */
-	private String readSlotItemNameFromUi(int slot)
-	{
-		int indexWidgetId = InterfaceID.GeOffers.INDEX_0 + slot;
-		Widget tile = client.getWidget(indexWidgetId);
-		if (tile == null) return null;
-		Widget[] dyn = tile.getDynamicChildren();
-		if (dyn == null) return null;
-		// Per earlier diagnostic dumps, dyn[19] is the item-name text. Find the
-		// longest "name-shaped" string (not "Buy"/"Sell"/contains "coins") as
-		// a robust fallback.
-		String best = null;
-		for (Widget child : dyn)
-		{
-			if (child == null) continue;
-			String text = child.getText();
-			if (text == null || text.isEmpty()) continue;
-			if ("Buy".equals(text) || "Sell".equals(text)) continue;
-			if (text.contains("coin")) continue;
-			if (best == null || text.length() > best.length()) best = text;
-		}
-		return best;
-	}
-
-	// One-shot per-slot scan: find the visible widget that displays the
-	// item-name text on the offer-status panel. That's the description
-	// widget we actually need to target.
-	private int findVisibleScanLastSlot = -999;
-	private int findVisibleScanRemaining = 0;
-
-	private void findVisibleDescriptionWidget(int slot, int itemId, String itemName)
-	{
-		if (itemName == null || itemName.isEmpty())
-		{
-			return;
-		}
-		log.debug("[GE find] === searching for widget displaying \"{}\" on slot={} ===", itemName, slot);
-		int hits = 0;
-		// Scan groups 162 (main GE interface) and 465 (GeOffers). Walk both
-		// top-level and one level of static + dynamic children.
-		for (int group : new int[]{162, 465})
-		{
-			for (int child = 0; child < 100; child++)
-			{
-				int packedId = (group << 16) | child;
-				Widget w = client.getWidget(packedId);
-				if (w == null) continue;
-				hits += scanWidgetForName(w, group, child, itemName);
-			}
-		}
-		log.debug("[GE find] === scan done, hits={} ===", hits);
-	}
-
-	private int scanWidgetForName(Widget w, int group, int child, String itemName)
-	{
-		int hits = 0;
-		String text = w.getText();
-		if (text != null && text.contains(itemName))
-		{
-			log.debug("[GE find] HIT group={} child={} id={} hidden={} text=\"{}\"",
-				group, child, w.getId(), w.isSelfHidden(),
-				text.replace("\n", "\\n"));
-			hits++;
-		}
-		Widget[] statics = w.getStaticChildren();
-		if (statics != null)
-		{
-			for (int i = 0; i < statics.length && i < 50; i++)
-			{
-				Widget c = statics[i];
-				if (c == null) continue;
-				String ctext = c.getText();
-				if (ctext != null && ctext.contains(itemName))
-				{
-					log.debug("[GE find] HIT group={} child={}.s{} id={} hidden={} text=\"{}\"",
-						group, child, i, c.getId(), c.isSelfHidden(),
-						ctext.replace("\n", "\\n"));
-					hits++;
-				}
-			}
-		}
-		Widget[] dyn = w.getDynamicChildren();
-		if (dyn != null)
-		{
-			for (int i = 0; i < dyn.length && i < 50; i++)
-			{
-				Widget c = dyn[i];
-				if (c == null) continue;
-				String ctext = c.getText();
-				if (ctext != null && ctext.contains(itemName))
-				{
-					log.debug("[GE find] HIT group={} child={}.d{} id={} hidden={} text=\"{}\"",
-						group, child, i, c.getId(), c.isSelfHidden(),
-						ctext.replace("\n", "\\n"));
-					hits++;
-				}
-			}
-		}
-		return hits;
-	}
-
 	/**
-	 * Reads the buy/sell direction from the OSRS slot tile widget for the given
-	 * slot. The tile displays "Buy" or "Sell" text in its first text child;
-	 * returns {@code true} for buy, {@code false} for sell, {@code null} if
-	 * the widget isn't loaded or doesn't have a matching label.
+	 * Returns {@code true} if the slot tile widget shows "Buy", {@code false}
+	 * for "Sell", {@code null} if the widget isn't loaded or has neither label.
 	 */
 	private Boolean readSlotDirectionFromUi(int slot)
 	{
-		int indexWidgetId = InterfaceID.GeOffers.INDEX_0 + slot;
-		Widget tile = client.getWidget(indexWidgetId);
-		if (tile == null)
-		{
-			return null;
-		}
+		Widget tile = client.getWidget(InterfaceID.GeOffers.INDEX_0 + slot);
+		if (tile == null) return null;
 		Widget[] dyn = tile.getDynamicChildren();
-		if (dyn == null)
-		{
-			return null;
-		}
+		if (dyn == null) return null;
 		for (Widget child : dyn)
 		{
 			if (child == null) continue;
@@ -399,19 +243,14 @@ public class GeOfferDescriptionService
 		return null;
 	}
 
-	private boolean writeIfNeeded(int widgetId, String desired)
+	private void writeIfNeeded(int widgetId, String desired)
 	{
 		Widget w = client.getWidget(widgetId);
-		if (w == null)
+		if (w == null || desired.equals(w.getText()))
 		{
-			return false;
-		}
-		if (desired.equals(w.getText()))
-		{
-			return false;
+			return;
 		}
 		w.setText(desired);
-		return true;
 	}
 
 	// ---------------------------------------------------------------------
@@ -425,22 +264,15 @@ public class GeOfferDescriptionService
 		{
 			apiClient.getDailyVolumeAsync(itemId).whenComplete((v, ex) ->
 			{
-				if (ex != null)
-				{
-					log.debug("Failed to fetch daily volume for item {}: {}", itemId, ex.getMessage());
-					return;
-				}
-				if (v != null)
+				if (ex == null && v != null)
 				{
 					refreshSetupBuyDescription(itemId);
 				}
 			});
 		}
 
-		Integer buyLimit = lookupBuyLimit(itemId);
-		Integer wikiInstaBuy = lookupWikiInstaBuy(itemId);
-
-		return GeOfferDescriptionFormatter.formatBuyDescription(dailyVolume, buyLimit, wikiInstaBuy);
+		return GeOfferDescriptionFormatter.formatBuyDescription(
+			dailyVolume, lookupBuyLimit(itemId), lookupWikiInstaBuy(itemId));
 	}
 
 	private void refreshSetupBuyDescription(int itemId)
@@ -452,30 +284,26 @@ public class GeOfferDescriptionService
 				return;
 			}
 			Widget desc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
-			if (desc == null)
+			if (desc != null)
 			{
-				return;
+				desc.setText(buildBuyDescription(itemId));
 			}
-			desc.setText(buildBuyDescription(itemId));
 		});
 	}
 
 	private String buildSellDescription(int itemId)
 	{
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
-		int sellPrice = client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE);
-		int quantity = client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY);
-		if (sellPrice < 0) sellPrice = 0;
-		if (quantity < 0) quantity = 0;
+		int sellPrice = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
+		int quantity = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
 		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, sellPrice, quantity);
 	}
 
 	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
 	{
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
-		int price = Math.max(listedPrice, 0);
-		int qty = Math.max(totalQuantity, 0);
-		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, price, qty);
+		return GeOfferDescriptionFormatter.formatSellDescription(
+			recordedBuyPrice, Math.max(listedPrice, 0), Math.max(totalQuantity, 0));
 	}
 
 	private Integer lookupBuyLimit(int itemId)
@@ -487,7 +315,6 @@ public class GeOfferDescriptionService
 		}
 		catch (Exception e)
 		{
-			log.debug("Failed to read ItemStats for item {}: {}", itemId, e.getMessage());
 			return null;
 		}
 	}
@@ -507,10 +334,7 @@ public class GeOfferDescriptionService
 	private void hideAndTransparent(int widgetId)
 	{
 		Widget w = client.getWidget(widgetId);
-		if (w == null)
-		{
-			return;
-		}
+		if (w == null) return;
 		w.setHidden(true);
 		w.setOpacity(255);
 	}
