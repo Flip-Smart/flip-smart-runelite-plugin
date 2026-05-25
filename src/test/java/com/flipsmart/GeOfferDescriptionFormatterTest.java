@@ -58,7 +58,7 @@ public class GeOfferDescriptionFormatterTest
 		assertEquals(3, lines.length);
 		assertEquals(LABEL_BUY + "142,300", lines[0]);
 		assertEquals(LABEL_LIMIT + "70 / 4h", lines[1]);
-		assertEquals(LABEL_WIKI_BUY + "167,200gp", lines[2]);
+		assertEquals(LABEL_WIKI_BUY + WHITE + "167,200 gp</col>", lines[2]);
 	}
 
 	@Test
@@ -117,7 +117,7 @@ public class GeOfferDescriptionFormatterTest
 	{
 		// 50gp is exempt — break-even = buy price exactly
 		String line = GeOfferDescriptionFormatter.formatBreakevenLine(50);
-		assertEquals(LABEL_BREAKEVEN + "50 gp", line);
+		assertEquals(LABEL_BREAKEVEN + WHITE + "50 gp</col>", line);
 	}
 
 	@Test
@@ -125,7 +125,7 @@ public class GeOfferDescriptionFormatterTest
 	{
 		// Buy 100gp -> tax = floor(102 * 0.02) = 2 -> 102-2=100. Breakeven=102.
 		String line = GeOfferDescriptionFormatter.formatBreakevenLine(100);
-		assertEquals(LABEL_BREAKEVEN + "102 gp", line);
+		assertEquals(LABEL_BREAKEVEN + WHITE + "102 gp</col>", line);
 	}
 
 	@Test
@@ -154,9 +154,10 @@ public class GeOfferDescriptionFormatterTest
 	@Test
 	public void taxLine_qty1_usesExactGpSuffix()
 	{
-		// AC4 example: "Tax applied: 2,000gp" — exact, no shorthand, no space before gp
+		// AC4 example: "Tax applied: 2,000 gp" — exact, no shorthand, space before gp
+		// for visual consistency with breakeven/profit/wiki lines.
 		String line = GeOfferDescriptionFormatter.formatTaxLine(2_000, 1);
-		assertEquals(LABEL_TAX + "2,000gp", line);
+		assertEquals(LABEL_TAX + "2,000 gp", line);
 	}
 
 	@Test
@@ -188,7 +189,7 @@ public class GeOfferDescriptionFormatterTest
 		// Defensive: an offer mid-construction with qty not yet entered should
 		// still produce a usable string, not a 0gp total which would be confusing.
 		String line = GeOfferDescriptionFormatter.formatTaxLine(1_000, 0);
-		assertEquals(LABEL_TAX + "1,000gp", line);
+		assertEquals(LABEL_TAX + "1,000 gp", line);
 	}
 
 	// ---------------------------------------------------------------- AC5 + AC6 — Profit (color + sign + format)
@@ -217,7 +218,7 @@ public class GeOfferDescriptionFormatterTest
 		int taxPerItem = GeOfferDescriptionFormatter.calculateTaxPerItem(sell);
 		int profitPerItem = sell - buy - taxPerItem;
 		String line = GeOfferDescriptionFormatter.formatProfitLine(buy, sell, taxPerItem, 1);
-		String expected = LABEL_PROFIT + GREEN + "+" + String.format("%,d", profitPerItem) + "gp</col>";
+		String expected = LABEL_PROFIT + GREEN + "+" + String.format("%,d", profitPerItem) + " gp</col>";
 		assertEquals(expected, line);
 	}
 
@@ -233,7 +234,7 @@ public class GeOfferDescriptionFormatterTest
 		String line = GeOfferDescriptionFormatter.formatProfitLine(buy, sell, taxPerItem, 1);
 		assertTrue("line should be red on loss: " + line, line.contains(RED));
 		assertTrue("line should retain leading minus from negative count: " + line,
-			line.contains("-" + String.format("%,d", -profitPerItem) + "gp"));
+			line.contains("-" + String.format("%,d", -profitPerItem) + " gp"));
 	}
 
 	@Test
@@ -241,7 +242,7 @@ public class GeOfferDescriptionFormatterTest
 	{
 		// Sell at the breakeven point. Use buy=100 -> breakeven=102, tax(102)=2 -> profit=0
 		String line = GeOfferDescriptionFormatter.formatProfitLine(100, 102, 2, 1);
-		assertEquals(LABEL_PROFIT + WHITE + "0gp</col>", line);
+		assertEquals(LABEL_PROFIT + WHITE + "0 gp</col>", line);
 	}
 
 	@Test
@@ -257,7 +258,7 @@ public class GeOfferDescriptionFormatterTest
 		long total = (long) profitPerItem * qty;
 		String line = GeOfferDescriptionFormatter.formatProfitLine(buy, sell, taxPerItem, qty);
 		assertTrue("must show total profit with sign+exact: " + line,
-			line.contains("+" + String.format("%,d", total) + "gp"));
+			line.contains("+" + String.format("%,d", total) + " gp"));
 		assertTrue("must show per-item shorthand in parens: " + line,
 			line.contains("per item)"));
 		assertTrue("must be color-coded green for positive: " + line, line.contains(GREEN));

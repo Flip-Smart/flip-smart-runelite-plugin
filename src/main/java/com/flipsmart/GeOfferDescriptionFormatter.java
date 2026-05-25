@@ -80,7 +80,8 @@ public final class GeOfferDescriptionFormatter
 
 	static String formatWikiInstaBuyLine(int wikiInstaBuy)
 	{
-		return colorTag(COLOR_LABEL) + "Wiki insta-buy: </col>" + formatExact(wikiInstaBuy) + "gp";
+		return colorTag(COLOR_LABEL) + "Wiki insta-buy: </col>"
+			+ colorTag(COLOR_WHITE) + formatExact(wikiInstaBuy) + " gp</col>";
 	}
 
 	/**
@@ -126,7 +127,7 @@ public final class GeOfferDescriptionFormatter
 			return label + "?";
 		}
 		int breakeven = calculateBreakevenPrice(recordedBuyPrice);
-		return label + formatExact(breakeven) + " gp";
+		return label + colorTag(COLOR_WHITE) + formatExact(breakeven) + " gp</col>";
 	}
 
 	static String formatTaxLine(int taxPerItem, int quantity)
@@ -134,7 +135,7 @@ public final class GeOfferDescriptionFormatter
 		String label = colorTag(COLOR_LABEL) + "Tax applied: </col>";
 		if (quantity <= 1)
 		{
-			return label + formatExact(taxPerItem) + "gp";
+			return label + formatExact(taxPerItem) + " gp";
 		}
 		long totalTax = (long) taxPerItem * (long) quantity;
 		return label + formatShortLower(totalTax) + " (" + formatShortLower(taxPerItem) + " per item)";
@@ -157,7 +158,7 @@ public final class GeOfferDescriptionFormatter
 
 		StringBuilder sb = new StringBuilder(label);
 		sb.append(colorTag(color));
-		sb.append(sign).append(formatExact(totalProfit)).append("gp");
+		sb.append(sign).append(formatExact(totalProfit)).append(" gp");
 		if (quantity > 1)
 		{
 			String perItemSign = profitPerItem > 0 ? "+" : "";
