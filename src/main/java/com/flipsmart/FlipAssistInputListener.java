@@ -10,8 +10,6 @@ import net.runelite.client.config.Keybind;
 import net.runelite.client.input.KeyListener;
 
 import javax.inject.Inject;
-import java.awt.Canvas;
-import java.awt.KeyboardFocusManager;
 import java.awt.event.KeyEvent;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -467,26 +465,53 @@ public class FlipAssistInputListener implements KeyListener
 	}
 
 	/**
-	 * Select the first item in the GE search results by dispatching Enter key.
+	 * Select the first item in the GE search results by invoking the result
+	 * widget's own click listener via a script event.
+	 *
+	 * <p>This replaces an earlier approach that synthesised AWT Enter key events
+	 * and pushed them through {@link java.awt.KeyboardFocusManager}, which the
+	 * RuneLite Plugin Hub disallows. Instead we locate the first search-result
+	 * widget that carries an "op" listener and run it exactly as a left-click
+	 * would (menu op 1, the default "select" action), which selects the top
+	 * result — the same outcome as pressing Enter in the search box.
+	 *
 	 * MUST be called on client thread.
 	 */
 	private void selectFirstSearchResult()
 	{
-		Canvas canvas = client.getCanvas();
-		if (canvas == null)
+		Widget searchResults = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
+		if (searchResults == null || searchResults.isHidden())
 		{
 			return;
 		}
 
-		long now = System.currentTimeMillis();
-		KeyEvent enterPressed = new KeyEvent(canvas, KeyEvent.KEY_PRESSED, now, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED);
-		KeyEvent enterTyped = new KeyEvent(canvas, KeyEvent.KEY_TYPED, now, 0, KeyEvent.VK_UNDEFINED, '\n');
-		KeyEvent enterReleased = new KeyEvent(canvas, KeyEvent.KEY_RELEASED, now, 0, KeyEvent.VK_ENTER, KeyEvent.CHAR_UNDEFINED);
+		Widget[] children = searchResults.getDynamicChildren();
+		if (children == null)
+		{
+			return;
+		}
 
-		KeyboardFocusManager focusManager = KeyboardFocusManager.getCurrentKeyboardFocusManager();
-		focusManager.dispatchKeyEvent(enterPressed);
-		focusManager.dispatchKeyEvent(enterTyped);
-		focusManager.dispatchKeyEvent(enterReleased);
+		// Result rows are laid out in document order; the first row that carries
+		// an onOp listener is the top match. Running its listener mirrors a
+		// left-click on that row without dispatching synthetic input events.
+		for (Widget child : children)
+		{
+			if (child == null)
+			{
+				continue;
+			}
+
+			Object[] opListener = child.getOnOpListener();
+			if (opListener != null)
+			{
+				client.createScriptEventBuilder(opListener)
+					.setSource(child)
+					.setOp(1)
+					.build()
+					.run();
+				return;
+			}
+		}
 	}
 }
 
