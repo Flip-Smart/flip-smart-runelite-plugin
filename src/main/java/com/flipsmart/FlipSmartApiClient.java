@@ -2475,14 +2475,21 @@ public class FlipSmartApiClient
 	// are picked up the next time the user opens a buy window, but long enough to
 	// avoid hitting the API on every offer-screen rebuild as the player adjusts qty.
 	private static final long DAILY_VOLUME_CACHE_TTL_MS = 300_000;  // 5 minutes
+	// Shorter TTL applied when a fetch fails (404/5xx/connection error). The GE
+	// offer description is rebuilt every render frame, so without a negative
+	// cache a persistent error (e.g. the endpoint missing on a stale API build)
+	// fires one request per frame. We back off for a minute, then retry.
+	private static final long DAILY_VOLUME_ERROR_CACHE_TTL_MS = 60_000;  // 1 minute
 	private final Map<Integer, CachedDailyVolume> dailyVolumeCache = new ConcurrentHashMap<>();
 
 	/**
 	 * Fetch the 24h daily trading volume for a single item.
-	 * Cached in-memory for {@link #DAILY_VOLUME_CACHE_TTL_MS}; cached value may
-	 * be null (the API returned no data for the item).
+	 * Cached in-memory for {@link #DAILY_VOLUME_CACHE_TTL_MS} on success (the
+	 * value may be null — the API returned no data for the item) and for
+	 * {@link #DAILY_VOLUME_ERROR_CACHE_TTL_MS} on failure, so the per-frame GE
+	 * render loop cannot spam the API when a request keeps failing.
 	 *
-	 * @return CompletableFuture resolving to the daily volume, or null when no data exists.
+	 * @return CompletableFuture resolving to the daily volume, or null when no data exists / the fetch failed.
 	 */
 	public CompletableFuture<Integer> getDailyVolumeAsync(int itemId)
 	{
@@ -2497,15 +2504,28 @@ public class FlipSmartApiClient
 			.url(url)
 			.get();
 
-		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+		CompletableFuture<Integer> future = executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			JsonObject obj = gson.fromJson(jsonData, JsonObject.class);
 			Integer volume = (obj != null && obj.has("daily_volume") && !obj.get("daily_volume").isJsonNull())
 				? obj.get("daily_volume").getAsInt()
 				: null;
-			dailyVolumeCache.put(itemId, new CachedDailyVolume(volume));
+			dailyVolumeCache.put(itemId, new CachedDailyVolume(volume, DAILY_VOLUME_CACHE_TTL_MS));
 			return volume;
 		});
+
+		// On any non-2xx response executeAsync completes the future with null
+		// WITHOUT running the handler above, so nothing gets cached. Record a
+		// short-lived negative entry in that case to throttle the render loop.
+		future.whenComplete((volume, ex) ->
+		{
+			if (!dailyVolumeCache.containsKey(itemId))
+			{
+				dailyVolumeCache.put(itemId, new CachedDailyVolume(null, DAILY_VOLUME_ERROR_CACHE_TTL_MS));
+			}
+		});
+
+		return future;
 	}
 
 	/**
@@ -2527,14 +2547,16 @@ public class FlipSmartApiClient
 	{
 		private final Integer volume;
 		private final long fetchedAt;
+		private final long ttlMs;
 
-		CachedDailyVolume(Integer volume)
+		CachedDailyVolume(Integer volume, long ttlMs)
 		{
 			this.volume = volume;
 			this.fetchedAt = System.currentTimeMillis();
+			this.ttlMs = ttlMs;
 		}
 
 		Integer getVolume() { return volume; }
-		boolean isExpired() { return System.currentTimeMillis() - fetchedAt > DAILY_VOLUME_CACHE_TTL_MS; }
+		boolean isExpired() { return System.currentTimeMillis() - fetchedAt > ttlMs; }
 	}
 }
