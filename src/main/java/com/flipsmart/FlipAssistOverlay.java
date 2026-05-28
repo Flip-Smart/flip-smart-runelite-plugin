@@ -107,7 +107,7 @@ public class FlipAssistOverlay extends Overlay
 	public enum FlipAssistStep
 	{
 		SELECT_ITEM("Select Item", "Click BUY on an empty slot"),
-		SEARCH_ITEM("Search Item", "Item auto-selected, press Enter"),
+		SEARCH_ITEM("Search Item", "Press [%s] to search, then click item"),
 		SET_QUANTITY("Set Quantity", "Press [%s] to set qty: %s"),
 		SET_PRICE("Set Price", "Press [%s] to set price: %s"),
 		CONFIRM_OFFER("Confirm", "Click the confirm button"),
@@ -798,6 +798,9 @@ public class FlipAssistOverlay extends Overlay
 		
 		switch (currentStep)
 		{
+			case SEARCH_ITEM:
+				// Press the hotkey to fill the search box, then click the result.
+				return String.format(currentStep.getDescription(), hotkeyName);
 			case SET_QUANTITY:
 				int targetQty = focusedFlip.getCurrentStepQuantity();
 				// Just show the target quantity with hotkey

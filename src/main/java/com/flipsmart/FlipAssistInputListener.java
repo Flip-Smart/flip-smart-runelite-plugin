@@ -3,7 +3,6 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
-import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.Keybind;
@@ -198,16 +197,15 @@ public class FlipAssistInputListener implements KeyListener
 
 		int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
 
-		// Handle GE item search — press hotkey to select the first result.
-		// The EDT guard already verified the search text matches the focused
-		// item (or is empty), so the player expects auto-selection here.
+		// Handle GE item search — fill the search box with the focused item's
+		// name and let the game's own search populate the results. The EDT guard
+		// already verified the search text matches the focused item (or is
+		// empty). The player clicks the result themselves; the plugin never
+		// selects/clicks an item on their behalf.
 		if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
 		{
-			if (hasSearchResults())
-			{
-				selectFirstSearchResult();
-				flipAssistOverlay.updateStep();
-			}
+			fillSearchWithFocusedItem(focusedFlip);
+			flipAssistOverlay.updateStep();
 			return;
 		}
 
@@ -448,70 +446,32 @@ public class FlipAssistInputListener implements KeyListener
 	}
 
 	/**
-	 * Check if there are GE search results displayed.
-	 * MUST be called on client thread.
-	 */
-	private boolean hasSearchResults()
-	{
-		Widget searchResults = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
-		if (searchResults == null || searchResults.isHidden())
-		{
-			return false;
-		}
-
-		Widget[] children = searchResults.getDynamicChildren();
-		// Each search result has 3 children (icon, name, ?)
-		return children != null && children.length >= 3;
-	}
-
-	/**
-	 * Select the first item in the GE search results by invoking the result
-	 * widget's own click listener via a script event.
+	 * Populate the GE item-search box with the focused item's name and run the
+	 * game's own search script so the matching results appear. The player then
+	 * clicks the result themselves.
 	 *
-	 * <p>This replaces an earlier approach that synthesised AWT Enter key events
-	 * and pushed them through {@link java.awt.KeyboardFocusManager}, which the
-	 * RuneLite Plugin Hub disallows. Instead we locate the first search-result
-	 * widget that carries an "op" listener and run it exactly as a left-click
-	 * would (menu op 1, the default "select" action), which selects the top
-	 * result — the same outcome as pressing Enter in the search box.
+	 * <p>This replaces an earlier approach that selected the first result for the
+	 * player — first by synthesising AWT Enter key events, then by invoking the
+	 * result widget's "op" listener via a script event. The RuneLite Plugin Hub
+	 * does not permit plugins to click/select on the player's behalf. Writing the
+	 * search text and letting the player pick the result is the supported pattern
+	 * (VarClientStr.INPUT_TEXT / 359 + ScriptID.GE_ITEM_SEARCH).
 	 *
 	 * MUST be called on client thread.
 	 */
-	private void selectFirstSearchResult()
+	private void fillSearchWithFocusedItem(FocusedFlip focusedFlip)
 	{
-		Widget searchResults = client.getWidget(InterfaceID.Chatbox.MES_LAYER_SCROLLCONTENTS);
-		if (searchResults == null || searchResults.isHidden())
+		String itemName = focusedFlip.getItemName();
+		if (itemName == null || itemName.isEmpty())
 		{
 			return;
 		}
 
-		Widget[] children = searchResults.getDynamicChildren();
-		if (children == null)
-		{
-			return;
-		}
-
-		// Result rows are laid out in document order; the first row that carries
-		// an onOp listener is the top match. Running its listener mirrors a
-		// left-click on that row without dispatching synthetic input events.
-		for (Widget child : children)
-		{
-			if (child == null)
-			{
-				continue;
-			}
-
-			Object[] opListener = child.getOnOpListener();
-			if (opListener != null)
-			{
-				client.createScriptEventBuilder(opListener)
-					.setSource(child)
-					.setOp(1)
-					.build()
-					.run();
-				return;
-			}
-		}
+		// Set the GE search input text, then run the vanilla GE item-search
+		// script so the result list rebuilds for the typed name — exactly as if
+		// the player had typed it themselves. They still click the item.
+		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, itemName);
+		client.runScript(ScriptID.GE_ITEM_SEARCH);
 	}
 }
 
