@@ -187,6 +187,9 @@ public class FlipSmartPlugin extends Plugin
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
 
+	// Injects the clickable "FlipSmart item" shortcut into GE search results
+	private GeSearchSuggestion geSearchSuggestion;
+
 	// Timer delay constants (in milliseconds)
 	/** Delay before syncing offline fills after login */
 	private static final int OFFLINE_SYNC_DELAY_MS = 2000;
@@ -547,6 +550,9 @@ public class FlipSmartPlugin extends Plugin
 		flipAssistInputListener = new FlipAssistInputListener(client, clientThread, config, flipAssistOverlay);
 		keyManager.registerKeyListener(flipAssistInputListener);
 
+		// GE search suggestion injector (clickable "FlipSmart item" shortcut row)
+		geSearchSuggestion = new GeSearchSuggestion(client, config, flipAssistOverlay);
+
 		// Initialize Flip Finder panel
 		if (config.showFlipFinder())
 		{
@@ -794,6 +800,7 @@ public class FlipSmartPlugin extends Plugin
 			keyManager.unregisterKeyListener(flipAssistInputListener);
 			flipAssistInputListener = null;
 		}
+		geSearchSuggestion = null;
 		
 		// Remove flip finder panel
 		if (flipFinderNavButton != null)
@@ -1336,13 +1343,25 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TYPE && flipAssistInputListener != null)
 		{
-			flipAssistInputListener.updateInputType(client.getVarcIntValue(FlipAssistInputListener.VARCLIENT_INPUT_TYPE));
+			int inputType = client.getVarcIntValue(FlipAssistInputListener.VARCLIENT_INPUT_TYPE);
+			flipAssistInputListener.updateInputType(inputType);
+
+			// When the GE item-search dialog opens, inject the clickable
+			// "FlipSmart item" shortcut row. Deferred so the search-results
+			// widget is built before we add children to it.
+			if (inputType == FlipAssistInputListener.INPUT_TYPE_GE_ITEM_SEARCH && geSearchSuggestion != null)
+			{
+				clientThread.invokeLater(geSearchSuggestion::showSuggestedItemInSearch);
+			}
 		}
 	}
 
 	@Subscribe
 	public void onVarClientStrChanged(VarClientStrChanged event)
 	{
+		// Keep the listener's cached search text fresh so its EDT-side consume
+		// gate (suppressing the stray hotkey char in GE item search) can compare
+		// what's typed against the focused item name.
 		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TEXT && flipAssistInputListener != null)
 		{
 			flipAssistInputListener.updateInputText(client.getVarcStrValue(FlipAssistInputListener.VARCLIENT_INPUT_TEXT));

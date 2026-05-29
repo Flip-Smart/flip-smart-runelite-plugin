@@ -107,7 +107,7 @@ public class FlipAssistOverlay extends Overlay
 	public enum FlipAssistStep
 	{
 		SELECT_ITEM("Select Item", "Click BUY on an empty slot"),
-		SEARCH_ITEM("Search Item", "Item auto-selected, press Enter"),
+		SEARCH_ITEM("Search Item", "Press Enter or click the item"),
 		SET_QUANTITY("Set Quantity", "Press [%s] to set qty: %s"),
 		SET_PRICE("Set Price", "Press [%s] to set price: %s"),
 		CONFIRM_OFFER("Confirm", "Click the confirm button"),
