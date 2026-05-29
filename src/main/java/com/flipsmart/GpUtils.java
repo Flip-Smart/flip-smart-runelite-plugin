@@ -1,13 +1,95 @@
 package com.flipsmart;
 
+import java.util.OptionalInt;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 /**
  * Utility class for GP (gold pieces) formatting and display.
  */
 public final class GpUtils
 {
+	// number with optional decimal, optional k/m/b suffix (case-insensitive).
+	private static final Pattern GP_INPUT = Pattern.compile("^(\\d+(?:\\.\\d+)?)([kmb]?)$");
+
 	private GpUtils()
 	{
 		// Utility class - prevent instantiation
+	}
+
+	/**
+	 * Parse a user-entered GP amount supporting shorthand suffixes.
+	 *
+	 * <p>Accepts raw integers ({@code 5000000}), comma separators
+	 * ({@code 10,000,000}), a trailing {@code gp}, and case-insensitive
+	 * {@code k}/{@code m}/{@code b} multipliers including decimals
+	 * ({@code 2.5m}, {@code 500K}). Fractional results are floored. Values are
+	 * clamped to {@link Integer#MAX_VALUE} (the largest coin stack the game
+	 * supports). Blank, zero, negative, or otherwise unparseable input yields
+	 * an empty result.
+	 *
+	 * @param input raw user text (may be null)
+	 * @return the resolved GP amount, or empty if the input is invalid
+	 */
+	public static OptionalInt parseGp(String input)
+	{
+		if (input == null)
+		{
+			return OptionalInt.empty();
+		}
+
+		String cleaned = input.trim().toLowerCase();
+		if (cleaned.endsWith("gp"))
+		{
+			cleaned = cleaned.substring(0, cleaned.length() - 2).trim();
+		}
+		cleaned = cleaned.replace(",", "").replace(" ", "");
+		if (cleaned.isEmpty())
+		{
+			return OptionalInt.empty();
+		}
+
+		Matcher matcher = GP_INPUT.matcher(cleaned);
+		if (!matcher.matches())
+		{
+			return OptionalInt.empty();
+		}
+
+		double base;
+		try
+		{
+			base = Double.parseDouble(matcher.group(1));
+		}
+		catch (NumberFormatException e)
+		{
+			return OptionalInt.empty();
+		}
+
+		switch (matcher.group(2))
+		{
+			case "k":
+				base *= 1_000d;
+				break;
+			case "m":
+				base *= 1_000_000d;
+				break;
+			case "b":
+				base *= 1_000_000_000d;
+				break;
+			default:
+				break;
+		}
+
+		long value = (long) Math.floor(base);
+		if (value < 1)
+		{
+			return OptionalInt.empty();
+		}
+		if (value > Integer.MAX_VALUE)
+		{
+			value = Integer.MAX_VALUE;
+		}
+		return OptionalInt.of((int) value);
 	}
 
 	/**

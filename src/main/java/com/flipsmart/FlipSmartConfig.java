@@ -167,6 +167,30 @@ public interface FlipSmartConfig extends Config
 		return 10000;
 	}
 
+	@ConfigItem(
+		keyName = "cashstackOverrideEnabled",
+		name = "Cashstack Override",
+		description = "Override your in-game cashstack with a fixed amount. The plugin will suggest flips based on this value instead of your actual inventory cash. Supports shorthand input: e.g. 500k, 2.5m, 10M.",
+		section = flipFinderSection,
+		position = 7
+	)
+	default boolean cashstackOverrideEnabled()
+	{
+		return false;
+	}
+
+	@ConfigItem(
+		keyName = "cashstackOverrideAmount",
+		name = "Override Amount",
+		description = "GP amount to use when Cashstack Override is enabled. Supports shorthand: 500k, 2.5m, 10M. Ignored when the box above is unchecked.",
+		section = flipFinderSection,
+		position = 8
+	)
+	default String cashstackOverrideAmount()
+	{
+		return "";
+	}
+
 	// ============================================
 	// Display Section
 	// ============================================
