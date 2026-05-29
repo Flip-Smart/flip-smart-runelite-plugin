@@ -18,6 +18,24 @@ public final class GpUtils
 	}
 
 	/**
+	 * Apply a k/m/b suffix multiplier to a base value.
+	 *
+	 * @param base   the numeric base already parsed from user input
+	 * @param suffix the suffix character group captured by {@link #GP_INPUT}
+	 * @return the multiplied value
+	 */
+	private static double applyMultiplier(double base, String suffix)
+	{
+		switch (suffix)
+		{
+			case "k": return base * 1_000d;
+			case "m": return base * 1_000_000d;
+			case "b": return base * 1_000_000_000d;
+			default:  return base;
+		}
+	}
+
+	/**
 	 * Parse a user-entered GP amount supporting shorthand suffixes.
 	 *
 	 * <p>Accepts raw integers ({@code 5000000}), comma separators
@@ -65,31 +83,12 @@ public final class GpUtils
 			return OptionalInt.empty();
 		}
 
-		switch (matcher.group(2))
-		{
-			case "k":
-				base *= 1_000d;
-				break;
-			case "m":
-				base *= 1_000_000d;
-				break;
-			case "b":
-				base *= 1_000_000_000d;
-				break;
-			default:
-				break;
-		}
-
-		long value = (long) Math.floor(base);
+		long value = (long) Math.floor(applyMultiplier(base, matcher.group(2)));
 		if (value < 1)
 		{
 			return OptionalInt.empty();
 		}
-		if (value > Integer.MAX_VALUE)
-		{
-			value = Integer.MAX_VALUE;
-		}
-		return OptionalInt.of((int) value);
+		return OptionalInt.of((int) Math.min(value, Integer.MAX_VALUE));
 	}
 
 	/**
