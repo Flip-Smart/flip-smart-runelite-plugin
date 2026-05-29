@@ -39,7 +39,7 @@ public class FlipAssistInputListener implements KeyListener
 
 	// Input type values
 	private static final int INPUT_TYPE_NUMERIC = 7;
-	private static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
+	static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 	
 	// Chat message prefix - cyan color for visibility
 	private static final String CHAT_MESSAGE_PREFIX = "<col=00e5ff>[FlipSmart]</col> ";
@@ -69,13 +69,6 @@ public class FlipAssistInputListener implements KeyListener
 	// Used on EDT to decide whether to consume the hotkey before clientThread runs.
 	private final AtomicInteger currentInputType = new AtomicInteger(0);
 
-	// Cached input text from VarClientStr, updated via event from FlipSmartPlugin.
-	// Used on EDT to gate hotkey consumption in the GE item search dialog: we
-	// only consume when the search box is empty or the user-typed text is a
-	// prefix of the focused item name. Otherwise the player is searching for a
-	// different item and the hotkey character must reach the search field.
-	private final AtomicReference<String> currentInputText = new AtomicReference<>("");
-
 	/**
 	 * Update the cached input type. Called from FlipSmartPlugin on VarClientIntChanged.
 	 */
@@ -84,6 +77,13 @@ public class FlipAssistInputListener implements KeyListener
 		currentInputType.set(inputType);
 	}
 
+	// Cached input text from VarClientStr, updated via event from FlipSmartPlugin.
+	// Used on the EDT to gate hotkey consumption in the GE item-search dialog: we
+	// only consume when the search box is empty or the user-typed text is a prefix
+	// of the focused item name. Otherwise the player is searching for a different
+	// item and the hotkey character must reach the search field (#616).
+	private final AtomicReference<String> currentInputText = new AtomicReference<>("");
+
 	/**
 	 * Update the cached input text. Called from FlipSmartPlugin on VarClientStrChanged.
 	 */
@@ -91,7 +91,36 @@ public class FlipAssistInputListener implements KeyListener
 	{
 		currentInputText.set(inputText == null ? "" : inputText);
 	}
-	
+
+	/**
+	 * EDT-side gate: should the hotkey be consumed in the GE item-search dialog?
+	 * True when the search box is empty or what's typed is a prefix of the focused
+	 * item — i.e. the player is going for the focused item, so the hotkey character
+	 * should be suppressed rather than typed into the box.
+	 */
+	private boolean searchTextMatchesFocusedItem(FocusedFlip focusedFlip)
+	{
+		return searchTextMatchesItem(currentInputText.get(), focusedFlip.getItemName());
+	}
+
+	/**
+	 * Pure prefix check used by {@link #searchTextMatchesFocusedItem}. Empty or null
+	 * search text matches (player hasn't narrowed yet); otherwise the item name must
+	 * start with the typed text, case-insensitively and trimmed.
+	 */
+	static boolean searchTextMatchesItem(String searchText, String itemName)
+	{
+		if (searchText == null || searchText.isEmpty())
+		{
+			return true;
+		}
+		if (itemName == null)
+		{
+			return false;
+		}
+		return itemName.toLowerCase().trim().startsWith(searchText.toLowerCase().trim());
+	}
+
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
@@ -129,63 +158,38 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
-		// Only consume the hotkey when a GE input dialog is active.
 		int cachedInputType = currentInputType.get();
-		if (cachedInputType != INPUT_TYPE_NUMERIC && cachedInputType != INPUT_TYPE_GE_ITEM_SEARCH)
+
+		// Numeric (price/quantity) input is hotkey-driven: the plugin fills the
+		// value. Consume eagerly on the EDT — clientThread.invoke() is async, so
+		// consuming inside the callback would be too late to stop the keystroke.
+		if (cachedInputType == INPUT_TYPE_NUMERIC)
 		{
+			handledKeyPressedEvent.set(e);
+			e.consume();
+			clientThread.invoke(() -> handleHotkeyOnClientThread(focusedFlip));
 			return;
 		}
 
-		// In the GE item search dialog, only consume the hotkey when the search
-		// box is empty or the user is on track to find the focused item. If the
-		// player is typing a different item name, let the character through to
-		// the search field — this is the fix for #616.
+		// GE item search: selection happens via the injected "FlipSmart item" row
+		// (player click or the game's native Enter), NOT the hotkey — the Plugin
+		// Hub forbids selecting on the player's behalf. We still consume the hotkey
+		// here so its character doesn't leak into the search box, but only when the
+		// player is clearly going for the focused item (empty box or a prefix of the
+		// item name). If they're typing a different item, let the character through
+		// so search still works (#616).
 		if (cachedInputType == INPUT_TYPE_GE_ITEM_SEARCH
-			&& !searchTextMatchesFocusedItem(focusedFlip))
+			&& searchTextMatchesFocusedItem(focusedFlip))
 		{
-			return;
+			handledKeyPressedEvent.set(e);
+			e.consume();
+			// Intentionally no action — the player selects via the injected row.
 		}
-
-		// Consume the event eagerly on the EDT to prevent the hotkey character
-		// from being typed into the GE search/input. clientThread.invoke() is
-		// asynchronous from the EDT, so consuming inside the callback is too late.
-		handledKeyPressedEvent.set(e);
-		e.consume();
-
-		clientThread.invoke(() -> handleHotkeyOnClientThread(focusedFlip));
-	}
-
-	/**
-	 * Decide on the EDT whether the cached search text indicates the player is
-	 * still searching for the focused item (empty box or a prefix of the item
-	 * name). Returns false when the player has typed something the focused item
-	 * does not start with — in that case the hotkey must not consume the key.
-	 */
-	private boolean searchTextMatchesFocusedItem(FocusedFlip focusedFlip)
-	{
-		String searchText = currentInputText.get();
-		if (searchText.isEmpty())
-		{
-			// Empty search box — the focused item will be auto-populated by
-			// the GE_LAST_SEARCHED varp, so the hotkey can confirm it.
-			return true;
-		}
-
-		String itemName = focusedFlip.getItemName();
-		if (itemName == null)
-		{
-			return false;
-		}
-
-		String normalizedSearch = searchText.toLowerCase().trim();
-		String normalizedItem = itemName.toLowerCase().trim();
-
-		return normalizedItem.startsWith(normalizedSearch);
 	}
 
 	/**
 	 * Handle the hotkey action on the client thread.
-	 * Validates GE state and dispatches to the appropriate handler.
+	 * Validates GE state and fills the numeric price/quantity input.
 	 * MUST be called on client thread.
 	 */
 	private void handleHotkeyOnClientThread(FocusedFlip focusedFlip)
@@ -195,22 +199,9 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
-		int inputType = client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
-
-		// Handle GE item search — fill the search box with the focused item's
-		// name and let the game's own search populate the results. The EDT guard
-		// already verified the search text matches the focused item (or is
-		// empty). The player clicks the result themselves; the plugin never
-		// selects/clicks an item on their behalf.
-		if (inputType == INPUT_TYPE_GE_ITEM_SEARCH)
-		{
-			fillSearchWithFocusedItem(focusedFlip);
-			flipAssistOverlay.updateStep();
-			return;
-		}
-
-		// Handle numeric input (price/quantity)
-		if (inputType == INPUT_TYPE_NUMERIC)
+		// Only numeric (price/quantity) input is hotkey-driven. Item selection is
+		// handled by the injected "FlipSmart item" shortcut row the player clicks.
+		if (client.getVarcIntValue(VARCLIENT_INPUT_TYPE) == INPUT_TYPE_NUMERIC)
 		{
 			handleFlipAssistAction(focusedFlip);
 			flipAssistOverlay.updateStep();
@@ -443,35 +434,6 @@ public class FlipAssistInputListener implements KeyListener
 			CHAT_MESSAGE_PREFIX + message,
 			null
 		);
-	}
-
-	/**
-	 * Populate the GE item-search box with the focused item's name and run the
-	 * game's own search script so the matching results appear. The player then
-	 * clicks the result themselves.
-	 *
-	 * <p>This replaces an earlier approach that selected the first result for the
-	 * player — first by synthesising AWT Enter key events, then by invoking the
-	 * result widget's "op" listener via a script event. The RuneLite Plugin Hub
-	 * does not permit plugins to click/select on the player's behalf. Writing the
-	 * search text and letting the player pick the result is the supported pattern
-	 * (VarClientStr.INPUT_TEXT / 359 + ScriptID.GE_ITEM_SEARCH).
-	 *
-	 * MUST be called on client thread.
-	 */
-	private void fillSearchWithFocusedItem(FocusedFlip focusedFlip)
-	{
-		String itemName = focusedFlip.getItemName();
-		if (itemName == null || itemName.isEmpty())
-		{
-			return;
-		}
-
-		// Set the GE search input text, then run the vanilla GE item-search
-		// script so the result list rebuilds for the typed name — exactly as if
-		// the player had typed it themselves. They still click the item.
-		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, itemName);
-		client.runScript(ScriptID.GE_ITEM_SEARCH);
 	}
 }
 
