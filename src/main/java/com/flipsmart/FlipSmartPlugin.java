@@ -854,6 +854,13 @@ public class FlipSmartPlugin extends Plugin
 			flipFinderPanel.refresh();
 		}
 
+		if (("cashstackOverrideEnabled".equals(configChanged.getKey())
+			|| "cashstackOverrideAmount".equals(configChanged.getKey())) && flipFinderPanel != null)
+		{
+			flipFinderPanel.updateCashstackOverrideIndicator();
+			flipFinderPanel.refresh();
+		}
+
 		// Sync webhook config changes to backend
 		String key = configChanged.getKey();
 		if ("discordWebhookUrl".equals(key) || "notifySaleCompleted".equals(key))
@@ -1427,6 +1434,14 @@ public class FlipSmartPlugin extends Plugin
 			@Override
 			protected Integer getCashStack()
 			{
+				if (config.cashstackOverrideEnabled())
+				{
+					java.util.OptionalInt override = GpUtils.parseGp(config.cashstackOverrideAmount());
+					if (override.isPresent())
+					{
+						return override.getAsInt();
+					}
+				}
 				return session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null;
 			}
 
@@ -1488,7 +1503,7 @@ public class FlipSmartPlugin extends Plugin
 
 		// Create navigation button
 		flipFinderNavButton = net.runelite.client.ui.NavigationButton.builder()
-			.tooltip("Flip Finder")
+			.tooltip("FlipSmart")
 			.icon(iconImage)
 			.priority(7)
 			.panel(flipFinderPanel)

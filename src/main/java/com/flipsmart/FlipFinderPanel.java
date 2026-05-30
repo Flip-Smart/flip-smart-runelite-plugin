@@ -88,8 +88,17 @@ public class FlipFinderPanel extends PluginPanel
 	// Premium subscription link (update when dashboard URL is available)
 	private static final String SUBSCRIBE_LINK = "https://flipsmart.net/dashboard";
 	private static final String SUBSCRIBE_MESSAGE = "Subscribe to Premium for all slots & RSNs";
-	
+
+	// FlipSmart website links (header). Authenticated users land on the dashboard.
+	private static final String WEBSITE_LANDING_URL = "https://flipsmart.net";
+	private static final String WEBSITE_DASHBOARD_URL = "https://flipsmart.net/dashboard";
+	private static final String WEBSITE_LINK_TEXT = "flipsmart.net";
+	private static final Color LINK_COLOR = new Color(110, 159, 255);
+	private static final Color OVERRIDE_ACTIVE_COLOR = new Color(255, 200, 50);
+	private static final Color OVERRIDE_ERROR_COLOR = new Color(220, 90, 90);
+
 	// Common fonts
+	private static final Font FONT_PLAIN_11 = new Font(FONT_ARIAL, Font.PLAIN, 11);
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
 	private static final Font FONT_BOLD_12 = new Font(FONT_ARIAL, Font.BOLD, 12);
 	private static final Font FONT_BOLD_13 = new Font(FONT_ARIAL, Font.BOLD, 13);
@@ -166,6 +175,9 @@ public class FlipFinderPanel extends PluginPanel
 	private JToggleButton autoRecommendButton;
 	private JButton skipButton;
 	private JLabel autoRecommendStatusLabel;
+
+	// Cashstack override indicator (AC3) — shows the active override or an error
+	private JLabel cashstackOverrideLabel;
 
 	// Cache blocklists for quick access when blocking items
 	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
@@ -402,14 +414,25 @@ public class FlipFinderPanel extends PluginPanel
 		mainPanel = new JPanel(new BorderLayout());
 		mainPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		// Header panel with even spacing between title and buttons
-		JPanel headerPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+		// Header: brand title + website link stacked on the left, buttons on the right
+		JPanel headerPanel = new JPanel(new BorderLayout());
 		headerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		headerPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
-		JLabel titleLabel = new JLabel("Flip Finder");
+		JPanel titleBox = new JPanel();
+		titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
+		titleBox.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel titleLabel = new JLabel("FlipSmart");
 		titleLabel.setForeground(Color.WHITE);
 		titleLabel.setFont(FONT_BOLD_16);
+		titleLabel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+
+		JLabel brandLink = buildWebsiteLink();
+		brandLink.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+
+		titleBox.add(titleLabel);
+		titleBox.add(brandLink);
 
 		// Logout button with compact styling
 		JButton logoutButton = new JButton("Logout");
@@ -422,9 +445,13 @@ public class FlipFinderPanel extends PluginPanel
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> refresh(true));
 
-		headerPanel.add(titleLabel);
-		headerPanel.add(logoutButton);
-		headerPanel.add(refreshButton);
+		JPanel headerButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+		headerButtons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		headerButtons.add(logoutButton);
+		headerButtons.add(refreshButton);
+
+		headerPanel.add(titleBox, BorderLayout.WEST);
+		headerPanel.add(headerButtons, BorderLayout.EAST);
 
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
@@ -593,6 +620,15 @@ public class FlipFinderPanel extends PluginPanel
 		autoRecommendStatusLabel.setVisible(false);
 		statusPanel.add(autoRecommendStatusLabel, BorderLayout.SOUTH);
 
+		// Cashstack override indicator (AC3) — hidden unless the override is enabled
+		cashstackOverrideLabel = new JLabel();
+		cashstackOverrideLabel.setFont(FONT_PLAIN_12);
+		cashstackOverrideLabel.setVisible(false);
+		JPanel overridePanel = new JPanel(new BorderLayout());
+		overridePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		overridePanel.setBorder(new EmptyBorder(0, 10, 5, 10));
+		overridePanel.add(cashstackOverrideLabel, BorderLayout.CENTER);
+
 		// Combine controls and status into top panel
 		JPanel topPanel = new JPanel();
 		topPanel.setLayout(new BoxLayout(topPanel, BoxLayout.Y_AXIS));
@@ -600,6 +636,8 @@ public class FlipFinderPanel extends PluginPanel
 		topPanel.add(headerPanel);
 		topPanel.add(controlsPanel);
 		topPanel.add(statusPanel);
+		topPanel.add(overridePanel);
+		updateCashstackOverrideIndicator();
 
 		// Recommended flips list container
 		recommendedListContainer.setLayout(new BoxLayout(recommendedListContainer, BoxLayout.Y_AXIS));
@@ -1806,6 +1844,74 @@ public class FlipFinderPanel extends PluginPanel
 		log.debug("Skipping active flip {} - has {} pending buy order(s) in GE",
 			flip.getItemName(), matchingPending.size());
 		return false;
+	}
+
+	/**
+	 * Build the clickable "flipsmart.net" link shown under the header title.
+	 * Opens the dashboard when authenticated, otherwise the public landing page;
+	 * if auth state cannot be determined it degrades to the landing page.
+	 */
+	private JLabel buildWebsiteLink()
+	{
+		JLabel link = new JLabel(WEBSITE_LINK_TEXT);
+		link.setFont(FONT_PLAIN_11);
+		link.setForeground(LINK_COLOR);
+		link.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		link.setToolTipText("Open FlipSmart in your browser");
+		link.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				boolean authed = apiClient != null && apiClient.isAuthenticated();
+				LinkBrowser.browse(authed ? WEBSITE_DASHBOARD_URL : WEBSITE_LANDING_URL);
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				link.setText("<html><u>" + WEBSITE_LINK_TEXT + "</u></html>");
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				link.setText(WEBSITE_LINK_TEXT);
+			}
+		});
+		return link;
+	}
+
+	/**
+	 * Refresh the cashstack-override indicator (AC3). Shows the resolved override
+	 * amount when enabled with a valid value, an inline error when enabled with an
+	 * unparseable value, and hides itself when the override is off.
+	 */
+	void updateCashstackOverrideIndicator()
+	{
+		if (cashstackOverrideLabel == null)
+		{
+			return;
+		}
+
+		if (!config.cashstackOverrideEnabled())
+		{
+			cashstackOverrideLabel.setVisible(false);
+			return;
+		}
+
+		java.util.OptionalInt parsed = GpUtils.parseGp(config.cashstackOverrideAmount());
+		if (parsed.isPresent())
+		{
+			cashstackOverrideLabel.setForeground(OVERRIDE_ACTIVE_COLOR);
+			cashstackOverrideLabel.setText("Cashstack override: " + GpUtils.formatGPExact(parsed.getAsInt()) + " gp");
+		}
+		else
+		{
+			cashstackOverrideLabel.setForeground(OVERRIDE_ERROR_COLOR);
+			cashstackOverrideLabel.setText("⚠ Invalid override amount — using live cash");
+		}
+		cashstackOverrideLabel.setVisible(true);
 	}
 
 	/**
