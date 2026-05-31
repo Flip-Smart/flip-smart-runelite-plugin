@@ -211,8 +211,9 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Resolves the offer context (itemId, direction, price, quantity) from either
-	 * the active Flip Assist recommendation or the GE slot the player clicked.
+	 * Resolves the offer context (itemId, direction, price, quantity) from one of
+	 * three sources, in priority order: Flip Assist focus, the GE slot the player
+	 * clicked, or the live "Set up offer" screen state.
 	 *
 	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
 	 *         no actionable context can be determined.
@@ -232,7 +233,50 @@ public class GeOfferDescriptionService
 
 		// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
 		// only used as a cold-start fallback (haven't seen a click yet).
-		return resolveSlotContext();
+		int[] slotCtx = resolveSlotContext();
+		if (slotCtx != null)
+		{
+			return slotCtx;
+		}
+
+		// Source #3: live "Set up offer" screen state (issue #684). Covers ad-hoc
+		// buy/sell offers being constructed without a Flip Assist focus — the
+		// slot is still EMPTY pre-confirm so #2 returns null, and the
+		// geBuyExamineText / geSellExamineText script callbacks don't fire on
+		// the current Jagex setup window, leaving SETUP_DESC un-replaced.
+		return resolveSetupWindowContext();
+	}
+
+	/**
+	 * Reads the current "Set up offer" screen state directly from varbits/varps.
+	 * Returns {@code null} when the setup window isn't open or no offer is being
+	 * built. Direction encoding: {@code GE_NEWOFFER_TYPE == 1} → sell, anything
+	 * else non-zero → buy.
+	 */
+	private int[] resolveSetupWindowContext()
+	{
+		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+		if (setupDesc == null || setupDesc.isHidden())
+		{
+			return null;
+		}
+
+		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
+		if (offerType == 0)
+		{
+			return null;
+		}
+
+		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (itemId <= 0)
+		{
+			return null;
+		}
+
+		boolean isBuy = offerType != 1;
+		int price = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
+		int qty = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
+		return new int[]{itemId, isBuy ? 1 : 0, price, qty};
 	}
 
 	private int[] resolveSlotContext()
