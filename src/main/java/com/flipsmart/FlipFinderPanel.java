@@ -1542,7 +1542,14 @@ public class FlipFinderPanel extends PluginPanel
 					return;
 				}
 
-				currentActiveFlips.clear();
+				// Build the filtered list locally first, then swap atomically into
+				// currentActiveFlips so cross-thread readers (the GE slot-hover
+				// overlay) never observe an empty/half-populated intermediate
+				// state. Previously the clear+add loop ran inline, allowing the
+				// overlay's render thread to snapshot a transient empty list and
+				// silently hide the profit line. See issue #685 Bug 2.
+				List<ActiveFlip> filtered = new ArrayList<>();
+				int filteredCount = 0;
 				if (response.getActiveFlips() != null)
 				{
 					// Show flips that are either:
@@ -1555,12 +1562,12 @@ public class FlipFinderPanel extends PluginPanel
 					// Note: Using getActiveFlipItemIds() instead of WithInventory() to avoid thread issues
 					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
 					java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
-					
+
 					for (ActiveFlip flip : response.getActiveFlips())
 					{
 						boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
 						boolean isRecent = false;
-						
+
 						// Check if flip had activity in the last 7 days
 						// Use lastBuyTime if available (more accurate), fall back to firstBuyTime
 						String timeStr = flip.getLastBuyTime();
@@ -1568,7 +1575,7 @@ public class FlipFinderPanel extends PluginPanel
 						{
 							timeStr = flip.getFirstBuyTime();
 						}
-						
+
 						if (timeStr != null && !timeStr.isEmpty())
 						{
 							try
@@ -1587,11 +1594,11 @@ public class FlipFinderPanel extends PluginPanel
 							// No timestamp, assume recent
 							isRecent = true;
 						}
-						
+
 						if (inGeOrCollected || isRecent)
 						{
-							currentActiveFlips.add(flip);
-							log.debug("Including flip: {} (inGE={}, recent={})", 
+							filtered.add(flip);
+							log.debug("Including flip: {} (inGE={}, recent={})",
 								flip.getItemName(), inGeOrCollected, isRecent);
 						}
 						else
@@ -1599,9 +1606,17 @@ public class FlipFinderPanel extends PluginPanel
 							log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
 						}
 					}
-					log.debug("Loaded {} active flips ({} from backend, {} filtered)", 
-						currentActiveFlips.size(), response.getActiveFlips().size(),
-						response.getActiveFlips().size() - currentActiveFlips.size());
+					filteredCount = response.getActiveFlips().size() - filtered.size();
+				}
+				synchronized (currentActiveFlips)
+				{
+					currentActiveFlips.clear();
+					currentActiveFlips.addAll(filtered);
+				}
+				if (response.getActiveFlips() != null)
+				{
+					log.debug("Loaded {} active flips ({} from backend, {} filtered)",
+						currentActiveFlips.size(), response.getActiveFlips().size(), filteredCount);
 				}
 
 				// Get pending orders from plugin
@@ -3038,13 +3053,25 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Get the current active flips
+	 * Get the current active flips.
+	 *
+	 * Returns a synchronized snapshot. The list is mutated on the EDT by
+	 * refreshActiveFlips, but cross-thread callers (e.g. the GE slot-hover
+	 * overlay, which runs on the render thread and reads via
+	 * BuyPriceLookup.findAverageBuyPrice) need to see either the old
+	 * complete list or the new complete list — never a half-populated
+	 * intermediate state. Without this lock the overlay can intermittently
+	 * see an empty list during the clear+addAll swap and silently hide the
+	 * hover-state profit line. See issue #685 Bug 2.
 	 */
 	public List<ActiveFlip> getCurrentActiveFlips()
 	{
-		return new ArrayList<>(currentActiveFlips);
+		synchronized (currentActiveFlips)
+		{
+			return new ArrayList<>(currentActiveFlips);
+		}
 	}
-	
+
 	/**
 	 * Check if an item exists in recommendations or active flips
 	 */
@@ -3059,11 +3086,14 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 		// Check active flips
-		for (ActiveFlip flip : currentActiveFlips)
+		synchronized (currentActiveFlips)
 		{
-			if (flip.getItemId() == itemId)
+			for (ActiveFlip flip : currentActiveFlips)
 			{
-				return true;
+				if (flip.getItemId() == itemId)
+				{
+					return true;
+				}
 			}
 		}
 		return false;
