@@ -459,7 +459,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setFont(new Font("Arial", Font.PLAIN, 11));
 		FontMetrics fm = graphics.getFontMetrics();
 
-		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy, offer.getTotalQuantity());
+		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy, offer.getTotalQuantity(), offer.getItemId());
 		Color yourPriceColor = determineYourPriceColor(wikiPrice, offerPrice, isBuy);
 
 		drawTooltipBackground(graphics, x, y, lines, fm);
@@ -480,7 +480,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Build tooltip text lines based on wiki price data
 	 */
 	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice,
-													  Integer buyPrice, boolean isBuy, int totalQuantity)
+													  Integer buyPrice, boolean isBuy, int totalQuantity, int itemId)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
 
@@ -489,7 +489,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		if (!isBuy && buyPrice != null && buyPrice > 0 && totalQuantity > 0)
 		{
-			addProfitLossLine(lines, offerPrice, buyPrice, totalQuantity);
+			addProfitLossLine(lines, offerPrice, buyPrice, totalQuantity, itemId);
 		}
 
 		return lines;
@@ -512,9 +512,12 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 	}
 
-	private void addProfitLossLine(java.util.List<String> lines, int sellPrice, int buyPrice, int totalQuantity)
+	private void addProfitLossLine(java.util.List<String> lines, int sellPrice, int buyPrice, int totalQuantity, int itemId)
 	{
-		int geTaxPerItem = Math.min((int)(sellPrice * 0.02), 5_000_000);
+		// Honor the GE tax-exempt list and the <=50gp threshold (issue #685 Bugs 3 & 4).
+		// ROI uses netPnlPerItem so it automatically becomes pre-tax for exempt items
+		// and post-tax for taxable ones, matching AC2 of Bug 4.
+		int geTaxPerItem = GeTax.taxFor(itemId, sellPrice);
 		int netPnlPerItem = sellPrice - buyPrice - geTaxPerItem;
 		int totalPnl = netPnlPerItem * totalQuantity;
 		double roiPercent = (netPnlPerItem / (double) buyPrice) * 100.0;
