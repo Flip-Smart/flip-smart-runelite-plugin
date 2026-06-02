@@ -336,24 +336,53 @@ public class GEHistoryService
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
 	private static int parsePerItemPrice(Widget widget)
 	{
-		if (widget == null) return -1;
-		String text = widget.getText();
+		return (widget == null) ? -1 : parsePerItemPriceFromText(widget.getText());
+	}
+
+	/** String-level entry point for {@link #parsePerItemPrice}, package-private
+	 *  so unit tests can exercise the parsing logic without mocking
+	 *  {@link Widget}.
+	 *  <p>
+	 *  Strips HTML tags <em>before</em> seeking the '=' separator. If the seek
+	 *  runs on the raw text first, the '=' inside {@code <col=ffb83f>} can win
+	 *  the {@code lastIndexOf('=')} race (when no plain-text '=' exists in the
+	 *  row), the substring starts mid-tag at {@code "=ffb83f>…"}, and
+	 *  {@link #stripHtmlTags} can no longer strip the fragment because its
+	 *  regex requires a leading '<'. The orphaned hex digits then leak into
+	 *  {@link #parseDigits} and concatenate with the trailing quantity —
+	 *  the {@code 83 × 10^n + qty} corruption pattern observed in production
+	 *  (Flip-Smart/flip-smart#689). Tag-stripping first removes that whole
+	 *  failure mode regardless of which widget shape RuneLite returns. */
+	static int parsePerItemPriceFromText(String text)
+	{
 		if (text == null || text.isEmpty()) return -1;
-		int eqIdx = text.lastIndexOf('=');
-		String slice = (eqIdx >= 0) ? text.substring(eqIdx) : text;
-		return parseDigits(stripHtmlTags(slice));
+		String cleaned = stripHtmlTags(text);
+		int eqIdx = cleaned.lastIndexOf('=');
+		String slice = (eqIdx >= 0) ? cleaned.substring(eqIdx) : cleaned;
+		return parseDigits(slice);
 	}
 
 	/** Leading total from a "X,XXX coins[(gross - tax)]" widget, ignoring any
 	 *  parenthesized tax breakdown so parseDigits doesn't concatenate them. */
 	private static int parseLeadingTotal(Widget widget)
 	{
-		if (widget == null) return -1;
-		String text = widget.getText();
+		return (widget == null) ? -1 : parseLeadingTotalFromText(widget.getText());
+	}
+
+	/** String-level entry point for {@link #parseLeadingTotal}, package-private
+	 *  for the same testing reason as {@link #parsePerItemPriceFromText}.
+	 *  Same tag-strip-first discipline: today the raw widget text always wraps
+	 *  the parenthesized tax breakdown inside the same {@code <col>} as the
+	 *  total, so the {@code indexOf('(')} seek would produce the correct head
+	 *  either way — but ordering matters as soon as RuneLite changes the row
+	 *  shape, so we strip first defensively. */
+	static int parseLeadingTotalFromText(String text)
+	{
 		if (text == null || text.isEmpty()) return -1;
-		int parenIdx = text.indexOf('(');
-		String head = (parenIdx >= 0) ? text.substring(0, parenIdx) : text;
-		return parseDigits(stripHtmlTags(head));
+		String cleaned = stripHtmlTags(text);
+		int parenIdx = cleaned.indexOf('(');
+		String head = (parenIdx >= 0) ? cleaned.substring(0, parenIdx) : cleaned;
+		return parseDigits(head);
 	}
 
 	/** Strip HTML-like tags (e.g. {@code <col=ffb83f>}, {@code <br>}, {@code </col>})
