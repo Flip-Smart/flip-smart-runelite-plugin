@@ -130,6 +130,9 @@ public class FlipSmartPlugin extends Plugin
 	private GeOfferDescriptionService geOfferDescriptionService;
 
 	@Inject
+	private TradeStationSlotPushService tradeStationSlotPushService;
+
+	@Inject
 	private Gson gson;
 
 	// Flip Finder panel
@@ -834,6 +837,9 @@ public class FlipSmartPlugin extends Plugin
 
 		// Clear API client cache
 		apiClient.clearCache();
+
+		// Shut down the trade-station snapshot pusher's executor.
+		tradeStationSlotPushService.shutdown();
 	}
 
 	@Subscribe
@@ -1307,6 +1313,11 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
+
+		// Warm the Trade Station "Import from RuneLite" cache (issue #683
+		// AC7). Captured here on the client thread; pushed off-thread.
+		tradeStationSlotPushService.scheduleSnapshotPush(
+			tradeStationSlotPushService.readCurrentSlotIds());
 
 		int itemId = offer.getItemId();
 		int quantitySold = offer.getQuantitySold();
