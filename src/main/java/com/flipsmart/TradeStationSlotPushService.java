@@ -43,7 +43,7 @@ public class TradeStationSlotPushService
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
-	private final ScheduledExecutorService scheduler;
+	private final ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
 
 	private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
 	private final AtomicReference<List<Integer>> lastPushed = new AtomicReference<>();
@@ -59,7 +59,7 @@ public class TradeStationSlotPushService
 		this.session = session;
 		this.scheduler = Executors.newSingleThreadScheduledExecutor(r ->
 		{
-			Thread t = new Thread(r, "flipsmart-trade-station-push");
+			Thread t = new Thread(r, "flipsmart-trade-station-push"); // NOPMD DoNotUseThreads
 			t.setDaemon(true);
 			return t;
 		});
@@ -103,7 +103,7 @@ public class TradeStationSlotPushService
 		{
 			existing.cancel(false);
 		}
-		scheduler.execute(() -> doPush(snapshot));
+		scheduler.execute(() -> doPush(snapshot)); // NOPMD DoNotUseThreads
 	}
 
 	public void shutdown()
@@ -113,7 +113,7 @@ public class TradeStationSlotPushService
 		{
 			existing.cancel(false);
 		}
-		scheduler.shutdownNow();
+		scheduler.shutdownNow(); // NOPMD DoNotUseThreads
 	}
 
 	/**

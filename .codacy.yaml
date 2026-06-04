@@ -10,14 +10,6 @@
 #
 # See https://docs.codacy.com/repositories-configure/codacy-configuration-file/
 
-engines:
-  pmd:
-    # DoNotUseThreads targets J2EE webapp compliance and is a false positive
-    # for a RuneLite desktop plugin where ScheduledExecutorService + daemon
-    # threads are the idiomatic pattern for background work.
-    exclude_patterns:
-      - "category/java/multithreading.xml/DoNotUseThreads"
-
 exclude_paths:
   # Gradle build output and caches
   - "build/**"
