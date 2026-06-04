@@ -154,8 +154,11 @@ public class TradeStationSlotPushService
 		List<Integer> previous = lastPushed.get();
 		if (previous != null && previous.equals(itemIds))
 		{
-			log.debug("Skipping trade-station slot push: snapshot unchanged ({} items)",
-				itemIds.size());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Skipping trade-station slot push: snapshot unchanged ({} items)",
+					itemIds.size());
+			}
 			return;
 		}
 		try
@@ -163,14 +166,20 @@ public class TradeStationSlotPushService
 			apiClient.pushTradeStationSlotsAsync(rsn, itemIds)
 				.exceptionally(e ->
 				{
-					log.debug("Trade-station slot push failed: {}", e.getMessage());
+					if (log.isDebugEnabled())
+					{
+						log.debug("Trade-station slot push failed: {}", e.getMessage());
+					}
 					return false;
 				});
 			lastPushed.set(itemIds);
 		}
 		catch (RuntimeException e)
 		{
-			log.debug("Trade-station slot push threw: {}", e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Trade-station slot push threw: {}", e.getMessage());
+			}
 		}
 	}
 }
