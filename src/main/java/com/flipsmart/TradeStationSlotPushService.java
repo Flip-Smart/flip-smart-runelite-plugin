@@ -26,6 +26,13 @@ import net.runelite.api.GrandExchangeOfferState;
  * (one per state transition) — we only need to push the final state of the
  * snapshot, not every intermediate one. Failed pushes are dropped silently;
  * this is best-effort cache warmth, not a critical signal.
+ *
+ * <p>Runs unconditionally — does not consult the {@code ff_trade_station}
+ * feature flag that gates the web page. The plugin has no user-visible
+ * Trade Station UI, so players see nothing whether the flag is on or off,
+ * and pre-warming the cache means the web Import button works immediately
+ * the moment the flag flips on for them (no "open RuneLite and wait for a
+ * trade to register" experience on first use).
  */
 @Slf4j
 @Singleton
