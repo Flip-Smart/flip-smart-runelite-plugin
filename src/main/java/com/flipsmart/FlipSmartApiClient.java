@@ -2543,6 +2543,36 @@ public class FlipSmartApiClient
 		return CompletableFuture.completedFuture(cached.getVolume());
 	}
 
+	/**
+	 * Push the current open GE slot item IDs to the backend cache so the web
+	 * Trade Station's "Import from RuneLite" button (issue #683 AC7) can
+	 * read them. Best-effort — failures are swallowed by the caller because
+	 * cache warmth is not critical to plugin operation.
+	 */
+	public CompletableFuture<Boolean> pushTradeStationSlotsAsync(String rsn, java.util.List<Integer> itemIds)
+	{
+		String url = String.format("%s/trade-station/runelite-slots", getApiUrl());
+
+		JsonObject body = new JsonObject();
+		body.addProperty("rsn", rsn);
+		com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+		for (Integer id : itemIds)
+		{
+			arr.add(id);
+		}
+		body.add("item_ids", arr);
+
+		RequestBody rb = RequestBody.create(JSON, body.toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
+			.exceptionally(e ->
+			{
+				log.debug("pushTradeStationSlotsAsync failed: {}", e.getMessage());
+				return false;
+			});
+	}
+
 	private static class CachedDailyVolume
 	{
 		private final Integer volume;
