@@ -209,8 +209,11 @@ public class FlipAssistInputListener implements KeyListener
 		int openOfferItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		if (openOfferItemId > 0 && focusedFlip.getItemId() != openOfferItemId)
 		{
-			log.debug("FlipAssist hotkey: skipped (focused item {} != open offer item {})",
-				focusedFlip.getItemId(), openOfferItemId);
+			if (log.isDebugEnabled())
+			{
+				log.debug("FlipAssist hotkey: skipped (focused item {} != open offer item {})",
+					focusedFlip.getItemId(), openOfferItemId);
+			}
 			return;
 		}
 
