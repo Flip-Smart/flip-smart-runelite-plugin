@@ -64,6 +64,15 @@ public class AutoRecommendService
 	private int currentIndex;
 	private volatile boolean active;
 
+	// Offer-screen lock (issue #702). When the user is on the buy/sell offer setup
+	// screen, auto-mode must not silently re-target the focused flip — that race
+	// causes the import hotkey to write the wrong item's price/qty into the open
+	// offer. While locked, invokeFocusCallback() drops focus changes that don't
+	// match the locked item. Acquired by FlipSmartPlugin on GE_OFFERS_SETUP_BUILD,
+	// released when the offer screen closes (GameTick poll) or the user manually
+	// picks a new item in Flip Finder. null = unlocked.
+	private volatile Integer lockedItemId;
+
 	// Timestamp of last queue refresh for staleness checks
 	private volatile long lastQueueRefreshMillis;
 
@@ -2207,11 +2216,72 @@ public class AutoRecommendService
 
 	private void invokeFocusCallback(FocusedFlip focus)
 	{
+		// Issue #702: while the user is in the buy/sell offer setup screen, the
+		// rec is locked. Drop any auto-mode focus change for a different item so
+		// the overlay and the open offer stay in sync. Manual picks bypass this
+		// because they go through FlipFinderPanel → onFocusChanged directly.
+		Integer locked = lockedItemId;
+		if (locked != null && focus != null && focus.getItemId() != locked)
+		{
+			log.debug("Auto-recommend: focus change to item {} blocked by offer-screen lock on item {}",
+				focus.getItemId(), locked);
+			return;
+		}
+		if (locked != null && focus == null)
+		{
+			log.debug("Auto-recommend: focus clear blocked by offer-screen lock on item {}", locked);
+			return;
+		}
+
 		Consumer<FocusedFlip> callback = onFocusChanged;
 		if (callback != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(focus));
 		}
+	}
+
+	/**
+	 * Acquire the offer-screen lock for the given item (issue #702). Called when
+	 * the GE buy/sell offer setup widget builds. While locked, auto-mode focus
+	 * mutations targeting a different item are silently dropped. Idempotent —
+	 * re-locking to the same item is a no-op; locking to a new item replaces the
+	 * lock (e.g. user navigates to a different offer screen).
+	 */
+	public void acquireOfferLock(int itemId)
+	{
+		if (itemId <= 0)
+		{
+			return;
+		}
+		Integer prior = lockedItemId;
+		if (prior != null && prior == itemId)
+		{
+			return;
+		}
+		lockedItemId = itemId;
+		log.debug("Auto-recommend: offer-screen lock acquired for item {}", itemId);
+	}
+
+	/**
+	 * Release the offer-screen lock (issue #702). Called when the offer setup
+	 * widget closes (poll on GameTick) or when the user manually picks a new
+	 * item in Flip Finder. No-op if no lock is held.
+	 */
+	public void releaseOfferLock()
+	{
+		Integer prior = lockedItemId;
+		if (prior == null)
+		{
+			return;
+		}
+		lockedItemId = null;
+		log.debug("Auto-recommend: offer-screen lock released (was item {})", prior);
+	}
+
+	/** Test-visible accessor for the current lock state. null = unlocked. */
+	public Integer getLockedItemId()
+	{
+		return lockedItemId;
 	}
 
 	private void invokeQueueAdvancedCallback()

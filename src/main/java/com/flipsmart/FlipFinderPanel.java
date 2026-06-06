@@ -3263,6 +3263,16 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void updateFocus(FocusedFlip newFocus, JPanel panel)
 	{
+		// Issue #702 — manual pick is the user's explicit override of the
+		// offer-screen lock. Release here so auto-mode can resume; the lock
+		// re-acquires on the next GE_OFFERS_SETUP_BUILD if they open another
+		// offer screen.
+		AutoRecommendService autoService = plugin.getAutoRecommendService();
+		if (autoService != null)
+		{
+			autoService.releaseOfferLock();
+		}
+
 		// Reset previous focused panel
 		if (currentFocusedPanel != null)
 		{

@@ -25,6 +25,7 @@ import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarbitID;
@@ -931,6 +932,30 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		geHistoryService.onGameTick();
+
+		// Issue #702 — release the offer-screen lock once the setup widget is
+		// gone (player confirmed, cancelled, or navigated back to the standard
+		// GE). We can't trust a single close event because the script-build hook
+		// only fires on open. Poll cheaply: short-circuit when no lock is held.
+		releaseOfferLockIfSetupClosed();
+	}
+
+	/**
+	 * If the auto-recommend offer-screen lock is held and the GE offer setup
+	 * widget is no longer visible, release the lock and surface the current
+	 * recommendation (which may have advanced in the background while locked).
+	 */
+	private void releaseOfferLockIfSetupClosed()
+	{
+		if (autoRecommendService == null || autoRecommendService.getLockedItemId() == null)
+		{
+			return;
+		}
+		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+		if (setupDesc == null || setupDesc.isHidden())
+		{
+			autoRecommendService.releaseOfferLock();
+		}
 	}
 
 	private void handleLogoutState()
@@ -1288,19 +1313,28 @@ public class FlipSmartPlugin extends Plugin
 			geOfferDescriptionService.onSetupBuildScriptPostFired();
 		}
 
+		// Issue #702 — lock auto-mode to the open offer's item the moment the
+		// setup screen builds. Applies to BOTH buy and sell so the user can't be
+		// raced into the wrong values on either side. Released in onGameTick
+		// when the setup widget closes, or by FlipFinderPanel on manual pick.
+		int openItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (openItemId > 0 && autoRecommendService != null)
+		{
+			autoRecommendService.acquireOfferLock(openItemId);
+		}
+
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 		if (offerType != 1)
 		{
 			return;
 		}
 
-		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-		if (itemId <= 0)
+		if (openItemId <= 0)
 		{
 			return;
 		}
 
-		grandExchangeTracker.autoFocusOnActiveFlip(itemId);
+		grandExchangeTracker.autoFocusOnActiveFlip(openItemId);
 	}
 
 	@Subscribe

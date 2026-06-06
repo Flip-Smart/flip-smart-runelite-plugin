@@ -3,6 +3,7 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.Keybind;
@@ -196,6 +197,20 @@ public class FlipAssistInputListener implements KeyListener
 	{
 		if (!isGrandExchangeOpen())
 		{
+			return;
+		}
+
+		// Issue #702 — defense-in-depth against the auto-advance race. The
+		// AutoRecommendService offer-screen lock should already keep focusedFlip
+		// in sync with the open offer, but the brief window between the player
+		// opening an offer and GE_OFFERS_SETUP_BUILD firing leaves room for a
+		// mismatch. If they don't match, silently skip — the hotkey is for the
+		// slot you're on, so we never write a different item's price/qty.
+		int openOfferItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (openOfferItemId > 0 && focusedFlip.getItemId() != openOfferItemId)
+		{
+			log.debug("FlipAssist hotkey: skipped (focused item {} != open offer item {})",
+				focusedFlip.getItemId(), openOfferItemId);
 			return;
 		}
 
