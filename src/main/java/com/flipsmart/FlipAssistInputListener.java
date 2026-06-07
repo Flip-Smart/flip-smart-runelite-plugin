@@ -3,6 +3,7 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.Keybind;
@@ -196,6 +197,18 @@ public class FlipAssistInputListener implements KeyListener
 	{
 		if (!isGrandExchangeOpen())
 		{
+			return;
+		}
+
+		// Defense-in-depth against the auto-advance race window before the offer-screen lock acquires.
+		int openOfferItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (openOfferItemId > 0 && focusedFlip.getItemId() != openOfferItemId)
+		{
+			if (log.isDebugEnabled())
+			{
+				log.debug("FlipAssist hotkey: skipped (focused item {} != open offer item {})",
+					focusedFlip.getItemId(), openOfferItemId);
+			}
 			return;
 		}
 

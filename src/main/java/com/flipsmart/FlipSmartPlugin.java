@@ -25,6 +25,7 @@ import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
+import net.runelite.api.widgets.Widget;
 import net.runelite.api.ScriptID;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarbitID;
@@ -931,6 +932,22 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		geHistoryService.onGameTick();
+
+		releaseOfferLockIfSetupClosed();
+	}
+
+	private void releaseOfferLockIfSetupClosed()
+	{
+		if (autoRecommendService == null || autoRecommendService.getLockedItemId() == null)
+		{
+			return;
+		}
+		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
+		if (setupDesc == null || setupDesc.isHidden())
+		{
+			autoRecommendService.releaseOfferLock();
+			autoRecommendService.refreshFocusAfterUnlock();
+		}
 	}
 
 	private void handleLogoutState()
@@ -1288,19 +1305,24 @@ public class FlipSmartPlugin extends Plugin
 			geOfferDescriptionService.onSetupBuildScriptPostFired();
 		}
 
+		int openItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (openItemId > 0 && autoRecommendService != null)
+		{
+			autoRecommendService.acquireOfferLock(openItemId);
+		}
+
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 		if (offerType != 1)
 		{
 			return;
 		}
 
-		int itemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-		if (itemId <= 0)
+		if (openItemId <= 0)
 		{
 			return;
 		}
 
-		grandExchangeTracker.autoFocusOnActiveFlip(itemId);
+		grandExchangeTracker.autoFocusOnActiveFlip(openItemId);
 	}
 
 	@Subscribe

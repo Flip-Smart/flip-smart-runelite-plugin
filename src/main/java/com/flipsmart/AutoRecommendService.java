@@ -64,6 +64,10 @@ public class AutoRecommendService
 	private int currentIndex;
 	private volatile boolean active;
 
+	// Offer-screen lock. While set, invokeFocusCallback drops focus changes
+	// for any item other than this one. null = unlocked.
+	private volatile Integer lockedItemId;
+
 	// Timestamp of last queue refresh for staleness checks
 	private volatile long lastQueueRefreshMillis;
 
@@ -2207,11 +2211,61 @@ public class AutoRecommendService
 
 	private void invokeFocusCallback(FocusedFlip focus)
 	{
+		Integer locked = lockedItemId;
+		if (locked != null && (focus == null || focus.getItemId() != locked))
+		{
+			log.debug("Auto-recommend: focus change blocked by offer-screen lock on item {}", locked);
+			return;
+		}
+
 		Consumer<FocusedFlip> callback = onFocusChanged;
 		if (callback != null)
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(focus));
 		}
+	}
+
+	/** Lock auto-mode focus to the given item until the offer setup screen closes. Idempotent. */
+	public void acquireOfferLock(int itemId)
+	{
+		if (itemId <= 0)
+		{
+			return;
+		}
+		Integer prior = lockedItemId;
+		if (prior != null && prior == itemId)
+		{
+			return;
+		}
+		lockedItemId = itemId;
+		log.debug("Auto-recommend: offer-screen lock acquired for item {}", itemId);
+	}
+
+	/** Clear the offer-screen lock. No-op if not held. */
+	public void releaseOfferLock()
+	{
+		Integer prior = lockedItemId;
+		if (prior == null)
+		{
+			return;
+		}
+		lockedItemId = null;
+		log.debug("Auto-recommend: offer-screen lock released (was item {})", prior);
+	}
+
+	public Integer getLockedItemId()
+	{
+		return lockedItemId;
+	}
+
+	/** Re-run the next-action router after the lock releases — focus updates that ran while locked were dropped. */
+	public synchronized void refreshFocusAfterUnlock()
+	{
+		if (!active)
+		{
+			return;
+		}
+		focusNextAvailableAction();
 	}
 
 	private void invokeQueueAdvancedCallback()

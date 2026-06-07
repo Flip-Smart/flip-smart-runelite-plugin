@@ -3263,6 +3263,13 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void updateFocus(FocusedFlip newFocus, JPanel panel)
 	{
+		// Manual pick overrides the auto-mode offer-screen lock.
+		AutoRecommendService autoService = plugin.getAutoRecommendService();
+		if (autoService != null)
+		{
+			autoService.releaseOfferLock();
+		}
+
 		// Reset previous focused panel
 		if (currentFocusedPanel != null)
 		{
