@@ -200,12 +200,7 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
-		// Issue #702 — defense-in-depth against the auto-advance race. The
-		// AutoRecommendService offer-screen lock should already keep focusedFlip
-		// in sync with the open offer, but the brief window between the player
-		// opening an offer and GE_OFFERS_SETUP_BUILD firing leaves room for a
-		// mismatch. If they don't match, silently skip — the hotkey is for the
-		// slot you're on, so we never write a different item's price/qty.
+		// Defense-in-depth against the auto-advance race window before the offer-screen lock acquires.
 		int openOfferItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		if (openOfferItemId > 0 && focusedFlip.getItemId() != openOfferItemId)
 		{

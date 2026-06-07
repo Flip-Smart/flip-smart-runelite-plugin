@@ -933,21 +933,9 @@ public class FlipSmartPlugin extends Plugin
 
 		geHistoryService.onGameTick();
 
-		// Issue #702 — release the offer-screen lock once the setup widget is
-		// gone (player confirmed, cancelled, or navigated back to the standard
-		// GE). We can't trust a single close event because the script-build hook
-		// only fires on open. Poll cheaply: short-circuit when no lock is held.
 		releaseOfferLockIfSetupClosed();
 	}
 
-	/**
-	 * If the auto-recommend offer-screen lock is held and the GE offer setup
-	 * widget is no longer visible, release the lock and surface the current
-	 * recommendation. The refresh is critical: any focusNextAvailableAction
-	 * routes that ran during the lock (e.g. onSellOrderPlaced after the player
-	 * confirmed a MODIFY) had their invokeFocusCallback dropped by the lock
-	 * gate, so without the replay the overlay stays on the just-handled item.
-	 */
 	private void releaseOfferLockIfSetupClosed()
 	{
 		if (autoRecommendService == null || autoRecommendService.getLockedItemId() == null)
@@ -1317,10 +1305,6 @@ public class FlipSmartPlugin extends Plugin
 			geOfferDescriptionService.onSetupBuildScriptPostFired();
 		}
 
-		// Issue #702 — lock auto-mode to the open offer's item the moment the
-		// setup screen builds. Applies to BOTH buy and sell so the user can't be
-		// raced into the wrong values on either side. Released in onGameTick
-		// when the setup widget closes, or by FlipFinderPanel on manual pick.
 		int openItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
 		if (openItemId > 0 && autoRecommendService != null)
 		{

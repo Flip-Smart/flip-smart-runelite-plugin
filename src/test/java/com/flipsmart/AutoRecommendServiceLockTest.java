@@ -8,14 +8,9 @@ import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.mock;
 
 /**
- * Issue #702 — verifies the offer-screen lock state machine on
- * {@link AutoRecommendService}. The lock guards against the auto-advance race
- * where focus could silently switch to a different item while the user is
- * mid-input on a GE offer screen.
- *
- * <p>These tests cover the lock's public state contract only. The
- * {@code invokeFocusCallback} gate is exercised indirectly through manual QA
- * (the offer-screen reproduction) because it requires a fully-wired queue.
+ * Verifies the offer-screen lock state machine on {@link AutoRecommendService}.
+ * Covers the public state contract only; the {@code invokeFocusCallback} gate
+ * is exercised via manual QA because it requires a fully-wired queue.
  */
 public class AutoRecommendServiceLockTest
 {
