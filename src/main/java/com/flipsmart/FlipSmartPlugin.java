@@ -943,7 +943,10 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * If the auto-recommend offer-screen lock is held and the GE offer setup
 	 * widget is no longer visible, release the lock and surface the current
-	 * recommendation (which may have advanced in the background while locked).
+	 * recommendation. The refresh is critical: any focusNextAvailableAction
+	 * routes that ran during the lock (e.g. onSellOrderPlaced after the player
+	 * confirmed a MODIFY) had their invokeFocusCallback dropped by the lock
+	 * gate, so without the replay the overlay stays on the just-handled item.
 	 */
 	private void releaseOfferLockIfSetupClosed()
 	{
@@ -955,6 +958,7 @@ public class FlipSmartPlugin extends Plugin
 		if (setupDesc == null || setupDesc.isHidden())
 		{
 			autoRecommendService.releaseOfferLock();
+			autoRecommendService.refreshFocusAfterUnlock();
 		}
 	}
 

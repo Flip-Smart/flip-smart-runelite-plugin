@@ -2284,6 +2284,24 @@ public class AutoRecommendService
 		return lockedItemId;
 	}
 
+	/**
+	 * Re-run the next-action router (issue #702). Called by FlipSmartPlugin
+	 * immediately after {@link #releaseOfferLock()} fires from the GameTick
+	 * poll, because any focus updates that happened during the lock (e.g.
+	 * onSellOrderPlaced → focusNextAvailableAction after the player confirmed
+	 * a MODIFY) were dropped by invokeFocusCallback's lock gate. Without this
+	 * replay the overlay stays stuck on the just-handled item. No-op when
+	 * auto-mode is off.
+	 */
+	public synchronized void refreshFocusAfterUnlock()
+	{
+		if (!active)
+		{
+			return;
+		}
+		focusNextAvailableAction();
+	}
+
 	private void invokeQueueAdvancedCallback()
 	{
 		Runnable callback = onQueueAdvanced;
