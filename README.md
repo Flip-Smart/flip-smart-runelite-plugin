@@ -1,12 +1,12 @@
-# Flip Smart RuneLite Plugin
+# FlipSmart RuneLite Plugin
 
 A RuneLite plugin that helps you find profitable items to flip in the Grand Exchange and automatically tracks your flipping progress.
 
 ## 🔐 Authentication Required
 
-This plugin requires a **Flip Smart account** to use. You'll need to:
+This plugin requires a **FlipSmart account** to use. You'll need to:
 
-1. Create an account on [Flip Smart](https://flipsmart.net)
+1. Create an account on [FlipSmart](https://flipsmart.net)
 2. Log in through the plugin's **Flip Finder panel** in the RuneLite sidebar
 3. Your credentials are securely stored after login
 
@@ -119,7 +119,7 @@ All prices and calculations are based on live market data:
 
 ## ⚙️ Configuration
 
-Access settings via the RuneLite configuration panel (wrench icon) → "Flip Smart":
+Access settings via the RuneLite configuration panel (wrench icon) → "FlipSmart":
 
 ### Flip Finder
 - **Enable Flip Finder**: Toggle the sidebar panel on/off
@@ -149,7 +149,7 @@ Access settings via the RuneLite configuration panel (wrench icon) → "Flip Sma
 
 1. **Install the plugin** in RuneLite
 2. **Open the Flip Finder panel** from the RuneLite sidebar
-3. **Log in** with your Flip Smart account
+3. **Log in** with your FlipSmart account
 4. **Browse recommended flips** and choose items that fit your cash stack
 5. **Buy items in the GE** - they'll automatically appear in the "Active Flips" tab
 6. **Sell when ready** - completed flips move to the "Completed" tab
@@ -185,7 +185,7 @@ Access settings via the RuneLite configuration panel (wrench icon) → "Flip Sma
 ## 🛠️ Troubleshooting
 
 **Plugin shows "Failed to fetch recommendations"**
-- Check that you're logged in to Flip Smart
+- Check that you're logged in to FlipSmart
 - Ensure you're logged into RuneLite and OSRS
 - Try clicking the Refresh button
 

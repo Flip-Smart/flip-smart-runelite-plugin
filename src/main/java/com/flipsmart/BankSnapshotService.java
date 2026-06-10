@@ -179,7 +179,7 @@ public class BankSnapshotService
 	{
 		ChatMessageBuilder builder = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ")
+			.append("[FlipSmart] ")
 			.append(isError ? ChatColorType.HIGHLIGHT : ChatColorType.NORMAL)
 			.append(message);
 

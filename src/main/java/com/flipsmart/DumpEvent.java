@@ -4,7 +4,7 @@ import com.google.gson.annotations.SerializedName;
 import lombok.Data;
 
 /**
- * Represents a market dump event from the Flip Smart API.
+ * Represents a market dump event from the FlipSmart API.
  * A dump is a sudden price drop (≥5%) with high trading volume.
  */
 @Data

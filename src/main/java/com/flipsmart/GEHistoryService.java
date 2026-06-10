@@ -127,7 +127,7 @@ public class GEHistoryService
 		chatPromptSent = true;
 		String msg = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ")
+			.append("[FlipSmart] ")
 			.append(ChatColorType.NORMAL)
 			.append("Offline trades detected. Open the Grand Exchange and click the ")
 			.append(ChatColorType.HIGHLIGHT)
