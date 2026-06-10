@@ -282,7 +282,7 @@ public class FlipFinderPanel extends PluginPanel
 		contentPanel.setBorder(new EmptyBorder(40, 20, 40, 20));
 
 		// Title
-		JLabel titleLabel = new JLabel("Flip Smart");
+		JLabel titleLabel = new JLabel("FlipSmart");
 		titleLabel.setForeground(Color.WHITE);
 		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 24));
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
@@ -2564,7 +2564,7 @@ public class FlipFinderPanel extends PluginPanel
 		java.awt.image.BufferedImage chartIcon = drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
 
 		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
-		chartLabel.setToolTipText("View price history on Flip Smart website");
+		chartLabel.setToolTipText("View price history on FlipSmart website");
 		chartLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
 		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 0));
 		chartLabel.setOpaque(false);

@@ -146,7 +146,7 @@ public class MotdService
 	{
 		ChatMessageBuilder builder = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ");
+			.append("[FlipSmart] ");
 
 		if ("alert".equalsIgnoreCase(severity))
 		{

@@ -228,7 +228,7 @@ public class DumpAlertService
 	{
 		String message = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ")
+			.append("[FlipSmart] ")
 			.append(ChatColorType.NORMAL)
 			.append(dump.toChatMessage())
 			.build();

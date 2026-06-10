@@ -51,7 +51,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 @PluginDescriptor(
-	name = "Flip Smart",
+	name = "FlipSmart",
 	description = "A tool to help with item flipping in the Grand Exchange",
 	tags = {"grand exchange", "flipping", "trading", "money making"}
 )
@@ -543,7 +543,7 @@ public class FlipSmartPlugin extends Plugin
 	@Override
 	protected void startUp() throws Exception
 	{
-		log.debug("Flip Smart started!");
+		log.debug("FlipSmart started!");
 		overlayManager.add(geOverlay);
 		overlayManager.add(geSlotOverlay);
 		overlayManager.add(flipAssistOverlay);
@@ -761,7 +761,7 @@ public class FlipSmartPlugin extends Plugin
 	@Override
 	protected void shutDown() throws Exception
 	{
-		log.debug("Flip Smart stopped!");
+		log.debug("FlipSmart stopped!");
 
 		// Persist refresh token on shutdown to prevent session loss
 		String currentRefreshToken = apiClient.getRefreshToken();
