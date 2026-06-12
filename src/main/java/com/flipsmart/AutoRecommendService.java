@@ -814,7 +814,9 @@ public class AutoRecommendService
 		plugin.getSession().clearStaleNotifications();
 
 		log.debug("Auto-recommend: Queue refreshed with {} items", recommendationQueue.size());
-		updateOverlayAfterRefresh(currentRec);
+		// Reflect the item actually focused after the rebuild — currentRec may have
+		// been dropped from the queue if Flip Finder no longer recommends it.
+		updateOverlayAfterRefresh(getCurrentRecommendation());
 	}
 
 	private List<FlipRecommendation> filterAndSortRecommendations(List<FlipRecommendation> newRecommendations)
@@ -839,24 +841,44 @@ public class AutoRecommendService
 	private void rebuildQueue(List<FlipRecommendation> filtered, FlipRecommendation currentRec)
 	{
 		recommendationQueue.clear();
+		recommendationQueue.addAll(buildRefreshedQueue(filtered, currentRec, plugin.getActiveFlipItemIds()));
 		currentIndex = 0;
+	}
+
+	/**
+	 * Decide the ordered queue after a Flip Finder refresh. {@code filtered} is the
+	 * refreshed, actionable pool (already excludes GE-active and below-min-profit items).
+	 * The currently focused item is kept at index 0 only when it is still in that pool,
+	 * so churn is avoided when nothing changed but stale items are dropped when Flip
+	 * Finder no longer recommends them.
+	 */
+	static List<FlipRecommendation> buildRefreshedQueue(
+		List<FlipRecommendation> filtered,
+		FlipRecommendation currentRec,
+		Set<Integer> activeItemIds)
+	{
 		// If currentRec is now on the GE, don't preserve it across the refresh —
 		// otherwise it would survive the filter and resurface at index 0.
 		boolean currentRecActive = currentRec != null
-			&& plugin.getActiveFlipItemIds().contains(currentRec.getItemId());
-		if (currentRec == null || currentRecActive)
+			&& activeItemIds.contains(currentRec.getItemId());
+		// If Flip Finder dropped currentRec from the actionable pool, don't keep it
+		// queued — fall through to the refreshed order so the next pull is current.
+		boolean currentRecStillRecommended = currentRec != null
+			&& filtered.stream().anyMatch(r -> r.getItemId() == currentRec.getItemId());
+		if (currentRec == null || currentRecActive || !currentRecStillRecommended)
 		{
-			recommendationQueue.addAll(filtered);
-			return;
+			return new ArrayList<>(filtered);
 		}
-		recommendationQueue.add(currentRec);
+		List<FlipRecommendation> queue = new ArrayList<>();
+		queue.add(currentRec);
 		for (FlipRecommendation rec : filtered)
 		{
 			if (rec.getItemId() != currentRec.getItemId())
 			{
-				recommendationQueue.add(rec);
+				queue.add(rec);
 			}
 		}
+		return queue;
 	}
 
 	private void updateOverlayAfterRefresh(FlipRecommendation currentRec)
