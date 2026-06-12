@@ -266,29 +266,26 @@ public class FlipAssistOverlay extends Overlay
 			// Offline trade recovery is one-shot per session — once the user
 			// closes the History tab the data is gone — so the prompt has to
 			// surface even when the auto-recommend overlay is otherwise active.
-			if (isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills())
+			//
+			// Everything below history is suppressed while the player is mid
+			// offer-setup so prompts never overlay the buy/sell screen.
+			String fallbackMessage = flipSmartPlugin.isAutoRecommendActive()
+				? flipSmartPlugin.getAutoRecommendOverlayMessage()
+				: null;
+			String message = selectNoFocusMessage(
+				isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills(),
+				isOfferSetupOpen(),
+				autoStatusMessage,
+				fallbackMessage,
+				flipSmartPlugin.getApiClient().isAuthenticated(),
+				HISTORY_PROMPT_MESSAGE,
+				LOGIN_MESSAGE,
+				HINT_MESSAGE);
+			if (message == null)
 			{
-				return renderHintBox(graphics, HISTORY_PROMPT_MESSAGE);
+				return null;
 			}
-			if (autoStatusMessage != null)
-			{
-				return renderHintBox(graphics, autoStatusMessage);
-			}
-			// Fallback: read the last overlay message directly from auto-recommend
-			// in case the async callback result was lost due to race conditions
-			if (flipSmartPlugin.isAutoRecommendActive())
-			{
-				String fallbackMessage = flipSmartPlugin.getAutoRecommendOverlayMessage();
-				if (fallbackMessage != null)
-				{
-					return renderHintBox(graphics, fallbackMessage);
-				}
-			}
-			if (!flipSmartPlugin.getApiClient().isAuthenticated())
-			{
-				return renderHintBox(graphics, LOGIN_MESSAGE);
-			}
-			return renderHintBox(graphics, HINT_MESSAGE);
+			return renderHintBox(graphics, message);
 		}
 		
 		// Only show when GE is open or when we have an active flip
@@ -894,6 +891,47 @@ public class FlipAssistOverlay extends Overlay
 			}
 		}
 		return hasQuantityLabel && hasPriceCoins;
+	}
+
+	/**
+	 * Pick the hint/status message to draw when no flip is focused, or null to draw
+	 * nothing. The history-backfill prompt is one-shot per session and surfaces even
+	 * over an open offer-setup screen; every other auto-status/hint box is suppressed
+	 * while the player is mid offer-setup so prompts like "Collect profit" never
+	 * overlay the buy/sell screen or compete with the auto-list hotkey. The
+	 * suppressed message is not cleared — it re-surfaces as soon as setup closes.
+	 */
+	static String selectNoFocusMessage(
+		boolean showHistoryPrompt,
+		boolean offerSetupOpen,
+		String autoStatusMessage,
+		String autoRecommendFallback,
+		boolean authenticated,
+		String historyMessage,
+		String loginMessage,
+		String hintMessage)
+	{
+		if (showHistoryPrompt)
+		{
+			return historyMessage;
+		}
+		if (offerSetupOpen)
+		{
+			return null;
+		}
+		if (autoStatusMessage != null)
+		{
+			return autoStatusMessage;
+		}
+		if (autoRecommendFallback != null)
+		{
+			return autoRecommendFallback;
+		}
+		if (!authenticated)
+		{
+			return loginMessage;
+		}
+		return hintMessage;
 	}
 	
 	private Widget[] getOfferPanelChildren()
