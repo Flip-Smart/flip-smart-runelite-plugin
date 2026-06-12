@@ -540,7 +540,8 @@ public class AutoRecommendService
 				wasBuy, filledQuantity, totalQuantity);
 		}
 
-		focusNextAvailableAction();
+		// A cancel frees a slot — rewind so a new recommendation surfaces immediately.
+		focusNextAvailableAction(true);
 	}
 
 	private void trackPartialBuyCancel(int itemId, int filledQuantity, int totalQuantity)
@@ -629,7 +630,8 @@ public class AutoRecommendService
 			clearSellAdjustmentTimer(itemId);
 			buyPrices.remove(itemId);
 			log.debug("Auto-recommend: Sell collected for {} - advancing", itemName);
-			focusNextAvailableAction();
+			// Collecting a sell frees the slot — rewind so a new buy surfaces.
+			focusNextAvailableAction(true);
 		}
 	}
 
@@ -660,7 +662,8 @@ public class AutoRecommendService
 			return;
 		}
 
-		focusNextAvailableAction();
+		// Nothing to sell for this collected buy — the slot is free, so rewind to a buy.
+		focusNextAvailableAction(true);
 	}
 
 	/**
@@ -669,6 +672,17 @@ public class AutoRecommendService
 	 * stale offers > buy next from queue > wait.
 	 */
 	private void focusNextAvailableAction()
+	{
+		focusNextAvailableAction(false);
+	}
+
+	/**
+	 * @param rewindToFirstAvailableBuy when a buy is the next action, rewind
+	 * {@code currentIndex} to the first still-valid queue item instead of relying on
+	 * its monotonically-advanced position. Set on slot-freeing events (collect /
+	 * cancel) so a freed slot always recovers a recommendation. See issue #725.
+	 */
+	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy)
 	{
 		focusedCollectedItemId = -1;
 
@@ -694,9 +708,29 @@ public class AutoRecommendService
 			// Guide user through stale offers one at a time before new recommendations
 			focusNextStaleOffer();
 		}
-		else if (hasAvailableGESlots() && currentIndex < recommendationQueue.size())
+		else if (hasAvailableGESlots())
 		{
-			focusCurrent();
+			// currentIndex only ever moves forward, so a freed slot can leave it
+			// parked past every still-valid item (including the one just freed).
+			// Rewind to the first surfaceable buy in that case so the slot is never
+			// left empty until the next full queue refresh.
+			if (rewindToFirstAvailableBuy)
+			{
+				int idx = firstAvailableBuyIndex(recommendationQueue,
+					plugin.getActiveFlipItemIds(), config.priceOffset(), config.minimumProfit());
+				if (idx >= 0)
+				{
+					currentIndex = idx;
+				}
+			}
+			if (currentIndex < recommendationQueue.size())
+			{
+				focusCurrent();
+			}
+			else
+			{
+				promptCollection();
+			}
 		}
 		else
 		{
@@ -704,6 +738,31 @@ public class AutoRecommendService
 			// completed offers, otherwise show "Waiting for flips"
 			promptCollection();
 		}
+	}
+
+	/**
+	 * First queue index that can be surfaced as a buy right now: not already on the
+	 * GE and at or above the minimum adjusted profit. Scans from the front (lowest
+	 * volume first), independent of {@code currentIndex}, so a freed slot can recover
+	 * an item the monotonic {@code currentIndex} has already advanced past. Returns
+	 * -1 when nothing is currently surfaceable.
+	 */
+	static int firstAvailableBuyIndex(
+		List<FlipRecommendation> queue,
+		Set<Integer> activeItemIds,
+		int priceOffset,
+		int minProfit)
+	{
+		for (int i = 0; i < queue.size(); i++)
+		{
+			FlipRecommendation rec = queue.get(i);
+			if (!activeItemIds.contains(rec.getItemId())
+				&& FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
+			{
+				return i;
+			}
+		}
+		return -1;
 	}
 
 	private boolean isUserBusy()
