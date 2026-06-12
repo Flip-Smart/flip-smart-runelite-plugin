@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 @Slf4j
 @Singleton
@@ -2481,6 +2482,10 @@ public class FlipSmartApiClient
 	// fires one request per frame. We back off for a minute, then retry.
 	private static final long DAILY_VOLUME_ERROR_CACHE_TTL_MS = 60_000;  // 1 minute
 	private final Map<Integer, CachedDailyVolume> dailyVolumeCache = new ConcurrentHashMap<>();
+	// In-flight fetches keyed by item id. onBeforeRender rebuilds the GE offer
+	// description every render frame, so without deduping a cold cache opens one
+	// connection per frame for the same item until the first response lands.
+	private final Map<Integer, CompletableFuture<Integer>> inFlightDailyVolume = new ConcurrentHashMap<>();
 
 	/**
 	 * Fetch the 24h daily trading volume for a single item.
@@ -2499,6 +2504,11 @@ public class FlipSmartApiClient
 			return CompletableFuture.completedFuture(cached.getVolume());
 		}
 
+		return dedupeInFlight(inFlightDailyVolume, itemId, () -> fetchDailyVolume(itemId));
+	}
+
+	private CompletableFuture<Integer> fetchDailyVolume(int itemId)
+	{
 		String url = String.format("%s/items/%d/daily-volume", getApiUrl(), itemId);
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -2525,6 +2535,28 @@ public class FlipSmartApiClient
 			}
 		});
 
+		return future;
+	}
+
+	/**
+	 * Share a single in-flight fetch per key. Callers arriving while a fetch is
+	 * running get the same future instead of starting their own; the entry is
+	 * cleared on completion so a later (post-TTL) call can fetch again. Callers
+	 * are serialized on the client thread, so a plain get-then-put is safe here.
+	 */
+	static CompletableFuture<Integer> dedupeInFlight(
+		Map<Integer, CompletableFuture<Integer>> inFlight,
+		int itemId,
+		Supplier<CompletableFuture<Integer>> fetcher)
+	{
+		CompletableFuture<Integer> existing = inFlight.get(itemId);
+		if (existing != null)
+		{
+			return existing;
+		}
+		CompletableFuture<Integer> future = fetcher.get();
+		inFlight.put(itemId, future);
+		future.whenComplete((v, ex) -> inFlight.remove(itemId, future));
 		return future;
 	}
 
