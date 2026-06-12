@@ -680,7 +680,7 @@ public class AutoRecommendService
 	 * @param rewindToFirstAvailableBuy when a buy is the next action, rewind
 	 * {@code currentIndex} to the first still-valid queue item instead of relying on
 	 * its monotonically-advanced position. Set on slot-freeing events (collect /
-	 * cancel) so a freed slot always recovers a recommendation. See issue #725.
+	 * cancel) so a freed slot always recovers a recommendation.
 	 */
 	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy)
 	{
