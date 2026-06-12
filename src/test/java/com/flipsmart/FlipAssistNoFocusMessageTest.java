@@ -16,6 +16,7 @@ public class FlipAssistNoFocusMessageTest
 	private static final String HIST = "history";
 	private static final String LOGIN = "login";
 	private static final String HINT = "hint";
+	private static final String COLLECT = "Collect profit from GE";
 
 	private static String select(boolean showHistory, boolean offerSetupOpen,
 		String autoStatus, String fallback, boolean authenticated)
@@ -28,7 +29,7 @@ public class FlipAssistNoFocusMessageTest
 	@Test
 	public void suppressesAutoStatusDuringOfferSetup()
 	{
-		assertNull(select(false, true, "Collect profit from GE", null, true));
+		assertNull(select(false, true, COLLECT, null, true));
 	}
 
 	// Suppression also hides the auto-recommend fallback message during setup.
@@ -42,21 +43,21 @@ public class FlipAssistNoFocusMessageTest
 	@Test
 	public void showsAutoStatusWhenNotInSetup()
 	{
-		assertEquals("Collect profit from GE", select(false, false, "Collect profit from GE", null, true));
+		assertEquals(COLLECT, select(false, false, COLLECT, null, true));
 	}
 
 	// History-backfill recovery is one-shot per session — it still surfaces during setup.
 	@Test
 	public void historyPromptSurfacesEvenDuringOfferSetup()
 	{
-		assertEquals(HIST, select(true, true, "Collect profit from GE", null, true));
+		assertEquals(HIST, select(true, true, COLLECT, null, true));
 	}
 
 	// History takes precedence over auto-status when both are present.
 	@Test
 	public void historyTakesPrecedenceOverAutoStatus()
 	{
-		assertEquals(HIST, select(true, false, "Collect profit from GE", null, true));
+		assertEquals(HIST, select(true, false, COLLECT, null, true));
 	}
 
 	// Falls back to the auto-recommend fallback message when no autoStatus.
