@@ -35,15 +35,19 @@ public class AutoRecommendRefreshQueueTest
 	}
 
 	private static final Set<Integer> NONE_ACTIVE = Collections.emptySet();
+	private static final String RAW_SHARK = "Raw Shark";
+	private static final String MAGIC_LOGS = "Magic Logs";
+	private static final String DEMONIC_HOOD = "Demonic Hood";
+	private static final String YEW_LOGS = "Yew Logs";
 
 	// AC2 — focused item removed from the refreshed pool is dropped from the queue.
 	@Test
 	public void dropsFocusedItemWhenNoLongerRecommended()
 	{
-		FlipRecommendation stale = rec(1001, "Demonic Hood", 50);
+		FlipRecommendation stale = rec(1001, DEMONIC_HOOD, 50);
 		List<FlipRecommendation> refreshedPool = Arrays.asList(
-			rec(2002, "Raw Shark", 100),
-			rec(3003, "Magic Logs", 200));
+			rec(2002, RAW_SHARK, 100),
+			rec(3003, MAGIC_LOGS, 200));
 
 		List<FlipRecommendation> queue = AutoRecommendService.buildRefreshedQueue(
 			refreshedPool, stale, NONE_ACTIVE);
@@ -56,11 +60,11 @@ public class AutoRecommendRefreshQueueTest
 	@Test
 	public void retainsFocusedItemAtFrontWhenStillRecommended()
 	{
-		FlipRecommendation focused = rec(2002, "Raw Shark", 100);
+		FlipRecommendation focused = rec(2002, RAW_SHARK, 100);
 		List<FlipRecommendation> refreshedPool = Arrays.asList(
-			rec(3003, "Magic Logs", 200),
-			rec(2002, "Raw Shark", 100),
-			rec(4004, "Yew Logs", 300));
+			rec(3003, MAGIC_LOGS, 200),
+			rec(2002, RAW_SHARK, 100),
+			rec(4004, YEW_LOGS, 300));
 
 		List<FlipRecommendation> queue = AutoRecommendService.buildRefreshedQueue(
 			refreshedPool, focused, NONE_ACTIVE);
@@ -75,10 +79,9 @@ public class AutoRecommendRefreshQueueTest
 	@Test
 	public void doesNotPrependFocusedItemThatIsLiveOnTheGe()
 	{
-		FlipRecommendation onGe = rec(2002, "Raw Shark", 100);
-		// filtered pool already excludes GE-active items, so onGe is absent here.
+		FlipRecommendation onGe = rec(2002, RAW_SHARK, 100);
 		List<FlipRecommendation> refreshedPool = Arrays.asList(
-			rec(3003, "Magic Logs", 200));
+			rec(3003, MAGIC_LOGS, 200));
 		Set<Integer> active = new HashSet<>(Collections.singletonList(2002));
 
 		List<FlipRecommendation> queue = AutoRecommendService.buildRefreshedQueue(
@@ -92,7 +95,7 @@ public class AutoRecommendRefreshQueueTest
 	@Test
 	public void clearsQueueWhenRefreshedPoolIsEmpty()
 	{
-		FlipRecommendation stale = rec(1001, "Demonic Hood", 50);
+		FlipRecommendation stale = rec(1001, DEMONIC_HOOD, 50);
 
 		List<FlipRecommendation> queue = AutoRecommendService.buildRefreshedQueue(
 			Collections.emptyList(), stale, NONE_ACTIVE);
@@ -105,8 +108,8 @@ public class AutoRecommendRefreshQueueTest
 	public void mirrorsPoolWhenNothingFocused()
 	{
 		List<FlipRecommendation> refreshedPool = Arrays.asList(
-			rec(2002, "Raw Shark", 100),
-			rec(3003, "Magic Logs", 200));
+			rec(2002, RAW_SHARK, 100),
+			rec(3003, MAGIC_LOGS, 200));
 
 		List<FlipRecommendation> queue = AutoRecommendService.buildRefreshedQueue(
 			refreshedPool, null, NONE_ACTIVE);
