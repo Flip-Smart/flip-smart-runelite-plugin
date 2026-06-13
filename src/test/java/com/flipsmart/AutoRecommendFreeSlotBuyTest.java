@@ -43,6 +43,7 @@ public class AutoRecommendFreeSlotBuyTest
 	}
 
 	private static final Set<Integer> NONE_ACTIVE = Collections.emptySet();
+	private static final int NO_EXCLUDE = -1;
 
 	// The freed slot must find an available item even when it sits at index 0 and
 	// the (monotonic) currentIndex has run off the end — the scan ignores currentIndex.
@@ -52,7 +53,7 @@ public class AutoRecommendFreeSlotBuyTest
 		List<FlipRecommendation> queue = Arrays.asList(
 			profitable(1001), profitable(2002), profitable(3003));
 
-		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, NONE_ACTIVE, 0, 1);
+		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, NONE_ACTIVE, NO_EXCLUDE, 0, 1);
 
 		assertEquals(0, idx);
 	}
@@ -65,9 +66,22 @@ public class AutoRecommendFreeSlotBuyTest
 			profitable(1001), profitable(2002), profitable(3003));
 		Set<Integer> active = new HashSet<>(Arrays.asList(1001, 2002));
 
-		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, active, 0, 1);
+		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, active, NO_EXCLUDE, 0, 1);
 
 		assertEquals("first non-GE item", 2, idx);
+	}
+
+	// The just-cancelled item is skipped so a cancel surfaces a different flip
+	// instead of immediately re-recommending the one the player just dropped (#725).
+	@Test
+	public void skipsExcludedJustCancelledItem()
+	{
+		List<FlipRecommendation> queue = Arrays.asList(
+			profitable(1001), profitable(2002), profitable(3003));
+
+		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, NONE_ACTIVE, 1001, 0, 1);
+
+		assertEquals("skips the excluded item, picks the next", 1, idx);
 	}
 
 	// Items below the minimum-profit threshold are skipped.
@@ -77,7 +91,7 @@ public class AutoRecommendFreeSlotBuyTest
 		List<FlipRecommendation> queue = Arrays.asList(
 			unprofitable(1001), profitable(2002));
 
-		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, NONE_ACTIVE, 0, 1);
+		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, NONE_ACTIVE, NO_EXCLUDE, 0, 1);
 
 		assertEquals(1, idx);
 	}
@@ -90,7 +104,7 @@ public class AutoRecommendFreeSlotBuyTest
 			profitable(1001), profitable(2002));
 		Set<Integer> active = new HashSet<>(Arrays.asList(1001, 2002));
 
-		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, active, 0, 1);
+		int idx = AutoRecommendService.firstAvailableBuyIndex(queue, active, NO_EXCLUDE, 0, 1);
 
 		assertEquals(-1, idx);
 	}
@@ -99,7 +113,7 @@ public class AutoRecommendFreeSlotBuyTest
 	public void returnsMinusOneForEmptyQueue()
 	{
 		int idx = AutoRecommendService.firstAvailableBuyIndex(
-			Collections.emptyList(), NONE_ACTIVE, 0, 1);
+			Collections.emptyList(), NONE_ACTIVE, NO_EXCLUDE, 0, 1);
 
 		assertEquals(-1, idx);
 	}

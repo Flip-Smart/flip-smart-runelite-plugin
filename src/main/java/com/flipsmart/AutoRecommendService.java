@@ -540,8 +540,9 @@ public class AutoRecommendService
 				wasBuy, filledQuantity, totalQuantity);
 		}
 
-		// A cancel frees a slot — rewind so a new recommendation surfaces immediately.
-		focusNextAvailableAction(true);
+		// A cancel frees a slot — rewind so a new recommendation surfaces immediately,
+		// but skip the just-cancelled item so we don't re-recommend what was dropped.
+		focusNextAvailableAction(true, itemId);
 	}
 
 	private void trackPartialBuyCancel(int itemId, int filledQuantity, int totalQuantity)
@@ -673,7 +674,12 @@ public class AutoRecommendService
 	 */
 	private void focusNextAvailableAction()
 	{
-		focusNextAvailableAction(false);
+		focusNextAvailableAction(false, -1);
+	}
+
+	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy)
+	{
+		focusNextAvailableAction(rewindToFirstAvailableBuy, -1);
 	}
 
 	/**
@@ -681,8 +687,10 @@ public class AutoRecommendService
 	 * {@code currentIndex} to the first still-valid queue item instead of relying on
 	 * its monotonically-advanced position. Set on slot-freeing events (collect /
 	 * cancel) so a freed slot always recovers a recommendation.
+	 * @param excludeItemId item id to skip when rewinding — set to the just-cancelled
+	 * item so a cancel surfaces a different flip rather than re-recommending the same one.
 	 */
-	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy)
+	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy, int excludeItemId)
 	{
 		focusedCollectedItemId = -1;
 
@@ -717,7 +725,7 @@ public class AutoRecommendService
 			if (rewindToFirstAvailableBuy)
 			{
 				int idx = firstAvailableBuyIndex(recommendationQueue,
-					plugin.getActiveFlipItemIds(), config.priceOffset(), config.minimumProfit());
+					plugin.getActiveFlipItemIds(), excludeItemId, config.priceOffset(), config.minimumProfit());
 				if (idx >= 0)
 				{
 					currentIndex = idx;
@@ -750,13 +758,15 @@ public class AutoRecommendService
 	static int firstAvailableBuyIndex(
 		List<FlipRecommendation> queue,
 		Set<Integer> activeItemIds,
+		int excludeItemId,
 		int priceOffset,
 		int minProfit)
 	{
 		for (int i = 0; i < queue.size(); i++)
 		{
 			FlipRecommendation rec = queue.get(i);
-			if (!activeItemIds.contains(rec.getItemId())
+			if (rec.getItemId() != excludeItemId
+				&& !activeItemIds.contains(rec.getItemId())
 				&& FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
 			{
 				return i;
