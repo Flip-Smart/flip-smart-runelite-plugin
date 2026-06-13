@@ -261,20 +261,18 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return null;
 			}
-			// History-backfill prompt takes priority over auto-recommend status
-			// messages ("Monitoring active offers", "Collect profit from GE", etc.).
-			// Offline trade recovery is one-shot per session — once the user
-			// closes the History tab the data is gone — so the prompt has to
-			// surface even when the auto-recommend overlay is otherwise active.
-			//
-			// Everything below history is suppressed while the player is mid
-			// offer-setup so prompts never overlay the buy/sell screen.
+			// While the player is in any buy/sell offer interface (item search,
+			// numeric qty/price input, or the offer-setup screen) the offer takes
+			// priority — every status/hint prompt, including the History-backfill
+			// prompt, is suppressed so nothing overlays the buy/sell screens. The
+			// prompts re-surface at the main GE view. Off the offer interface, the
+			// History prompt still takes priority over the auto-recommend status.
 			String fallbackMessage = flipSmartPlugin.isAutoRecommendActive()
 				? flipSmartPlugin.getAutoRecommendOverlayMessage()
 				: null;
 			String message = selectNoFocusMessage(
 				isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills(),
-				isOfferSetupOpen(),
+				isInOfferInterface(),
 				autoStatusMessage,
 				fallbackMessage,
 				flipSmartPlugin.getApiClient().isAuthenticated(),
@@ -894,16 +892,33 @@ public class FlipAssistOverlay extends Overlay
 	}
 
 	/**
+	 * True while the player is in any GE buy/sell offer interface: the item-search
+	 * screen, the numeric quantity/price input, or the offer-setup screen. While one
+	 * is open the offer takes priority and transient status prompts are hidden.
+	 */
+	private boolean isInOfferInterface()
+	{
+		if (!isGrandExchangeOpen())
+		{
+			return false;
+		}
+		int inputType = getInputType();
+		return inputType == INPUT_TYPE_GE_SEARCH
+			|| inputType == INPUT_TYPE_NUMERIC
+			|| isOfferSetupOpen();
+	}
+
+	/**
 	 * Pick the hint/status message to draw when no flip is focused, or null to draw
-	 * nothing. The history-backfill prompt is one-shot per session and surfaces even
-	 * over an open offer-setup screen; every other auto-status/hint box is suppressed
-	 * while the player is mid offer-setup so prompts like "Collect profit" never
-	 * overlay the buy/sell screen or compete with the auto-list hotkey. The
-	 * suppressed message is not cleared — it re-surfaces as soon as setup closes.
+	 * nothing. While any buy/sell offer interface is open the offer takes priority and
+	 * ALL prompts — including the one-shot history-backfill prompt — are suppressed so
+	 * nothing overlays the buy/sell screens; the prompts re-surface at the main GE view
+	 * (none of them are cleared). Off the offer interface the history prompt takes
+	 * priority over the auto-recommend status, then login, then the generic hint.
 	 */
 	static String selectNoFocusMessage(
 		boolean showHistoryPrompt,
-		boolean offerSetupOpen,
+		boolean offerInterfaceOpen,
 		String autoStatusMessage,
 		String autoRecommendFallback,
 		boolean authenticated,
@@ -911,13 +926,13 @@ public class FlipAssistOverlay extends Overlay
 		String loginMessage,
 		String hintMessage)
 	{
+		if (offerInterfaceOpen)
+		{
+			return null;
+		}
 		if (showHistoryPrompt)
 		{
 			return historyMessage;
-		}
-		if (offerSetupOpen)
-		{
-			return null;
 		}
 		if (autoStatusMessage != null)
 		{

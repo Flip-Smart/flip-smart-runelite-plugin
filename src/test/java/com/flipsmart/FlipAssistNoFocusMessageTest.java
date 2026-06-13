@@ -18,39 +18,40 @@ public class FlipAssistNoFocusMessageTest
 	private static final String HINT = "hint";
 	private static final String COLLECT = "Collect profit from GE";
 
-	private static String select(boolean showHistory, boolean offerSetupOpen,
+	private static String select(boolean showHistory, boolean offerInterfaceOpen,
 		String autoStatus, String fallback, boolean authenticated)
 	{
 		return FlipAssistOverlay.selectNoFocusMessage(
-			showHistory, offerSetupOpen, autoStatus, fallback, authenticated, HIST, LOGIN, HINT);
+			showHistory, offerInterfaceOpen, autoStatus, fallback, authenticated, HIST, LOGIN, HINT);
 	}
 
-	// AC1/AC2 — collect-profit (autoStatus) is suppressed while in the offer-setup screen.
+	// Collect-profit (autoStatus) is suppressed while in any offer interface.
 	@Test
-	public void suppressesAutoStatusDuringOfferSetup()
+	public void suppressesAutoStatusDuringOfferInterface()
 	{
 		assertNull(select(false, true, COLLECT, null, true));
 	}
 
-	// Suppression also hides the auto-recommend fallback message during setup.
+	// Suppression also hides the auto-recommend fallback message during an offer interface.
 	@Test
-	public void suppressesFallbackDuringOfferSetup()
+	public void suppressesFallbackDuringOfferInterface()
 	{
 		assertNull(select(false, true, null, "Monitoring active offers", true));
 	}
 
-	// AC4/AC5 — when NOT in setup, the collect-profit prompt shows normally.
+	// When NOT in an offer interface, the collect-profit prompt shows normally.
 	@Test
-	public void showsAutoStatusWhenNotInSetup()
+	public void showsAutoStatusWhenNotInOfferInterface()
 	{
 		assertEquals(COLLECT, select(false, false, COLLECT, null, true));
 	}
 
-	// History-backfill recovery is one-shot per session — it still surfaces during setup.
+	// The offer interface now takes priority over EVERYTHING — even the one-shot
+	// history-backfill prompt is suppressed while a buy/sell screen is up.
 	@Test
-	public void historyPromptSurfacesEvenDuringOfferSetup()
+	public void suppressesHistoryDuringOfferInterface()
 	{
-		assertEquals(HIST, select(true, true, COLLECT, null, true));
+		assertNull(select(true, true, COLLECT, null, true));
 	}
 
 	// History takes precedence over auto-status when both are present.

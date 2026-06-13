@@ -1311,9 +1311,18 @@ public class FlipSmartPlugin extends Plugin
 			autoRecommendService.acquireOfferLock(openItemId);
 		}
 
+		// GE_NEWOFFER_TYPE == 1 is a sell; anything else is a buy.
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
 		if (offerType != 1)
 		{
+			// Buy setup: focus the queued buy recommendation for this item (if any) so
+			// the overlay guides the buy the player is setting up, taking priority over
+			// a pending collect/history prompt. Focus returns to the queue on lock
+			// release once the setup screen closes.
+			if (openItemId > 0 && autoRecommendService != null)
+			{
+				autoRecommendService.overrideFocusForBuy(openItemId);
+			}
 			return;
 		}
 
