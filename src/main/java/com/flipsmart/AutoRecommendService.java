@@ -726,10 +726,7 @@ public class AutoRecommendService
 			{
 				int idx = firstAvailableBuyIndex(recommendationQueue,
 					plugin.getActiveFlipItemIds(), excludeItemId, config.priceOffset(), config.minimumProfit());
-				if (idx >= 0)
-				{
-					currentIndex = idx;
-				}
+				currentIndex = (idx >= 0) ? idx : recommendationQueue.size();
 			}
 			if (currentIndex < recommendationQueue.size())
 			{
