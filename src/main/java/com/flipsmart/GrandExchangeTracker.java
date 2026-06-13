@@ -214,15 +214,18 @@ public class GrandExchangeTracker
 		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
 		int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
 
+		// A cancel that leaves items in the GE collection box must stay collectable so
+		// the items route through the normal collect -> (re)sell flow instead of being
+		// orphaned. Removing the offer here would leave the later collect (EMPTY) event
+		// with no tracked offer, so no (re)sell prompt would ever surface proactively.
+		//  - partial BUY cancel: the bought items still need selling
+		//  - SELL cancel with unsold items: the returned items need re-listing
 		boolean partialBuyCancel = ctx.isBuy && ctx.quantitySold > 0;
-		if (partialBuyCancel && cancelledOffer != null)
+		boolean sellCancelWithRemaining = !ctx.isBuy && (totalQuantity - ctx.quantitySold) > 0;
+		if ((partialBuyCancel || sellCancelWithRemaining) && cancelledOffer != null)
 		{
-			// Keep the partially-bought offer as a collectable completed buy. The bought
-			// items sit in the GE collection box, so removing the offer here would orphan
-			// them — the later collect (EMPTY) event would find no tracked offer and never
-			// surface a sell. Marking it completed routes it through the normal
-			// collect -> sell flow: a Collect prompt now (the slot still counts as
-			// occupied), then a Sell prompt once the player collects the items.
+			// Mark it completed: a Collect prompt now (the slot still counts as occupied),
+			// then a (re)sell prompt once the player collects the items.
 			cancelledOffer.setPreviousQuantitySold(ctx.quantitySold);
 			cancelledOffer.setCompletedAtMillis(System.currentTimeMillis());
 		}
