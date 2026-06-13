@@ -261,34 +261,29 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return null;
 			}
-			// History-backfill prompt takes priority over auto-recommend status
-			// messages ("Monitoring active offers", "Collect profit from GE", etc.).
-			// Offline trade recovery is one-shot per session — once the user
-			// closes the History tab the data is gone — so the prompt has to
-			// surface even when the auto-recommend overlay is otherwise active.
-			if (isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills())
+			// While the player is in any buy/sell offer interface (item search,
+			// numeric qty/price input, or the offer-setup screen) the offer takes
+			// priority — every status/hint prompt, including the History-backfill
+			// prompt, is suppressed so nothing overlays the buy/sell screens. The
+			// prompts re-surface at the main GE view. Off the offer interface, the
+			// History prompt still takes priority over the auto-recommend status.
+			String fallbackMessage = flipSmartPlugin.isAutoRecommendActive()
+				? flipSmartPlugin.getAutoRecommendOverlayMessage()
+				: null;
+			String message = selectNoFocusMessage(
+				isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills(),
+				isInOfferInterface(),
+				autoStatusMessage,
+				fallbackMessage,
+				flipSmartPlugin.getApiClient().isAuthenticated(),
+				HISTORY_PROMPT_MESSAGE,
+				LOGIN_MESSAGE,
+				HINT_MESSAGE);
+			if (message == null)
 			{
-				return renderHintBox(graphics, HISTORY_PROMPT_MESSAGE);
+				return null;
 			}
-			if (autoStatusMessage != null)
-			{
-				return renderHintBox(graphics, autoStatusMessage);
-			}
-			// Fallback: read the last overlay message directly from auto-recommend
-			// in case the async callback result was lost due to race conditions
-			if (flipSmartPlugin.isAutoRecommendActive())
-			{
-				String fallbackMessage = flipSmartPlugin.getAutoRecommendOverlayMessage();
-				if (fallbackMessage != null)
-				{
-					return renderHintBox(graphics, fallbackMessage);
-				}
-			}
-			if (!flipSmartPlugin.getApiClient().isAuthenticated())
-			{
-				return renderHintBox(graphics, LOGIN_MESSAGE);
-			}
-			return renderHintBox(graphics, HINT_MESSAGE);
+			return renderHintBox(graphics, message);
 		}
 		
 		// Only show when GE is open or when we have an active flip
@@ -894,6 +889,64 @@ public class FlipAssistOverlay extends Overlay
 			}
 		}
 		return hasQuantityLabel && hasPriceCoins;
+	}
+
+	/**
+	 * True while the player is in any GE buy/sell offer interface: the item-search
+	 * screen, the numeric quantity/price input, or the offer-setup screen. While one
+	 * is open the offer takes priority and transient status prompts are hidden.
+	 */
+	private boolean isInOfferInterface()
+	{
+		if (!isGrandExchangeOpen())
+		{
+			return false;
+		}
+		int inputType = getInputType();
+		return inputType == INPUT_TYPE_GE_SEARCH
+			|| inputType == INPUT_TYPE_NUMERIC
+			|| isOfferSetupOpen();
+	}
+
+	/**
+	 * Pick the hint/status message to draw when no flip is focused, or null to draw
+	 * nothing. While any buy/sell offer interface is open the offer takes priority and
+	 * ALL prompts — including the one-shot history-backfill prompt — are suppressed so
+	 * nothing overlays the buy/sell screens; the prompts re-surface at the main GE view
+	 * (none of them are cleared). Off the offer interface the history prompt takes
+	 * priority over the auto-recommend status, then login, then the generic hint.
+	 */
+	static String selectNoFocusMessage(
+		boolean showHistoryPrompt,
+		boolean offerInterfaceOpen,
+		String autoStatusMessage,
+		String autoRecommendFallback,
+		boolean authenticated,
+		String historyMessage,
+		String loginMessage,
+		String hintMessage)
+	{
+		if (offerInterfaceOpen)
+		{
+			return null;
+		}
+		if (showHistoryPrompt)
+		{
+			return historyMessage;
+		}
+		if (autoStatusMessage != null)
+		{
+			return autoStatusMessage;
+		}
+		if (autoRecommendFallback != null)
+		{
+			return autoRecommendFallback;
+		}
+		if (!authenticated)
+		{
+			return loginMessage;
+		}
+		return hintMessage;
 	}
 	
 	private Widget[] getOfferPanelChildren()

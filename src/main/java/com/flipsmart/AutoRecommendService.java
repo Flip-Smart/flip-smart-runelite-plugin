@@ -35,6 +35,7 @@ public class AutoRecommendService
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
+	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
 
 	private final FlipSmartConfig config;
@@ -461,6 +462,40 @@ public class AutoRecommendService
 		updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 
 		log.debug("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
+		return true;
+	}
+
+	/**
+	 * Override the auto-recommend focus to show a buy overlay for the item whose offer
+	 * setup screen is open, when it is a current queue recommendation. Lets the buy the
+	 * player is setting up take priority over a pending collect/history prompt while the
+	 * offer screen is up. Temporary — focus returns to the queue when the setup screen
+	 * closes (lock release via refreshFocusAfterUnlock) or the buy is placed.
+	 *
+	 * @return true if a buy overlay was focused, false if the item is not a surfaceable
+	 *         queued recommendation (caller leaves the overlay as-is).
+	 */
+	public synchronized boolean overrideFocusForBuy(int itemId)
+	{
+		if (!active)
+		{
+			return false;
+		}
+		// Already live on the GE — the player is past the buy stage for this item.
+		if (plugin.getActiveFlipItemIds().contains(itemId))
+		{
+			return false;
+		}
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		if (rec == null)
+		{
+			return false;
+		}
+		focusBuyOverlay(itemId, rec.getItemName(),
+			rec.getRecommendedBuyPrice(), rec.getRecommendedQuantity(), rec.getRecommendedSellPrice(),
+			String.format(MSG_BUY_FORMAT, rec.getItemName(),
+				GpUtils.formatGPWithSuffix(rec.getRecommendedBuyPrice())));
+		log.debug("Auto-recommend: Override focus for buy {} @ {} gp", rec.getItemName(), rec.getRecommendedBuyPrice());
 		return true;
 	}
 
