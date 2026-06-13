@@ -214,9 +214,27 @@ public class GrandExchangeTracker
 		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
 		int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
 
-		// Remove tracked offer BEFORE notifying auto-recommend so hasActiveSellSlotForItem
-		// returns false and findNextSellableCollectedItem can find the re-added items
-		session.removeTrackedOffer(ctx.slot);
+		// A cancel that leaves items in the GE collection box must stay collectable so
+		// the items route through the normal collect -> (re)sell flow instead of being
+		// orphaned. Removing the offer here would leave the later collect (EMPTY) event
+		// with no tracked offer, so no (re)sell prompt would ever surface proactively.
+		//  - partial BUY cancel: the bought items still need selling
+		//  - SELL cancel with unsold items: the returned items need re-listing
+		boolean partialBuyCancel = ctx.isBuy && ctx.quantitySold > 0;
+		boolean sellCancelWithRemaining = !ctx.isBuy && (totalQuantity - ctx.quantitySold) > 0;
+		if ((partialBuyCancel || sellCancelWithRemaining) && cancelledOffer != null)
+		{
+			// Mark it completed: a Collect prompt now (the slot still counts as occupied),
+			// then a (re)sell prompt once the player collects the items.
+			cancelledOffer.setPreviousQuantitySold(ctx.quantitySold);
+			cancelledOffer.setCompletedAtMillis(System.currentTimeMillis());
+		}
+		else
+		{
+			// Remove tracked offer BEFORE notifying auto-recommend so hasActiveSellSlotForItem
+			// returns false and findNextSellableCollectedItem can find the re-added items
+			session.removeTrackedOffer(ctx.slot);
+		}
 
 		// Only remove recommended price for zero-fill buy cancels — partial fills need the
 		// sell price preserved so the user can be prompted to sell the collected items
