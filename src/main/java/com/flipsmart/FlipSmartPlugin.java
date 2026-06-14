@@ -1862,7 +1862,10 @@ public class FlipSmartPlugin extends Plugin
 				.thenAccept(resp -> activeOfferAdvisorService.applyResponse(offer.getItemId(), resp))
 				.exceptionally(ex ->
 				{
-					log.debug("offer-action poll failed for {}: {}", offer.getItemId(), ex.getMessage());
+					if (log.isDebugEnabled())
+					{
+						log.debug("offer-action poll failed for {}: {}", offer.getItemId(), ex.getMessage());
+					}
 					return null;
 				});
 		}
