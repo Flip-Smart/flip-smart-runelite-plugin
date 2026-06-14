@@ -623,7 +623,8 @@ public class FlipSmartPlugin extends Plugin
 		activeOfferAdvisorService = new ActiveOfferAdvisorService();
 		activeOfferAdvisorService.setCallbacks(
 			resp -> javax.swing.SwingUtilities.invokeLater(() -> applyActiveOfferSurface(resp)),
-			this::handleActiveOfferHandoff);
+			itemId -> handleActiveOfferHandoff(itemId),
+			itemId -> javax.swing.SwingUtilities.invokeLater(() -> clearActiveOfferSurface(itemId)));
 
 		activeOfferAdvisorTimer = new java.util.Timer("ActiveOfferAdvisorTimer", true);
 		activeOfferAdvisorTimer.scheduleAtFixedRate(new java.util.TimerTask()
@@ -1843,6 +1844,10 @@ public class FlipSmartPlugin extends Plugin
 			{
 				continue;
 			}
+			if (offer.getCreatedAtMillis() <= 0)
+			{
+				continue;
+			}
 			if (autoRecommendService != null
 				&& Integer.valueOf(offer.getItemId()).equals(autoRecommendService.getLockedItemId()))
 			{
@@ -1884,6 +1889,24 @@ public class FlipSmartPlugin extends Plugin
 		if (slot != null && geSlotOverlay != null)
 		{
 			geSlotOverlay.setAdjustmentHighlight(slot, resp.getNewPrice());
+		}
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.refreshActiveFlips();
+		}
+	}
+
+	private void clearActiveOfferSurface(int itemId)
+	{
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		Integer slot = findSlotForItem(sess, itemId);
+		if (slot != null && geSlotOverlay != null)
+		{
+			geSlotOverlay.clearAdjustmentHighlight(slot);
 		}
 		if (flipFinderPanel != null)
 		{

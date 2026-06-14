@@ -11,11 +11,13 @@ public class ActiveOfferAdvisorService
 
 	private Consumer<OfferAdviceResponse> onSurfacePrice;
 	private IntConsumer onHandoff;
+	private IntConsumer onClearSurface;
 
-	void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, IntConsumer onHandoff)
+	void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, IntConsumer onHandoff, IntConsumer onClearSurface)
 	{
 		this.onSurfacePrice = onSurfacePrice;
 		this.onHandoff = onHandoff;
+		this.onClearSurface = onClearSurface;
 	}
 
 	public OfferAdviceResponse getDisposition(int itemId)
@@ -38,6 +40,10 @@ public class ActiveOfferAdvisorService
 				break;
 			case HANDOFF:
 				dispositions.remove(itemId);
+				if (onClearSurface != null)
+				{
+					onClearSurface.accept(itemId);
+				}
 				if (onHandoff != null)
 				{
 					onHandoff.accept(itemId);
@@ -46,6 +52,10 @@ public class ActiveOfferAdvisorService
 			case NONE:
 			default:
 				dispositions.remove(itemId);
+				if (onClearSurface != null)
+				{
+					onClearSurface.accept(itemId);
+				}
 				break;
 		}
 	}

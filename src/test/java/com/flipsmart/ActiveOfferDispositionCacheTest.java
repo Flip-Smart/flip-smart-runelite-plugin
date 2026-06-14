@@ -3,6 +3,7 @@ package com.flipsmart;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 public class ActiveOfferDispositionCacheTest
 {
@@ -23,9 +24,12 @@ public class ActiveOfferDispositionCacheTest
 	}
 
 	@Test
-	public void waitResponseClearsAnyPriorDisposition()
+	public void waitResponseClearsCacheAndFiresClearCallback()
 	{
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
+		final int[] cleared = {-1};
+		svc.setCallbacks(null, null, id -> cleared[0] = id);
+
 		OfferAdviceResponse move = new OfferAdviceResponse();
 		move.setAction("move_price_down");
 		svc.applyResponse(1, move);
@@ -35,14 +39,16 @@ public class ActiveOfferDispositionCacheTest
 		svc.applyResponse(1, wait);
 
 		assertNull(svc.getDisposition(1));
+		assertEquals(1, cleared[0]);
 	}
 
 	@Test
-	public void handoffInvokesCallbackAndClearsCache()
+	public void handoffFiresHandoffAndClearCallbacksAndClearsCache()
 	{
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
 		final int[] handoffItem = {-1};
-		svc.setCallbacks(null, id -> handoffItem[0] = id);
+		final int[] cleared = {-1};
+		svc.setCallbacks(null, id -> handoffItem[0] = id, id -> cleared[0] = id);
 
 		OfferAdviceResponse move = new OfferAdviceResponse();
 		move.setAction("move_price_down");
@@ -53,6 +59,21 @@ public class ActiveOfferDispositionCacheTest
 		svc.applyResponse(7, cancel);
 
 		assertEquals(7, handoffItem[0]);
+		assertEquals(7, cleared[0]);
 		assertNull(svc.getDisposition(7));
+	}
+
+	@Test
+	public void surfacePriceDoesNotFireClearCallback()
+	{
+		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
+		final boolean[] clearFired = {false};
+		svc.setCallbacks(null, null, id -> clearFired[0] = true);
+
+		OfferAdviceResponse move = new OfferAdviceResponse();
+		move.setAction("move_price_down");
+		svc.applyResponse(2, move);
+
+		assertTrue("clear must not fire on surface", !clearFired[0]);
 	}
 }
