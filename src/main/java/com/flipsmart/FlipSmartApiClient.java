@@ -2620,6 +2620,22 @@ public class FlipSmartApiClient
 	}
 
 	/**
+	 * Synchronous, non-blocking read of the daily-volume cache. Returns the
+	 * cached value when fresh, or {@code null} when not cached / expired —
+	 * never triggers a network fetch. Mirrors {@link #getWikiPrice(int)} so
+	 * timer threads can build snapshots without blocking on I/O.
+	 */
+	public Integer getCachedDailyVolume(int itemId)
+	{
+		CachedDailyVolume cached = dailyVolumeCache.get(itemId);
+		if (cached == null || cached.isExpired())
+		{
+			return null;
+		}
+		return cached.getVolume();
+	}
+
+	/**
 	 * Push the current open GE slot item IDs to the backend cache so the web
 	 * Trade Station's "Import from RuneLite" button (issue #683 AC7) can
 	 * read them. Best-effort — failures are swallowed by the caller because

@@ -1474,7 +1474,7 @@ public class AutoRecommendService
 	 * Add a tracked offer to the stale queue if not already present.
 	 * If the queue was empty, immediately shows the first prompt.
 	 */
-	private void addToStaleQueue(TrackedOffer offer)
+	void addToStaleQueue(TrackedOffer offer)
 	{
 		// Don't add duplicates
 		for (TrackedOffer existing : staleOfferQueue)

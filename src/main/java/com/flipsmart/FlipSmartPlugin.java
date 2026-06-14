@@ -157,6 +157,10 @@ public class FlipSmartPlugin extends Plugin
 	// Auto-recommend refresh timer (2-minute cycle)
 	private java.util.Timer autoRecommendRefreshTimer;
 
+	// Active-offer advisor service + poll timer (30-second cycle)
+	private ActiveOfferAdvisorService activeOfferAdvisorService;
+	private java.util.Timer activeOfferAdvisorTimer;
+
 	// Track all active one-shot Swing timers for cleanup on shutdown
 	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
 
@@ -187,6 +191,9 @@ public class FlipSmartPlugin extends Plugin
 
 	/** Auto-recommend queue refresh interval (2 minutes) */
 	private static final long AUTO_RECOMMEND_REFRESH_INTERVAL_MS = 2 * 60 * 1000L;
+
+	/** Active-offer advisor poll interval (30 seconds) */
+	private static final long ACTIVE_OFFER_ADVISOR_INTERVAL_MS = 30_000L;
 
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
@@ -569,6 +576,7 @@ public class FlipSmartPlugin extends Plugin
 		// Wire service callbacks and initialize auto-recommend
 		wireServiceCallbacks();
 		initializeAutoRecommendService();
+		initializeActiveOfferAdvisor();
 		initializeManualAdjustmentTracker();
 		wireGrandExchangeTrackerCallbacks();
 
@@ -604,6 +612,28 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
 		autoRecommendService.setOnStaleOfferPrompted(this::highlightSlotForItem);
 		flipAssistOverlay.setOnStepChanged(autoRecommendService::onOverlayStepChanged);
+	}
+
+	/**
+	 * Construct the active-offer advisor service, wire its callbacks, and start
+	 * the 30-second poll timer.
+	 */
+	private void initializeActiveOfferAdvisor()
+	{
+		activeOfferAdvisorService = new ActiveOfferAdvisorService();
+		activeOfferAdvisorService.setCallbacks(
+			resp -> javax.swing.SwingUtilities.invokeLater(() -> applyActiveOfferSurface(resp)),
+			this::handleActiveOfferHandoff);
+
+		activeOfferAdvisorTimer = new java.util.Timer("ActiveOfferAdvisorTimer", true);
+		activeOfferAdvisorTimer.scheduleAtFixedRate(new java.util.TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				pollActiveOfferAdvisor();
+			}
+		}, ACTIVE_OFFER_ADVISOR_INTERVAL_MS, ACTIVE_OFFER_ADVISOR_INTERVAL_MS);
 	}
 
 	/**
@@ -835,6 +865,9 @@ public class FlipSmartPlugin extends Plugin
 			persistAutoRecommendState();
 			autoRecommendService.stop();
 		}
+
+		// Stop active-offer advisor poll timer
+		stopActiveOfferAdvisorTimer();
 
 		// Clear API client cache
 		apiClient.clearCache();
@@ -1777,6 +1810,86 @@ public class FlipSmartPlugin extends Plugin
 		{
 			autoRecommendRefreshTimer.cancel();
 			autoRecommendRefreshTimer = null;
+		}
+	}
+
+	void stopActiveOfferAdvisorTimer()
+	{
+		if (activeOfferAdvisorTimer != null)
+		{
+			activeOfferAdvisorTimer.cancel();
+			activeOfferAdvisorTimer = null;
+		}
+	}
+
+	private void pollActiveOfferAdvisor()
+	{
+		if (!config.enableActiveOfferAdvisor() || config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.ACTIVE)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		for (Map.Entry<Integer, TrackedOffer> entry : sess.getTrackedOffers().entrySet())
+		{
+			TrackedOffer offer = entry.getValue();
+			if (offer == null || offer.isCompleted())
+			{
+				continue;
+			}
+			if (autoRecommendService != null
+				&& Integer.valueOf(offer.getItemId()).equals(autoRecommendService.getLockedItemId()))
+			{
+				continue;
+			}
+			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
+			FlipSmartApiClient.WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
+			Integer avgBuy = offer.isBuy() ? null
+				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
+			OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume);
+			apiClient.postOfferActionAsync(req)
+				.thenAccept(resp -> activeOfferAdvisorService.applyResponse(offer.getItemId(), resp))
+				.exceptionally(ex ->
+				{
+					log.debug("offer-action poll failed for {}: {}", offer.getItemId(), ex.getMessage());
+					return null;
+				});
+		}
+	}
+
+	private void applyActiveOfferSurface(OfferAdviceResponse resp)
+	{
+		if (resp == null || resp.getNewPrice() == null)
+		{
+			return;
+		}
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.refreshActiveFlips();
+		}
+	}
+
+	private void handleActiveOfferHandoff(int itemId)
+	{
+		if (autoRecommendService == null)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		for (TrackedOffer offer : sess.getTrackedOffers().values())
+		{
+			if (offer != null && offer.getItemId() == itemId)
+			{
+				autoRecommendService.addToStaleQueue(offer);
+				break;
+			}
 		}
 	}
 
