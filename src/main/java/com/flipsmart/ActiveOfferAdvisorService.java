@@ -9,9 +9,9 @@ public class ActiveOfferAdvisorService
 {
 	private final Map<Integer, OfferAdviceResponse> dispositions = new ConcurrentHashMap<>();
 
-	private Consumer<OfferAdviceResponse> onSurfacePrice;
-	private IntConsumer onHandoff;
-	private IntConsumer onClearSurface;
+	private volatile Consumer<OfferAdviceResponse> onSurfacePrice;
+	private volatile IntConsumer onHandoff;
+	private volatile IntConsumer onClearSurface;
 
 	void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, IntConsumer onHandoff, IntConsumer onClearSurface)
 	{
