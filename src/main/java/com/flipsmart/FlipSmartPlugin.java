@@ -676,6 +676,7 @@ public class FlipSmartPlugin extends Plugin
 		manualAdjustmentTracker.setMembersWorldSupplier(this::isMembersWorld);
 
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
+		grandExchangeTracker.setActiveOfferAdvisorService(activeOfferAdvisorService);
 		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
 		grandExchangeTracker.setConfig(config);
 	}

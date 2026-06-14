@@ -34,6 +34,7 @@ public class GrandExchangeTracker
 	// Set after construction (created in plugin startUp)
 	private AutoRecommendService autoRecommendService;
 	private ManualAdjustmentTracker manualAdjustmentTracker;
+	private ActiveOfferAdvisorService activeOfferAdvisorService;
 	private java.util.function.BooleanSupplier adjustmentPromptsEnabled;
 	private FlipSmartConfig config;
 
@@ -96,6 +97,11 @@ public class GrandExchangeTracker
 	public void setManualAdjustmentTracker(ManualAdjustmentTracker tracker)
 	{
 		this.manualAdjustmentTracker = tracker;
+	}
+
+	public void setActiveOfferAdvisorService(ActiveOfferAdvisorService service)
+	{
+		this.activeOfferAdvisorService = service;
 	}
 
 	public void setAdjustmentPromptsEnabled(java.util.function.BooleanSupplier supplier)
@@ -748,6 +754,21 @@ public class GrandExchangeTracker
 			int averageBuyPrice = (buyPrice != null && buyPrice > 0) ? buyPrice : ctx.price;
 			manualAdjustmentTracker.scheduleSellAdjustment(
 				ctx.itemId, ctx.itemName, ctx.slot, ctx.price, averageBuyPrice);
+		}
+
+		OfferAdviceResponse priorAdvice = (activeOfferAdvisorService != null)
+			? activeOfferAdvisorService.getDisposition(ctx.itemId)
+			: null;
+		if (priorAdvice != null
+			&& priorAdvice.getActionEnum() == OfferAction.EXIT_AT_BREAKEVEN
+			&& priorAdvice.getNewPrice() != null)
+		{
+			TrackedOffer relisted = session.getTrackedOffer(ctx.slot);
+			if (relisted != null
+				&& TrackedOffer.shouldAdvanceToBreakevenRelist(true, ctx.price, priorAdvice.getNewPrice()))
+			{
+				relisted.setOfferStage(TrackedOffer.STAGE_BREAKEVEN_RELIST);
+			}
 		}
 	}
 
