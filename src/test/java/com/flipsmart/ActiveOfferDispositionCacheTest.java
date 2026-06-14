@@ -7,19 +7,21 @@ import static org.junit.Assert.assertTrue;
 
 public class ActiveOfferDispositionCacheTest
 {
+	private static final String MOVE_PRICE_DOWN = "move_price_down";
+
 	@Test
 	public void surfacePriceResponseIsCachedForPanel()
 	{
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
 		OfferAdviceResponse resp = new OfferAdviceResponse();
-		resp.setAction("move_price_down");
+		resp.setAction(MOVE_PRICE_DOWN);
 		resp.setReason("Move down to 1050");
 		resp.setNewPrice(1050);
 
 		svc.applyResponse(12345, resp);
 
 		OfferAdviceResponse cached = svc.getDisposition(12345);
-		assertEquals("move_price_down", cached.getAction());
+		assertEquals(MOVE_PRICE_DOWN, cached.getAction());
 		assertEquals(Integer.valueOf(1050), cached.getNewPrice());
 	}
 
@@ -31,7 +33,7 @@ public class ActiveOfferDispositionCacheTest
 		svc.setCallbacks(null, null, id -> cleared[0] = id);
 
 		OfferAdviceResponse move = new OfferAdviceResponse();
-		move.setAction("move_price_down");
+		move.setAction(MOVE_PRICE_DOWN);
 		svc.applyResponse(1, move);
 
 		OfferAdviceResponse wait = new OfferAdviceResponse();
@@ -51,7 +53,7 @@ public class ActiveOfferDispositionCacheTest
 		svc.setCallbacks(null, id -> handoffItem[0] = id, id -> cleared[0] = id);
 
 		OfferAdviceResponse move = new OfferAdviceResponse();
-		move.setAction("move_price_down");
+		move.setAction(MOVE_PRICE_DOWN);
 		svc.applyResponse(7, move);
 
 		OfferAdviceResponse cancel = new OfferAdviceResponse();
@@ -71,7 +73,7 @@ public class ActiveOfferDispositionCacheTest
 		svc.setCallbacks(null, null, id -> clearFired[0] = true);
 
 		OfferAdviceResponse move = new OfferAdviceResponse();
-		move.setAction("move_price_down");
+		move.setAction(MOVE_PRICE_DOWN);
 		svc.applyResponse(2, move);
 
 		assertTrue("clear must not fire on surface", !clearFired[0]);
