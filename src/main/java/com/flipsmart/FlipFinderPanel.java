@@ -166,7 +166,8 @@ public class FlipFinderPanel extends PluginPanel
 	private transient JPanel currentFocusedPanel = null;
 	private transient int currentFocusedItemId = -1;
 	private transient java.util.function.Consumer<FocusedFlip> onFocusChanged;
-	
+	private transient java.util.function.IntFunction<OfferAdviceResponse> offerDispositionLookup;
+
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
@@ -3131,7 +3132,27 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		this.onFocusChanged = callback;
 	}
-	
+
+	public void setOfferDispositionLookup(java.util.function.IntFunction<OfferAdviceResponse> lookup)
+	{
+		this.offerDispositionLookup = lookup;
+	}
+
+	private static String activeOfferVerb(OfferAction action)
+	{
+		switch (action)
+		{
+			case MOVE_PRICE_DOWN:
+				return "Move price down";
+			case EXIT_AT_BREAKEVEN:
+				return "Exit at breakeven";
+			case EXIT_AT_LOSS:
+				return "Exit at loss";
+			default:
+				return "";
+		}
+	}
+
 	/**
 	 * Set the callback for when authentication succeeds.
 	 * This allows the plugin to sync RSN after Discord login.
@@ -3473,8 +3494,24 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
-		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
+		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel,
 			profitCostLabel, liquidityLabel, riskLabel);
+
+		if (offerDispositionLookup != null)
+		{
+			OfferAdviceResponse advice = offerDispositionLookup.apply(flip.getItemId());
+			if (advice != null && advice.getActionEnum() != null && !activeOfferVerb(advice.getActionEnum()).isEmpty())
+			{
+				String verb = activeOfferVerb(advice.getActionEnum());
+				String text = advice.getNewPrice() != null
+					? verb + " → " + GpUtils.formatGP(advice.getNewPrice())
+					: verb;
+				JLabel adviceLabel = createStyledLabel(text, Color.ORANGE);
+				adviceLabel.setToolTipText(advice.getReason());
+				detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+				detailsPanel.add(adviceLabel);
+			}
+		}
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);

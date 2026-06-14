@@ -1545,7 +1545,9 @@ public class FlipSmartPlugin extends Plugin
 				flipAssistOverlay.clearFocus();
 			}
 		});
-		
+
+		flipFinderPanel.setOfferDispositionLookup(id -> activeOfferAdvisorService.getDisposition(id));
+
 		// Connect auth success callback to sync RSN after Discord login
 		flipFinderPanel.setOnAuthSuccess(() -> {
 			// Sync RSN to API if we have one (player is logged in)
