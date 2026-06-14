@@ -2321,6 +2321,50 @@ public class FlipSmartApiClient
 			gson.fromJson(jsonData, FlipAdjustmentResponse.class));
 	}
 
+	static JsonObject buildOfferActionBody(OfferAdviceRequest req)
+	{
+		JsonObject body = new JsonObject();
+		body.addProperty(JSON_KEY_ITEM_ID, req.getItemId());
+		body.addProperty("pool", req.getPool());
+		body.addProperty("side", req.getSide());
+		body.addProperty("stage", req.getStage());
+		String listedAt = req.getListedAtMillis() == null ? null : OfferAdviceRequest.toIsoUtc(req.getListedAtMillis());
+		if (listedAt != null)
+		{
+			body.addProperty("listed_at", listedAt);
+		}
+		body.addProperty("listed_price", req.getListedPrice());
+		body.addProperty("listed_quantity", req.getListedQuantity());
+		body.addProperty("filled_quantity", req.getFilledQuantity());
+		String lastFill = req.getLastFillAtMillis() == null ? null : OfferAdviceRequest.toIsoUtc(req.getLastFillAtMillis());
+		if (lastFill != null)
+		{
+			body.addProperty("last_fill_at", lastFill);
+		}
+		if (req.getCurrentMarketHigh() != null)
+		{
+			body.addProperty("current_market_high", req.getCurrentMarketHigh());
+		}
+		if (req.getCurrentMarketLow() != null)
+		{
+			body.addProperty("current_market_low", req.getCurrentMarketLow());
+		}
+		if (req.getUserAvgBuyPrice() != null)
+		{
+			body.addProperty("user_avg_buy_price", req.getUserAvgBuyPrice());
+		}
+		return body;
+	}
+
+	public CompletableFuture<OfferAdviceResponse> postOfferActionAsync(OfferAdviceRequest req)
+	{
+		String url = String.format("%s/flip-finder/active/offer-action", getApiUrl());
+		RequestBody body = RequestBody.create(JSON, buildOfferActionBody(req).toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, OfferAdviceResponse.class));
+	}
+
 	// =========================================================================
 	// Webhook API Methods
 	// =========================================================================
