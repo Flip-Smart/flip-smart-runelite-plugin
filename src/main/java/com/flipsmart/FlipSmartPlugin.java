@@ -1866,10 +1866,39 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		Integer itemId = resp.getItemIdHint();
+		if (itemId == null)
+		{
+			return;
+		}
+		sess.setRecommendedPrice(itemId, resp.getNewPrice());
+		Integer slot = findSlotForItem(sess, itemId);
+		if (slot != null && geSlotOverlay != null)
+		{
+			geSlotOverlay.setAdjustmentHighlight(slot, resp.getNewPrice());
+		}
 		if (flipFinderPanel != null)
 		{
 			flipFinderPanel.refreshActiveFlips();
 		}
+	}
+
+	private Integer findSlotForItem(PlayerSession sess, int itemId)
+	{
+		for (Map.Entry<Integer, TrackedOffer> e : sess.getTrackedOffers().entrySet())
+		{
+			TrackedOffer o = e.getValue();
+			if (o != null && o.getItemId() == itemId && !o.isCompleted())
+			{
+				return e.getKey();
+			}
+		}
+		return null;
 	}
 
 	private void handleActiveOfferHandoff(int itemId)

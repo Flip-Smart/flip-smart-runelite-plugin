@@ -29,6 +29,7 @@ public class ActiveOfferAdvisorService
 		switch (disposition)
 		{
 			case SURFACE_PRICE:
+				resp.setItemIdHint(itemId);
 				dispositions.put(itemId, resp);
 				if (onSurfacePrice != null)
 				{

@@ -15,6 +15,18 @@ public class OfferAdviceResponse
 	@SerializedName("net_profit_estimate")
 	private Integer netProfitEstimate;
 
+	private transient Integer itemIdHint;
+
+	public Integer getItemIdHint()
+	{
+		return itemIdHint;
+	}
+
+	public void setItemIdHint(Integer itemIdHint)
+	{
+		this.itemIdHint = itemIdHint;
+	}
+
 	public OfferAction getActionEnum()
 	{
 		return OfferAction.fromWire(action);
