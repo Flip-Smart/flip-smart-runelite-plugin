@@ -171,4 +171,17 @@ public class TrackedOffer
 	{
 		return lastActivityAtMillis > 0 ? lastActivityAtMillis : createdAtMillis;
 	}
+
+	// 2 % keeps noise from price rounding from triggering false negatives
+	private static final double BREAKEVEN_RELIST_TOLERANCE = 0.02;
+
+	public static boolean shouldAdvanceToBreakevenRelist(boolean breakevenExitAccepted, int observedRelistPrice, int advisedPrice)
+	{
+		if (!breakevenExitAccepted || advisedPrice <= 0 || observedRelistPrice <= 0)
+		{
+			return false;
+		}
+		double delta = Math.abs(observedRelistPrice - advisedPrice);
+		return delta <= advisedPrice * BREAKEVEN_RELIST_TOLERANCE;
+	}
 }
