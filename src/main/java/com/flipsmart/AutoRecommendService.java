@@ -1140,10 +1140,20 @@ public class AutoRecommendService
 	 *
 	 * Called periodically from the auto-recommend refresh timer (2-minute interval).
 	 */
+	public static boolean shouldRunLegacyAdjustment(String timeframeApiValue, boolean activeAdvisorEnabled)
+	{
+		boolean isActive = "active".equals(timeframeApiValue);
+		return !(isActive && activeAdvisorEnabled);
+	}
+
 	public synchronized void checkAdjustmentTimers(
 		Map<Integer, TrackedOffer> trackedOffers,
 		List<FlipRecommendation> currentRecommendations)
 	{
+		if (!shouldRunLegacyAdjustment(config.flipTimeframe().getApiValue(), config.enableActiveOfferAdvisor()))
+		{
+			return;
+		}
 		if (!active || adjustmentDeadlines.isEmpty() || trackedOffers == null)
 		{
 			log.debug("Auto-recommend: checkAdjustmentTimers skipped (active={}, deadlines={}, offers={})",
@@ -1582,6 +1592,10 @@ public class AutoRecommendService
 	 */
 	public synchronized void checkSellAdjustmentTimers(Map<Integer, TrackedOffer> trackedOffers)
 	{
+		if (!shouldRunLegacyAdjustment(config.flipTimeframe().getApiValue(), config.enableActiveOfferAdvisor()))
+		{
+			return;
+		}
 		if (!active || sellAdjustmentStates.isEmpty() || trackedOffers == null)
 		{
 			return;
