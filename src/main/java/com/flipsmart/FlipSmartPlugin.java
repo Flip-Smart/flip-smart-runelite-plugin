@@ -1926,6 +1926,14 @@ public class FlipSmartPlugin extends Plugin
 		{
 			geSlotOverlay.setAdjustmentHighlight(slot, resp.getNewPrice());
 		}
+		if (slot != null && autoRecommendService != null)
+		{
+			TrackedOffer offer = sess.getTrackedOffer(slot);
+			if (offer != null)
+			{
+				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice());
+			}
+		}
 		if (flipFinderPanel != null)
 		{
 			flipFinderPanel.refreshActiveFlips();
@@ -1943,6 +1951,10 @@ public class FlipSmartPlugin extends Plugin
 		if (slot != null && geSlotOverlay != null)
 		{
 			geSlotOverlay.clearAdjustmentHighlight(slot);
+		}
+		if (autoRecommendService != null)
+		{
+			autoRecommendService.removeAdvisorResell(itemId);
 		}
 		if (flipFinderPanel != null)
 		{

@@ -1496,6 +1496,42 @@ public class AutoRecommendService
 		}
 	}
 
+	/**
+	 * Surface an Active-mode advisor sell re-list recommendation through the stale-resell
+	 * prompt so the overlay shows "Re-sell &lt;item&gt; at: &lt;price&gt;" and the re-list auto-fill
+	 * uses the advised price. Idempotent — addToStaleQueue dedupes by item, and the price
+	 * map is refreshed on each poll.
+	 */
+	public synchronized void surfaceAdvisorResell(TrackedOffer offer, int newPrice)
+	{
+		if (offer == null)
+		{
+			return;
+		}
+		staleResellPrices.put(offer.getItemId(), newPrice);
+		PlayerSession sess = plugin.getSession();
+		if (sess != null)
+		{
+			sess.setRecommendedPrice(offer.getItemId(), newPrice);
+		}
+		addToStaleQueue(offer);
+	}
+
+	/**
+	 * Retract a previously-surfaced advisor sell prompt (the advisor changed its mind, e.g.
+	 * the market recovered and it now returns WAIT). Refreshes focus to whatever is next.
+	 */
+	public synchronized void removeAdvisorResell(int itemId)
+	{
+		boolean wasHead = !staleOfferQueue.isEmpty() && staleOfferQueue.get(0).getItemId() == itemId;
+		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
+		if (wasHead)
+		{
+			executeOrDefer(this::focusNextAvailableAction);
+		}
+	}
+
 	// =====================
 	// Sell Adjustment Timers
 	// =====================
