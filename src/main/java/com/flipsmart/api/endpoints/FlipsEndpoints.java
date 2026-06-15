@@ -61,7 +61,7 @@ public class FlipsEndpoints
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			FlipAnalysis analysis = gson.fromJson(jsonData, FlipAnalysis.class);
-			removedExpiredCacheEntries();
+			removeExpiredCacheEntries();
 			analysisCache.put(itemId, new CachedAnalysis(analysis));
 			return analysis;
 		});
@@ -77,7 +77,7 @@ public class FlipsEndpoints
 		String apiUrl = transport.getApiUrl();
 
 		// Build URL with query parameters
-		StringBuilder urlBuilder = new StringBuilder();
+		StringBuilder urlBuilder = new StringBuilder(128);
 		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
 
 		if (cashStack != null)
@@ -207,7 +207,7 @@ public class FlipsEndpoints
 	/**
 	 * Removes expired entries from the cache
 	 */
-	private void removedExpiredCacheEntries()
+	private void removeExpiredCacheEntries()
 	{
 		analysisCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
 	}
