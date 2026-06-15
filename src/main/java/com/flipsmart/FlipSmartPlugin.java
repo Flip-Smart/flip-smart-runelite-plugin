@@ -836,7 +836,8 @@ public class FlipSmartPlugin extends Plugin
 			autoRecommendService.stop();
 		}
 
-		// Clear API client cache
+		// Shutdown API client (rate limiter timer) and clear cache
+		apiClient.shutdown();
 		apiClient.clearCache();
 
 		// Shut down the trade-station snapshot pusher's executor.
