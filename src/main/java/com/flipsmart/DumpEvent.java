@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.util.GpUtils;
 
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;

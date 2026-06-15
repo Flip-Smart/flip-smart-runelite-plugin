@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.util;
 
 import net.runelite.api.ItemComposition;
 import net.runelite.client.game.ItemManager;

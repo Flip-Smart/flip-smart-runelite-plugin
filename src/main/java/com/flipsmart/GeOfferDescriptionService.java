@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.util.BuyPriceLookup;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;

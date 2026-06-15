@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.util.GeTax;
+import com.flipsmart.util.TimeUtils;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -842,7 +844,7 @@ public class FlipAssistOverlay extends Overlay
 			return 0;
 		}
 		int margin = flip.getSellPrice() - flip.getBuyPrice();
-		int geTax = Math.min((int)(flip.getSellPrice() * 0.02), 5_000_000);
+		int geTax = GeTax.taxFor(flip.getItemId(), flip.getSellPrice());
 		return (margin - geTax) * flip.getBuyQuantity();
 	}
 	

@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.util.GeTax;
 
 import lombok.Data;
 
@@ -129,7 +130,7 @@ public class FocusedFlip
 		int adjBuy = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
 		int adjSell = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
 		int margin = adjSell - adjBuy;
-		int geTax = Math.min((int)(adjSell * 0.02), 5_000_000);
+		int geTax = GeTax.taxFor(rec.getItemId(), adjSell);
 		return (margin - geTax) * rec.getRecommendedQuantity();
 	}
 }

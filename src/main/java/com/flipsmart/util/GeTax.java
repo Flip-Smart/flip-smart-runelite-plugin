@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.util;
 
 import java.util.Collections;
 import java.util.HashSet;
@@ -107,5 +107,48 @@ public final class GeTax
 			return 0;
 		}
 		return Math.min((int) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
+	}
+
+	/**
+	 * Per-item GE tax for a given sell price when the item id is not known to the
+	 * caller (e.g. the pure-function offer-description formatter). Applies the
+	 * price-based exemption (&le; 50gp) and cap, but cannot consult the
+	 * exempt-item list. Prefer {@link #taxFor(int, int)} whenever an item id is
+	 * available.
+	 */
+	public static int taxFor(int sellPrice)
+	{
+		if (sellPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
+		{
+			return 0;
+		}
+		return Math.min((int) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
+	}
+
+	/**
+	 * Smallest sell price S such that {@code S - taxFor(S) >= recordedBuyPrice},
+	 * i.e. the price at which a flip first breaks even after GE tax. Returns the
+	 * buy price unchanged for tax-exempt (&le; 50gp) inputs.
+	 */
+	public static int breakevenSellPrice(int recordedBuyPrice)
+	{
+		if (recordedBuyPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
+		{
+			return recordedBuyPrice;
+		}
+		// Start from the closed-form estimate (overshoots by 1 due to ceiling),
+		// walk up past the cap/floor-truncation region, then down to guarantee
+		// minimality.
+		int candidate = (int) Math.ceil(recordedBuyPrice / (1.0 - GE_TAX_RATE));
+		while (candidate - taxFor(candidate) < recordedBuyPrice)
+		{
+			candidate++;
+		}
+		while (candidate > recordedBuyPrice
+			&& (candidate - 1) - taxFor(candidate - 1) >= recordedBuyPrice)
+		{
+			candidate--;
+		}
+		return candidate;
 	}
 }

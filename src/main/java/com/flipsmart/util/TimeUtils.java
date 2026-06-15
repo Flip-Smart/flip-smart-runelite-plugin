@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.util;
 
 import java.time.Instant;
 import java.time.format.DateTimeParseException;

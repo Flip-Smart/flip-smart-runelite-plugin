@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.util;
 
 import java.util.OptionalInt;
 import java.util.regex.Matcher;
