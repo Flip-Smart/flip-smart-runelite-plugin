@@ -352,6 +352,27 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * True when at least one GE slot holds uncollected items or coins. Used to
+	 * suppress collection prompts once everything has been collected (all slots EMPTY).
+	 */
+	public boolean hasCollectableGEOffers()
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return false;
+		}
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer.getState() != GrandExchangeOfferState.EMPTY && offer.getQuantitySold() > 0)
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
 	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
 	 */
 	public int getInventoryCountForItem(int itemId)

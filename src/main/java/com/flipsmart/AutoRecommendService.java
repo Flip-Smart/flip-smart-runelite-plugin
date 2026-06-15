@@ -2291,7 +2291,7 @@ public class AutoRecommendService
 		invokeFocusCallback(null);
 
 		List<TrackedOffer> completed = plugin.getSession().getCompletedOffers();
-		if (!completed.isEmpty())
+		if (!completed.isEmpty() && plugin.hasCollectableGEOffers())
 		{
 			TrackedOffer first = completed.get(0);
 			if (first.isBuy())
