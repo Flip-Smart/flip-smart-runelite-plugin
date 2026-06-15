@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.TransactionRequest;
 import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.domain.offer.TrackedOffer;
@@ -297,7 +298,7 @@ public class GrandExchangeTracker
 
 			Integer recommendedSellPrice = ctx.isBuy ? session.getRecommendedPrice(ctx.itemId) : null;
 
-			apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+			apiClient.recordTransactionAsync(TransactionRequest
 				.builder(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity, pricePerItem)
 				.geSlot(ctx.slot)
 				.recommendedSellPrice(recommendedSellPrice)
@@ -606,7 +607,7 @@ public class GrandExchangeTracker
 
 		Integer recommendedSellPrice = ctx.isBuy ? session.getRecommendedPrice(ctx.itemId) : null;
 
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+		apiClient.recordTransactionAsync(TransactionRequest
 			.builder(ctx.itemId, ctx.itemName, ctx.isBuy, newQuantity, pricePerItem)
 			.geSlot(ctx.slot)
 			.recommendedSellPrice(recommendedSellPrice)
@@ -727,7 +728,7 @@ public class GrandExchangeTracker
 
 		Integer recommendedSellPrice = session.getRecommendedPrice(ctx.itemId);
 
-		apiClient.recordTransactionAsync(FlipSmartApiClient.TransactionRequest
+		apiClient.recordTransactionAsync(TransactionRequest
 			.builder(ctx.itemId, ctx.itemName, true, 0, ctx.price)
 			.geSlot(ctx.slot)
 			.recommendedSellPrice(recommendedSellPrice)

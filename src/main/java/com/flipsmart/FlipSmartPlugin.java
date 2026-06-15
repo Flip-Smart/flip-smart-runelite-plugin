@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
@@ -449,7 +450,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Try to get real-time wiki prices first
-		FlipSmartApiClient.WikiPrice wikiPrice = apiClient.getWikiPrice(offer.getItemId());
+		WikiPrice wikiPrice = apiClient.getWikiPrice(offer.getItemId());
 
 		if (wikiPrice != null)
 		{
@@ -485,7 +486,7 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Get real-time wiki price for an item (for tooltip display)
 	 */
-	public FlipSmartApiClient.WikiPrice getWikiPrice(int itemId)
+	public WikiPrice getWikiPrice(int itemId)
 	{
 		return apiClient.getWikiPrice(itemId);
 	}
@@ -1916,7 +1917,7 @@ public class FlipSmartPlugin extends Plugin
 				continue;
 			}
 			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
-			FlipSmartApiClient.WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
+			WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
 			Integer avgBuy = offer.isBuy() ? null
 				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
 			requests.add(ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume));

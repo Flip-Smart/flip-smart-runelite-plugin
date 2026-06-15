@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
@@ -203,7 +204,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static class TooltipData
 	{
 		GrandExchangeOffer offer;
-		FlipSmartApiClient.WikiPrice wikiPrice;
+		WikiPrice wikiPrice;
 		int offerPrice;
 		int x;
 		int y;
@@ -456,7 +457,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Draw a custom tooltip with background showing real-time insta prices
 	 */
 	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer,
-								  FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice, Integer buyPrice)
+								  WikiPrice wikiPrice, int offerPrice, Integer buyPrice)
 	{
 		boolean isBuy = isOfferBuyType(offer);
 
@@ -484,7 +485,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Build tooltip text lines based on wiki price data
 	 */
-	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice,
+	private java.util.List<String> buildTooltipLines(WikiPrice wikiPrice, int offerPrice,
 													  Integer buyPrice, boolean isBuy, int totalQuantity, int itemId)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
@@ -500,7 +501,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		return lines;
 	}
 
-	private void addPriceLines(java.util.List<String> lines, FlipSmartApiClient.WikiPrice wikiPrice)
+	private void addPriceLines(java.util.List<String> lines, WikiPrice wikiPrice)
 	{
 		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
 		{
@@ -547,7 +548,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Determine color for user's price based on competitiveness
 	 */
-	private Color determineYourPriceColor(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice, boolean isBuy)
+	private Color determineYourPriceColor(WikiPrice wikiPrice, int offerPrice, boolean isBuy)
 	{
 		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
 		{

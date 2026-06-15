@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.MotdChannelData;
+import com.flipsmart.api.dto.MotdResponse;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -43,7 +45,7 @@ public class MotdService
 	private ScheduledExecutorService executor;
 	private ScheduledFuture<?> pollingTask;
 
-	private FlipSmartApiClient.MotdResponse latest;
+	private MotdResponse latest;
 
 	@Inject
 	public MotdService(
@@ -98,7 +100,7 @@ public class MotdService
 	}
 
 	/** Visible for testing. */
-	void handleResponse(FlipSmartApiClient.MotdResponse response)
+	void handleResponse(MotdResponse response)
 	{
 		if (response == null) return;
 		latest = response;
@@ -122,7 +124,7 @@ public class MotdService
 	{
 		if (!config.motdEnabled()) return;
 		if (latest == null) return;
-		FlipSmartApiClient.MotdChannelData plugin = latest.getPlugin();
+		MotdChannelData plugin = latest.getPlugin();
 		if (plugin == null) return;
 		if (!plugin.isEnabled()) return;
 		String message = plugin.getMessage();

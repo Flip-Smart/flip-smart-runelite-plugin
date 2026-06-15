@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.domain.flip.FlipRecommendation;
@@ -289,7 +290,7 @@ public class ManualAdjustmentTracker
 
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
 
-		apiClient.getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
+		apiClient.getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
 			.isBuyOffer(state.isBuy)
 			.offerPrice(offer.getPrice())

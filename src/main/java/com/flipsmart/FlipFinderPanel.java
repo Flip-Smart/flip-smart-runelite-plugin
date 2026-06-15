@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.AuthResult;
 import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.CompletedFlip;
@@ -918,7 +919,7 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			// Try to authenticate in background
 			java.util.concurrent.CompletableFuture.runAsync(() -> {
-				FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
+				AuthResult result = apiClient.login(email, password);
 
 				SwingUtilities.invokeLater(() -> {
 					if (result.success)
@@ -963,7 +964,7 @@ public class FlipFinderPanel extends PluginPanel
 		showLoginStatus("Logging in...", true);
 
 		java.util.concurrent.CompletableFuture.runAsync(() -> {
-			FlipSmartApiClient.AuthResult result = apiClient.login(email, password);
+			AuthResult result = apiClient.login(email, password);
 
 			SwingUtilities.invokeLater(() -> {
 				setLoginButtonsEnabled(true);
@@ -1003,7 +1004,7 @@ public class FlipFinderPanel extends PluginPanel
 		showLoginStatus("Creating account...", true);
 
 		java.util.concurrent.CompletableFuture.runAsync(() -> {
-			FlipSmartApiClient.AuthResult result = apiClient.signup(email, password);
+			AuthResult result = apiClient.signup(email, password);
 
 			SwingUtilities.invokeLater(() -> {
 				setLoginButtonsEnabled(true);

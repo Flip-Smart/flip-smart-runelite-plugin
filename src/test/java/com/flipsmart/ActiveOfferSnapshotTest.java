@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.api.dto.OfferAdviceRequest;
 
@@ -12,7 +13,7 @@ public class ActiveOfferSnapshotTest
 	public void buildsSellSnapshotWithMarketAndBuyPrice()
 	{
 		TrackedOffer offer = new TrackedOffer(12345, "Item", false, 10, 1000, 2);
-		FlipSmartApiClient.WikiPrice market = new FlipSmartApiClient.WikiPrice(1080, 1020);
+		WikiPrice market = new WikiPrice(1080, 1020);
 
 		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, market, 990, 600000);
 

@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.BuyPriceLookup;
 
@@ -430,7 +431,7 @@ public class GeOfferDescriptionService
 
 	private Integer lookupWikiInstaBuy(int itemId)
 	{
-		FlipSmartApiClient.WikiPrice price = apiClient.getWikiPrice(itemId);
+		WikiPrice price = apiClient.getWikiPrice(itemId);
 		return (price != null && price.instaBuy > 0) ? price.instaBuy : null;
 	}
 

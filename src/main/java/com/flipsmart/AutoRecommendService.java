@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.FlipAdjustmentRequest;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.domain.flip.FlipRecommendation;
@@ -647,7 +649,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		FlipSmartApiClient.WikiPrice wikiPrice = plugin.getWikiPrice(itemId);
+		WikiPrice wikiPrice = plugin.getWikiPrice(itemId);
 		if (wikiPrice != null && wikiPrice.instaBuy > 0)
 		{
 			plugin.setRecommendedSellPrice(itemId, wikiPrice.instaBuy);
@@ -1239,7 +1241,7 @@ public class AutoRecommendService
 		log.debug("Auto-recommend: Checking buy adjustment for {} (price={}, {}min elapsed)",
 			itemName, offer.getPrice(), minutesSince);
 
-		plugin.getApiClient().getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
+		plugin.getApiClient().getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
 			.itemId(itemId)
 			.isBuyOffer(true)
 			.offerPrice(offer.getPrice())
@@ -1719,7 +1721,7 @@ public class AutoRecommendService
 		PlayerSession session = plugin.getSession();
 		String rsn = session != null ? session.getRsnSafe().orElse(null) : null;
 
-		plugin.getApiClient().getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
+		plugin.getApiClient().getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
 			.isBuyOffer(false)
 			.offerPrice(offer.getPrice())
