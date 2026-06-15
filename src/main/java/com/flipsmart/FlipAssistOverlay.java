@@ -34,7 +34,8 @@ import java.util.function.Consumer;
 @Slf4j
 public class FlipAssistOverlay extends Overlay
 {
-	private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("#,###");
+	private static final ThreadLocal<DecimalFormat> PRICE_FORMAT =
+		ThreadLocal.withInitial(() -> new DecimalFormat("#,###"));
 	
 	// Color theme
 	private static final Color COLOR_BG_DARK = new Color(25, 22, 18, 200);
@@ -794,16 +795,16 @@ public class FlipAssistOverlay extends Overlay
 		int lineHeight = 12;
 
 		String priceLabel = flip.isBuying() ? "Buy at:" : "Sell at:";
-		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.format(flip.getCurrentStepPrice()) + " gp",
+		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.get().format(flip.getCurrentStepPrice()) + " gp",
 			y + lineHeight, flip.isBuying() ? COLOR_BUY : COLOR_SELL);
 
-		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.format(flip.getCurrentStepQuantity()),
+		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.get().format(flip.getCurrentStepQuantity()),
 			y + lineHeight * 2, COLOR_TEXT);
 
 		if (flip.isBuying() && flip.getSellPrice() > 0)
 		{
 			int totalProfit = calculateTotalProfit();
-			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.format(totalProfit) + " gp",
+			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.get().format(totalProfit) + " gp",
 				y + lineHeight * 3, totalProfit > 0 ? COLOR_PROFIT : new Color(255, 100, 100));
 		}
 	}
@@ -843,13 +844,13 @@ public class FlipAssistOverlay extends Overlay
 				int targetQty = flip.getCurrentStepQuantity();
 				// Just show the target quantity with hotkey
 				return String.format(currentStep.getDescription(), hotkeyName,
-					PRICE_FORMAT.format(targetQty));
+					PRICE_FORMAT.get().format(targetQty));
 			case SET_PRICE:
 			case SET_SELL_PRICE:
 				int targetPrice = flip.getCurrentStepPrice();
 				// Just show the target price with hotkey
 				return String.format(currentStep.getDescription(), hotkeyName,
-					PRICE_FORMAT.format(targetPrice));
+					PRICE_FORMAT.get().format(targetPrice));
 			default:
 				return currentStep.getDescription();
 		}

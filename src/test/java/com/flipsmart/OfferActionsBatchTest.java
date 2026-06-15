@@ -10,6 +10,8 @@ import static org.junit.Assert.assertTrue;
 
 public class OfferActionsBatchTest
 {
+	private static final String OFFERS_KEY = "offers";
+
 	@Test
 	public void bodyWrapsEachOfferUnderOffersArray()
 	{
@@ -23,10 +25,10 @@ public class OfferActionsBatchTest
 
 		JsonObject body = FlipSmartApiClient.buildOfferActionsBody(Arrays.asList(a, b));
 
-		assertTrue(body.has("offers"));
-		assertEquals(2, body.getAsJsonArray("offers").size());
-		assertEquals(1, body.getAsJsonArray("offers").get(0).getAsJsonObject().get("item_id").getAsInt());
-		assertEquals(2, body.getAsJsonArray("offers").get(1).getAsJsonObject().get("item_id").getAsInt());
+		assertTrue(body.has(OFFERS_KEY));
+		assertEquals(2, body.getAsJsonArray(OFFERS_KEY).size());
+		assertEquals(1, body.getAsJsonArray(OFFERS_KEY).get(0).getAsJsonObject().get("item_id").getAsInt());
+		assertEquals(2, body.getAsJsonArray(OFFERS_KEY).get(1).getAsJsonObject().get("item_id").getAsInt());
 	}
 
 	@Test
