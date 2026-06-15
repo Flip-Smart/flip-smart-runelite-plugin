@@ -1471,14 +1471,10 @@ public class AutoRecommendService
 		if (!next.isBuy() && resellPrice != null)
 		{
 			Integer net = staleResellNet.get(next.getItemId());
-			String netLine = "";
-			if (net != null)
-			{
-				String keyword = net < 0 ? "Loss" : (net > 0 ? "Profit" : "Breakeven");
-				netLine = String.format("\n%s: %s%,d", keyword, net >= 0 ? "+" : "-", Math.abs(net));
-			}
+			String netSuffix = net == null ? ""
+				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
 			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", next.getItemName(),
-				String.format("%,d", resellPrice), netLine);
+				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
 		{

@@ -3159,17 +3159,6 @@ public class FlipFinderPanel extends PluginPanel
 		return (amount >= 0 ? "+" : "-") + GpUtils.formatGP(Math.abs(amount));
 	}
 
-	private static String activeOfferPricePrefix(OfferAction action)
-	{
-		switch (action)
-		{
-			case EXIT_AT_BREAKEVEN:
-			case EXIT_AT_LOSS:
-				return "Exit at:";
-			default:
-				return "Sell at:";
-		}
-	}
 
 	/**
 	 * Set the callback for when authentication succeeds.
@@ -3525,16 +3514,13 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
 
-				JLabel verbLabel = createStyledLabel(verb, Color.ORANGE);
+				String verbLine = advice.getNewPrice() != null
+					? verb + ": " + String.format("%,d", advice.getNewPrice()) + "gp"
+					: verb;
+				JLabel verbLabel = createStyledLabel(verbLine, Color.ORANGE);
 				verbLabel.setToolTipText(advice.getReason());
 				detailsPanel.add(verbLabel);
 
-				if (advice.getNewPrice() != null)
-				{
-					String priceLine = activeOfferPricePrefix(advice.getActionEnum())
-						+ " " + String.format("%,d", advice.getNewPrice()) + "gp";
-					detailsPanel.add(createStyledLabel(priceLine, Color.ORANGE));
-				}
 				if (advice.getNetProfitEstimate() != null)
 				{
 					int net = advice.getNetProfitEstimate();
