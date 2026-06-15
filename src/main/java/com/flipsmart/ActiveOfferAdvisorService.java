@@ -18,7 +18,7 @@ public class ActiveOfferAdvisorService
 	private volatile IntConsumer onHandoff;
 	private volatile IntConsumer onClearSurface;
 
-	void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, IntConsumer onHandoff, IntConsumer onClearSurface)
+	public void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, IntConsumer onHandoff, IntConsumer onClearSurface)
 	{
 		this.onSurfacePrice = onSurfacePrice;
 		this.onHandoff = onHandoff;

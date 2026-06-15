@@ -10,6 +10,9 @@ import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.ItemUtils;
 import com.flipsmart.util.TimeUtils;
 import com.flipsmart.util.GpUtils;
+import com.flipsmart.plugin.EventRouter;
+import com.flipsmart.plugin.PluginScheduler;
+import com.flipsmart.plugin.ServiceWiring;
 
 import com.google.gson.Gson;
 import com.google.inject.Provides;
@@ -58,7 +61,6 @@ import java.awt.Rectangle;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CopyOnWriteArrayList;
 
 @Slf4j
 @PluginDescriptor(
@@ -162,19 +164,18 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private PlayerSession session;
 
-	// Auto-refresh timer for flip finder
-	private java.util.Timer flipFinderRefreshTimer;
+	// Timer / one-shot ownership extracted into PluginScheduler
+	private final PluginScheduler scheduler = new PluginScheduler();
 
-	// Auto-recommend refresh timer (2-minute cycle)
-	private java.util.Timer autoRecommendRefreshTimer;
+	// Post-construction setter wiring extracted into ServiceWiring
+	private final ServiceWiring serviceWiring = new ServiceWiring();
 
-	// Active-offer advisor service + poll timer (30-second cycle)
+	// EventBus routing extracted into EventRouter (built in startUp once collaborators exist)
+	private EventRouter eventRouter;
+
+	// Active-offer advisor service (poll timer owned by the scheduler)
 	private ActiveOfferAdvisorService activeOfferAdvisorService;
-	private java.util.Timer activeOfferAdvisorTimer;
 	private long lastAdvisorPollMs;
-
-	// Track all active one-shot Swing timers for cleanup on shutdown
-	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
 
 	// Last known RSN — saved when we learn it, used as fallback for persistence on shutdown
 	// when session.getRsn() may already be null
@@ -201,30 +202,11 @@ public class FlipSmartPlugin extends Plugin
 	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
 
-	/** Auto-recommend queue refresh interval (2 minutes) */
-	private static final long AUTO_RECOMMEND_REFRESH_INTERVAL_MS = 2 * 60 * 1000L;
-
-	/** Active-offer advisor poll interval (30 seconds) */
-	private static final long ACTIVE_OFFER_ADVISOR_INTERVAL_MS = 30_000L;
-	private static final long ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS = 3_000L;
-
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
 
 	// Injects the clickable "FlipSmart item" shortcut into GE search results
 	private GeSearchSuggestion geSearchSuggestion;
-
-	// Timer delay constants (in milliseconds)
-	/** Delay before syncing offline fills after login */
-	private static final int OFFLINE_SYNC_DELAY_MS = 2000;
-	/** Delay before refreshing panel after sync */
-	private static final int PANEL_REFRESH_DELAY_MS = 1000;
-	/** Delay before cleaning up stale flips (allows GE state to stabilize) */
-	private static final int STALE_FLIP_CLEANUP_DELAY_MS = 15000;
-	/** Delay before validating inventory quantities */
-	private static final int INVENTORY_VALIDATION_DELAY_MS = 2000;
-	/** Delay before re-evaluating auto-recommend after login sync */
-	private static final int AUTO_RECOMMEND_REEVALUATE_DELAY_MS = 3000;
 
 	// Threshold constants
 	/** Minimum interval between auto-refreshes (30 seconds) */
@@ -254,6 +236,18 @@ public class FlipSmartPlugin extends Plugin
 	public FlipSmartApiClient getApiClient()
 	{
 		return apiClient;
+	}
+
+	/** Flip Finder panel (may be null until initialized / when disabled in config). */
+	public FlipFinderPanel getFlipFinderPanel()
+	{
+		return flipFinderPanel;
+	}
+
+	/** MOTD service (used by the event router on login). */
+	public MotdService getMotdService()
+	{
+		return motdService;
 	}
 
 	/**
@@ -312,7 +306,7 @@ public class FlipSmartPlugin extends Plugin
 	 * Refresh the cached members-world state from the Client API.
 	 * Must be called on the client thread.
 	 */
-	private void updateMembersWorldCache()
+	public void updateMembersWorldCache()
 	{
 		membersWorld = client.getWorldType().contains(WorldType.MEMBERS);
 	}
@@ -608,11 +602,18 @@ public class FlipSmartPlugin extends Plugin
 		startFlipFinderRefreshTimer();
 
 		// Wire service callbacks and initialize auto-recommend
-		wireServiceCallbacks();
-		initializeAutoRecommendService();
-		initializeActiveOfferAdvisor();
-		initializeManualAdjustmentTracker();
-		wireGrandExchangeTrackerCallbacks();
+		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker);
+		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay);
+		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
+		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
+		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
+			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService);
+		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService);
+
+		// Build the event router now that all collaborators exist
+		eventRouter = new EventRouter(this, client, config, session, webhookSyncService,
+			offlineSyncService, bankSnapshotService, geHistoryService, geOfferDescriptionService,
+			grandExchangeTracker);
 
 		// Start dump alert service
 		dumpAlertService.start();
@@ -625,99 +626,7 @@ public class FlipSmartPlugin extends Plugin
 		// Don't access client data during startup - must be on client thread
 	}
 
-	/**
-	 * Wire callbacks for offline sync and active flip tracker services.
-	 */
-	private void wireServiceCallbacks()
-	{
-		offlineSyncService.setOnSyncComplete(this::schedulePostSyncTasks);
-		activeFlipTracker.setOnPanelRefreshNeeded(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
-		activeFlipTracker.setOnActiveFlipsRefreshNeeded(() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
-	}
-
-	/**
-	 * Initialize auto-recommend service and wire its callbacks.
-	 */
-	private void initializeAutoRecommendService()
-	{
-		autoRecommendService = new AutoRecommendService(config, this);
-		autoRecommendService.setOnFocusChanged(this::handleAutoRecommendFocusChanged);
-		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
-		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
-		autoRecommendService.setOnStaleOfferPrompted(this::highlightSlotForItem);
-		autoRecommendService.setOnClearAllHighlights(geSlotOverlay::clearAllAdjustmentHighlights);
-		flipAssistOverlay.setOnStepChanged(autoRecommendService::onOverlayStepChanged);
-	}
-
-	/**
-	 * Construct the active-offer advisor service, wire its callbacks, and start
-	 * the 30-second poll timer.
-	 */
-	private void initializeActiveOfferAdvisor()
-	{
-		activeOfferAdvisorService = new ActiveOfferAdvisorService();
-		activeOfferAdvisorService.setCallbacks(
-			resp -> javax.swing.SwingUtilities.invokeLater(() -> applyActiveOfferSurface(resp)),
-			itemId -> handleActiveOfferHandoff(itemId),
-			itemId -> javax.swing.SwingUtilities.invokeLater(() -> clearActiveOfferSurface(itemId)));
-
-		activeOfferAdvisorTimer = new java.util.Timer("ActiveOfferAdvisorTimer", true);
-		activeOfferAdvisorTimer.scheduleAtFixedRate(new java.util.TimerTask()
-		{
-			@Override
-			public void run()
-			{
-				pollActiveOfferAdvisor();
-			}
-		}, ACTIVE_OFFER_ADVISOR_INTERVAL_MS, ACTIVE_OFFER_ADVISOR_INTERVAL_MS);
-	}
-
-	/**
-	 * Initialize manual adjustment tracker for staleness detection on manual flips.
-	 */
-	private void initializeManualAdjustmentTracker()
-	{
-		manualAdjustmentTracker = new ManualAdjustmentTracker(apiClient, config);
-
-		// Wire callback: show adjustment prompts in FlipAssistOverlay
-		manualAdjustmentTracker.setOnAdjustmentPrompt(flipAssistOverlay::setAutoStatusMessage);
-
-		// Wire callback: focus a buy overlay when adjustment recommends a new price
-		manualAdjustmentTracker.setOnFocusFlip((focus, statusMsg) ->
-		{
-			flipAssistOverlay.setFocusedFlip(focus);
-			flipAssistOverlay.setAutoStatusMessage(statusMsg, focus.getItemId());
-			updateInventoryHighlightForFocus(focus);
-		});
-
-		manualAdjustmentTracker.setOnHighlightSlot((slot, recommendedPrice) ->
-			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
-		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
-
-		manualAdjustmentTracker.setOnHighlightInventoryItem(inventoryHighlightOverlay::addHighlight);
-		manualAdjustmentTracker.setOnClearInventoryItem(inventoryHighlightOverlay::removeHighlight);
-		manualAdjustmentTracker.setOnSellPriceAdjusted((itemId, price) ->
-		{
-			if (session != null)
-			{
-				session.setRecommendedPrice(itemId, price);
-			}
-		});
-
-		// Wire suppliers for ditch logic (replacement recommendations)
-		manualAdjustmentTracker.setCashStackSupplier(() ->
-			session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null);
-		manualAdjustmentTracker.setRsnSupplier(() -> getCurrentRsnSafe().orElse(null));
-		manualAdjustmentTracker.setFilledSlotsSupplier(this::getFilledGESlotCount);
-		manualAdjustmentTracker.setMembersWorldSupplier(this::isMembersWorld);
-
-		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
-		grandExchangeTracker.setActiveOfferAdvisorService(activeOfferAdvisorService);
-		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
-		grandExchangeTracker.setConfig(config);
-	}
-
-	private void highlightSlotForItem(int itemId)
+	public void highlightSlotForItem(int itemId)
 	{
 		geSlotOverlay.clearAllAdjustmentHighlights();
 		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
@@ -730,7 +639,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void updateInventoryHighlightForFocus(FocusedFlip focus)
+	public void updateInventoryHighlightForFocus(FocusedFlip focus)
 	{
 		inventoryHighlightOverlay.clearAll();
 		if (focus != null && focus.isSelling())
@@ -739,7 +648,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void handleAutoRecommendFocusChanged(FocusedFlip focus)
+	public void handleAutoRecommendFocusChanged(FocusedFlip focus)
 	{
 		flipAssistOverlay.setFocusedFlip(focus);
 		updateInventoryHighlightForFocus(focus);
@@ -771,30 +680,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	/**
-	 * Wire all GrandExchangeTracker callbacks.
-	 */
-	private void wireGrandExchangeTrackerCallbacks()
-	{
-		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
-		grandExchangeTracker.setRsnSupplier(this::getCurrentRsnSafe);
-		grandExchangeTracker.setOnPanelRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
-		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) { flipFinderPanel.refreshActiveFlips(); flipFinderPanel.reevaluateSlotLimitDisplay(); } maybeEventPollAdvisor(); });
-		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (flipFinderPanel != null) flipFinderPanel.updatePendingOrders(getPendingBuyOrders()); });
-		grandExchangeTracker.setOnFocusChanged(this::handleGETrackerFocusChanged);
-		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
-		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
-		grandExchangeTracker.setOneShotScheduler(this::scheduleOneShot);
-
-		geHistoryService.setOnBackfillComplete(() -> {
-			if (flipFinderPanel != null)
-			{
-				javax.swing.SwingUtilities.invokeLater(flipFinderPanel::refresh);
-			}
-		});
-	}
-
-	private void handleGETrackerFocusChanged(FocusedFlip focus)
+	public void handleGETrackerFocusChanged(FocusedFlip focus)
 	{
 		flipAssistOverlay.setFocusedFlip(focus);
 		updateInventoryHighlightForFocus(focus);
@@ -804,7 +690,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void handleGETrackerFocusClear(int itemId, boolean isBuy)
+	public void handleGETrackerFocusClear(int itemId, boolean isBuy)
 	{
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
 		if (focusedFlip == null || focusedFlip.getItemId() != itemId)
@@ -886,17 +772,17 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		// Stop auto-refresh timer
-		stopFlipFinderRefreshTimer();
+		scheduler.stopFlipFinderRefreshTimer();
 
 		// Stop all pending one-shot timers
-		stopAllOneShotTimers();
+		scheduler.stopAllOneShotTimers();
 
 		// Stop dump alert service
 		dumpAlertService.stop();
 		motdService.stop();
 
 		// Stop auto-recommend service and timer
-		stopAutoRecommendRefreshTimer();
+		scheduler.stopAutoRecommendRefreshTimer();
 		if (autoRecommendService != null)
 		{
 			persistAutoRecommendState();
@@ -904,7 +790,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		// Stop active-offer advisor poll timer
-		stopActiveOfferAdvisorTimer();
+		scheduler.stopActiveOfferAdvisorTimer();
 
 		// Clear API client cache
 		apiClient.clearCache();
@@ -916,78 +802,33 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onConfigChanged(ConfigChanged configChanged)
 	{
-		if (!CONFIG_GROUP.equals(configChanged.getGroup()))
-		{
-			return;
-		}
-
-		if ("enableAutoRecommend".equals(configChanged.getKey()) && flipFinderPanel != null)
-		{
-			flipFinderPanel.setAutoRecommendVisible(config.enableAutoRecommend());
-		}
-
-		if ("f2pMode".equals(configChanged.getKey()) && flipFinderPanel != null)
-		{
-			flipFinderPanel.refresh();
-		}
-
-		if (("cashstackOverrideEnabled".equals(configChanged.getKey())
-			|| "cashstackOverrideAmount".equals(configChanged.getKey())) && flipFinderPanel != null)
-		{
-			flipFinderPanel.updateCashstackOverrideIndicator();
-			flipFinderPanel.refresh();
-		}
-
-		// Sync webhook config changes to backend
-		String key = configChanged.getKey();
-		if ("discordWebhookUrl".equals(key) || "notifySaleCompleted".equals(key))
-		{
-			webhookSyncService.syncIfChanged();
-		}
+		eventRouter.onConfigChanged(configChanged);
 	}
 
 	@Subscribe
 	public void onGameStateChanged(GameStateChanged gameStateChanged)
 	{
-		GameState gameState = gameStateChanged.getGameState();
-
-		// Track login/hopping to avoid recording existing GE offers
-		if (gameState == GameState.LOGGING_IN || gameState == GameState.HOPPING || gameState == GameState.CONNECTION_LOST)
-		{
-			session.onLoginStateChange(client.getTickCount());
-
-			// Persist offer state before hop/reconnect so timestamps survive.
-			// handleLogoutState only runs on LOGIN_SCREEN, not hops.
-			if (!session.getTrackedOffers().isEmpty())
-			{
-				offlineSyncService.persistOfferState();
-			}
-		}
-
-		if (gameState == GameState.LOGIN_SCREEN)
-		{
-			handleLogoutState();
-		}
-
-		if (gameState == GameState.LOGGED_IN)
-		{
-			handleLoggedInState();
-			motdService.onLogin();
-		}
+		eventRouter.onGameStateChanged(gameStateChanged);
 	}
 
 	@Subscribe
 	public void onWorldChanged(WorldChanged event)
 	{
-		updateMembersWorldCache();
-		if (flipFinderPanel != null)
-		{
-			flipFinderPanel.refresh();
-		}
+		eventRouter.onWorldChanged(event);
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick event)
+	{
+		eventRouter.onGameTick(event);
+	}
+
+	/**
+	 * Game-tick handler body. Kept on the plugin because it mutates plugin-private
+	 * volatile state ({@code atGrandExchange}, {@code rsnSyncPending}) and calls
+	 * private RSN sync logic. The router delegates straight here.
+	 */
+	public void onGameTickHandler(GameTick event)
 	{
 		Player localPlayer = client.getLocalPlayer();
 		atGrandExchange = localPlayer != null && localPlayer.getWorldLocation().getRegionID() == GE_REGION_ID;
@@ -1022,7 +863,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void handleLogoutState()
+	public void handleLogoutState()
 	{
 		session.onLogout();
 		offlineSyncService.persistOfferState();
@@ -1052,7 +893,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void handleLoggedInState()
+	public void handleLoggedInState()
 	{
 		log.debug("Player logged in");
 		updateMembersWorldCache();
@@ -1102,7 +943,7 @@ public class FlipSmartPlugin extends Plugin
 		restoreAutoRecommendState();
 
 		// Start the refresh timer if not already running (needed for manual adjustment checks)
-		if (autoRecommendRefreshTimer == null)
+		if (!scheduler.isAutoRecommendRefreshTimerRunning())
 		{
 			startAutoRecommendRefreshTimer();
 		}
@@ -1110,7 +951,7 @@ public class FlipSmartPlugin extends Plugin
 		// Schedule offline sync after a delay to ensure all GE events have been processed
 		if (!session.isOfflineSyncCompleted())
 		{
-			scheduleOneShot(OFFLINE_SYNC_DELAY_MS, offlineSyncService::syncOfflineFills);
+			scheduleOneShot(PluginScheduler.OFFLINE_SYNC_DELAY_MS, offlineSyncService::syncOfflineFills);
 		}
 
 		if (flipFinderPanel != null)
@@ -1123,21 +964,21 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Schedule panel refresh and stale flip cleanup after offline sync.
 	 */
-	private void schedulePostSyncTasks()
+	public void schedulePostSyncTasks()
 	{
 		// Backfill any missing timestamps from backend before panel refresh
 		backfillMissingTimestamps();
 
 		if (flipFinderPanel != null)
 		{
-			scheduleOneShot(PANEL_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
+			scheduleOneShot(PluginScheduler.PANEL_REFRESH_DELAY_MS, () -> flipFinderPanel.refresh());
 		}
 
-		scheduleOneShot(STALE_FLIP_CLEANUP_DELAY_MS, this::performStaleFlipCleanup);
+		scheduleOneShot(PluginScheduler.STALE_FLIP_CLEANUP_DELAY_MS, this::performStaleFlipCleanup);
 
 		if (autoRecommendService != null && autoRecommendService.isActive())
 		{
-			scheduleOneShot(AUTO_RECOMMEND_REEVALUATE_DELAY_MS, this::reevaluateAutoRecommendAfterLogin);
+			scheduleOneShot(PluginScheduler.AUTO_RECOMMEND_REEVALUATE_DELAY_MS, this::reevaluateAutoRecommendAfterLogin);
 		}
 	}
 
@@ -1228,7 +1069,7 @@ public class FlipSmartPlugin extends Plugin
 		if (!session.getTrackedOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())
 		{
 			activeFlipTracker.cleanupStaleActiveFlips();
-			scheduleOneShot(INVENTORY_VALIDATION_DELAY_MS, () ->
+			scheduleOneShot(PluginScheduler.INVENTORY_VALIDATION_DELAY_MS, () ->
 				clientThread.invokeLater(activeFlipTracker::validateInventoryQuantities));
 		}
 		else
@@ -1345,69 +1186,27 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged event)
 	{
-		int containerId = event.getContainerId();
-		
-		// Handle inventory changes
-		if (containerId == INVENTORY_CONTAINER_ID)
-		{
-			updateCashStack();
-			return;
-		}
-		
-		// Handle bank container changes (bank opened/updated)
-		if (containerId == InventoryID.BANK.getId())
-		{
-			bankSnapshotService.onBankContainerChanged(getCurrentRsnSafe().orElse(null));
-		}
+		eventRouter.onItemContainerChanged(event);
 	}
-	
+
 	@Subscribe
 	public void onScriptPostFired(ScriptPostFired event)
 	{
-		if (event.getScriptId() != ScriptID.GE_OFFERS_SETUP_BUILD)
-		{
-			return;
-		}
-
-		// Issue #665 — hide the convenience-fee info icon (SETUP_GRAPHIC4) so it
-		// doesn't overlap our multi-line description. Fires for both buy and
-		// sell, not just the auto-focus path below.
-		if (geOfferDescriptionService != null)
-		{
-			geOfferDescriptionService.onSetupBuildScriptPostFired();
-		}
-
-		int openItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-		if (openItemId > 0 && autoRecommendService != null)
-		{
-			autoRecommendService.acquireOfferLock(openItemId);
-		}
-
-		// GE_NEWOFFER_TYPE == 1 is a sell; anything else is a buy.
-		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
-		if (offerType != 1)
-		{
-			// Buy setup: focus the queued buy recommendation for this item (if any) so
-			// the overlay guides the buy the player is setting up, taking priority over
-			// a pending collect/history prompt. Focus returns to the queue on lock
-			// release once the setup screen closes.
-			if (openItemId > 0 && autoRecommendService != null)
-			{
-				autoRecommendService.overrideFocusForBuy(openItemId);
-			}
-			return;
-		}
-
-		if (openItemId <= 0)
-		{
-			return;
-		}
-
-		grandExchangeTracker.autoFocusOnActiveFlip(openItemId);
+		eventRouter.onScriptPostFired(event);
 	}
 
 	@Subscribe
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged offerEvent)
+	{
+		eventRouter.onGrandExchangeOfferChanged(offerEvent);
+	}
+
+	/**
+	 * GE offer-changed handler body. Kept on the plugin because it builds
+	 * {@link GrandExchangeTracker.OfferContext}, a package-private type. The router
+	 * delegates straight here.
+	 */
+	public void onGrandExchangeOfferChangedHandler(GrandExchangeOfferChanged offerEvent)
 	{
 		final int slot = offerEvent.getSlot();
 		final GrandExchangeOffer offer = offerEvent.getOffer();
@@ -1462,6 +1261,16 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onVarClientIntChanged(VarClientIntChanged event)
 	{
+		eventRouter.onVarClientIntChanged(event);
+	}
+
+	/**
+	 * VarClientInt handler body. Kept on the plugin because it touches plugin-private
+	 * listener/suggestion state ({@code flipAssistInputListener}, {@code geSearchSuggestion})
+	 * created during startUp. The router delegates straight here.
+	 */
+	public void onVarClientIntChangedHandler(VarClientIntChanged event)
+	{
 		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TYPE && flipAssistInputListener != null)
 		{
 			int inputType = client.getVarcIntValue(FlipAssistInputListener.VARCLIENT_INPUT_TYPE);
@@ -1480,6 +1289,16 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onVarClientStrChanged(VarClientStrChanged event)
 	{
+		eventRouter.onVarClientStrChanged(event);
+	}
+
+	/**
+	 * VarClientStr handler body. Kept on the plugin because it touches the
+	 * plugin-private {@code flipAssistInputListener} created during startUp. The
+	 * router delegates straight here.
+	 */
+	public void onVarClientStrChangedHandler(VarClientStrChanged event)
+	{
 		// Keep the listener's cached search text fresh so its EDT-side consume
 		// gate (suppressing the stray hotkey char in GE item search) can compare
 		// what's typed against the focused item name.
@@ -1492,49 +1311,25 @@ public class FlipSmartPlugin extends Plugin
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded event)
 	{
-		if (event.getGroupId() == InterfaceID.GE_HISTORY)
-		{
-			geHistoryService.onHistoryWidgetLoaded();
-		}
+		eventRouter.onWidgetLoaded(event);
 	}
 
 	@Subscribe
 	public void onScriptCallbackEvent(ScriptCallbackEvent event)
 	{
-		// Issue #665 — replace GE buy/sell window description text with FlipSmart
-		// contextual data. The runelite-injected GeExamineInfoText script fires
-		// geBuyExamineText / geSellExamineText every time the description rebuilds,
-		// so dynamic updates on price/qty edits are free.
-		if (geOfferDescriptionService != null)
-		{
-			geOfferDescriptionService.onScriptCallbackEvent(event);
-		}
+		eventRouter.onScriptCallbackEvent(event);
 	}
 
 	@Subscribe
 	public void onBeforeRender(BeforeRender event)
 	{
-		// Issue #665 — in-flight Offer status panel (DETAILS_DESC). Hooked at
-		// frame-render time (not script-fire) because OSRS rebuilds the widget
-		// from ~30 scripts per tick; reacting per-script is an unwinnable race.
-		// Once-per-frame check with text-equality short-circuit gives us the
-		// final say each frame without performance overhead.
-		if (geOfferDescriptionService != null)
-		{
-			geOfferDescriptionService.onBeforeRender(event);
-		}
+		eventRouter.onBeforeRender(event);
 	}
 
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		// Issue #665 — record the GE slot the user clicks so the offer-status
-		// panel renders contextual data for the open panel rather than the
-		// hovered slot tile (which is what GE_SELECTEDSLOT tracks).
-		if (geOfferDescriptionService != null)
-		{
-			geOfferDescriptionService.onMenuOptionClicked(event);
-		}
+		eventRouter.onMenuOptionClicked(event);
 	}
 
 
@@ -1648,7 +1443,7 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Update the player's current cash stack from inventory
 	 */
-	private void updateCashStack()
+	public void updateCashStack()
 	{
 		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
 		if (inventory == null)
@@ -1692,104 +1487,47 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void startFlipFinderRefreshTimer()
 	{
-		if (flipFinderRefreshTimer != null)
-		{
-			flipFinderRefreshTimer.cancel();
-		}
-
-		flipFinderRefreshTimer = new java.util.Timer("FlipFinderRefreshTimer", true);
-		
-		// Schedule refresh based on config
-		int refreshMinutes = Math.max(1, Math.min(60, config.flipFinderRefreshMinutes()));
-		long refreshIntervalMs = refreshMinutes * 60 * 1000L;
-
-		flipFinderRefreshTimer.scheduleAtFixedRate(new java.util.TimerTask()
-		{
-			@Override
-			public void run()
-			{
-				// Skip API calls if player is not logged into RuneScape
-				// This saves API requests and battery when at the login screen
-				if (!session.isLoggedIntoRunescape())
-				{
-					log.debug("Skipping auto-refresh - player not logged into RuneScape");
-					return;
-				}
-				
-				// Webhook sync — pull latest config from backend
-				webhookSyncService.pullAndSync();
-
-				if (flipFinderPanel != null && config.showFlipFinder())
-				{
-					javax.swing.SwingUtilities.invokeLater(() ->
-					{
-						log.debug("Auto-refreshing flip finder");
-						session.setLastFlipFinderRefresh(System.currentTimeMillis());
-						flipFinderPanel.refresh();
-					});
-				}
-
-				// Check for inactive auto-recommend offers
-				if (autoRecommendService != null && autoRecommendService.isActive() && flipFinderPanel != null)
-				{
-					autoRecommendService.checkInactiveOffers(
-						session.getTrackedOffers(),
-						flipFinderPanel.getCurrentRecommendations()
-					);
-				}
-			}
-		}, refreshIntervalMs, refreshIntervalMs);
-
-		log.debug("Flip Finder auto-refresh started (every {} minutes)", refreshMinutes);
+		scheduler.startFlipFinderRefreshTimer(
+			config.flipFinderRefreshMinutes(),
+			session::isLoggedIntoRunescape,
+			this::runFlipFinderRefreshBody);
 	}
 
 	/**
-	 * Stop the auto-refresh timer for flip finder
+	 * Per-tick body for the flip-finder auto-refresh timer. Runs only when the
+	 * player is logged in (the scheduler applies that guard before calling).
 	 */
-	private void stopFlipFinderRefreshTimer()
+	private void runFlipFinderRefreshBody()
 	{
-		if (flipFinderRefreshTimer != null)
+		// Webhook sync — pull latest config from backend
+		webhookSyncService.pullAndSync();
+
+		if (flipFinderPanel != null && config.showFlipFinder())
 		{
-			flipFinderRefreshTimer.cancel();
-			flipFinderRefreshTimer = null;
-			log.debug("Flip Finder auto-refresh stopped");
+			javax.swing.SwingUtilities.invokeLater(() ->
+			{
+				log.debug("Auto-refreshing flip finder");
+				session.setLastFlipFinderRefresh(System.currentTimeMillis());
+				flipFinderPanel.refresh();
+			});
+		}
+
+		// Check for inactive auto-recommend offers
+		if (autoRecommendService != null && autoRecommendService.isActive() && flipFinderPanel != null)
+		{
+			autoRecommendService.checkInactiveOffers(
+				session.getTrackedOffers(),
+				flipFinderPanel.getCurrentRecommendations()
+			);
 		}
 	}
 
 	/**
-	 * Create and start a tracked one-shot Swing timer.
-	 * The timer is automatically removed from tracking after it fires.
-	 * All tracked timers are stopped during {@link #shutDown()}.
+	 * Create and start a tracked one-shot Swing timer (delegates to the scheduler).
 	 */
-	private void scheduleOneShot(int delayMs, Runnable action)
+	public void scheduleOneShot(int delayMs, Runnable action)
 	{
-		javax.swing.Timer timer = new javax.swing.Timer(delayMs, null);
-		timer.addActionListener(e ->
-		{
-			try
-			{
-				action.run();
-			}
-			finally
-			{
-				activeOneShotTimers.remove(timer);
-			}
-		});
-		timer.setRepeats(false);
-		activeOneShotTimers.add(timer);
-		timer.start();
-	}
-
-	/**
-	 * Stop all active one-shot Swing timers.
-	 */
-	private void stopAllOneShotTimers()
-	{
-		for (javax.swing.Timer timer : activeOneShotTimers)
-		{
-			timer.stop();
-		}
-		activeOneShotTimers.clear();
+		scheduler.scheduleOneShot(delayMs, action);
 	}
 
 	/**
@@ -1799,22 +1537,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	void startAutoRecommendRefreshTimer()
 	{
-		stopAutoRecommendRefreshTimer();
-
-		autoRecommendRefreshTimer = new java.util.Timer("AutoRecommendRefreshTimer", true);
-		autoRecommendRefreshTimer.scheduleAtFixedRate(new java.util.TimerTask()
-		{
-			@Override
-			public void run()
-			{
-				if (session.isLoggedIntoRunescape())
-				{
-					runRefreshCycle();
-				}
-			}
-		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
-
-		log.debug("Auto-recommend refresh timer started (every 2 minutes)");
+		scheduler.startAutoRecommendRefreshTimer(session::isLoggedIntoRunescape, this::runRefreshCycle);
 	}
 
 	private void runRefreshCycle()
@@ -1847,31 +1570,18 @@ public class FlipSmartPlugin extends Plugin
 
 	void stopAutoRecommendRefreshTimer()
 	{
-		if (autoRecommendRefreshTimer != null)
-		{
-			autoRecommendRefreshTimer.cancel();
-			autoRecommendRefreshTimer = null;
-		}
-	}
-
-	void stopActiveOfferAdvisorTimer()
-	{
-		if (activeOfferAdvisorTimer != null)
-		{
-			activeOfferAdvisorTimer.cancel();
-			activeOfferAdvisorTimer = null;
-		}
+		scheduler.stopAutoRecommendRefreshTimer();
 	}
 
 	// Re-evaluate promptly on GE offer changes (fill/complete/cancel/new) instead of
 	// waiting up to a full 30s cycle, debounced so a burst of slot events polls once.
-	private void maybeEventPollAdvisor()
+	public void maybeEventPollAdvisor()
 	{
 		if (!config.enableActiveOfferAdvisor() || config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.ACTIVE)
 		{
 			return;
 		}
-		if (System.currentTimeMillis() - lastAdvisorPollMs >= ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS)
+		if (System.currentTimeMillis() - lastAdvisorPollMs >= PluginScheduler.ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS)
 		{
 			pollActiveOfferAdvisor();
 		}
@@ -1985,7 +1695,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void applyActiveOfferSurface(OfferAdviceResponse resp)
+	public void applyActiveOfferSurface(OfferAdviceResponse resp)
 	{
 		if (resp == null || resp.getNewPrice() == null)
 		{
@@ -2013,7 +1723,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void clearActiveOfferSurface(int itemId)
+	public void clearActiveOfferSurface(int itemId)
 	{
 		if (autoRecommendService != null)
 		{
@@ -2034,7 +1744,7 @@ public class FlipSmartPlugin extends Plugin
 		return null;
 	}
 
-	private void handleActiveOfferHandoff(int itemId)
+	public void handleActiveOfferHandoff(int itemId)
 	{
 		if (autoRecommendService == null)
 		{

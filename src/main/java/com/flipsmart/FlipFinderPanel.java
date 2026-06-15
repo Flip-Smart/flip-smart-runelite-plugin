@@ -1311,7 +1311,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * amount when enabled with a valid value, an inline error when enabled with an
 	 * unparseable value, and hides itself when the override is off.
 	 */
-	void updateCashstackOverrideIndicator()
+	public void updateCashstackOverrideIndicator()
 	{
 		if (cashstackOverrideLabel == null)
 		{
