@@ -92,6 +92,10 @@ public class AutoRecommendService
 
 	private volatile java.util.function.IntConsumer onStaleOfferPrompted;
 
+	// Clears all GE slot adjustment highlights when the stale-offer queue drains,
+	// so a slot highlight never lingers without a matching prompt.
+	private volatile Runnable onClearAllHighlights;
+
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
 
@@ -174,6 +178,11 @@ public class AutoRecommendService
 	public void setOnStaleOfferPrompted(java.util.function.IntConsumer callback)
 	{
 		this.onStaleOfferPrompted = callback;
+	}
+
+	public void setOnClearAllHighlights(Runnable callback)
+	{
+		this.onClearAllHighlights = callback;
 	}
 
 	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
@@ -1443,7 +1452,11 @@ public class AutoRecommendService
 
 		if (staleOfferQueue.isEmpty())
 		{
-			// All stale offers handled — resume normal flow
+			// All stale offers handled — drop any lingering slot highlight, resume normal flow
+			if (onClearAllHighlights != null)
+			{
+				onClearAllHighlights.run();
+			}
 			focusNextAvailableAction();
 			return;
 		}
