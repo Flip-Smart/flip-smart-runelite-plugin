@@ -468,8 +468,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 32 + lineHeight;
 			for (String line : iconLines)
 			{
-				graphics.setColor(getHintLineColor(line));
-				graphics.drawString(line, textStartX, y);
+				drawHintLine(graphics, line, textStartX, y, smallMetrics);
 				y += lineHeight;
 			}
 		}
@@ -481,9 +480,8 @@ public class FlipAssistOverlay extends Overlay
 			int y = 28 + lineHeight;
 			for (String line : wrappedLines)
 			{
-				graphics.setColor(getHintLineColor(line));
 				int lineWidth = smallMetrics.stringWidth(line);
-				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
+				drawHintLine(graphics, line, (HINT_PANEL_WIDTH - lineWidth) / 2, y, smallMetrics);
 				y += lineHeight;
 			}
 		}
@@ -548,6 +546,25 @@ public class FlipAssistOverlay extends Overlay
 
 			textY += lineHeight;
 		}
+	}
+
+	private void drawHintLine(Graphics2D graphics, String line, int x, int y, FontMetrics fm)
+	{
+		int parenIdx = line.lastIndexOf(" (");
+		boolean isNetParen = parenIdx > 0 && line.endsWith(")")
+			&& (line.startsWith("(-", parenIdx + 1) || line.startsWith("(+", parenIdx + 1));
+		if (!isNetParen)
+		{
+			graphics.setColor(getHintLineColor(line));
+			graphics.drawString(line, x, y);
+			return;
+		}
+		String base = line.substring(0, parenIdx);
+		String paren = line.substring(parenIdx);
+		graphics.setColor(getHintLineColor(base));
+		graphics.drawString(base, x, y);
+		graphics.setColor(paren.trim().startsWith("(-") ? COLOR_LOSS : COLOR_PROFIT);
+		graphics.drawString(paren, x + fm.stringWidth(base), y);
 	}
 
 	private Color getHintLineColor(String line)
