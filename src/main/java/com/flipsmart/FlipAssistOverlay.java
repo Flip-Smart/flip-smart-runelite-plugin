@@ -46,6 +46,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final Color COLOR_BUY = new Color(100, 220, 130);
 	private static final Color COLOR_SELL = new Color(255, 140, 80);
 	private static final Color COLOR_PROFIT = new Color(80, 255, 120);
+	private static final Color COLOR_LOSS = new Color(255, 100, 100);
 	private static final Color COLOR_STEP_COMPLETE = new Color(80, 200, 100);
 	private static final Color COLOR_STEP_CURRENT = COLOR_ACCENT;
 	private static final Color COLOR_STEP_PENDING = new Color(80, 75, 70);
@@ -551,6 +552,14 @@ public class FlipAssistOverlay extends Overlay
 	private Color getHintLineColor(String line)
 	{
 		String trimmed = line.trim();
+		if (trimmed.startsWith("Loss"))
+		{
+			return COLOR_LOSS;
+		}
+		if (trimmed.startsWith("Profit") || trimmed.startsWith("Breakeven"))
+		{
+			return COLOR_PROFIT;
+		}
 		if (trimmed.startsWith("Open GE History"))
 		{
 			return COLOR_BUY;
