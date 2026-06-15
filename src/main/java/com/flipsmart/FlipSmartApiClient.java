@@ -1,4 +1,18 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.OfferAdviceBatchResponse;
+import com.flipsmart.api.dto.BankSnapshotResponse;
+import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
+import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.BlocklistsResponse;
+import com.flipsmart.domain.flip.FlipAnalysis;
+import com.flipsmart.api.dto.DumpEvent;
+import com.flipsmart.api.dto.FlipStatisticsResponse;
+import com.flipsmart.api.dto.BankSnapshotStatusResponse;
+import com.flipsmart.api.dto.OfferAdviceRequest;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

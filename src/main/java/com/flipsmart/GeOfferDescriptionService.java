@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.BuyPriceLookup;
 
 import lombok.extern.slf4j.Slf4j;

@@ -1,4 +1,8 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.domain.offer.OfferDisposition;
+import com.flipsmart.api.dto.OfferAdviceRequest;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

@@ -1,4 +1,10 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.offer.PendingOrder;
+import com.flipsmart.api.dto.OfferAdviceResult;
+import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.ItemUtils;
 import com.flipsmart.util.TimeUtils;

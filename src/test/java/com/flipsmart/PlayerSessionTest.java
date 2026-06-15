@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
 
 import org.junit.Test;
 

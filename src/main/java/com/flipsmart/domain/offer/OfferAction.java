@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.domain.offer;
 
 public enum OfferAction
 {

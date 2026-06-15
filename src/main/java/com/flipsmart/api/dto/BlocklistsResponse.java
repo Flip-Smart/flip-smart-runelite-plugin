@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.api.dto;
 
 import lombok.Data;
 import java.util.List;

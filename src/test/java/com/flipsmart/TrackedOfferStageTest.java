@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
 
 import com.google.gson.Gson;
 import org.junit.Test;

@@ -1,4 +1,13 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.OfferAction;
+import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.domain.flip.CompletedFlip;
+import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.domain.flip.FlipAnalysis;
+import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.api.dto.BlocklistSummary;
+import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;

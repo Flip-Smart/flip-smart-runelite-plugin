@@ -1,4 +1,8 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.util.GpUtils;
 
 import lombok.extern.slf4j.Slf4j;

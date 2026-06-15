@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.TimeUtils;

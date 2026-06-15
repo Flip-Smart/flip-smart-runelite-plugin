@@ -1,4 +1,7 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.util.GpUtils;
 
 import com.flipsmart.FlipAssistOverlay.FlipAssistStep;

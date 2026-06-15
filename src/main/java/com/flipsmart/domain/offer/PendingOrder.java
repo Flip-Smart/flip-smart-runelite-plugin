@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.domain.offer;
 
 /**
  * Represents a pending buy order in a GE slot.

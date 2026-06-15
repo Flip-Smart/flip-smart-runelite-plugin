@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.domain.offer;
 
 import lombok.Getter;
 import lombok.NoArgsConstructor;
