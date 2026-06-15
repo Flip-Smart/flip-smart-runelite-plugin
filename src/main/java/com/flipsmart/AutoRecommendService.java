@@ -11,6 +11,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.function.ObjIntConsumer;
@@ -51,11 +53,11 @@ public class AutoRecommendService
 
 	// Items that have already been flagged as stale/uncompetitive — prevents repeated prompts
 	// Cleared when the offer is cancelled, filled, or a new offer is placed for the item
-	private final Set<Integer> promptedStaleItems = new HashSet<>();
+	private final Set<Integer> promptedStaleItems = ConcurrentHashMap.newKeySet();
 
 	// Stale offer queue — guides user through stale offers one at a time
-	private final List<TrackedOffer> staleOfferQueue = new ArrayList<>();
-	private final Map<Integer, Integer> staleResellPrices = new HashMap<>();
+	private final List<TrackedOffer> staleOfferQueue = new CopyOnWriteArrayList<>();
+	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	// Queue state - guarded by synchronized(this)
