@@ -160,6 +160,7 @@ public class FlipSmartPlugin extends Plugin
 	// Active-offer advisor service + poll timer (30-second cycle)
 	private ActiveOfferAdvisorService activeOfferAdvisorService;
 	private java.util.Timer activeOfferAdvisorTimer;
+	private long lastAdvisorPollMs;
 
 	// Track all active one-shot Swing timers for cleanup on shutdown
 	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
@@ -194,6 +195,7 @@ public class FlipSmartPlugin extends Plugin
 
 	/** Active-offer advisor poll interval (30 seconds) */
 	private static final long ACTIVE_OFFER_ADVISOR_INTERVAL_MS = 30_000L;
+	private static final long ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS = 3_000L;
 
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
@@ -766,7 +768,7 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setRsnSupplier(this::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
-		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) { flipFinderPanel.refreshActiveFlips(); flipFinderPanel.reevaluateSlotLimitDisplay(); } });
+		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) { flipFinderPanel.refreshActiveFlips(); flipFinderPanel.reevaluateSlotLimitDisplay(); } maybeEventPollAdvisor(); });
 		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (flipFinderPanel != null) flipFinderPanel.updatePendingOrders(getPendingBuyOrders()); });
 		grandExchangeTracker.setOnFocusChanged(this::handleGETrackerFocusChanged);
 		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
@@ -1848,6 +1850,20 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
+	// Re-evaluate promptly on GE offer changes (fill/complete/cancel/new) instead of
+	// waiting up to a full 30s cycle, debounced so a burst of slot events polls once.
+	private void maybeEventPollAdvisor()
+	{
+		if (!config.enableActiveOfferAdvisor() || config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.ACTIVE)
+		{
+			return;
+		}
+		if (System.currentTimeMillis() - lastAdvisorPollMs >= ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS)
+		{
+			pollActiveOfferAdvisor();
+		}
+	}
+
 	private void pollActiveOfferAdvisor()
 	{
 		if (!config.enableActiveOfferAdvisor() || config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.ACTIVE)
@@ -1858,6 +1874,19 @@ public class FlipSmartPlugin extends Plugin
 		if (sess == null)
 		{
 			return;
+		}
+		lastAdvisorPollMs = System.currentTimeMillis();
+		java.util.Set<Integer> activeItemIds = new java.util.HashSet<>();
+		for (TrackedOffer o : sess.getTrackedOffers().values())
+		{
+			if (o != null && !o.isCompleted())
+			{
+				activeItemIds.add(o.getItemId());
+			}
+		}
+		if (activeOfferAdvisorService != null)
+		{
+			activeOfferAdvisorService.reconcile(activeItemIds);
 		}
 		if (log.isDebugEnabled())
 		{

@@ -25,6 +25,22 @@ public class ActiveOfferAdvisorService
 		return dispositions.get(itemId);
 	}
 
+	/**
+	 * Drop dispositions for items that are no longer open active offers (sold, bought,
+	 * collected, cancelled) so their prompt/highlight clears immediately instead of
+	 * lingering until the next poll skips them.
+	 */
+	void reconcile(java.util.Set<Integer> activeItemIds)
+	{
+		for (Integer itemId : dispositions.keySet())
+		{
+			if (!activeItemIds.contains(itemId))
+			{
+				applyResponse(itemId, null);
+			}
+		}
+	}
+
 	void applyResponse(int itemId, OfferAdviceResponse resp)
 	{
 		OfferDisposition disposition = OfferDisposition.route(resp == null ? null : resp.getActionEnum());
