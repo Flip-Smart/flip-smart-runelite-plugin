@@ -1934,10 +1934,6 @@ public class FlipSmartPlugin extends Plugin
 				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice());
 			}
 		}
-		if (flipFinderPanel != null)
-		{
-			flipFinderPanel.refreshActiveFlips();
-		}
 	}
 
 	private void clearActiveOfferSurface(int itemId)
@@ -1955,10 +1951,6 @@ public class FlipSmartPlugin extends Plugin
 		if (autoRecommendService != null)
 		{
 			autoRecommendService.removeAdvisorResell(itemId);
-		}
-		if (flipFinderPanel != null)
-		{
-			flipFinderPanel.refreshActiveFlips();
 		}
 	}
 
