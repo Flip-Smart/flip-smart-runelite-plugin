@@ -1888,10 +1888,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			activeOfferAdvisorService.reconcile(activeItemIds);
 		}
-		if (log.isDebugEnabled())
-		{
-			log.debug("active-offer advisor poll: {} tracked offers", sess.getTrackedOffers().size());
-		}
+		java.util.List<OfferAdviceRequest> requests = new java.util.ArrayList<>();
 		for (Map.Entry<Integer, TrackedOffer> entry : sess.getTrackedOffers().entrySet())
 		{
 			TrackedOffer offer = entry.getValue();
@@ -1912,22 +1909,63 @@ public class FlipSmartPlugin extends Plugin
 			FlipSmartApiClient.WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
 			Integer avgBuy = offer.isBuy() ? null
 				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
-			OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume);
+			requests.add(ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume));
+		}
+		if (requests.isEmpty())
+		{
+			return;
+		}
+		if (log.isDebugEnabled())
+		{
+			log.debug("active-offer advisor poll: {} offers (batched)", requests.size());
+		}
+		apiClient.postOfferActionsBatchAsync(requests)
+			.thenAccept(batch ->
+			{
+				if (batch != null && batch.getResults() != null)
+				{
+					for (OfferAdviceResult result : batch.getResults())
+					{
+						if (log.isDebugEnabled())
+						{
+							log.debug("offer-action {} -> {} newPrice={}",
+								result.getItemId(), result.getAction(), result.getNewPrice());
+						}
+						activeOfferAdvisorService.applyResponse(result.getItemId(), result);
+					}
+				}
+				else
+				{
+					// Backend without the batch endpoint (or a transient failure) — fall back per-offer.
+					pollAdvisorPerOffer(requests);
+				}
+			})
+			.exceptionally(ex ->
+			{
+				pollAdvisorPerOffer(requests);
+				return null;
+			});
+	}
+
+	private void pollAdvisorPerOffer(java.util.List<OfferAdviceRequest> requests)
+	{
+		for (OfferAdviceRequest req : requests)
+		{
 			apiClient.postOfferActionAsync(req)
 				.thenAccept(resp ->
 				{
 					if (resp != null && log.isDebugEnabled())
 					{
 						log.debug("offer-action {} side={} stage={} -> {} newPrice={}",
-							offer.getItemName(), req.getSide(), req.getStage(), resp.getAction(), resp.getNewPrice());
+							req.getItemId(), req.getSide(), req.getStage(), resp.getAction(), resp.getNewPrice());
 					}
-					activeOfferAdvisorService.applyResponse(offer.getItemId(), resp);
+					activeOfferAdvisorService.applyResponse(req.getItemId(), resp);
 				})
 				.exceptionally(ex ->
 				{
 					if (log.isDebugEnabled())
 					{
-						log.debug("offer-action poll failed for {}: {}", offer.getItemId(), ex.getMessage());
+						log.debug("offer-action poll failed for {}: {}", req.getItemId(), ex.getMessage());
 					}
 					return null;
 				});

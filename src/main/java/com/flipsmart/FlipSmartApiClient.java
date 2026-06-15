@@ -2365,6 +2365,27 @@ public class FlipSmartApiClient
 			gson.fromJson(jsonData, OfferAdviceResponse.class));
 	}
 
+	static JsonObject buildOfferActionsBody(java.util.List<OfferAdviceRequest> reqs)
+	{
+		JsonObject body = new JsonObject();
+		com.google.gson.JsonArray offers = new com.google.gson.JsonArray();
+		for (OfferAdviceRequest req : reqs)
+		{
+			offers.add(buildOfferActionBody(req));
+		}
+		body.add("offers", offers);
+		return body;
+	}
+
+	public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(java.util.List<OfferAdviceRequest> reqs)
+	{
+		String url = String.format("%s/flip-finder/active/offer-actions", getApiUrl());
+		RequestBody body = RequestBody.create(JSON, buildOfferActionsBody(reqs).toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, OfferAdviceBatchResponse.class));
+	}
+
 	// =========================================================================
 	// Webhook API Methods
 	// =========================================================================
