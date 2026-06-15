@@ -166,7 +166,8 @@ public class FlipFinderPanel extends PluginPanel
 	private transient JPanel currentFocusedPanel = null;
 	private transient int currentFocusedItemId = -1;
 	private transient java.util.function.Consumer<FocusedFlip> onFocusChanged;
-	
+	private transient java.util.function.IntFunction<OfferAdviceResponse> offerDispositionLookup;
+
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
 	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
@@ -3131,7 +3132,34 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		this.onFocusChanged = callback;
 	}
-	
+
+	public void setOfferDispositionLookup(java.util.function.IntFunction<OfferAdviceResponse> lookup)
+	{
+		this.offerDispositionLookup = lookup;
+	}
+
+	private static String activeOfferVerb(OfferAction action, Integer netProfitEstimate)
+	{
+		boolean isLoss = netProfitEstimate != null && netProfitEstimate < 0;
+		switch (action)
+		{
+			case MOVE_PRICE_DOWN:
+				return "Move price down";
+			case EXIT_AT_BREAKEVEN:
+				return isLoss ? "Exit at a loss" : "Exit at breakeven";
+			case EXIT_AT_LOSS:
+				return "Exit at a loss";
+			default:
+				return "";
+		}
+	}
+
+	private static String formatSignedGp(int amount)
+	{
+		return (amount >= 0 ? "+" : "-") + GpUtils.formatGP(Math.abs(amount));
+	}
+
+
 	/**
 	 * Set the callback for when authentication succeeds.
 	 * This allows the plugin to sync RSN after Discord login.
@@ -3473,8 +3501,35 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
-		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
+		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel,
 			profitCostLabel, liquidityLabel, riskLabel);
+
+		if (offerDispositionLookup != null)
+		{
+			OfferAdviceResponse advice = offerDispositionLookup.apply(flip.getItemId());
+			String verb = advice != null && advice.getActionEnum() != null
+				? activeOfferVerb(advice.getActionEnum(), advice.getNetProfitEstimate())
+				: "";
+			if (!verb.isEmpty())
+			{
+				detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
+
+				String verbLine = advice.getNewPrice() != null
+					? verb + ": " + String.format("%,d", advice.getNewPrice()) + "gp"
+					: verb;
+				JLabel verbLabel = createStyledLabel(verbLine, Color.ORANGE);
+				verbLabel.setToolTipText(advice.getReason());
+				detailsPanel.add(verbLabel);
+
+				if (advice.getNetProfitEstimate() != null)
+				{
+					int net = advice.getNetProfitEstimate();
+					String keyword = net < 0 ? "Loss" : (net > 0 ? "Profit" : "Breakeven");
+					Color netColor = net < 0 ? new Color(255, 100, 100) : new Color(80, 255, 120);
+					detailsPanel.add(createStyledLabel(keyword + ": " + formatSignedGp(net), netColor));
+				}
+			}
+		}
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);

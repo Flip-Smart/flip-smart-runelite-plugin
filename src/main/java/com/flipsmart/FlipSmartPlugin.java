@@ -157,6 +157,11 @@ public class FlipSmartPlugin extends Plugin
 	// Auto-recommend refresh timer (2-minute cycle)
 	private java.util.Timer autoRecommendRefreshTimer;
 
+	// Active-offer advisor service + poll timer (30-second cycle)
+	private ActiveOfferAdvisorService activeOfferAdvisorService;
+	private java.util.Timer activeOfferAdvisorTimer;
+	private long lastAdvisorPollMs;
+
 	// Track all active one-shot Swing timers for cleanup on shutdown
 	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
 
@@ -187,6 +192,10 @@ public class FlipSmartPlugin extends Plugin
 
 	/** Auto-recommend queue refresh interval (2 minutes) */
 	private static final long AUTO_RECOMMEND_REFRESH_INTERVAL_MS = 2 * 60 * 1000L;
+
+	/** Active-offer advisor poll interval (30 seconds) */
+	private static final long ACTIVE_OFFER_ADVISOR_INTERVAL_MS = 30_000L;
+	private static final long ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS = 3_000L;
 
 	// Flip Assist input listener for hotkey handling
 	private FlipAssistInputListener flipAssistInputListener;
@@ -342,6 +351,27 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * True when at least one GE slot holds uncollected items or coins. Used to
+	 * suppress collection prompts once everything has been collected (all slots EMPTY).
+	 */
+	public boolean hasCollectableGEOffers()
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return false;
+		}
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer.getState() != GrandExchangeOfferState.EMPTY && offer.getQuantitySold() > 0)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -569,6 +599,7 @@ public class FlipSmartPlugin extends Plugin
 		// Wire service callbacks and initialize auto-recommend
 		wireServiceCallbacks();
 		initializeAutoRecommendService();
+		initializeActiveOfferAdvisor();
 		initializeManualAdjustmentTracker();
 		wireGrandExchangeTrackerCallbacks();
 
@@ -603,7 +634,31 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> flipFinderPanel != null ? flipFinderPanel.getDisplayedSellPrice(itemId) : null);
 		autoRecommendService.setOnStaleOfferPrompted(this::highlightSlotForItem);
+		autoRecommendService.setOnClearAllHighlights(geSlotOverlay::clearAllAdjustmentHighlights);
 		flipAssistOverlay.setOnStepChanged(autoRecommendService::onOverlayStepChanged);
+	}
+
+	/**
+	 * Construct the active-offer advisor service, wire its callbacks, and start
+	 * the 30-second poll timer.
+	 */
+	private void initializeActiveOfferAdvisor()
+	{
+		activeOfferAdvisorService = new ActiveOfferAdvisorService();
+		activeOfferAdvisorService.setCallbacks(
+			resp -> javax.swing.SwingUtilities.invokeLater(() -> applyActiveOfferSurface(resp)),
+			itemId -> handleActiveOfferHandoff(itemId),
+			itemId -> javax.swing.SwingUtilities.invokeLater(() -> clearActiveOfferSurface(itemId)));
+
+		activeOfferAdvisorTimer = new java.util.Timer("ActiveOfferAdvisorTimer", true);
+		activeOfferAdvisorTimer.scheduleAtFixedRate(new java.util.TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				pollActiveOfferAdvisor();
+			}
+		}, ACTIVE_OFFER_ADVISOR_INTERVAL_MS, ACTIVE_OFFER_ADVISOR_INTERVAL_MS);
 	}
 
 	/**
@@ -646,6 +701,7 @@ public class FlipSmartPlugin extends Plugin
 		manualAdjustmentTracker.setMembersWorldSupplier(this::isMembersWorld);
 
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
+		grandExchangeTracker.setActiveOfferAdvisorService(activeOfferAdvisorService);
 		grandExchangeTracker.setAdjustmentPromptsEnabled(config::showAdjustmentPrompts);
 		grandExchangeTracker.setConfig(config);
 	}
@@ -712,7 +768,7 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setRsnSupplier(this::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); });
-		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) { flipFinderPanel.refreshActiveFlips(); flipFinderPanel.reevaluateSlotLimitDisplay(); } });
+		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (flipFinderPanel != null) { flipFinderPanel.refreshActiveFlips(); flipFinderPanel.reevaluateSlotLimitDisplay(); } maybeEventPollAdvisor(); });
 		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (flipFinderPanel != null) flipFinderPanel.updatePendingOrders(getPendingBuyOrders()); });
 		grandExchangeTracker.setOnFocusChanged(this::handleGETrackerFocusChanged);
 		grandExchangeTracker.setOnFocusClear(this::handleGETrackerFocusClear);
@@ -835,6 +891,9 @@ public class FlipSmartPlugin extends Plugin
 			persistAutoRecommendState();
 			autoRecommendService.stop();
 		}
+
+		// Stop active-offer advisor poll timer
+		stopActiveOfferAdvisorTimer();
 
 		// Clear API client cache
 		apiClient.clearCache();
@@ -1511,7 +1570,9 @@ public class FlipSmartPlugin extends Plugin
 				flipAssistOverlay.clearFocus();
 			}
 		});
-		
+
+		flipFinderPanel.setOfferDispositionLookup(id -> activeOfferAdvisorService.getDisposition(id));
+
 		// Connect auth success callback to sync RSN after Discord login
 		flipFinderPanel.setOnAuthSuccess(() -> {
 			// Sync RSN to API if we have one (player is logged in)
@@ -1777,6 +1838,207 @@ public class FlipSmartPlugin extends Plugin
 		{
 			autoRecommendRefreshTimer.cancel();
 			autoRecommendRefreshTimer = null;
+		}
+	}
+
+	void stopActiveOfferAdvisorTimer()
+	{
+		if (activeOfferAdvisorTimer != null)
+		{
+			activeOfferAdvisorTimer.cancel();
+			activeOfferAdvisorTimer = null;
+		}
+	}
+
+	// Re-evaluate promptly on GE offer changes (fill/complete/cancel/new) instead of
+	// waiting up to a full 30s cycle, debounced so a burst of slot events polls once.
+	private void maybeEventPollAdvisor()
+	{
+		if (!config.enableActiveOfferAdvisor() || config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.ACTIVE)
+		{
+			return;
+		}
+		if (System.currentTimeMillis() - lastAdvisorPollMs >= ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS)
+		{
+			pollActiveOfferAdvisor();
+		}
+	}
+
+	private void pollActiveOfferAdvisor()
+	{
+		if (!config.enableActiveOfferAdvisor() || config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.ACTIVE)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		lastAdvisorPollMs = System.currentTimeMillis();
+		java.util.Set<Integer> activeItemIds = new java.util.HashSet<>();
+		for (TrackedOffer o : sess.getTrackedOffers().values())
+		{
+			if (o != null && !o.isCompleted())
+			{
+				activeItemIds.add(o.getItemId());
+			}
+		}
+		if (activeOfferAdvisorService != null)
+		{
+			activeOfferAdvisorService.reconcile(activeItemIds);
+		}
+		java.util.List<OfferAdviceRequest> requests = new java.util.ArrayList<>();
+		for (Map.Entry<Integer, TrackedOffer> entry : sess.getTrackedOffers().entrySet())
+		{
+			TrackedOffer offer = entry.getValue();
+			if (offer == null || offer.isCompleted())
+			{
+				continue;
+			}
+			if (offer.getCreatedAtMillis() <= 0)
+			{
+				continue;
+			}
+			if (autoRecommendService != null
+				&& Integer.valueOf(offer.getItemId()).equals(autoRecommendService.getLockedItemId()))
+			{
+				continue;
+			}
+			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
+			FlipSmartApiClient.WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
+			Integer avgBuy = offer.isBuy() ? null
+				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
+			requests.add(ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume));
+		}
+		if (requests.isEmpty())
+		{
+			return;
+		}
+		if (log.isDebugEnabled())
+		{
+			log.debug("active-offer advisor poll: {} offers (batched)", requests.size());
+		}
+		apiClient.postOfferActionsBatchAsync(requests)
+			.thenAccept(batch ->
+			{
+				if (batch != null && batch.getResults() != null)
+				{
+					for (OfferAdviceResult result : batch.getResults())
+					{
+						if (log.isDebugEnabled())
+						{
+							log.debug("offer-action {} -> {} newPrice={}",
+								result.getItemId(), result.getAction(), result.getNewPrice());
+						}
+						activeOfferAdvisorService.applyResponse(result.getItemId(), result);
+					}
+				}
+				else
+				{
+					// Backend without the batch endpoint (or a transient failure) — fall back per-offer.
+					pollAdvisorPerOffer(requests);
+				}
+			})
+			.exceptionally(ex ->
+			{
+				pollAdvisorPerOffer(requests);
+				return null;
+			});
+	}
+
+	private void pollAdvisorPerOffer(java.util.List<OfferAdviceRequest> requests)
+	{
+		for (OfferAdviceRequest req : requests)
+		{
+			apiClient.postOfferActionAsync(req)
+				.thenAccept(resp ->
+				{
+					if (resp != null && log.isDebugEnabled())
+					{
+						log.debug("offer-action {} side={} stage={} -> {} newPrice={}",
+							req.getItemId(), req.getSide(), req.getStage(), resp.getAction(), resp.getNewPrice());
+					}
+					activeOfferAdvisorService.applyResponse(req.getItemId(), resp);
+				})
+				.exceptionally(ex ->
+				{
+					if (log.isDebugEnabled())
+					{
+						log.debug("offer-action poll failed for {}: {}", req.getItemId(), ex.getMessage());
+					}
+					return null;
+				});
+		}
+	}
+
+	private void applyActiveOfferSurface(OfferAdviceResponse resp)
+	{
+		if (resp == null || resp.getNewPrice() == null)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		Integer itemId = resp.getItemIdHint();
+		if (itemId == null)
+		{
+			return;
+		}
+		sess.setRecommendedPrice(itemId, resp.getNewPrice());
+		Integer slot = findSlotForItem(sess, itemId);
+		if (slot != null && autoRecommendService != null)
+		{
+			TrackedOffer offer = sess.getTrackedOffer(slot);
+			if (offer != null)
+			{
+				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
+			}
+		}
+	}
+
+	private void clearActiveOfferSurface(int itemId)
+	{
+		if (autoRecommendService != null)
+		{
+			autoRecommendService.removeAdvisorResell(itemId);
+		}
+	}
+
+	private Integer findSlotForItem(PlayerSession sess, int itemId)
+	{
+		for (Map.Entry<Integer, TrackedOffer> e : sess.getTrackedOffers().entrySet())
+		{
+			TrackedOffer o = e.getValue();
+			if (o != null && o.getItemId() == itemId && !o.isCompleted())
+			{
+				return e.getKey();
+			}
+		}
+		return null;
+	}
+
+	private void handleActiveOfferHandoff(int itemId)
+	{
+		if (autoRecommendService == null)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		for (TrackedOffer offer : sess.getTrackedOffers().values())
+		{
+			if (offer != null && offer.getItemId() == itemId)
+			{
+				autoRecommendService.addToStaleQueue(offer);
+				break;
+			}
 		}
 	}
 

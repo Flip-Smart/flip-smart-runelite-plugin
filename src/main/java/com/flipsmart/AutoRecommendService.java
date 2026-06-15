@@ -11,6 +11,8 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.function.ObjIntConsumer;
@@ -51,11 +53,14 @@ public class AutoRecommendService
 
 	// Items that have already been flagged as stale/uncompetitive — prevents repeated prompts
 	// Cleared when the offer is cancelled, filled, or a new offer is placed for the item
-	private final Set<Integer> promptedStaleItems = new HashSet<>();
+	private final Set<Integer> promptedStaleItems = ConcurrentHashMap.newKeySet();
 
 	// Stale offer queue — guides user through stale offers one at a time
-	private final List<TrackedOffer> staleOfferQueue = new ArrayList<>();
-	private final Map<Integer, Integer> staleResellPrices = new HashMap<>();
+	private final List<TrackedOffer> staleOfferQueue = new CopyOnWriteArrayList<>();
+	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
+	// Advisor-only: net profit/loss estimate to show alongside a re-sell prompt. Kept in
+	// sync with staleResellPrices at both put-sites, so it's never read with a stale price.
+	private final Map<Integer, Integer> staleResellNet = new ConcurrentHashMap<>();
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	// Queue state - guarded by synchronized(this)
@@ -89,6 +94,10 @@ public class AutoRecommendService
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
 	private volatile java.util.function.IntConsumer onStaleOfferPrompted;
+
+	// Clears all GE slot adjustment highlights when the stale-offer queue drains,
+	// so a slot highlight never lingers without a matching prompt.
+	private volatile Runnable onClearAllHighlights;
 
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
@@ -172,6 +181,11 @@ public class AutoRecommendService
 	public void setOnStaleOfferPrompted(java.util.function.IntConsumer callback)
 	{
 		this.onStaleOfferPrompted = callback;
+	}
+
+	public void setOnClearAllHighlights(Runnable callback)
+	{
+		this.onClearAllHighlights = callback;
 	}
 
 	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
@@ -281,6 +295,7 @@ public class AutoRecommendService
 		promptedStaleItems.clear();
 		staleOfferQueue.clear();
 		staleResellPrices.clear();
+		staleResellNet.clear();
 		deferredActions.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
@@ -1140,10 +1155,20 @@ public class AutoRecommendService
 	 *
 	 * Called periodically from the auto-recommend refresh timer (2-minute interval).
 	 */
+	public static boolean shouldRunLegacyAdjustment(String timeframeApiValue, boolean activeAdvisorEnabled)
+	{
+		boolean isActive = "active".equals(timeframeApiValue);
+		return !(isActive && activeAdvisorEnabled);
+	}
+
 	public synchronized void checkAdjustmentTimers(
 		Map<Integer, TrackedOffer> trackedOffers,
 		List<FlipRecommendation> currentRecommendations)
 	{
+		if (!shouldRunLegacyAdjustment(config.flipTimeframe().getApiValue(), config.enableActiveOfferAdvisor()))
+		{
+			return;
+		}
 		if (!active || adjustmentDeadlines.isEmpty() || trackedOffers == null)
 		{
 			log.debug("Auto-recommend: checkAdjustmentTimers skipped (active={}, deadlines={}, offers={})",
@@ -1431,7 +1456,11 @@ public class AutoRecommendService
 
 		if (staleOfferQueue.isEmpty())
 		{
-			// All stale offers handled — resume normal flow
+			// All stale offers handled — drop any lingering slot highlight, resume normal flow
+			if (onClearAllHighlights != null)
+			{
+				onClearAllHighlights.run();
+			}
 			focusNextAvailableAction();
 			return;
 		}
@@ -1441,8 +1470,11 @@ public class AutoRecommendService
 		String overlayMsg;
 		if (!next.isBuy() && resellPrice != null)
 		{
-			overlayMsg = String.format("Re-sell %s at:\n%s gp", next.getItemName(),
-				String.format("%,d", resellPrice));
+			Integer net = staleResellNet.get(next.getItemId());
+			String netSuffix = net == null ? ""
+				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
+			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", next.getItemName(),
+				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
 		{
@@ -1464,7 +1496,7 @@ public class AutoRecommendService
 	 * Add a tracked offer to the stale queue if not already present.
 	 * If the queue was empty, immediately shows the first prompt.
 	 */
-	private void addToStaleQueue(TrackedOffer offer)
+	void addToStaleQueue(TrackedOffer offer)
 	{
 		// Don't add duplicates
 		for (TrackedOffer existing : staleOfferQueue)
@@ -1482,6 +1514,51 @@ public class AutoRecommendService
 
 		if (wasEmpty)
 		{
+			executeOrDefer(this::focusNextStaleOffer);
+		}
+	}
+
+	/**
+	 * Surface an Active-mode advisor sell re-list recommendation through the stale-resell
+	 * prompt so the overlay shows "Re-sell &lt;item&gt; at: &lt;price&gt;" and the re-list auto-fill
+	 * uses the advised price. Idempotent — addToStaleQueue dedupes by item, and the price
+	 * map is refreshed on each poll.
+	 */
+	public synchronized void surfaceAdvisorResell(TrackedOffer offer, int newPrice, Integer netProfitEstimate)
+	{
+		if (offer == null)
+		{
+			return;
+		}
+		staleResellPrices.put(offer.getItemId(), newPrice);
+		if (netProfitEstimate != null)
+		{
+			staleResellNet.put(offer.getItemId(), netProfitEstimate);
+		}
+		else
+		{
+			staleResellNet.remove(offer.getItemId());
+		}
+		PlayerSession sess = plugin.getSession();
+		if (sess != null)
+		{
+			sess.setRecommendedPrice(offer.getItemId(), newPrice);
+		}
+		addToStaleQueue(offer);
+	}
+
+	/**
+	 * Retract a previously-surfaced advisor sell prompt (the advisor changed its mind, e.g.
+	 * the market recovered and it now returns WAIT). Refreshes focus to whatever is next.
+	 */
+	public synchronized void removeAdvisorResell(int itemId)
+	{
+		boolean wasHead = !staleOfferQueue.isEmpty() && staleOfferQueue.get(0).getItemId() == itemId;
+		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		staleResellPrices.remove(itemId);
+		if (wasHead)
+		{
+			// Re-prompt the new head (re-highlights it) or clears highlights if the queue drained.
 			executeOrDefer(this::focusNextStaleOffer);
 		}
 	}
@@ -1582,6 +1659,10 @@ public class AutoRecommendService
 	 */
 	public synchronized void checkSellAdjustmentTimers(Map<Integer, TrackedOffer> trackedOffers)
 	{
+		if (!shouldRunLegacyAdjustment(config.flipTimeframe().getApiValue(), config.enableActiveOfferAdvisor()))
+		{
+			return;
+		}
 		if (!active || sellAdjustmentStates.isEmpty() || trackedOffers == null)
 		{
 			return;
@@ -1692,6 +1773,7 @@ public class AutoRecommendService
 			// Unlike buy adjustments (where local wiki competitiveness is a useful gate),
 			// sell adjustments use backend market data which is authoritative.
 			staleResellPrices.put(offer.getItemId(), newPrice);
+			staleResellNet.remove(offer.getItemId());  // legacy adjustment has no advisor net estimate
 			addToStaleQueue(offer);
 
 			// Persist to session so relist auto-fill uses the adjusted price
@@ -2277,7 +2359,7 @@ public class AutoRecommendService
 		invokeFocusCallback(null);
 
 		List<TrackedOffer> completed = plugin.getSession().getCompletedOffers();
-		if (!completed.isEmpty())
+		if (!completed.isEmpty() && plugin.hasCollectableGEOffers())
 		{
 			TrackedOffer first = completed.get(0);
 			if (first.isBuy())

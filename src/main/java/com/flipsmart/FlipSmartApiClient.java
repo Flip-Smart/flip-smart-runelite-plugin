@@ -2321,6 +2321,71 @@ public class FlipSmartApiClient
 			gson.fromJson(jsonData, FlipAdjustmentResponse.class));
 	}
 
+	static JsonObject buildOfferActionBody(OfferAdviceRequest req)
+	{
+		JsonObject body = new JsonObject();
+		body.addProperty(JSON_KEY_ITEM_ID, req.getItemId());
+		body.addProperty("pool", req.getPool());
+		body.addProperty("side", req.getSide());
+		body.addProperty("stage", req.getStage());
+		String listedAt = req.getListedAtMillis() == null ? null : OfferAdviceRequest.toIsoUtc(req.getListedAtMillis());
+		if (listedAt != null)
+		{
+			body.addProperty("listed_at", listedAt);
+		}
+		body.addProperty("listed_price", req.getListedPrice());
+		body.addProperty("listed_quantity", req.getListedQuantity());
+		body.addProperty("filled_quantity", req.getFilledQuantity());
+		String lastFill = req.getLastFillAtMillis() == null ? null : OfferAdviceRequest.toIsoUtc(req.getLastFillAtMillis());
+		if (lastFill != null)
+		{
+			body.addProperty("last_fill_at", lastFill);
+		}
+		if (req.getCurrentMarketHigh() != null)
+		{
+			body.addProperty("current_market_high", req.getCurrentMarketHigh());
+		}
+		if (req.getCurrentMarketLow() != null)
+		{
+			body.addProperty("current_market_low", req.getCurrentMarketLow());
+		}
+		if (req.getUserAvgBuyPrice() != null)
+		{
+			body.addProperty("user_avg_buy_price", req.getUserAvgBuyPrice());
+		}
+		return body;
+	}
+
+	public CompletableFuture<OfferAdviceResponse> postOfferActionAsync(OfferAdviceRequest req)
+	{
+		String url = String.format("%s/flip-finder/active/offer-action", getApiUrl());
+		RequestBody body = RequestBody.create(JSON, buildOfferActionBody(req).toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, OfferAdviceResponse.class));
+	}
+
+	static JsonObject buildOfferActionsBody(java.util.List<OfferAdviceRequest> reqs)
+	{
+		JsonObject body = new JsonObject();
+		com.google.gson.JsonArray offers = new com.google.gson.JsonArray();
+		for (OfferAdviceRequest req : reqs)
+		{
+			offers.add(buildOfferActionBody(req));
+		}
+		body.add("offers", offers);
+		return body;
+	}
+
+	public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(java.util.List<OfferAdviceRequest> reqs)
+	{
+		String url = String.format("%s/flip-finder/active/offer-actions", getApiUrl());
+		RequestBody body = RequestBody.create(JSON, buildOfferActionsBody(reqs).toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, OfferAdviceBatchResponse.class));
+	}
+
 	// =========================================================================
 	// Webhook API Methods
 	// =========================================================================
@@ -2573,6 +2638,22 @@ public class FlipSmartApiClient
 			return null;
 		}
 		return CompletableFuture.completedFuture(cached.getVolume());
+	}
+
+	/**
+	 * Synchronous, non-blocking read of the daily-volume cache. Returns the
+	 * cached value when fresh, or {@code null} when not cached / expired —
+	 * never triggers a network fetch. Mirrors {@link #getWikiPrice(int)} so
+	 * timer threads can build snapshots without blocking on I/O.
+	 */
+	public Integer getCachedDailyVolume(int itemId)
+	{
+		CachedDailyVolume cached = dailyVolumeCache.get(itemId);
+		if (cached == null || cached.isExpired())
+		{
+			return null;
+		}
+		return cached.getVolume();
 	}
 
 	/**

@@ -334,6 +334,18 @@ public interface FlipSmartConfig extends Config
 		return false;
 	}
 
+	@ConfigItem(
+		keyName = "enableActiveOfferAdvisor",
+		name = "Active Offer Advisor",
+		description = "In Active mode, advise when to wait, move price down, or exit aging GE offers",
+		section = displaySection,
+		position = 11
+	)
+	default boolean enableActiveOfferAdvisor()
+	{
+		return true;
+	}
+
 	// ============================================
 	// Flip Assistant Section (Guided Workflow + Quick Actions)
 	// ============================================

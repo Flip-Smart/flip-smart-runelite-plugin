@@ -22,6 +22,10 @@ public class TrackedOffer
 	private long createdAtMillis;  // Timestamp when offer was created (for timer display)
 	private long completedAtMillis;  // Timestamp when offer completed (0 if not complete)
 	private long lastActivityAtMillis;  // Timestamp of most recent fill (for timer display & stale detection)
+	private String offerStage;
+
+	public static final String STAGE_INITIAL = "initial";
+	public static final String STAGE_BREAKEVEN_RELIST = "breakeven_relist";
 
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 	{
@@ -41,6 +45,7 @@ public class TrackedOffer
 		this.previousQuantitySold = quantitySold;
 		this.createdAtMillis = createdAtMillis;
 		this.lastActivityAtMillis = createdAtMillis;
+		this.offerStage = STAGE_INITIAL;
 	}
 
 	/**
@@ -82,6 +87,11 @@ public class TrackedOffer
 		if (existing != null && existing.getLastActivityAtMillis() > 0)
 		{
 			offer.setLastActivityAtMillis(existing.getLastActivityAtMillis());
+		}
+
+		if (existing != null)
+		{
+			offer.setOfferStage(existing.getOfferStage());
 		}
 
 		if (state == GrandExchangeOfferState.BOUGHT || state == GrandExchangeOfferState.SOLD)
@@ -143,6 +153,16 @@ public class TrackedOffer
 		this.lastActivityAtMillis = lastActivityAtMillis;
 	}
 
+	public String getOfferStage()
+	{
+		return offerStage == null ? STAGE_INITIAL : offerStage;
+	}
+
+	public void setOfferStage(String offerStage)
+	{
+		this.offerStage = offerStage;
+	}
+
 	/**
 	 * Get the effective last activity time. Falls back to createdAtMillis
 	 * for offers persisted before this field was added.
@@ -150,5 +170,18 @@ public class TrackedOffer
 	public long getEffectiveLastActivityAtMillis()
 	{
 		return lastActivityAtMillis > 0 ? lastActivityAtMillis : createdAtMillis;
+	}
+
+	// 2 % keeps noise from price rounding from triggering false negatives
+	private static final double BREAKEVEN_RELIST_TOLERANCE = 0.02;
+
+	public static boolean shouldAdvanceToBreakevenRelist(boolean breakevenExitAccepted, int observedRelistPrice, int advisedPrice)
+	{
+		if (!breakevenExitAccepted || advisedPrice <= 0 || observedRelistPrice <= 0)
+		{
+			return false;
+		}
+		double delta = Math.abs(observedRelistPrice - advisedPrice);
+		return delta <= advisedPrice * BREAKEVEN_RELIST_TOLERANCE;
 	}
 }

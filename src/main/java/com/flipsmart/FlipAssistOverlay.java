@@ -34,7 +34,8 @@ import java.util.function.Consumer;
 @Slf4j
 public class FlipAssistOverlay extends Overlay
 {
-	private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("#,###");
+	private static final ThreadLocal<DecimalFormat> PRICE_FORMAT =
+		ThreadLocal.withInitial(() -> new DecimalFormat("#,###"));
 	
 	// Color theme
 	private static final Color COLOR_BG_DARK = new Color(25, 22, 18, 200);
@@ -46,6 +47,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final Color COLOR_BUY = new Color(100, 220, 130);
 	private static final Color COLOR_SELL = new Color(255, 140, 80);
 	private static final Color COLOR_PROFIT = new Color(80, 255, 120);
+	private static final Color COLOR_LOSS = new Color(255, 100, 100);
 	private static final Color COLOR_STEP_COMPLETE = new Color(80, 200, 100);
 	private static final Color COLOR_STEP_CURRENT = COLOR_ACCENT;
 	private static final Color COLOR_STEP_PENDING = new Color(80, 75, 70);
@@ -169,13 +171,14 @@ public class FlipAssistOverlay extends Overlay
 	public void updateStep()
 	{
 		FlipAssistStep newStep;
-		if (focusedFlip == null)
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
 		{
 			newStep = FlipAssistStep.SELECT_ITEM;
 		}
 		else if (!isGrandExchangeOpen())
 		{
-			newStep = focusedFlip.isBuying() ? FlipAssistStep.WAITING_BUY : FlipAssistStep.WAITING_SELL;
+			newStep = flip.isBuying() ? FlipAssistStep.WAITING_BUY : FlipAssistStep.WAITING_SELL;
 		}
 		else
 		{
@@ -195,9 +198,10 @@ public class FlipAssistOverlay extends Overlay
 	
 	private FlipAssistStep determineNumericInputStep()
 	{
-		if (isLikelyPriceInput())
+		final FocusedFlip flip = focusedFlip;
+		if (flip != null && isLikelyPriceInput())
 		{
-			return focusedFlip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
+			return flip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
 		}
 		return FlipAssistStep.SET_QUANTITY;
 	}
@@ -217,23 +221,33 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return determineOfferSetupStep();
 		}
-		return focusedFlip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return FlipAssistStep.SELECT_ITEM;
+		}
+		return flip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
 	}
 
 	private FlipAssistStep determineOfferSetupStep()
 	{
-		boolean qtyCorrect = isValueWithinTolerance(getCurrentQuantityFromGE(), focusedFlip.getCurrentStepQuantity());
-		boolean priceCorrect = isValueWithinTolerance(getCurrentPriceFromGE(), focusedFlip.getCurrentStepPrice());
-		
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return FlipAssistStep.SELECT_ITEM;
+		}
+		boolean qtyCorrect = isValueWithinTolerance(getCurrentQuantityFromGE(), flip.getCurrentStepQuantity());
+		boolean priceCorrect = isValueWithinTolerance(getCurrentPriceFromGE(), flip.getCurrentStepPrice());
+
 		if (qtyCorrect && priceCorrect)
 		{
-			return focusedFlip.isBuying() ? FlipAssistStep.CONFIRM_OFFER : FlipAssistStep.CONFIRM_SELL;
+			return flip.isBuying() ? FlipAssistStep.CONFIRM_OFFER : FlipAssistStep.CONFIRM_SELL;
 		}
 		if (!qtyCorrect)
 		{
 			return FlipAssistStep.SET_QUANTITY;
 		}
-		return focusedFlip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
+		return flip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
 	}
 	
 	/**
@@ -454,8 +468,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 32 + lineHeight;
 			for (String line : iconLines)
 			{
-				graphics.setColor(getHintLineColor(line));
-				graphics.drawString(line, textStartX, y);
+				drawHintLine(graphics, line, textStartX, y, smallMetrics);
 				y += lineHeight;
 			}
 		}
@@ -467,9 +480,8 @@ public class FlipAssistOverlay extends Overlay
 			int y = 28 + lineHeight;
 			for (String line : wrappedLines)
 			{
-				graphics.setColor(getHintLineColor(line));
 				int lineWidth = smallMetrics.stringWidth(line);
-				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
+				drawHintLine(graphics, line, (HINT_PANEL_WIDTH - lineWidth) / 2, y, smallMetrics);
 				y += lineHeight;
 			}
 		}
@@ -536,9 +548,36 @@ public class FlipAssistOverlay extends Overlay
 		}
 	}
 
+	private void drawHintLine(Graphics2D graphics, String line, int x, int y, FontMetrics fm)
+	{
+		int parenIdx = line.lastIndexOf(" (");
+		boolean isNetParen = parenIdx > 0 && line.endsWith(")")
+			&& (line.startsWith("(-", parenIdx + 1) || line.startsWith("(+", parenIdx + 1));
+		if (!isNetParen)
+		{
+			graphics.setColor(getHintLineColor(line));
+			graphics.drawString(line, x, y);
+			return;
+		}
+		String base = line.substring(0, parenIdx);
+		String paren = line.substring(parenIdx);
+		graphics.setColor(getHintLineColor(base));
+		graphics.drawString(base, x, y);
+		graphics.setColor(paren.trim().startsWith("(-") ? COLOR_LOSS : COLOR_PROFIT);
+		graphics.drawString(paren, x + fm.stringWidth(base), y);
+	}
+
 	private Color getHintLineColor(String line)
 	{
 		String trimmed = line.trim();
+		if (trimmed.startsWith("Loss"))
+		{
+			return COLOR_LOSS;
+		}
+		if (trimmed.startsWith("Profit") || trimmed.startsWith("Breakeven"))
+		{
+			return COLOR_PROFIT;
+		}
 		if (trimmed.startsWith("Open GE History"))
 		{
 			return COLOR_BUY;
@@ -603,23 +642,28 @@ public class FlipAssistOverlay extends Overlay
 	
 	private int renderHeader(Graphics2D graphics, int y)
 	{
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return y;
+		}
 		y += 4;
-		
-		AsyncBufferedImage itemImage = itemManager.getImage(focusedFlip.getItemId());
+
+		AsyncBufferedImage itemImage = itemManager.getImage(flip.getItemId());
 		if (itemImage != null)
 		{
 			graphics.drawImage(itemImage, SECTION_PADDING, y, ICON_SIZE, ICON_SIZE, null);
 		}
-		
+
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		graphics.setColor(COLOR_TEXT);
-		String itemName = truncateString(focusedFlip.getItemName(), PANEL_WIDTH - ICON_SIZE - SECTION_PADDING * 3, graphics.getFontMetrics());
+		String itemName = truncateString(flip.getItemName(), PANEL_WIDTH - ICON_SIZE - SECTION_PADDING * 3, graphics.getFontMetrics());
 		graphics.drawString(itemName, SECTION_PADDING + ICON_SIZE + 6, y + 10);
-		
+
 		graphics.setFont(FontManager.getRunescapeSmallFont());
-		graphics.setColor(focusedFlip.isBuying() ? COLOR_BUY : COLOR_SELL);
+		graphics.setColor(flip.isBuying() ? COLOR_BUY : COLOR_SELL);
 		String stepLabel;
-		if (focusedFlip.isBuying())
+		if (flip.isBuying())
 		{
 			stepLabel = "BUYING";
 		}
@@ -627,11 +671,11 @@ public class FlipAssistOverlay extends Overlay
 		{
 			// Show "MODIFY" if there's already an active sell order for this item
 			PlayerSession sess = flipSmartPlugin.getSession();
-			boolean hasActiveSell = sess != null && sess.hasActiveSellSlotForItem(focusedFlip.getItemId());
+			boolean hasActiveSell = sess != null && sess.hasActiveSellSlotForItem(flip.getItemId());
 			stepLabel = hasActiveSell ? "MODIFY" : "SELLING";
 		}
 		graphics.drawString(stepLabel, SECTION_PADDING + ICON_SIZE + 6, y + 24);
-		
+
 		return y + ICON_SIZE + 4;
 	}
 	
@@ -658,7 +702,12 @@ public class FlipAssistOverlay extends Overlay
 	
 	private FlipAssistStep[] getStepsForCurrentPhase()
 	{
-		if (focusedFlip.isBuying())
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return new FlipAssistStep[0];
+		}
+		if (flip.isBuying())
 		{
 			return new FlipAssistStep[]{
 				FlipAssistStep.SELECT_ITEM, FlipAssistStep.SET_QUANTITY,
@@ -754,20 +803,25 @@ public class FlipAssistOverlay extends Overlay
 	
 	private void renderFlipSummary(Graphics2D graphics, int y)
 	{
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return;
+		}
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		int lineHeight = 12;
-		
-		String priceLabel = focusedFlip.isBuying() ? "Buy at:" : "Sell at:";
-		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.format(focusedFlip.getCurrentStepPrice()) + " gp",
-			y + lineHeight, focusedFlip.isBuying() ? COLOR_BUY : COLOR_SELL);
-		
-		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.format(focusedFlip.getCurrentStepQuantity()),
+
+		String priceLabel = flip.isBuying() ? "Buy at:" : "Sell at:";
+		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.get().format(flip.getCurrentStepPrice()) + " gp",
+			y + lineHeight, flip.isBuying() ? COLOR_BUY : COLOR_SELL);
+
+		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.get().format(flip.getCurrentStepQuantity()),
 			y + lineHeight * 2, COLOR_TEXT);
-		
-		if (focusedFlip.isBuying() && focusedFlip.getSellPrice() > 0)
+
+		if (flip.isBuying() && flip.getSellPrice() > 0)
 		{
 			int totalProfit = calculateTotalProfit();
-			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.format(totalProfit) + " gp",
+			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.get().format(totalProfit) + " gp",
 				y + lineHeight * 3, totalProfit > 0 ? COLOR_PROFIT : new Color(255, 100, 100));
 		}
 	}
@@ -782,28 +836,38 @@ public class FlipAssistOverlay extends Overlay
 	
 	private int calculateTotalProfit()
 	{
-		int margin = focusedFlip.getSellPrice() - focusedFlip.getBuyPrice();
-		int geTax = Math.min((int)(focusedFlip.getSellPrice() * 0.02), 5_000_000);
-		return (margin - geTax) * focusedFlip.getBuyQuantity();
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return 0;
+		}
+		int margin = flip.getSellPrice() - flip.getBuyPrice();
+		int geTax = Math.min((int)(flip.getSellPrice() * 0.02), 5_000_000);
+		return (margin - geTax) * flip.getBuyQuantity();
 	}
 	
 	private String formatStepDescription()
 	{
 		String hotkeyName = config.flipAssistHotkey().toString();
-		
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return currentStep.getDescription();
+		}
+
 		switch (currentStep)
 		{
 			case SET_QUANTITY:
-				int targetQty = focusedFlip.getCurrentStepQuantity();
+				int targetQty = flip.getCurrentStepQuantity();
 				// Just show the target quantity with hotkey
-				return String.format(currentStep.getDescription(), hotkeyName, 
-					PRICE_FORMAT.format(targetQty));
+				return String.format(currentStep.getDescription(), hotkeyName,
+					PRICE_FORMAT.get().format(targetQty));
 			case SET_PRICE:
 			case SET_SELL_PRICE:
-				int targetPrice = focusedFlip.getCurrentStepPrice();
+				int targetPrice = flip.getCurrentStepPrice();
 				// Just show the target price with hotkey
 				return String.format(currentStep.getDescription(), hotkeyName,
-					PRICE_FORMAT.format(targetPrice));
+					PRICE_FORMAT.get().format(targetPrice));
 			default:
 				return currentStep.getDescription();
 		}
