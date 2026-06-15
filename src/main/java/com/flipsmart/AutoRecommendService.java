@@ -1543,7 +1543,8 @@ public class AutoRecommendService
 		staleResellPrices.remove(itemId);
 		if (wasHead)
 		{
-			executeOrDefer(this::focusNextAvailableAction);
+			// Re-prompt the new head (re-highlights it) or clears highlights if the queue drained.
+			executeOrDefer(this::focusNextStaleOffer);
 		}
 	}
 

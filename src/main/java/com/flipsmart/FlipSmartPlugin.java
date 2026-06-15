@@ -1923,10 +1923,6 @@ public class FlipSmartPlugin extends Plugin
 		}
 		sess.setRecommendedPrice(itemId, resp.getNewPrice());
 		Integer slot = findSlotForItem(sess, itemId);
-		if (slot != null && geSlotOverlay != null)
-		{
-			geSlotOverlay.setAdjustmentHighlight(slot, resp.getNewPrice());
-		}
 		if (slot != null && autoRecommendService != null)
 		{
 			TrackedOffer offer = sess.getTrackedOffer(slot);
@@ -1939,16 +1935,6 @@ public class FlipSmartPlugin extends Plugin
 
 	private void clearActiveOfferSurface(int itemId)
 	{
-		PlayerSession sess = getSession();
-		if (sess == null)
-		{
-			return;
-		}
-		Integer slot = findSlotForItem(sess, itemId);
-		if (slot != null && geSlotOverlay != null)
-		{
-			geSlotOverlay.clearAdjustmentHighlight(slot);
-		}
 		if (autoRecommendService != null)
 		{
 			autoRecommendService.removeAdvisorResell(itemId);
