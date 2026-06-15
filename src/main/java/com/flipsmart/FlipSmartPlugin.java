@@ -1837,6 +1837,10 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
+		if (log.isDebugEnabled())
+		{
+			log.debug("active-offer advisor poll: {} tracked offers", sess.getTrackedOffers().size());
+		}
 		for (Map.Entry<Integer, TrackedOffer> entry : sess.getTrackedOffers().entrySet())
 		{
 			TrackedOffer offer = entry.getValue();
@@ -1859,7 +1863,15 @@ public class FlipSmartPlugin extends Plugin
 				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
 			OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume);
 			apiClient.postOfferActionAsync(req)
-				.thenAccept(resp -> activeOfferAdvisorService.applyResponse(offer.getItemId(), resp))
+				.thenAccept(resp ->
+				{
+					if (resp != null && log.isDebugEnabled())
+					{
+						log.debug("offer-action {} side={} stage={} -> {} newPrice={}",
+							offer.getItemName(), req.getSide(), req.getStage(), resp.getAction(), resp.getNewPrice());
+					}
+					activeOfferAdvisorService.applyResponse(offer.getItemId(), resp);
+				})
 				.exceptionally(ex ->
 				{
 					if (log.isDebugEnabled())
