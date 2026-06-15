@@ -58,6 +58,9 @@ public class AutoRecommendService
 	// Stale offer queue — guides user through stale offers one at a time
 	private final List<TrackedOffer> staleOfferQueue = new CopyOnWriteArrayList<>();
 	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
+	// Advisor-only: net profit/loss estimate to show alongside a re-sell prompt. Kept in
+	// sync with staleResellPrices at both put-sites, so it's never read with a stale price.
+	private final Map<Integer, Integer> staleResellNet = new ConcurrentHashMap<>();
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	// Queue state - guarded by synchronized(this)
@@ -292,6 +295,7 @@ public class AutoRecommendService
 		promptedStaleItems.clear();
 		staleOfferQueue.clear();
 		staleResellPrices.clear();
+		staleResellNet.clear();
 		deferredActions.clear();
 		PlayerSession session = plugin.getSession();
 		if (session != null)
@@ -1466,8 +1470,11 @@ public class AutoRecommendService
 		String overlayMsg;
 		if (!next.isBuy() && resellPrice != null)
 		{
-			overlayMsg = String.format("Re-sell %s at:\n%s gp", next.getItemName(),
-				String.format("%,d", resellPrice));
+			Integer net = staleResellNet.get(next.getItemId());
+			String netSuffix = net == null ? ""
+				: String.format(" (%s%,d)", net >= 0 ? "+" : "-", Math.abs(net));
+			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", next.getItemName(),
+				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
 		{
@@ -1517,13 +1524,21 @@ public class AutoRecommendService
 	 * uses the advised price. Idempotent — addToStaleQueue dedupes by item, and the price
 	 * map is refreshed on each poll.
 	 */
-	public synchronized void surfaceAdvisorResell(TrackedOffer offer, int newPrice)
+	public synchronized void surfaceAdvisorResell(TrackedOffer offer, int newPrice, Integer netProfitEstimate)
 	{
 		if (offer == null)
 		{
 			return;
 		}
 		staleResellPrices.put(offer.getItemId(), newPrice);
+		if (netProfitEstimate != null)
+		{
+			staleResellNet.put(offer.getItemId(), netProfitEstimate);
+		}
+		else
+		{
+			staleResellNet.remove(offer.getItemId());
+		}
 		PlayerSession sess = plugin.getSession();
 		if (sess != null)
 		{
@@ -1758,6 +1773,7 @@ public class AutoRecommendService
 			// Unlike buy adjustments (where local wiki competitiveness is a useful gate),
 			// sell adjustments use backend market data which is authoritative.
 			staleResellPrices.put(offer.getItemId(), newPrice);
+			staleResellNet.remove(offer.getItemId());  // legacy adjustment has no advisor net estimate
 			addToStaleQueue(offer);
 
 			// Persist to session so relist auto-fill uses the adjusted price

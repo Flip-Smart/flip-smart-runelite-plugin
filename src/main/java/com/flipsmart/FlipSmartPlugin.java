@@ -1995,7 +1995,7 @@ public class FlipSmartPlugin extends Plugin
 			TrackedOffer offer = sess.getTrackedOffer(slot);
 			if (offer != null)
 			{
-				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice());
+				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
 			}
 		}
 	}

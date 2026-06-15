@@ -3138,19 +3138,25 @@ public class FlipFinderPanel extends PluginPanel
 		this.offerDispositionLookup = lookup;
 	}
 
-	private static String activeOfferVerb(OfferAction action)
+	private static String activeOfferVerb(OfferAction action, Integer netProfitEstimate)
 	{
+		boolean isLoss = netProfitEstimate != null && netProfitEstimate < 0;
 		switch (action)
 		{
 			case MOVE_PRICE_DOWN:
 				return "Move price down";
 			case EXIT_AT_BREAKEVEN:
-				return "Exit at breakeven";
+				return isLoss ? "Exit at a loss" : "Exit at breakeven";
 			case EXIT_AT_LOSS:
-				return "Exit at loss";
+				return "Exit at a loss";
 			default:
 				return "";
 		}
+	}
+
+	private static String formatSignedGp(int amount)
+	{
+		return (amount >= 0 ? "+" : "-") + GpUtils.formatGP(Math.abs(amount));
 	}
 
 	/**
@@ -3500,13 +3506,21 @@ public class FlipFinderPanel extends PluginPanel
 		if (offerDispositionLookup != null)
 		{
 			OfferAdviceResponse advice = offerDispositionLookup.apply(flip.getItemId());
-			if (advice != null && advice.getActionEnum() != null && !activeOfferVerb(advice.getActionEnum()).isEmpty())
+			String verb = advice != null && advice.getActionEnum() != null
+				? activeOfferVerb(advice.getActionEnum(), advice.getNetProfitEstimate())
+				: "";
+			if (!verb.isEmpty())
 			{
-				String verb = activeOfferVerb(advice.getActionEnum());
-				String text = advice.getNewPrice() != null
-					? verb + " → " + GpUtils.formatGP(advice.getNewPrice())
-					: verb;
-				JLabel adviceLabel = createStyledLabel(text, Color.ORANGE);
+				StringBuilder text = new StringBuilder(verb);
+				if (advice.getNewPrice() != null)
+				{
+					text.append(" → ").append(GpUtils.formatGP(advice.getNewPrice()));
+				}
+				if (advice.getNetProfitEstimate() != null)
+				{
+					text.append(" (").append(formatSignedGp(advice.getNetProfitEstimate())).append(")");
+				}
+				JLabel adviceLabel = createStyledLabel(text.toString(), Color.ORANGE);
 				adviceLabel.setToolTipText(advice.getReason());
 				detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
 				detailsPanel.add(adviceLabel);
