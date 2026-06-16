@@ -52,6 +52,8 @@ public final class CardWidgets
 		return detailsPanel;
 	}
 
+	private static final Dimension LABEL_SPACING = new Dimension(0, 2);
+
 	/**
 	 * Add labels to a details panel with standard 2px vertical spacing
 	 */
@@ -62,7 +64,7 @@ public final class CardWidgets
 			panel.add(labels[i]);
 			if (i < labels.length - 1)
 			{
-				panel.add(Box.createRigidArea(new Dimension(0, 2)));
+				panel.add(Box.createRigidArea(LABEL_SPACING));
 			}
 		}
 	}
