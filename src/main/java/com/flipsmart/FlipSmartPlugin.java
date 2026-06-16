@@ -610,7 +610,7 @@ public class FlipSmartPlugin extends Plugin
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
-			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService);
+			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
 		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService);
 
@@ -1560,7 +1560,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			java.util.Map<Integer, TrackedOffer> offers = session.getTrackedOffers();
-			autoRecommendService.ensureAllOffersHaveTimers(offers);
+			autoRecommendService.ensureAllOffersHaveTimers();
 			autoRecommendService.checkAdjustmentTimers(
 				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
 			autoRecommendService.checkSellAdjustmentTimers(offers);
@@ -1568,7 +1568,7 @@ public class FlipSmartPlugin extends Plugin
 
 		if (manualAdjustmentTracker != null)
 		{
-			manualAdjustmentTracker.checkTimers(session.getTrackedOffers());
+			manualAdjustmentTracker.checkTimers();
 		}
 	}
 

@@ -86,9 +86,10 @@ public class ServiceWiring
 	public ManualAdjustmentTracker initializeManualAdjustmentTracker(FlipSmartPlugin plugin, FlipSmartConfig config,
 		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay,
 		InventoryHighlightOverlay inventoryHighlightOverlay, PlayerSession session,
-		GrandExchangeTracker grandExchangeTracker, ActiveOfferAdvisorService activeOfferAdvisorService)
+		GrandExchangeTracker grandExchangeTracker, ActiveOfferAdvisorService activeOfferAdvisorService,
+		OfferStore offerStore)
 	{
-		ManualAdjustmentTracker manualAdjustmentTracker = new ManualAdjustmentTracker(plugin.getApiClient(), config);
+		ManualAdjustmentTracker manualAdjustmentTracker = new ManualAdjustmentTracker(plugin.getApiClient(), config, offerStore);
 
 		manualAdjustmentTracker.setOnAdjustmentPrompt(flipAssistOverlay::setAutoStatusMessage);
 

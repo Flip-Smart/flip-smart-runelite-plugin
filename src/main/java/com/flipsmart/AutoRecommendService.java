@@ -3,6 +3,7 @@ import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.recommend.AdjustmentService;
@@ -238,11 +239,7 @@ public class AutoRecommendService
 		rescheduleSellAdjustmentTimersAfterLogin();
 
 		// Immediately check timers that are already past deadline (don't wait for 2-min cycle)
-		PlayerSession s = plugin.getSession();
-		if (s != null)
-		{
-			ensureAllOffersHaveTimers(s.getTrackedOffers());
-		}
+		ensureAllOffersHaveTimers();
 	}
 
 	/**
@@ -1337,17 +1334,23 @@ public class AutoRecommendService
 	 * Called on each 2-minute refresh cycle to catch offers that were
 	 * missed (e.g., placed before a plugin rebuild or not present at login).
 	 */
-	public synchronized void ensureAllOffersHaveTimers(Map<Integer, TrackedOffer> trackedOffers)
+	private static long effectiveLastActivity(OfferRecord offer)
 	{
-		if (!active || trackedOffers == null)
+		long last = offer.getLastActivityAtMillis();
+		return last > 0 ? last : offer.getCreatedAtMillis();
+	}
+
+	public synchronized void ensureAllOffersHaveTimers()
+	{
+		if (!active)
 		{
 			return;
 		}
 
 		long now = System.currentTimeMillis();
-		for (TrackedOffer offer : trackedOffers.values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
-			if (offer.isCompleted())
+			if (offer.getState() == OfferState.FILLED)
 			{
 				continue;
 			}
@@ -1363,9 +1366,9 @@ public class AutoRecommendService
 		}
 	}
 
-	private void scheduleMissingBuyTimer(TrackedOffer offer, long now)
+	private void scheduleMissingBuyTimer(OfferRecord offer, long now)
 	{
-		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
+		long offerAgeMs = now - effectiveLastActivity(offer);
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		adjustments.putBuyDeadline(offer.getItemId(), deadline);
@@ -1373,10 +1376,10 @@ public class AutoRecommendService
 			offer.getItemName(), offerAgeMs / 60000);
 	}
 
-	private void scheduleMissingSellTimer(TrackedOffer offer, long now)
+	private void scheduleMissingSellTimer(OfferRecord offer, long now)
 	{
 		Integer buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
-		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
+		long offerAgeMs = now - effectiveLastActivity(offer);
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		SellAdjustmentState state = new SellAdjustmentState(

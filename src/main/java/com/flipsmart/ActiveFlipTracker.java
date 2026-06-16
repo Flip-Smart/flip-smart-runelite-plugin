@@ -1,6 +1,7 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.trading.OfferStore;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -33,6 +34,7 @@ public class ActiveFlipTracker
 	private final Client client;
 	private final ClientThread clientThread;
 	private final ItemManager itemManager;
+	private final OfferStore offerStore;
 
 	private Runnable onPanelRefreshNeeded;
 	private Runnable onActiveFlipsRefreshNeeded;
@@ -43,13 +45,15 @@ public class ActiveFlipTracker
 		FlipSmartApiClient apiClient,
 		Client client,
 		ClientThread clientThread,
-		ItemManager itemManager)
+		ItemManager itemManager,
+		OfferStore offerStore)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
 		this.client = client;
 		this.clientThread = clientThread;
 		this.itemManager = itemManager;
+		this.offerStore = offerStore;
 	}
 
 	public void setOnPanelRefreshNeeded(Runnable callback)
@@ -309,14 +313,7 @@ public class ActiveFlipTracker
 
 	private boolean isItemInActiveBuySlot(int itemId)
 	{
-		for (TrackedOffer offer : session.getTrackedOffers().values())
-		{
-			if (offer.getItemId() == itemId && offer.isBuy())
-			{
-				return true;
-			}
-		}
-		return false;
+		return offerStore.hasLiveBuyOfferForItem(itemId);
 	}
 
 	private Map<Integer, Integer> getTotalItemCounts()
@@ -336,11 +333,11 @@ public class ActiveFlipTracker
 			}
 		}
 
-		for (TrackedOffer offer : session.getTrackedOffers().values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (!offer.isBuy() && offer.getItemId() > 0)
 			{
-				int remainingInSlot = offer.getTotalQuantity() - offer.getPreviousQuantitySold();
+				int remainingInSlot = offer.getTotalQuantity() - offer.getFilledQuantity();
 				if (remainingInSlot > 0)
 				{
 					counts.merge(offer.getItemId(), remainingInSlot, Integer::sum);

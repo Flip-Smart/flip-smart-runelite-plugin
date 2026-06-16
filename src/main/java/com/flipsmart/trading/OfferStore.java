@@ -102,6 +102,24 @@ public final class OfferStore
     }
 
     /**
+     * Records that still occupy a GE slot (state is non-terminal). Terminal
+     * records (collected / cancelled-empty) are retained by the store but
+     * excluded here, matching the live-only view the session offer map exposed.
+     */
+    public synchronized List<OfferRecord> liveOffers()
+    {
+        List<OfferRecord> out = new ArrayList<>();
+        for (OfferRecord r : byOfferId.values())
+        {
+            if (!r.getState().isTerminal())
+            {
+                out.add(r);
+            }
+        }
+        return Collections.unmodifiableList(out);
+    }
+
+    /**
      * A sell offer for {@code itemId} is currently live (occupies a GE slot).
      * Terminal records (collected / cancelled-empty) are ignored so a finished
      * lifecycle never reports as an active slot.

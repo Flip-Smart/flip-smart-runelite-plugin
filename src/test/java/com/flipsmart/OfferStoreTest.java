@@ -182,6 +182,32 @@ public class OfferStoreTest
     }
 
     @Test
+    public void liveOffers_excludesTerminalRecords()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW); // NEW (live)
+        store.apply(sig(1, GrandExchangeOfferState.SELLING, 5678, 0, 5), NOW); // NEW sell (live)
+
+        assertEquals("both offers are live", 2, store.liveOffers().size());
+
+        // Complete and collect the buy → terminal COLLECTED
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 10, 10), NOW); // FILLED (still live)
+        assertEquals("filled-but-uncollected buy is still live", 2, store.liveOffers().size());
+
+        store.apply(sig(0, GrandExchangeOfferState.EMPTY, 1234, 10, 10), NOW); // COLLECTED (terminal)
+        List<OfferRecord> live = store.liveOffers();
+        assertEquals("collected offer drops out of live view", 1, live.size());
+        assertEquals(5678, live.get(0).getItemId());
+    }
+
+    @Test
+    public void liveOffers_isEmptyWhenNoOffers()
+    {
+        OfferStore store = new OfferStore();
+        assertTrue(store.liveOffers().isEmpty());
+    }
+
+    @Test
     public void offerIds_areMonotonicAndUnique()
     {
         OfferStore store = new OfferStore();
