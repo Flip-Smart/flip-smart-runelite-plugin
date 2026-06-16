@@ -427,8 +427,7 @@ public class AutoRecommendService
 	 * This is a temporary override — after the sell is placed, focusNextAvailableAction()
 	 * resumes normal queue processing.
 	 *
-	 * @return true if focus was successfully overridden, false if no sell price could be found
-	 *         (caller should fall through to API-based price lookup)
+	 * @return {@link SellFocusResult} indicating the outcome of the focus attempt.
 	 */
 	/**
 	 * Outcome of {@link #overrideFocusForSell(int, String)}. The caller's retry
