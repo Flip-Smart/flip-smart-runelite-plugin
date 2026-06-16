@@ -15,11 +15,12 @@ import java.util.function.Consumer;
  * Single source of truth for offer state. Keyed by a monotonic offerId; indexed by slot
  * (event resolution) and item (consumer queries). The sole writer of offer state.
  * Thread-safe: every compound mutation runs under this monitor; reads return snapshots.
+ * Listeners are notified after the monitor is released so a slow listener cannot stall readers.
  */
 public final class OfferStore
 {
     private final Map<Long, OfferRecord> byOfferId = new HashMap<>();
-    private final Map<Integer, Long> bySlot = new HashMap<>();      // 0..7 -> offerId (live only)
+    private final Map<Integer, Long> slotToOfferId = new HashMap<>();   // 0..7 -> offerId (live only)
     private long nextOfferId = 1;
     private final List<Consumer<OfferEvent>> listeners = new ArrayList<>();
 
@@ -28,36 +29,44 @@ public final class OfferStore
         listeners.add(listener);
     }
 
-    public synchronized OfferTransition apply(OfferSignal signal, long now)
+    public OfferTransition apply(OfferSignal signal, long now)
     {
-        Long currentId = bySlot.get(signal.slot);
-        OfferRecord current = currentId == null ? null : byOfferId.get(currentId);
-
-        long idForNew = current == null ? nextOfferId : current.getOfferId();
-        OfferTransition t = OfferStateMachine.decide(current, signal, idForNew, now);
-
-        if (t.kind == OfferTransition.Kind.REJECTED || t.kind == OfferTransition.Kind.NONE || t.record == null)
+        OfferTransition t;
+        OfferEvent event;
+        List<Consumer<OfferEvent>> snapshot;
+        synchronized (this)
         {
-            return t;
+            Long currentId = slotToOfferId.get(signal.slot);
+            OfferRecord current = currentId == null ? null : byOfferId.get(currentId);
+
+            long idForNew = current == null ? nextOfferId : current.getOfferId();
+            t = OfferStateMachine.decide(current, signal, idForNew, now);
+
+            if (t.kind == OfferTransition.Kind.REJECTED || t.kind == OfferTransition.Kind.NONE || t.record == null)
+            {
+                return t;
+            }
+
+            if (current == null)
+            {
+                nextOfferId = Math.max(nextOfferId, t.record.getOfferId() + 1);
+            }
+
+            byOfferId.put(t.record.getOfferId(), t.record);
+            if (t.record.getSlot() == null)
+            {
+                slotToOfferId.remove(signal.slot);
+            }
+            else
+            {
+                slotToOfferId.put(signal.slot, t.record.getOfferId());
+            }
+
+            event = new OfferEvent(t.kind, t.record, t.newlyFilledQuantity);
+            snapshot = new ArrayList<>(listeners);
         }
 
-        if (current == null)
-        {
-            nextOfferId = Math.max(nextOfferId, t.record.getOfferId() + 1);
-        }
-
-        byOfferId.put(t.record.getOfferId(), t.record);
-        if (t.record.getSlot() == null)
-        {
-            bySlot.remove(signal.slot);
-        }
-        else
-        {
-            bySlot.put(signal.slot, t.record.getOfferId());
-        }
-
-        OfferEvent event = new OfferEvent(t.kind, t.record, t.newlyFilledQuantity);
-        for (Consumer<OfferEvent> l : listeners)
+        for (Consumer<OfferEvent> l : snapshot)
         {
             l.accept(event);
         }
@@ -66,7 +75,7 @@ public final class OfferStore
 
     public synchronized OfferRecord bySlot(int slot)
     {
-        Long id = bySlot.get(slot);
+        Long id = slotToOfferId.get(slot);
         return id == null ? null : byOfferId.get(id);
     }
 
