@@ -430,24 +430,41 @@ public class AutoRecommendService
 	 * @return true if focus was successfully overridden, false if no sell price could be found
 	 *         (caller should fall through to API-based price lookup)
 	 */
-	public synchronized boolean overrideFocusForSell(int itemId, String itemName)
+	/**
+	 * Outcome of {@link #overrideFocusForSell(int, String)}. The caller's retry
+	 * logic depends on the distinction: {@link #UNAVAILABLE} means the
+	 * collect/inventory/session state has not settled yet and the attempt should
+	 * be repeated on a later tick, whereas {@link #ALREADY_SELLING} is a settled,
+	 * terminal outcome.
+	 */
+	public enum SellFocusResult
+	{
+		/** A sell focus was set on the overlay. */
+		FOCUSED,
+		/** A live sell offer for this item already exists; left as-is. */
+		ALREADY_SELLING,
+		/** Price or quantity not resolvable yet (state not settled); retry later. */
+		UNAVAILABLE
+	}
+
+	public synchronized SellFocusResult overrideFocusForSell(int itemId, String itemName)
 	{
 		if (!active)
 		{
-			return false;
+			return SellFocusResult.UNAVAILABLE;
 		}
 
 		PlayerSession session = plugin.getSession();
 		if (session == null)
 		{
-			return false;
+			return SellFocusResult.UNAVAILABLE;
 		}
 
 		// Don't re-show sell overlay if this item already has an active sell order
 		if (session.hasActiveSellSlotForItem(itemId))
 		{
 			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
-			return true;
+			return SellFocusResult.ALREADY_SELLING;
 		}
 
 		Integer sellPrice = resolveBestSellPrice(itemId);
@@ -463,8 +480,8 @@ public class AutoRecommendService
 			}
 			else
 			{
-				log.debug("Auto-recommend: No local sell price for {} - falling through to API lookup", itemName);
-				return false;
+				log.debug("Auto-recommend: No sell price yet for {} - state not settled, will retry", itemName);
+				return SellFocusResult.UNAVAILABLE;
 			}
 		}
 
@@ -472,8 +489,8 @@ public class AutoRecommendService
 
 		if (collectedQty <= 0)
 		{
-			log.warn("Auto-recommend: Cannot override focus for {} - no quantity available", itemName);
-			return false;
+			log.debug("Auto-recommend: No quantity yet for {} - state not settled, will retry", itemName);
+			return SellFocusResult.UNAVAILABLE;
 		}
 
 		int priceOffset = config.priceOffset();
@@ -483,7 +500,7 @@ public class AutoRecommendService
 		updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(sellPrice)));
 
 		log.debug("Auto-recommend: Override focus for sell {} x{} @ {} gp", itemName, collectedQty, sellPrice);
-		return true;
+		return SellFocusResult.FOCUSED;
 	}
 
 	/**
