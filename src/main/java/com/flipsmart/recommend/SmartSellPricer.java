@@ -78,18 +78,26 @@ public final class SmartSellPricer
 		}
 	}
 
+	private static final int GE_TAX_EXEMPT_THRESHOLD = 100;
+	private static final int GE_TAX_CAP_GP = 5_000_000;
+	private static final double GE_TAX_RATE = 0.01;
+
 	/**
 	 * Calculate the minimum profitable sell price for an active flip.
-	 * This is the price that would result in zero profit after tax.
-	 * Formula: minSellPrice = buyPrice / (1 - taxRate)
-	 * Adding 1gp ensures a small profit.
+	 * This is the sell price at which profit after GE tax is exactly 1 GP.
+	 *
+	 * OSRS GE tax rules:
+	 * - Items priced under 100 GP are tax-exempt.
+	 * - Tax = 1% of sell price, capped at 5,000,000 GP.
 	 */
 	public static int calculateMinProfitableSellPrice(int buyPrice)
 	{
-		// GE tax is 2%, so to break even: sellPrice * 0.98 = buyPrice
-		// sellPrice = buyPrice / 0.98
-		// Add 1gp to ensure profit
-		return (int) Math.ceil(buyPrice / 0.98) + 1;
+		if (buyPrice < GE_TAX_EXEMPT_THRESHOLD)
+		{
+			return buyPrice + 1;
+		}
+		int tax = (int) Math.min(Math.ceil(buyPrice * GE_TAX_RATE), GE_TAX_CAP_GP);
+		return buyPrice + tax + 1;
 	}
 
 	public static Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice)
