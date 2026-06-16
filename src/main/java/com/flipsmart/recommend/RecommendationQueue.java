@@ -43,11 +43,6 @@ public final class RecommendationQueue
 		this.currentIndex = index;
 	}
 
-	public int incrementIndex()
-	{
-		return ++currentIndex;
-	}
-
 	public int size()
 	{
 		return recommendationQueue.size();
