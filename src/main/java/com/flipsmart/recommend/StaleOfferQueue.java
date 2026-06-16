@@ -1,6 +1,6 @@
 package com.flipsmart.recommend;
 
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +20,7 @@ import java.util.function.Predicate;
  */
 public final class StaleOfferQueue
 {
-	private final List<TrackedOffer> staleOfferQueue = new CopyOnWriteArrayList<>();
+	private final List<OfferRecord> staleOfferQueue = new CopyOnWriteArrayList<>();
 	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
 	// Advisor-only: net profit/loss estimate to show alongside a re-sell prompt. Kept in
 	// sync with staleResellPrices at both put-sites, so it's never read with a stale price.
@@ -39,7 +39,7 @@ public final class StaleOfferQueue
 		return staleOfferQueue.size();
 	}
 
-	public TrackedOffer head()
+	public OfferRecord head()
 	{
 		return staleOfferQueue.get(0);
 	}
@@ -97,14 +97,14 @@ public final class StaleOfferQueue
 	}
 
 	/** Remove the head offer and clear its resell price; returns the removed offer. */
-	public TrackedOffer removeHead()
+	public OfferRecord removeHead()
 	{
-		TrackedOffer skipped = staleOfferQueue.remove(0);
+		OfferRecord skipped = staleOfferQueue.remove(0);
 		staleResellPrices.remove(skipped.getItemId());
 		return skipped;
 	}
 
-	/** Outcome of {@link #addIfAbsent(TrackedOffer)}. */
+	/** Outcome of {@link #addIfAbsent(OfferRecord)}. */
 	public enum AddResult
 	{
 		/** An entry for this item already existed — nothing changed. */
@@ -120,9 +120,9 @@ public final class StaleOfferQueue
 	 * it prompted. The return value lets the caller distinguish the dedup no-op
 	 * from a genuine add and decide whether to surface the first prompt.
 	 */
-	public AddResult addIfAbsent(TrackedOffer offer)
+	public AddResult addIfAbsent(OfferRecord offer)
 	{
-		for (TrackedOffer existing : staleOfferQueue)
+		for (OfferRecord existing : staleOfferQueue)
 		{
 			if (existing.getItemId() == offer.getItemId())
 			{
@@ -141,7 +141,7 @@ public final class StaleOfferQueue
 	 * is supplied by the coordinator because relevance depends on live session
 	 * and competitiveness state outside this class.
 	 */
-	public void pruneIrrelevant(Predicate<TrackedOffer> shouldRemove)
+	public void pruneIrrelevant(Predicate<OfferRecord> shouldRemove)
 	{
 		staleOfferQueue.removeIf(o ->
 		{

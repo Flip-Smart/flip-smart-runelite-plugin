@@ -1,6 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.offer.OfferDisposition;
 import com.flipsmart.api.dto.OfferAdviceRequest;
@@ -82,7 +82,7 @@ public class ActiveOfferAdvisorService
 	}
 
 	static OfferAdviceRequest buildSnapshot(
-		TrackedOffer offer,
+		OfferRecord offer,
 		WikiPrice market,
 		Integer userAvgBuyPrice,
 		Integer dailyVolume)
@@ -97,7 +97,7 @@ public class ActiveOfferAdvisorService
 			.listedAtMillis(offer.getCreatedAtMillis())
 			.listedPrice(offer.getPrice())
 			.listedQuantity(offer.getTotalQuantity())
-			.filledQuantity(offer.getPreviousQuantitySold())
+			.filledQuantity(offer.getFilledQuantity())
 			.lastFillAtMillis(lastFill > 0 ? lastFill : null)
 			.currentMarketHigh(market == null ? null : market.instaBuy)
 			.currentMarketLow(market == null ? null : market.instaSell)

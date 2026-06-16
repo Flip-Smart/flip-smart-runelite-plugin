@@ -447,15 +447,6 @@ public class FlipSmartPlugin extends Plugin
 	 *
 	 * This shows if your offer is "in the margin" and likely to fill.
 	 */
-	public OfferCompetitiveness calculateCompetitiveness(TrackedOffer offer)
-	{
-		if (offer == null)
-		{
-			return OfferCompetitiveness.UNKNOWN;
-		}
-		return calculateCompetitiveness(offer.getItemId(), offer.getPrice(), offer.isBuy());
-	}
-
 	public OfferCompetitiveness calculateCompetitiveness(com.flipsmart.domain.offer.OfferRecord record)
 	{
 		if (record == null)
@@ -652,11 +643,11 @@ public class FlipSmartPlugin extends Plugin
 	public void highlightSlotForItem(int itemId)
 	{
 		geSlotOverlay.clearAllAdjustmentHighlights();
-		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			if (entry.getValue().getItemId() == itemId)
+			if (offer.getItemId() == itemId && offer.getSlot() != null)
 			{
-				geSlotOverlay.setAdjustmentHighlight(entry.getKey(), 0);
+				geSlotOverlay.setAdjustmentHighlight(offer.getSlot(), 0);
 				return;
 			}
 		}
@@ -1116,10 +1107,9 @@ public class FlipSmartPlugin extends Plugin
 		if (sess != null)
 		{
 			autoRecommendService.checkAdjustmentTimers(
-				sess.getTrackedOffers(),
 				flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
 			);
-			autoRecommendService.checkSellAdjustmentTimers(sess.getTrackedOffers());
+			autoRecommendService.checkSellAdjustmentTimers();
 		}
 	}
 
@@ -1539,7 +1529,6 @@ public class FlipSmartPlugin extends Plugin
 		if (autoRecommendService != null && autoRecommendService.isActive() && flipFinderPanel != null)
 		{
 			autoRecommendService.checkInactiveOffers(
-				session.getTrackedOffers(),
 				flipFinderPanel.getCurrentRecommendations()
 			);
 		}
@@ -1578,11 +1567,10 @@ public class FlipSmartPlugin extends Plugin
 				});
 			}
 
-			java.util.Map<Integer, TrackedOffer> offers = session.getTrackedOffers();
 			autoRecommendService.ensureAllOffersHaveTimers();
 			autoRecommendService.checkAdjustmentTimers(
-				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
-			autoRecommendService.checkSellAdjustmentTimers(offers);
+				flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
+			autoRecommendService.checkSellAdjustmentTimers();
 		}
 
 		if (manualAdjustmentTracker != null)
@@ -1622,10 +1610,11 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		lastAdvisorPollMs = System.currentTimeMillis();
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveOffers = offerStore.liveOffers();
 		java.util.Set<Integer> activeItemIds = new java.util.HashSet<>();
-		for (TrackedOffer o : sess.getTrackedOffers().values())
+		for (com.flipsmart.domain.offer.OfferRecord o : liveOffers)
 		{
-			if (o != null && !o.isCompleted())
+			if (o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
 			{
 				activeItemIds.add(o.getItemId());
 			}
@@ -1635,10 +1624,9 @@ public class FlipSmartPlugin extends Plugin
 			activeOfferAdvisorService.reconcile(activeItemIds);
 		}
 		java.util.List<OfferAdviceRequest> requests = new java.util.ArrayList<>();
-		for (Map.Entry<Integer, TrackedOffer> entry : sess.getTrackedOffers().entrySet())
+		for (com.flipsmart.domain.offer.OfferRecord offer : liveOffers)
 		{
-			TrackedOffer offer = entry.getValue();
-			if (offer == null || offer.isCompleted())
+			if (offer.getState() == com.flipsmart.domain.offer.OfferState.FILLED)
 			{
 				continue;
 			}
@@ -1735,10 +1723,9 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		sess.setRecommendedPrice(itemId, resp.getNewPrice());
-		Integer slot = findSlotForItem(sess, itemId);
-		if (slot != null && autoRecommendService != null)
+		if (autoRecommendService != null)
 		{
-			TrackedOffer offer = sess.getTrackedOffer(slot);
+			com.flipsmart.domain.offer.OfferRecord offer = findLiveOfferForItem(itemId);
 			if (offer != null)
 			{
 				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
@@ -1754,14 +1741,13 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private Integer findSlotForItem(PlayerSession sess, int itemId)
+	private com.flipsmart.domain.offer.OfferRecord findLiveOfferForItem(int itemId)
 	{
-		for (Map.Entry<Integer, TrackedOffer> e : sess.getTrackedOffers().entrySet())
+		for (com.flipsmart.domain.offer.OfferRecord o : offerStore.liveOffers())
 		{
-			TrackedOffer o = e.getValue();
-			if (o != null && o.getItemId() == itemId && !o.isCompleted())
+			if (o.getItemId() == itemId && o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
 			{
-				return e.getKey();
+				return o;
 			}
 		}
 		return null;
@@ -1778,9 +1764,9 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		for (TrackedOffer offer : sess.getTrackedOffers().values())
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			if (offer != null && offer.getItemId() == itemId)
+			if (offer.getItemId() == itemId)
 			{
 				autoRecommendService.addToStaleQueue(offer);
 				break;

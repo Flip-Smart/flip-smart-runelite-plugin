@@ -1,6 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.api.dto.OfferAdviceRequest;
 
 import org.junit.Test;
@@ -9,10 +10,21 @@ import static org.junit.Assert.assertNull;
 
 public class ActiveOfferSnapshotTest
 {
+	private static OfferRecord sellOffer(int itemId, int totalQty, int price, int filled, long now)
+	{
+		OfferRecord offer = OfferRecord.newOffer(1, 0, itemId, "Item", false, totalQty, price, now);
+		return filled > 0 ? offer.withFill(filled, 0L, OfferState.PARTIAL_FILL, now) : offer;
+	}
+
+	private static OfferRecord buyOffer(int itemId, int totalQty, int price, long now)
+	{
+		return OfferRecord.newOffer(1, 0, itemId, "Item", true, totalQty, price, now);
+	}
+
 	@Test
 	public void buildsSellSnapshotWithMarketAndBuyPrice()
 	{
-		TrackedOffer offer = new TrackedOffer(12345, "Item", false, 10, 1000, 2);
+		OfferRecord offer = sellOffer(12345, 10, 1000, 2, System.currentTimeMillis());
 		WikiPrice market = new WikiPrice(1080, 1020);
 
 		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, market, 990, 600000);
@@ -32,7 +44,7 @@ public class ActiveOfferSnapshotTest
 	@Test
 	public void classifiesHighVolFromDailyVolume()
 	{
-		TrackedOffer offer = new TrackedOffer(1, "Item", true, 1, 5, 0);
+		OfferRecord offer = buyOffer(1, 1, 5, System.currentTimeMillis());
 		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, null, null, 600000);
 		assertEquals("high_vol", req.getPool());
 		assertEquals("buy", req.getSide());
@@ -43,7 +55,7 @@ public class ActiveOfferSnapshotTest
 	@Test
 	public void buyOfferOmitsUserAvgBuyPriceEvenIfProvided()
 	{
-		TrackedOffer offer = new TrackedOffer(1, "Item", true, 1, 5, 0);
+		OfferRecord offer = buyOffer(1, 1, 5, System.currentTimeMillis());
 		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, null, 990, 100000);
 		assertEquals("mid_vol", req.getPool());
 		assertNull(req.getUserAvgBuyPrice());
