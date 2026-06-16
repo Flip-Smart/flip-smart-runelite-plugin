@@ -1,4 +1,7 @@
 package com.flipsmart;
+import com.flipsmart.util.BuyPriceLookup;
+import com.flipsmart.util.GeTax;
+import com.flipsmart.util.GpUtils;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
@@ -2260,7 +2263,7 @@ public class FlipFinderPanel extends PluginPanel
 		int displayBuyPrice = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
 		int displaySellPrice = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
 		int displayMargin = displaySellPrice - displayBuyPrice;
-		int geTax = Math.min((int)(displaySellPrice * 0.02), 5_000_000);
+		int geTax = GeTax.taxFor(rec.getItemId(), displaySellPrice);
 		int displayProfit = (displayMargin - geTax) * rec.getRecommendedQuantity();
 		int displayCost = displayBuyPrice * rec.getRecommendedQuantity();
 		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
@@ -3623,9 +3626,8 @@ public class FlipFinderPanel extends PluginPanel
 						formatGPExact(smartSellPrice),
 						priceSuffix));
 
-					// Calculate GE tax (2% capped at 5M)
-					int geTax = Math.min((int)(smartSellPrice * 0.02), 5_000_000);
-					
+					int geTax = GeTax.taxFor(flip.getItemId(), smartSellPrice);
+
 					// Calculate margin and profit
 					int marginPerItem = smartSellPrice - flip.getAverageBuyPrice() - geTax;
 					int totalProfit = marginPerItem * flip.getTotalQuantity();
@@ -3836,9 +3838,8 @@ public class FlipFinderPanel extends PluginPanel
 					// Row 1: Update prices
 					pricesLabel.setText(formatBuySellText(pending.pricePerItem, sellPrice));
 
-					// Calculate GE tax (2% capped at 5M)
-					int geTax = Math.min((int)(sellPrice * 0.02), 5_000_000);
-					
+					int geTax = GeTax.taxFor(pending.itemId, sellPrice);
+
 					// Calculate margin and profit
 					int marginPerItem = sellPrice - pending.pricePerItem - geTax;
 					int totalProfit = marginPerItem * pending.quantity;

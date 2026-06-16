@@ -1,5 +1,6 @@
-package com.flipsmart;
+package com.flipsmart.util;
 
+import com.flipsmart.ActiveFlip;
 import java.util.List;
 
 /**

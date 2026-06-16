@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.util.GeTax;
 
 import org.junit.Test;
 

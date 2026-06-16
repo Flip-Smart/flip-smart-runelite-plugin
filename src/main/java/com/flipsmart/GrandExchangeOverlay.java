@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.util.ItemUtils;
 
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
