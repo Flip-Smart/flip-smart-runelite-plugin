@@ -830,6 +830,17 @@ public class GrandExchangeTracker
 			return;
 		}
 
+		tryAsyncSellFocus(itemId);
+	}
+
+	/**
+	 * Backend fallback: resolve the item's active flip via the API and focus the
+	 * sell from that. Used for items the local auto-recommend state cannot resolve
+	 * (e.g. not in the queue), and after the local tick-retry budget is exhausted.
+	 * Runs on the client thread (reads the inventory container).
+	 */
+	private void tryAsyncSellFocus(int itemId)
+	{
 		String rsn = getRsn().orElse(null);
 
 		// Capture inventory count on client thread before async API call
@@ -870,8 +881,11 @@ public class GrandExchangeTracker
 		pendingSellFocusTicksLeft--;
 		if (pendingSellFocusTicksLeft <= 0)
 		{
-			log.debug("Auto-focus sell retry budget exhausted for {}", itemName);
+			// Local state never settled — fall back to the backend active-flip
+			// lookup (the original behaviour for items not resolvable locally).
+			log.debug("Auto-focus sell retry budget exhausted for {} - falling back to API lookup", itemName);
 			clearPendingSellFocus();
+			tryAsyncSellFocus(itemId);
 		}
 	}
 
