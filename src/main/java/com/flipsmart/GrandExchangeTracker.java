@@ -61,6 +61,12 @@ public class GrandExchangeTracker
 	private volatile int lastAutoFocusItemId;
 	private volatile long lastAutoFocusTimeMs;
 
+	// Deferred sell-focus retry: when the sell screen opens before the collect's
+	// state has settled, re-attempt focus over the next few game ticks.
+	private static final int SELL_FOCUS_RETRY_TICKS = 6;
+	private volatile int pendingSellFocusItemId = -1;
+	private int pendingSellFocusTicksLeft;
+
 	/**
 	 * Bundles GE offer data passed from the plugin event handler.
 	 * Constructed by the plugin and passed to {@link #handleOfferChanged(OfferContext)}.
@@ -805,13 +811,36 @@ public class GrandExchangeTracker
 			// overrideFocusForSell handles sell price recovery, quantity resolution
 			// (including inventory fallback and auto-correction of session state)
 			String itemName = ItemUtils.getItemName(itemManager, itemId);
-			if (autoRecommendService.overrideFocusForSell(itemId, itemName))
+			AutoRecommendService.SellFocusResult result =
+				autoRecommendService.overrideFocusForSell(itemId, itemName);
+			log.debug("Auto-focus sell {} -> {}", itemName, result);
+			if (result != AutoRecommendService.SellFocusResult.UNAVAILABLE)
 			{
+				// FOCUSED or ALREADY_SELLING — settled, nothing more to do.
+				clearPendingSellFocus();
 				return;
 			}
-			// Fall through to API path for items not in the auto-recommend queue
+			// State from the just-finished collect (cleared offer slot, updated
+			// inventory) has not caught up to the freshly-opened sell screen yet.
+			// Re-attempt over the next few game ticks instead of falling to the slow
+			// async path or giving up — that lag is what made the re-sell focus
+			// arrive late or not show at all.
+			pendingSellFocusItemId = itemId;
+			pendingSellFocusTicksLeft = SELL_FOCUS_RETRY_TICKS;
+			return;
 		}
 
+		tryAsyncSellFocus(itemId);
+	}
+
+	/**
+	 * Backend fallback: resolve the item's active flip via the API and focus the
+	 * sell from that. Used for items the local auto-recommend state cannot resolve
+	 * (e.g. not in the queue), and after the local tick-retry budget is exhausted.
+	 * Runs on the client thread (reads the inventory container).
+	 */
+	private void tryAsyncSellFocus(int itemId)
+	{
 		String rsn = getRsn().orElse(null);
 
 		// Capture inventory count on client thread before async API call
@@ -820,6 +849,50 @@ public class GrandExchangeTracker
 
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 			handleActiveFlipResponse(response, itemId, inventoryCount, rsn));
+	}
+
+	/**
+	 * Re-attempt a deferred sell focus once per game tick until the underlying
+	 * collect/inventory/session state settles or the retry budget runs out. Must
+	 * run on the client thread (overrideFocusForSell reads inventory). Invoked
+	 * from the plugin's GameTick handler.
+	 */
+	public void retryPendingSellFocusTick()
+	{
+		if (pendingSellFocusItemId < 0)
+		{
+			return;
+		}
+		if (!isAutoRecommendActive())
+		{
+			clearPendingSellFocus();
+			return;
+		}
+		int itemId = pendingSellFocusItemId;
+		String itemName = ItemUtils.getItemName(itemManager, itemId);
+		AutoRecommendService.SellFocusResult result =
+			autoRecommendService.overrideFocusForSell(itemId, itemName);
+		if (result != AutoRecommendService.SellFocusResult.UNAVAILABLE)
+		{
+			log.debug("Auto-focus sell retry settled {} -> {}", itemName, result);
+			clearPendingSellFocus();
+			return;
+		}
+		pendingSellFocusTicksLeft--;
+		if (pendingSellFocusTicksLeft <= 0)
+		{
+			// Local state never settled — fall back to the backend active-flip
+			// lookup (the original behaviour for items not resolvable locally).
+			log.debug("Auto-focus sell retry budget exhausted for {} - falling back to API lookup", itemName);
+			clearPendingSellFocus();
+			tryAsyncSellFocus(itemId);
+		}
+	}
+
+	private void clearPendingSellFocus()
+	{
+		pendingSellFocusItemId = -1;
+		pendingSellFocusTicksLeft = 0;
 	}
 
 	private void handleActiveFlipResponse(

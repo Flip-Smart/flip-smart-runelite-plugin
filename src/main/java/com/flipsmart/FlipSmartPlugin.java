@@ -1003,6 +1003,8 @@ public class FlipSmartPlugin extends Plugin
 
 		geHistoryService.onGameTick();
 
+		grandExchangeTracker.retryPendingSellFocusTick();
+
 		releaseOfferLockIfSetupClosed();
 	}
 
