@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.api.dto;
 
 import java.time.Instant;
 import java.time.format.DateTimeFormatter;

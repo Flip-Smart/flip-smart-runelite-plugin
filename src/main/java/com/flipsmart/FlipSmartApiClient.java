@@ -1,4 +1,29 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.OfferAdviceBatchResponse;
+import com.flipsmart.api.dto.BankSnapshotResponse;
+import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
+import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.BlocklistsResponse;
+import com.flipsmart.domain.flip.FlipAnalysis;
+import com.flipsmart.api.dto.DumpEvent;
+import com.flipsmart.api.dto.FlipStatisticsResponse;
+import com.flipsmart.api.dto.BankSnapshotStatusResponse;
+import com.flipsmart.api.dto.OfferAdviceRequest;
+import com.flipsmart.api.dto.AuthResult;
+import com.flipsmart.api.dto.DeviceAuthResponse;
+import com.flipsmart.api.dto.DeviceStatusResponse;
+import com.flipsmart.api.dto.MotdResponse;
+import com.flipsmart.api.dto.TransactionRequest;
+import com.flipsmart.api.dto.HistoryBackfillEntry;
+import com.flipsmart.api.dto.DumpsResponse;
+import com.flipsmart.api.dto.BankItem;
+import com.flipsmart.api.dto.BankItemId;
+import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.FlipAdjustmentRequest;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -133,21 +158,6 @@ public class FlipSmartApiClient
 		return URLEncoder.encode(value, StandardCharsets.UTF_8);
 	}
 
-	/**
-	 * Authentication result with status and message
-	 */
-	public static class AuthResult
-	{
-		public final boolean success;
-		public final String message;
-		
-		public AuthResult(boolean success, String message)
-		{
-			this.success = success;
-			this.message = message;
-		}
-	}
-	
 	/**
 	 * Execute an HTTP request asynchronously with automatic retry on 401
 	 * This is the core method that handles all HTTP requests off the main threads
@@ -884,90 +894,6 @@ public class FlipSmartApiClient
 	// ============================================================================
 	
 	/**
-	 * Response from starting device authorization
-	 */
-	public static class DeviceAuthResponse
-	{
-		private String deviceCode;
-		private String userCode;
-		private String verificationUrl;
-		private int expiresIn;
-		private int pollInterval;
-		
-		/** Default constructor required for Gson deserialization */
-		public DeviceAuthResponse() { }
-		
-		public String getDeviceCode() { return deviceCode; }
-		public void setDeviceCode(String deviceCode) { this.deviceCode = deviceCode; }
-		
-		public String getUserCode() { return userCode; }
-		public void setUserCode(String userCode) { this.userCode = userCode; }
-		
-		public String getVerificationUrl() { return verificationUrl; }
-		public void setVerificationUrl(String verificationUrl) { this.verificationUrl = verificationUrl; }
-		
-		public int getExpiresIn() { return expiresIn; }
-		public void setExpiresIn(int expiresIn) { this.expiresIn = expiresIn; }
-		
-		public int getPollInterval() { return pollInterval; }
-		public void setPollInterval(int pollInterval) { this.pollInterval = pollInterval; }
-	}
-	
-	/**
-	 * Response from polling device authorization status
-	 */
-	public static class DeviceStatusResponse
-	{
-		private String status;  // pending, authorized, expired
-		private String accessToken;
-		private String tokenType;
-		private String refreshToken;  // For session persistence across client restarts
-
-		/** Default constructor required for Gson deserialization */
-		public DeviceStatusResponse() { }
-
-		public String getStatus() { return status; }
-		public void setStatus(String status) { this.status = status; }
-
-		public String getAccessToken() { return accessToken; }
-		public void setAccessToken(String accessToken) { this.accessToken = accessToken; }
-
-		public String getTokenType() { return tokenType; }
-		public void setTokenType(String tokenType) { this.tokenType = tokenType; }
-
-		public String getRefreshToken() { return refreshToken; }
-		public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
-	}
-
-	/**
-	 * Per-channel MOTD payload returned by GET /motd.
-	 */
-	public static class MotdChannelData
-	{
-		private String message;
-		private boolean enabled;
-		private String version;
-		private String severity;
-
-		public String getMessage() { return message; }
-		public boolean isEnabled() { return enabled; }
-		public String getVersion() { return version; }
-		public String getSeverity() { return severity; }
-	}
-
-	/**
-	 * Response shape for GET /motd.
-	 */
-	public static class MotdResponse
-	{
-		private MotdChannelData web;
-		private MotdChannelData plugin;
-
-		public MotdChannelData getWeb() { return web; }
-		public MotdChannelData getPlugin() { return plugin; }
-	}
-
-	/**
 	 * Start the device authorization flow for Discord login.
 	 * Returns a device code and verification URL that the user should open in their browser.
 	 * 
@@ -1011,13 +937,13 @@ public class FlipSmartApiClient
 					JsonObject json = gson.fromJson(jsonData, JsonObject.class);
 					
 					DeviceAuthResponse authResponse = new DeviceAuthResponse();
-					authResponse.deviceCode = json.get("device_code").getAsString();
-					authResponse.userCode = json.get("user_code").getAsString();
-					authResponse.verificationUrl = json.get("verification_url").getAsString();
-					authResponse.expiresIn = json.get("expires_in").getAsInt();
-					authResponse.pollInterval = json.get("poll_interval").getAsInt();
-					
-					log.debug("Device auth started, verification URL: {}", authResponse.verificationUrl);
+					authResponse.setDeviceCode(json.get("device_code").getAsString());
+					authResponse.setUserCode(json.get("user_code").getAsString());
+					authResponse.setVerificationUrl(json.get("verification_url").getAsString());
+					authResponse.setExpiresIn(json.get("expires_in").getAsInt());
+					authResponse.setPollInterval(json.get("poll_interval").getAsInt());
+
+					log.debug("Device auth started, verification URL: {}", authResponse.getVerificationUrl());
 					future.complete(authResponse);
 				}
 				catch (Exception e)
@@ -1067,7 +993,7 @@ public class FlipSmartApiClient
 					{
 						// Device code not found - treat as expired
 						DeviceStatusResponse statusResponse = new DeviceStatusResponse();
-						statusResponse.status = "expired";
+						statusResponse.setStatus("expired");
 						future.complete(statusResponse);
 						return;
 					}
@@ -1302,69 +1228,6 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Data class for transaction request parameters (use Builder to construct)
-	 */
-	public static class TransactionRequest
-	{
-		public final int itemId;
-		public final String itemName;
-		public final boolean isBuy;
-		public final int quantity;
-		public final int pricePerItem;
-		public final Integer geSlot;
-		public final Integer recommendedSellPrice;
-		public final String rsn;
-		public final Integer totalQuantity;
-
-		private TransactionRequest(Builder builder)
-		{
-			this.itemId = builder.itemId;
-			this.itemName = builder.itemName;
-			this.isBuy = builder.isBuy;
-			this.quantity = builder.quantity;
-			this.pricePerItem = builder.pricePerItem;
-			this.geSlot = builder.geSlot;
-			this.recommendedSellPrice = builder.recommendedSellPrice;
-			this.rsn = builder.rsn;
-			this.totalQuantity = builder.totalQuantity;
-		}
-
-		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
-		{
-			return new Builder(itemId, itemName, isBuy, quantity, pricePerItem);
-		}
-
-		public static class Builder
-		{
-			private final int itemId;
-			private final String itemName;
-			private final boolean isBuy;
-			private final int quantity;
-			private final int pricePerItem;
-			private Integer geSlot;
-			private Integer recommendedSellPrice;
-			private String rsn;
-			private Integer totalQuantity;
-
-			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
-			{
-				this.itemId = itemId;
-				this.itemName = itemName;
-				this.isBuy = isBuy;
-				this.quantity = quantity;
-				this.pricePerItem = pricePerItem;
-			}
-
-			public Builder geSlot(Integer geSlot) { this.geSlot = geSlot; return this; }
-			public Builder recommendedSellPrice(Integer price) { this.recommendedSellPrice = price; return this; }
-			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
-			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
-
-			public TransactionRequest build() { return new TransactionRequest(this); }
-		}
-	}
-
-	/**
 	 * Record a Grand Exchange transaction asynchronously
 	 */
 	public CompletableFuture<Void> recordTransactionAsync(TransactionRequest request)
@@ -1431,27 +1294,6 @@ public class FlipSmartApiClient
 			.build();
 		
 		return recordTransactionAsync(request);
-	}
-
-	/**
-	 * Single GE History row, used by recordHistoryBackfillBatchAsync.
-	 */
-	public static class HistoryBackfillEntry
-	{
-		public final int itemId;
-		public final String itemName;
-		public final boolean isBuy;
-		public final int quantity;
-		public final int pricePerItem;
-
-		public HistoryBackfillEntry(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
-		{
-			this.itemId = itemId;
-			this.itemName = itemName;
-			this.isBuy = isBuy;
-			this.quantity = quantity;
-			this.pricePerItem = pricePerItem;
-		}
 	}
 
 	/**
@@ -1762,16 +1604,6 @@ public class FlipSmartApiClient
 	}
 
 	/**
-	 * Response wrapper for dumps API
-	 */
-	public static class DumpsResponse
-	{
-		public DumpEvent[] dumps;
-		public int count;
-		public String sort_by;
-	}
-
-	/**
 	 * Fetch market dumps from the API asynchronously
 	 *
 	 * @param sortBy Sort order: "recency" or "profit"
@@ -1893,39 +1725,6 @@ public class FlipSmartApiClient
 	// ============================================================================
 
 	/**
-	 * Data class for bank snapshot item
-	 */
-	public static class BankItem
-	{
-		public final int itemId;
-		public final int quantity;
-		public final int valuePerItem;
-
-		public BankItem(int itemId, int quantity, int valuePerItem)
-		{
-			this.itemId = itemId;
-			this.quantity = quantity;
-			this.valuePerItem = valuePerItem;
-		}
-	}
-
-	/**
-	 * Data class for an inventory or gear item.
-	 * Backend prices these server-side, so no value_per_item is sent.
-	 */
-	public static class BankItemId
-	{
-		public final int itemId;
-		public final int quantity;
-
-		public BankItemId(int itemId, int quantity)
-		{
-			this.itemId = itemId;
-			this.quantity = quantity;
-		}
-	}
-
-	/**
 	 * Check if a bank snapshot can be taken (rate limit check)
 	 *
 	 * @param rsn RuneScape Name to check
@@ -2023,28 +1822,6 @@ public class FlipSmartApiClient
 	private final Map<Integer, WikiPrice> wikiPriceCache = new ConcurrentHashMap<>();
 	private final AtomicLong lastWikiPriceFetch = new AtomicLong(0);
 	private final AtomicBoolean wikiPriceFetchInProgress = new AtomicBoolean(false);
-
-	/**
-	 * Real-time price data from the wiki API
-	 */
-	public static class WikiPrice
-	{
-		public final int instaBuy;   // High price - what buyers pay to instant-buy
-		public final int instaSell;  // Low price - what sellers receive when instant-selling
-		public final long fetchedAt;
-
-		public WikiPrice(int instaBuy, int instaSell)
-		{
-			this.instaBuy = instaBuy;
-			this.instaSell = instaSell;
-			this.fetchedAt = System.currentTimeMillis();
-		}
-
-		public boolean isExpired()
-		{
-			return System.currentTimeMillis() - fetchedAt > WIKI_PRICE_CACHE_DURATION_MS;
-		}
-	}
 
 	/**
 	 * Get cached wiki price for an item. Returns null if not cached or expired.
@@ -2265,24 +2042,6 @@ public class FlipSmartApiClient
 	// =========================================================================
 	// Flip Adjustment API Methods
 	// =========================================================================
-
-	/**
-	 * Request parameters for the flip adjustment API.
-	 */
-	@lombok.Builder
-	public static class FlipAdjustmentRequest
-	{
-		final int itemId;
-		final boolean isBuyOffer;
-		final int offerPrice;
-		final int averageBuyPrice;
-		final int minutesSinceOffer;
-		final int adjustmentCount;
-		final int quantityFilled;
-		final int totalQuantity;
-		final String timeframe;
-		final String rsn;
-	}
 
 	/**
 	 * Get a flip adjustment recommendation from the backend.

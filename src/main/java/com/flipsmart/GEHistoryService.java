@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.HistoryBackfillEntry;
+import com.flipsmart.domain.offer.TrackedOffer;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -414,10 +416,10 @@ public class GEHistoryService
 		for (TrackedOffer o : session.getTrackedOffers().values()) nameByItem.put(o.getItemId(), o.getItemName());
 		for (TrackedOffer o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
 
-		List<FlipSmartApiClient.HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
+		List<HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
 		for (GEHistoryEntry e : entries)
 		{
-			batch.add(new FlipSmartApiClient.HistoryBackfillEntry(
+			batch.add(new HistoryBackfillEntry(
 				e.getItemId(), nameByItem.get(e.getItemId()),
 				e.isBuy(), e.getQuantity(), e.getPricePerItem()
 			));

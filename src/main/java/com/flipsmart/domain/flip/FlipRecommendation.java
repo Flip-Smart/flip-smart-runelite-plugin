@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.domain.flip;
 import com.flipsmart.util.GpUtils;
 
 import com.google.gson.annotations.SerializedName;

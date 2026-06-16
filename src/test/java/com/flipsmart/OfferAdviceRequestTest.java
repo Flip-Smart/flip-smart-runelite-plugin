@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.OfferAdviceRequest;
 
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;

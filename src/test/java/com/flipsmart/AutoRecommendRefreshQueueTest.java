@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.flip.FlipRecommendation;
 
 import java.util.Arrays;
 import java.util.Collections;

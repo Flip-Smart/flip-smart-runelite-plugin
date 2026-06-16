@@ -1,4 +1,9 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.domain.offer.OfferDisposition;
+import com.flipsmart.api.dto.OfferAdviceRequest;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -78,7 +83,7 @@ public class ActiveOfferAdvisorService
 
 	static OfferAdviceRequest buildSnapshot(
 		TrackedOffer offer,
-		FlipSmartApiClient.WikiPrice market,
+		WikiPrice market,
 		Integer userAvgBuyPrice,
 		Integer dailyVolume)
 	{

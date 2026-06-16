@@ -1,4 +1,8 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.OfferAction;
+import com.flipsmart.api.dto.OfferAdviceBatchResponse;
+import com.flipsmart.api.dto.OfferAdviceResult;
+import com.flipsmart.api.dto.OfferAdviceRequest;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;

@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.util.GeTax;
 
 import lombok.Data;

@@ -1,4 +1,4 @@
-package com.flipsmart;
+package com.flipsmart.api.dto;
 
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;

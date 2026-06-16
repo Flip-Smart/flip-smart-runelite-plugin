@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.ItemUtils;
 
 import net.runelite.api.Client;

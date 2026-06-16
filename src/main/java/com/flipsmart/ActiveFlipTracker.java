@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.flip.ActiveFlip;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;

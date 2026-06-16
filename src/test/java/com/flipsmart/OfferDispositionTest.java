@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.OfferAction;
+import com.flipsmart.domain.offer.OfferDisposition;
 
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;

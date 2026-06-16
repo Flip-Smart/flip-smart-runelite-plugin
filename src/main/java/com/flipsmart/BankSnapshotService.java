@@ -1,4 +1,7 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.BankItemId;
+import com.flipsmart.api.dto.BankItem;
+import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.ItemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -124,7 +127,7 @@ public class BankSnapshotService
 	{
 		try
 		{
-			List<FlipSmartApiClient.BankItem> items = collectTradeableBankItems();
+			List<BankItem> items = collectTradeableBankItems();
 
 			if (items == null || items.isEmpty())
 			{
@@ -132,8 +135,8 @@ public class BankSnapshotService
 				return;
 			}
 
-			List<FlipSmartApiClient.BankItemId> inventoryItems = collectInventoryItems();
-			List<FlipSmartApiClient.BankItemId> gearItems = collectGearItems();
+			List<BankItemId> inventoryItems = collectInventoryItems();
+			List<BankItemId> gearItems = collectGearItems();
 			long geOffersValue = calculateGEOffersValue();
 
 			log.debug("Capturing bank snapshot: {} bank items, {} inv items, {} gear items, ge={} for RSN {}",
@@ -193,7 +196,7 @@ public class BankSnapshotService
 	/**
 	 * Collect all tradeable items from the bank with their GE prices.
 	 */
-	private List<FlipSmartApiClient.BankItem> collectTradeableBankItems()
+	private List<BankItem> collectTradeableBankItems()
 	{
 		ItemContainer bank = client.getItemContainer(InventoryID.BANK);
 		if (bank == null)
@@ -209,11 +212,11 @@ public class BankSnapshotService
 			return null;
 		}
 
-		List<FlipSmartApiClient.BankItem> items = new ArrayList<>();
+		List<BankItem> items = new ArrayList<>();
 
 		for (Item item : bankItems)
 		{
-			FlipSmartApiClient.BankItem bankItem = toTradeableBankItem(item);
+			BankItem bankItem = toTradeableBankItem(item);
 			if (bankItem != null)
 			{
 				items.add(bankItem);
@@ -231,7 +234,7 @@ public class BankSnapshotService
 	/**
 	 * Convert a bank item to a BankItem if it's tradeable and has a price, or if it's coins.
 	 */
-	private FlipSmartApiClient.BankItem toTradeableBankItem(Item item)
+	private BankItem toTradeableBankItem(Item item)
 	{
 		int itemId = item.getId();
 		int quantity = item.getQuantity();
@@ -243,7 +246,7 @@ public class BankSnapshotService
 
 		if (itemId == COINS_ITEM_ID)
 		{
-			return new FlipSmartApiClient.BankItem(itemId, quantity, 1);
+			return new BankItem(itemId, quantity, 1);
 		}
 
 		if (!ItemUtils.isTradeable(itemManager, itemId))
@@ -257,7 +260,7 @@ public class BankSnapshotService
 			return null;
 		}
 
-		return new FlipSmartApiClient.BankItem(itemId, quantity, gePrice);
+		return new BankItem(itemId, quantity, gePrice);
 	}
 
 	/**
@@ -265,7 +268,7 @@ public class BankSnapshotService
 	 * The backend prices these server-side, so no GE price is computed here.
 	 * Coins (item_id 995) are included; backend prices coins as 1 GP each.
 	 */
-	private List<FlipSmartApiClient.BankItemId> collectInventoryItems()
+	private List<BankItemId> collectInventoryItems()
 	{
 		ItemContainer inventory = client.getItemContainer(InventoryID.INVENTORY);
 		if (inventory == null)
@@ -279,7 +282,7 @@ public class BankSnapshotService
 	 * Collect tradeable equipped gear items from the EQUIPMENT container.
 	 * The backend prices these server-side.
 	 */
-	private List<FlipSmartApiClient.BankItemId> collectGearItems()
+	private List<BankItemId> collectGearItems()
 	{
 		ItemContainer equipment = client.getItemContainer(InventoryID.EQUIPMENT);
 		if (equipment == null)
@@ -293,9 +296,9 @@ public class BankSnapshotService
 	 * Filter an item array to tradeable items (or coins) and return as a list
 	 * of BankItemId records (item_id + quantity, no client-side price).
 	 */
-	private List<FlipSmartApiClient.BankItemId> collectItemIds(Item[] items)
+	private List<BankItemId> collectItemIds(Item[] items)
 	{
-		List<FlipSmartApiClient.BankItemId> out = new ArrayList<>();
+		List<BankItemId> out = new ArrayList<>();
 		if (items == null)
 		{
 			return out;
@@ -310,7 +313,7 @@ public class BankSnapshotService
 			}
 			if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
 			{
-				out.add(new FlipSmartApiClient.BankItemId(itemId, quantity));
+				out.add(new BankItemId(itemId, quantity));
 			}
 		}
 		return out;
