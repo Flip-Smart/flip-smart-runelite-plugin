@@ -1334,12 +1334,6 @@ public class AutoRecommendService
 	 * Called on each 2-minute refresh cycle to catch offers that were
 	 * missed (e.g., placed before a plugin rebuild or not present at login).
 	 */
-	private static long effectiveLastActivity(OfferRecord offer)
-	{
-		long last = offer.getLastActivityAtMillis();
-		return last > 0 ? last : offer.getCreatedAtMillis();
-	}
-
 	public synchronized void ensureAllOffersHaveTimers()
 	{
 		if (!active)
@@ -1368,7 +1362,7 @@ public class AutoRecommendService
 
 	private void scheduleMissingBuyTimer(OfferRecord offer, long now)
 	{
-		long offerAgeMs = now - effectiveLastActivity(offer);
+		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		adjustments.putBuyDeadline(offer.getItemId(), deadline);
@@ -1379,7 +1373,7 @@ public class AutoRecommendService
 	private void scheduleMissingSellTimer(OfferRecord offer, long now)
 	{
 		Integer buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
-		long offerAgeMs = now - effectiveLastActivity(offer);
+		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
 			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 		SellAdjustmentState state = new SellAdjustmentState(

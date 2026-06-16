@@ -286,15 +286,9 @@ public class ManualAdjustmentTracker
 		return offer == null || offer.getState() == OfferState.FILLED;
 	}
 
-	private long effectiveLastActivity(OfferRecord offer)
-	{
-		long last = offer.getLastActivityAtMillis();
-		return last > 0 ? last : offer.getCreatedAtMillis();
-	}
-
 	private void processExpiredTimer(OfferAdjustmentState state, OfferRecord offer)
 	{
-		long minutesSinceOffer = (System.currentTimeMillis() - effectiveLastActivity(offer)) / 60000;
+		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
 
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;

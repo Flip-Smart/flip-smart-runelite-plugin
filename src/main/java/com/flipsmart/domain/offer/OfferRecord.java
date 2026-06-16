@@ -79,4 +79,10 @@ public final class OfferRecord
         return new OfferRecord(offerId, slot, itemId, itemName, buy, totalQuantity, price,
             filledQuantity, spent, state, createdAtMillis, completedAtMillis, lastActivityAtMillis, newStage);
     }
+
+    /** Last activity time, falling back to creation time for records persisted before the field existed. */
+    public long getEffectiveLastActivityAtMillis()
+    {
+        return lastActivityAtMillis > 0 ? lastActivityAtMillis : createdAtMillis;
+    }
 }

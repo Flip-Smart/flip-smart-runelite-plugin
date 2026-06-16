@@ -291,7 +291,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		// Draw timer in top-right corner — uses locally persisted timestamps
 		// that survive plugin restarts via OfflineSyncService
-		long effectiveLastActivity = trackedOffer == null ? 0L : effectiveLastActivityMillis(trackedOffer);
+		long effectiveLastActivity = trackedOffer == null ? 0L : trackedOffer.getEffectiveLastActivityAtMillis();
 		if (config.showOfferTimers() && trackedOffer != null && effectiveLastActivity > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
@@ -326,14 +326,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 			graphics.setFont(originalFont);
 		}
-	}
-
-	// Falls back to creation time for records persisted before lastActivity was tracked.
-	private static long effectiveLastActivityMillis(OfferRecord record)
-	{
-		return record.getLastActivityAtMillis() > 0
-			? record.getLastActivityAtMillis()
-			: record.getCreatedAtMillis();
 	}
 
 	/**

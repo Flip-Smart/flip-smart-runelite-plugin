@@ -539,7 +539,7 @@ public class FlipSmartPlugin extends Plugin
 					offer.getItemId(),
 					offer.getItemName(),
 					offer.getTotalQuantity(),
-					offer.getFilledQuantity(), // How many filled so far
+					offer.getFilledQuantity(),
 					offer.getPrice(),
 					recommendedSellPrice,
 					offer.getSlot()
