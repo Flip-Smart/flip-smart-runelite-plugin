@@ -2,6 +2,7 @@ package com.flipsmart.trading;
 
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.OfferTransition;
 
 import java.util.ArrayList;
@@ -98,5 +99,58 @@ public final class OfferStore
     public synchronized List<OfferRecord> allRecords()
     {
         return Collections.unmodifiableList(new ArrayList<>(byOfferId.values()));
+    }
+
+    /**
+     * A sell offer for {@code itemId} is currently live (occupies a GE slot).
+     * Terminal records (collected / cancelled-empty) are ignored so a finished
+     * lifecycle never reports as an active slot.
+     */
+    public synchronized boolean hasActiveSellOfferForItem(int itemId)
+    {
+        for (OfferRecord r : byOfferId.values())
+        {
+            if (r.getItemId() == itemId && !r.isBuy() && !r.getState().isTerminal())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * A buy offer for {@code itemId} is live — either still filling or filled but
+     * not yet collected. Mirrors the union of the session's in-flight and
+     * uncollected buy predicates: any non-terminal buy record qualifies, since a
+     * collected buy is terminal and a freshly-collected slot is freed.
+     */
+    public synchronized boolean hasLiveBuyOfferForItem(int itemId)
+    {
+        for (OfferRecord r : byOfferId.values())
+        {
+            if (r.getItemId() == itemId && r.isBuy() && !r.getState().isTerminal())
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Records that are fully filled but not yet collected (state FILLED). These
+     * are the offers awaiting a collect action in the GE. Cancelled-partial
+     * offers are excluded — they were never "completed" in the BOUGHT/SOLD sense.
+     */
+    public synchronized List<OfferRecord> completedAwaitingCollection()
+    {
+        List<OfferRecord> out = new ArrayList<>();
+        for (OfferRecord r : byOfferId.values())
+        {
+            if (r.getState() == OfferState.FILLED)
+            {
+                out.add(r);
+            }
+        }
+        return Collections.unmodifiableList(out);
     }
 }

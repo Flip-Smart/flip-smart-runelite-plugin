@@ -606,7 +606,7 @@ public class FlipSmartPlugin extends Plugin
 
 		// Wire service callbacks and initialize auto-recommend
 		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker);
-		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay);
+		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,

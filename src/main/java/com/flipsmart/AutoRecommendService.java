@@ -2,12 +2,14 @@ package com.flipsmart;
 import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.recommend.AdjustmentService;
 import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
 import com.flipsmart.recommend.RecommendationQueue;
 import com.flipsmart.recommend.StaleOfferQueue;
+import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
 
 import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
@@ -52,6 +54,7 @@ public class AutoRecommendService
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
+	private final OfferStore offerStore;
 
 	// Buy queue + cursor + item names + offer-screen lock + last-refresh timestamp.
 	private final RecommendationQueue queue = new RecommendationQueue();
@@ -115,10 +118,11 @@ public class AutoRecommendService
 		Map<Integer, Integer> buyPrices;
 	}
 
-	public AutoRecommendService(FlipSmartConfig config, FlipSmartPlugin plugin)
+	public AutoRecommendService(FlipSmartConfig config, FlipSmartPlugin plugin, OfferStore offerStore)
 	{
 		this.config = config;
 		this.plugin = plugin;
+		this.offerStore = offerStore;
 	}
 
 	public void setOnFocusChanged(Consumer<FocusedFlip> callback)
@@ -405,7 +409,7 @@ public class AutoRecommendService
 		}
 
 		// Don't re-show sell overlay if this item already has an active sell order
-		if (session.hasActiveSellSlotForItem(itemId))
+		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
 			return SellFocusResult.ALREADY_SELLING;
@@ -715,8 +719,7 @@ public class AutoRecommendService
 		// completed slot sits uncollected — and may even recommend a flip for
 		// an item the user has already sold, because the slot has not been
 		// freed.
-		PlayerSession session = plugin.getSession();
-		if (session != null && !session.getCompletedOffers().isEmpty())
+		if (!offerStore.completedAwaitingCollection().isEmpty())
 		{
 			promptCollection();
 			return;
@@ -2137,12 +2140,12 @@ public class AutoRecommendService
 
 		for (int itemId : session.getCollectedItemIds())
 		{
-			if (session.hasActiveSellSlotForItem(itemId))
+			if (offerStore.hasActiveSellOfferForItem(itemId))
 			{
 				continue;
 			}
 
-			int result = evaluateCollectedItem(itemId, session, staleItems);
+			int result = evaluateCollectedItem(itemId, staleItems);
 			if (result >= 0)
 			{
 				return result;
@@ -2164,14 +2167,13 @@ public class AutoRecommendService
 	 * to promptCollection. Anything else is stale — collectedQuantity alone does not
 	 * keep an entry alive (that fallback was the root cause of stuck sell prompts).
 	 */
-	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
+	private int evaluateCollectedItem(int itemId, List<Integer> staleItems)
 	{
 		if (isItemInInventory(itemId))
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
-		if (session.hasInFlightBuyOfferForItem(itemId)
-			|| session.hasUncollectedBuyOfferForItem(itemId))
+		if (offerStore.hasLiveBuyOfferForItem(itemId))
 		{
 			return -1;
 		}
@@ -2281,10 +2283,10 @@ public class AutoRecommendService
 		// Clear the buy overlay so it doesn't show a buy instruction when slots are full
 		invokeFocusCallback(null);
 
-		List<TrackedOffer> completed = plugin.getSession().getCompletedOffers();
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
 		if (!completed.isEmpty() && plugin.hasCollectableGEOffers())
 		{
-			TrackedOffer first = completed.get(0);
+			OfferRecord first = completed.get(0);
 			if (first.isBuy())
 			{
 				updateStatus("Auto: Collect " + first.getItemName() + " from GE");

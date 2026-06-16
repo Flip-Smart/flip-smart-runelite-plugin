@@ -10,6 +10,7 @@ import org.junit.Test;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -85,6 +86,74 @@ public class OfferStoreTest
 
         assertEquals("previously-returned snapshot is immutable", before, held.size());
         assertTrue(store.allRecords().size() > before);
+    }
+
+    @Test
+    public void hasActiveSellOfferForItem_trueForLiveSell_falseAfterCollect()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.SELLING, 1234, 0, 10), NOW);
+        assertTrue(store.hasActiveSellOfferForItem(1234));
+
+        store.apply(sig(0, GrandExchangeOfferState.SOLD, 1234, 10, 10), NOW);
+        assertTrue("FILLED sell still occupies the slot", store.hasActiveSellOfferForItem(1234));
+
+        store.apply(sig(0, GrandExchangeOfferState.EMPTY, 1234, 10, 10), NOW); // collected
+        assertFalse("collected sell is terminal", store.hasActiveSellOfferForItem(1234));
+    }
+
+    @Test
+    public void hasActiveSellOfferForItem_ignoresBuyOffers()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        assertFalse(store.hasActiveSellOfferForItem(1234));
+    }
+
+    @Test
+    public void hasLiveBuyOfferForItem_coversInFlightAndUncollected()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        assertTrue("in-flight buy", store.hasLiveBuyOfferForItem(1234));
+
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 10, 10), NOW);
+        assertTrue("filled but uncollected buy", store.hasLiveBuyOfferForItem(1234));
+
+        store.apply(sig(0, GrandExchangeOfferState.EMPTY, 1234, 10, 10), NOW); // collected
+        assertFalse("collected buy is terminal", store.hasLiveBuyOfferForItem(1234));
+    }
+
+    @Test
+    public void hasLiveBuyOfferForItem_ignoresSellOffers()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.SELLING, 1234, 0, 10), NOW);
+        assertFalse(store.hasLiveBuyOfferForItem(1234));
+    }
+
+    @Test
+    public void completedAwaitingCollection_listsFilledOnly()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW); // NEW
+        store.apply(sig(1, GrandExchangeOfferState.BOUGHT, 5678, 10, 10), NOW); // FILLED
+        assertEquals(1, store.completedAwaitingCollection().size());
+        assertEquals(5678, store.completedAwaitingCollection().get(0).getItemId());
+
+        store.apply(sig(1, GrandExchangeOfferState.EMPTY, 5678, 10, 10), NOW); // collected
+        assertTrue("collected offer drops out of awaiting-collection",
+            store.completedAwaitingCollection().isEmpty());
+    }
+
+    @Test
+    public void completedAwaitingCollection_excludesCancelledPartial()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 3, 10), NOW); // PARTIAL_FILL
+        store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 1234, 3, 10), NOW); // CANCELLED_PARTIAL
+        assertTrue("cancelled-partial is not a completed BOUGHT/SOLD offer",
+            store.completedAwaitingCollection().isEmpty());
     }
 
     @Test

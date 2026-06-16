@@ -14,6 +14,7 @@ import com.flipsmart.ManualAdjustmentTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
 import com.flipsmart.GrandExchangeTracker;
+import com.flipsmart.trading.OfferStore;
 
 import javax.swing.SwingUtilities;
 
@@ -47,9 +48,9 @@ public class ServiceWiring
 	 * @return the constructed AutoRecommendService
 	 */
 	public AutoRecommendService initializeAutoRecommendService(FlipSmartPlugin plugin, FlipSmartConfig config,
-		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay)
+		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore)
 	{
-		AutoRecommendService autoRecommendService = new AutoRecommendService(config, plugin);
+		AutoRecommendService autoRecommendService = new AutoRecommendService(config, plugin, offerStore);
 		autoRecommendService.setOnFocusChanged(plugin::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
