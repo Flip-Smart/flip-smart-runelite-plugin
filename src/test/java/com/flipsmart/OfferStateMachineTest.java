@@ -137,4 +137,31 @@ public class OfferStateMachineTest
 
         assertEquals(OfferTransition.Kind.REJECTED, t.kind);
     }
+
+    @Test
+    public void instantFillOnPlacement_fromNull_isCompleted()
+    {
+        // OSRS can fill an offer the instant it is placed (large margin) — the very first
+        // event we see is BOUGHT with no prior record. It must mint + complete in one step.
+        OfferTransition t = OfferStateMachine.decide(null, buy(GrandExchangeOfferState.BOUGHT, 10, 10), ID, NOW);
+
+        assertEquals(OfferTransition.Kind.COMPLETED, t.kind);
+        assertEquals(OfferState.FILLED, t.record.getState());
+        assertEquals(ID, t.record.getOfferId());
+        assertEquals(10, t.record.getFilledQuantity());
+        assertEquals(10, t.newlyFilledQuantity);
+    }
+
+    @Test
+    public void emptyOnNewOffer_withNoFills_isRejected()
+    {
+        // A slot cleared before any fill (place-then-instant-cancel-collect in one tick)
+        // is a bad/no-op signal, not a collection — must be rejected, state untouched.
+        OfferRecord placed = OfferRecord.newOffer(ID, 0, 1234, "Item", true, 10, 100, NOW);
+
+        OfferTransition t = OfferStateMachine.decide(placed, buy(GrandExchangeOfferState.EMPTY, 0, 10), ID, NOW);
+
+        assertEquals(OfferTransition.Kind.REJECTED, t.kind);
+        assertEquals(OfferState.NEW, t.record.getState());
+    }
 }
