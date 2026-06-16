@@ -1,5 +1,4 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.AuthResult;
 import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.CompletedFlip;
@@ -9,6 +8,10 @@ import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.domain.offer.PendingOrder;
+import com.flipsmart.recommend.SmartSellPricer;
+import com.flipsmart.ui.panel.CardWidgets;
+import com.flipsmart.ui.panel.LoginPanel;
+import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
@@ -26,16 +29,9 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class FlipFinderPanel extends PluginPanel
@@ -44,10 +40,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
-	private static final String CONFIG_KEY_EMAIL = "email";
-	private static final String CONFIG_KEY_PASSWORD = "password";  // Deprecated: kept for migration
-	private static final String CONFIG_KEY_REFRESH_TOKEN = "refreshToken";
-	
+
 	// Constants for duplicated literals
 	private static final String FONT_ARIAL = "Arial";
 	private static final String ERROR_PREFIX = "Error: ";
@@ -55,16 +48,8 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String FORMAT_SELL = "Sell: %s";
 	private static final String FORMAT_ROI = "ROI: %.1f%%";
 	private static final String FORMAT_BUY_SELL = "Buy: %s | Sell: %s";
-	private static final String FORMAT_PROFIT_COST = "Profit: %s | Cost: %s";
-	private static final String FORMAT_MARGIN_ROI = "Margin: %s (%.1f%% ROI)";
-	private static final String FORMAT_MARGIN_ROI_LOSS = "Margin: %s (%.1f%% ROI) - Loss";
-	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
-	private static final String FORMAT_VOLUME = "Volume: %s/day";
-	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
 	private static final String ERROR_DIALOG_TITLE = "Error";
-	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
-	private static final String VOLUME_NA = "Volume: N/A";
 	private static final String RISK_NA = "Risk: N/A";
 	private static final String MSG_LOGIN_TO_RUNESCAPE = "Log in to RuneScape";
 	private static final String MSG_LOGIN_INSTRUCTION = "<html><center>Log in to the game to get<br>flip suggestions and track your flips</center></html>";
@@ -117,15 +102,6 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Font FONT_BOLD_13 = new Font(FONT_ARIAL, Font.BOLD, 13);
 	private static final Font FONT_BOLD_16 = new Font(FONT_ARIAL, Font.BOLD, 16);
 	
-	// Time-based sell price thresholds (in minutes)
-	// High volume items (>500k daily trades): switch to loss-minimizing after 10 min
-	private static final int HIGH_VOLUME_THRESHOLD = 500_000;
-	private static final int HIGH_VOLUME_TIME_MINUTES = 10;
-	// Regular items: switch after 20 min
-	private static final int REGULAR_TIME_MINUTES = 20;
-	// High value items (>250M): give them 30 min before loss-minimizing
-	private static final int HIGH_VALUE_THRESHOLD = 250_000_000;
-	private static final int HIGH_VALUE_TIME_MINUTES = 30;
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
@@ -149,31 +125,16 @@ public class FlipFinderPanel extends PluginPanel
 	private JScrollPane activeFlipsScrollPane;
 	private JScrollPane completedFlipsScrollPane;
 
-	// Login panel components
-	private JPanel loginPanel;
+	// Login / auth subsystem (UI construction, credential + device-auth flow)
+	private transient LoginPanel loginPanel;
 	private JPanel mainPanel;
-	private JTextField emailField;
-	private JPasswordField passwordField;
-	private JLabel loginStatusLabel;
-	private JButton loginButton;
-	private JButton signupButton;
-	private JButton discordButton;
 
 	// Premium subscribe message (shown for non-premium users)
 	private JLabel subscribeLabel;
-	private boolean isAuthenticated = false;
-	
-	// Discord device auth polling
-	private ScheduledExecutorService deviceAuthScheduler;
-	private ScheduledFuture<?> deviceAuthPollTask;
-	private volatile String currentDeviceCode;
 
-	// Auth transition timer (tracked for cleanup)
-	private Timer authTransitionTimer;
-	
 	// Callback for when authentication completes (to sync RSN)
 	private transient Runnable onAuthSuccess;
-	
+
 	// Flip Assist focus tracking
 	private transient FocusedFlip currentFocus = null;
 	private transient JPanel currentFocusedPanel = null;
@@ -222,7 +183,7 @@ public class FlipFinderPanel extends PluginPanel
 				configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_STYLE, selectedStyle);
 			}
 			// Refresh recommendations when flip style changes
-			if (isAuthenticated)
+			if (apiClient.isAuthenticated())
 			{
 				refresh();
 			}
@@ -243,7 +204,7 @@ public class FlipFinderPanel extends PluginPanel
 				configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_TIMEFRAME, selectedTimeframe);
 			}
 			// Refresh recommendations when timeframe changes
-			if (isAuthenticated)
+			if (apiClient.isAuthenticated())
 			{
 				refresh();
 			}
@@ -252,172 +213,26 @@ public class FlipFinderPanel extends PluginPanel
 		setLayout(new BorderLayout());
 		setBackground(ColorScheme.DARK_GRAY_COLOR);
 
-		// Build both panels
-		buildLoginPanel();
+		// Build the login subsystem and the main panel
+		loginPanel = new LoginPanel(apiClient, config, configManager,
+			() -> { if (onAuthSuccess != null) onAuthSuccess.run(); },
+			this::showMainPanel);
 		buildMainPanel();
 
 		// Start with login panel, then check authentication
-		add(loginPanel, BorderLayout.CENTER);
+		add(loginPanel.getComponent(), BorderLayout.CENTER);
 
 		// Set up auth failure callback to redirect to login screen
 		apiClient.setOnAuthFailure(() -> SwingUtilities.invokeLater(() -> {
 			// Pre-fill email if available
-			String email = config.email();
-			if (email != null && !email.isEmpty())
-			{
-				emailField.setText(email);
-			}
-			loginStatusLabel.setText("Session expired. Please login again.");
-			loginStatusLabel.setForeground(new Color(255, 200, 100)); // Orange warning color
+			loginPanel.setEmailField(config.email());
+			loginPanel.setLoginStatusText("Session expired. Please login again.",
+				new Color(255, 200, 100)); // Orange warning color
 			showLoginPanel();
 		}));
 
-		// Persist refresh token whenever it changes (rotation, new login, etc.)
-		// This prevents token loss from mid-session rotations via the 401 retry path
-		apiClient.setOnRefreshTokenChanged(this::saveRefreshToken);
-
 		// Check if already authenticated and switch to main panel if so
-		checkAuthenticationAndShow();
-	}
-
-	/**
-	 * Build the login/signup panel
-	 */
-	private void buildLoginPanel()
-	{
-		loginPanel = new JPanel();
-		loginPanel.setLayout(new BorderLayout());
-		loginPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		// Center content panel
-		JPanel contentPanel = new JPanel();
-		contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
-		contentPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		contentPanel.setBorder(new EmptyBorder(40, 20, 40, 20));
-
-		// Title
-		JLabel titleLabel = new JLabel("FlipSmart");
-		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 24));
-		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-		// Subtitle
-		JLabel subtitleLabel = new JLabel("Sign in to start flipping");
-		subtitleLabel.setForeground(Color.LIGHT_GRAY);
-		subtitleLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
-		subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-		// Email field
-		JLabel emailLabel = new JLabel("Email");
-		emailLabel.setForeground(Color.LIGHT_GRAY);
-		emailLabel.setFont(FONT_PLAIN_12);
-		emailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-		emailField = new JTextField(20);
-		emailField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		emailField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		emailField.setForeground(Color.WHITE);
-		emailField.setCaretColor(Color.WHITE);
-		emailField.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(5, 10, 5, 10)
-		));
-
-		// Password field
-		JLabel passwordLabel = new JLabel("Password");
-		passwordLabel.setForeground(Color.LIGHT_GRAY);
-		passwordLabel.setFont(FONT_PLAIN_12);
-		passwordLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-		passwordField = new JPasswordField(20);
-		passwordField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		passwordField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		passwordField.setForeground(Color.WHITE);
-		passwordField.setCaretColor(Color.WHITE);
-		passwordField.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(5, 10, 5, 10)
-		));
-
-		// Status label for messages
-		loginStatusLabel = new JLabel(" ");
-		loginStatusLabel.setFont(FONT_PLAIN_12);
-		loginStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-
-		// Buttons panel for Login/Sign Up
-		JPanel buttonsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
-		buttonsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		buttonsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
-
-		// Sign Up button
-		signupButton = new JButton("Sign Up");
-		signupButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		signupButton.setForeground(Color.WHITE);
-		signupButton.setFocusPainted(false);
-		signupButton.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.BRAND_ORANGE),
-			BorderFactory.createEmptyBorder(8, 15, 8, 15)
-		));
-		signupButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		signupButton.addActionListener(e -> handleSignup());
-
-		// Login button
-		loginButton = new JButton("Login");
-		loginButton.setBackground(ColorScheme.BRAND_ORANGE);
-		loginButton.setForeground(Color.WHITE);
-		loginButton.setFocusPainted(false);
-		loginButton.setBorder(BorderFactory.createEmptyBorder(8, 15, 8, 15));
-		loginButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		loginButton.addActionListener(e -> handleLogin());
-
-		buttonsPanel.add(signupButton);
-		buttonsPanel.add(loginButton);
-		
-		// Divider
-		JPanel dividerPanel = new JPanel(new BorderLayout());
-		dividerPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		dividerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
-		
-		JLabel orLabel = new JLabel("OR", SwingConstants.CENTER);
-		orLabel.setForeground(Color.GRAY);
-		orLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
-		dividerPanel.add(orLabel, BorderLayout.CENTER);
-		
-		// Discord login button (with Discord purple color)
-		discordButton = new JButton("Login with Discord");
-		discordButton.setBackground(new Color(88, 101, 242)); // Discord blurple
-		discordButton.setForeground(Color.WHITE);
-		discordButton.setFocusPainted(false);
-		discordButton.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
-		discordButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		discordButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
-		discordButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-		discordButton.addActionListener(e -> handleDiscordLogin());
-
-		// Add components with spacing
-		contentPanel.add(titleLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-		contentPanel.add(subtitleLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 30)));
-		contentPanel.add(emailLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-		contentPanel.add(emailField);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(passwordLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-		contentPanel.add(passwordField);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-		contentPanel.add(buttonsPanel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(dividerPanel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(discordButton);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(loginStatusLabel);
-
-		// Center the content vertically
-		loginPanel.add(contentPanel, BorderLayout.CENTER);
+		loginPanel.checkAuthenticationAndShow();
 	}
 
 	/**
@@ -749,7 +564,7 @@ public class FlipFinderPanel extends PluginPanel
 				statusLabel.setText(String.format("%d active %s | %s invested",
 					itemCount,
 					itemCount == 1 ? "flip" : "flips",
-					formatGP(invested)));
+					PanelFormat.formatGP(invested)));
 			}
 			else if (selectedIndex == 2)
 			{
@@ -763,7 +578,7 @@ public class FlipFinderPanel extends PluginPanel
 						{
 							statusLabel.setText(String.format("%d flips (30d) | %s profit",
 								stats.getTotalFlips(),
-								formatGP(stats.getTotalProfit())));
+								PanelFormat.formatGP(stats.getTotalProfit())));
 						}
 					});
 				});
@@ -846,397 +661,11 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Check if already authenticated and show appropriate panel.
-	 * Tries refresh token first (secure), falls back to legacy password if needed.
-	 */
-	private void checkAuthenticationAndShow()
-	{
-		// First, try to authenticate with refresh token (secure method)
-		String refreshToken = config.refreshToken();
-		String email = config.email();
-
-		if (refreshToken != null && !refreshToken.isEmpty())
-		{
-			// Pre-fill email field if available
-			if (email != null && !email.isEmpty())
-			{
-				emailField.setText(email);
-			}
-
-			// Load refresh token into API client and try to authenticate
-			apiClient.setRefreshToken(refreshToken);
-
-			apiClient.refreshAccessTokenAsync().thenAccept(success ->
-				SwingUtilities.invokeLater(() -> {
-					if (Boolean.TRUE.equals(success))
-					{
-						saveRefreshToken(apiClient.getRefreshToken());
-						onAuthenticationSuccess(null, false);
-					}
-					else
-					{
-						// Only clear persisted token if explicitly rejected (401)
-						if (apiClient.getRefreshToken() == null)
-						{
-							clearRefreshToken();
-						}
-						else
-						{
-							log.debug("Refresh token auth failed (transient) - keeping token for next attempt");
-						}
-						tryLegacyPasswordAuth();
-					}
-				})
-			).exceptionally(e -> {
-				log.debug("Refresh token auth failed: {}", e.getMessage());
-				SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
-				return null;
-			});
-		}
-		else
-		{
-			// No refresh token, try legacy password auth
-			tryLegacyPasswordAuth();
-		}
-	}
-
-	/**
-	 * Try to authenticate with legacy stored password (migration path).
-	 * After successful login, the password will be cleared and replaced with refresh token.
-	 */
-	private void tryLegacyPasswordAuth()
-	{
-		String email = config.email();
-		String password = config.password();
-
-		// Always pre-fill email if available (helps users who need to re-login)
-		if (email != null && !email.isEmpty())
-		{
-			emailField.setText(email);
-		}
-
-		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
-		{
-			// Try to authenticate in background
-			java.util.concurrent.CompletableFuture.runAsync(() -> {
-				AuthResult result = apiClient.login(email, password);
-
-				SwingUtilities.invokeLater(() -> {
-					if (result.success)
-					{
-						// Migration: save refresh token and clear password
-						saveRefreshToken(apiClient.getRefreshToken());
-						clearPassword();
-						onAuthenticationSuccess(null, false);
-					}
-					else
-					{
-						// Stay on login panel, show message
-						loginStatusLabel.setText("Please login to continue");
-						loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-					}
-				});
-			});
-		}
-		else
-		{
-			// No stored credentials - show helpful message to user
-			loginStatusLabel.setText("Please login to continue");
-			loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-		}
-	}
-
-	/**
-	 * Handle login button click
-	 */
-	private void handleLogin()
-	{
-		String email = emailField.getText().trim();
-		String password = new String(passwordField.getPassword());
-
-		if (email.isEmpty() || password.isEmpty())
-		{
-			showLoginStatus("Please enter email and password", false);
-			return;
-		}
-
-		setLoginButtonsEnabled(false);
-		showLoginStatus("Logging in...", true);
-
-		java.util.concurrent.CompletableFuture.runAsync(() -> {
-			AuthResult result = apiClient.login(email, password);
-
-			SwingUtilities.invokeLater(() -> {
-				setLoginButtonsEnabled(true);
-
-				if (result.success)
-				{
-					// Save email and refresh token (NOT password) for next session
-					saveEmail(email);
-					saveRefreshToken(apiClient.getRefreshToken());
-					// Clear any legacy password storage
-					clearPassword();
-					onAuthenticationSuccess(result.message, true);
-				}
-				else
-				{
-					showLoginStatus(result.message, false);
-				}
-			});
-		});
-	}
-
-	/**
-	 * Handle signup button click
-	 */
-	private void handleSignup()
-	{
-		String email = emailField.getText().trim();
-		String password = new String(passwordField.getPassword());
-
-		if (email.isEmpty() || password.isEmpty())
-		{
-			showLoginStatus("Please enter email and password", false);
-			return;
-		}
-
-		setLoginButtonsEnabled(false);
-		showLoginStatus("Creating account...", true);
-
-		java.util.concurrent.CompletableFuture.runAsync(() -> {
-			AuthResult result = apiClient.signup(email, password);
-
-			SwingUtilities.invokeLater(() -> {
-				setLoginButtonsEnabled(true);
-
-				if (result.success)
-				{
-					// Save email and refresh token (NOT password) for next session
-					saveEmail(email);
-					saveRefreshToken(apiClient.getRefreshToken());
-					// Clear any legacy password storage
-					clearPassword();
-					onAuthenticationSuccess(result.message, true);
-				}
-				else
-				{
-					showLoginStatus(result.message, false);
-				}
-			});
-		});
-	}
-
-	/**
-	 * Save email for next session
-	 */
-	private void saveEmail(String email)
-	{
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
-	}
-
-	/**
-	 * Save refresh token for persistent login (replaces password storage)
-	 */
-	private void saveRefreshToken(String refreshToken)
-	{
-		if (refreshToken != null && !refreshToken.isEmpty())
-		{
-			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_REFRESH_TOKEN, refreshToken);
-		}
-	}
-
-	/**
-	 * Clear refresh token (on logout or revocation)
-	 */
-	private void clearRefreshToken()
-	{
-		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_REFRESH_TOKEN);
-	}
-
-	/**
-	 * Clear legacy password storage (migration cleanup)
-	 */
-	private void clearPassword()
-	{
-		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD);
-	}
-
-	/**
-	 * @deprecated Use saveEmail() and saveRefreshToken() instead
-	 */
-	@Deprecated
-	private void saveCredentials(String email, String password)
-	{
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD, password);
-	}
-
-	/**
-	 * Show status message on login panel
-	 */
-	private void showLoginStatus(String message, boolean success)
-	{
-		loginStatusLabel.setText(message);
-		loginStatusLabel.setForeground(success ? COLOR_PROFIT_GREEN : COLOR_LOSS_RED);
-	}
-
-	/**
-	 * Enable/disable login buttons during authentication
-	 */
-	private void setLoginButtonsEnabled(boolean enabled)
-	{
-		loginButton.setEnabled(enabled);
-		signupButton.setEnabled(enabled);
-		discordButton.setEnabled(enabled);
-		emailField.setEnabled(enabled);
-		passwordField.setEnabled(enabled);
-	}
-	
-	/**
-	 * Handle Discord login button click
-	 */
-	private void handleDiscordLogin()
-	{
-		setLoginButtonsEnabled(false);
-		showLoginStatus("Starting Discord login...", true);
-		
-		// Start device auth flow
-		apiClient.startDeviceAuthAsync().thenAccept(response ->
-		{
-			if (response == null)
-			{
-				SwingUtilities.invokeLater(() ->
-				{
-					setLoginButtonsEnabled(true);
-					showLoginStatus("Failed to start Discord login", false);
-				});
-				return;
-			}
-			
-			// Store device code for polling
-			currentDeviceCode = response.getDeviceCode();
-			
-			// Open browser with verification URL using RuneLite's LinkBrowser
-            // which properly handles sandboxed environments (Flatpak, etc.)
-            LinkBrowser.browse(response.getVerificationUrl());
-
-        	SwingUtilities.invokeLater(() ->
-            	showLoginStatus("Complete login in your browser...", true));
-
-		   // Start polling for completion
-		   startDeviceAuthPolling(response.getDeviceCode(), response.getPollInterval(), response.getExpiresIn());
-		});
-	}
-	
-	/**
-	 * Start polling for device authorization completion
-	 */
-	private void startDeviceAuthPolling(String deviceCode, int pollIntervalSeconds, int expiresInSeconds)
-	{
-		// Cancel any existing poll task
-		stopDeviceAuthPolling();
-		
-		// Create scheduler if needed
-		if (deviceAuthScheduler == null || deviceAuthScheduler.isShutdown())
-		{
-			deviceAuthScheduler = Executors.newSingleThreadScheduledExecutor();
-		}
-		
-		// Calculate max poll attempts based on expiry time
-		int maxAttempts = expiresInSeconds / pollIntervalSeconds;
-		final int[] attempts = {0};
-		
-		deviceAuthPollTask = deviceAuthScheduler.scheduleAtFixedRate(() ->
-		{
-			attempts[0]++;
-			
-			// Check if we've exceeded max attempts
-			if (attempts[0] > maxAttempts)
-			{
-				stopDeviceAuthPolling();
-				SwingUtilities.invokeLater(() ->
-				{
-					setLoginButtonsEnabled(true);
-					showLoginStatus("Discord login timed out", false);
-				});
-				return;
-			}
-			
-			// Poll status
-			apiClient.pollDeviceStatusAsync(deviceCode).thenAccept(status ->
-			{
-				if (status == null)
-				{
-					return; // Network error, will retry
-				}
-				
-				switch (status.getStatus())
-				{
-					case "authorized":
-						// Success! Set the token and switch to main panel
-						stopDeviceAuthPolling();
-						apiClient.setAuthToken(status.getAccessToken());
-						// Save refresh token for session persistence across client restarts
-						if (status.getRefreshToken() != null)
-						{
-							apiClient.setRefreshToken(status.getRefreshToken());
-							saveRefreshToken(status.getRefreshToken());
-						}
-						SwingUtilities.invokeLater(() ->
-							onAuthenticationSuccess("Login successful!", true));
-						break;
-						
-					case "expired":
-						// Device code expired
-						stopDeviceAuthPolling();
-						SwingUtilities.invokeLater(() ->
-						{
-							setLoginButtonsEnabled(true);
-							showLoginStatus("Discord login expired. Try again.", false);
-						});
-						break;
-						
-					case "pending":
-						// Still waiting - continue polling
-						break;
-						
-					default:
-						log.warn("Unknown device status: {}", status.getStatus());
-						break;
-				}
-			});
-		}, pollIntervalSeconds, pollIntervalSeconds, TimeUnit.SECONDS);
-	}
-	
-	/**
-	 * Stop device auth polling
-	 */
-	private void stopDeviceAuthPolling()
-	{
-		if (deviceAuthPollTask != null)
-		{
-			deviceAuthPollTask.cancel(false);
-			deviceAuthPollTask = null;
-		}
-		currentDeviceCode = null;
-	}
-	
-	/**
 	 * Clean up resources when panel is destroyed
 	 */
 	public void shutdown()
 	{
-		stopDeviceAuthPolling();
-		if (deviceAuthScheduler != null)
-		{
-			deviceAuthScheduler.shutdownNow();
-			deviceAuthScheduler = null;
-		}
-		if (authTransitionTimer != null)
-		{
-			authTransitionTimer.stop();
-			authTransitionTimer = null;
-		}
+		loginPanel.shutdown();
 	}
 
 	/**
@@ -1244,12 +673,11 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showMainPanel()
 	{
-		isAuthenticated = true;
 		removeAll();
 		add(mainPanel, BorderLayout.CENTER);
 		revalidate();
 		repaint();
-		
+
 		// Load data
 		refresh();
 	}
@@ -1259,44 +687,12 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	public void showLoginPanel()
 	{
-		isAuthenticated = false;
-		// Stop any pending device auth polling
-		stopDeviceAuthPolling();
-		// Re-enable all login buttons
-		setLoginButtonsEnabled(true);
+		// Stop any pending device auth polling and re-enable login buttons
+		loginPanel.resetLoginView();
 		removeAll();
-		add(loginPanel, BorderLayout.CENTER);
+		add(loginPanel.getComponent(), BorderLayout.CENTER);
 		revalidate();
 		repaint();
-	}
-
-	/**
-	 * Handle successful authentication - notify plugin and transition to main panel.
-	 * @param successMessage message to display, or null to skip showing message
-	 * @param showDelay if true, show message briefly before transitioning
-	 */
-	private void onAuthenticationSuccess(String successMessage, boolean showDelay)
-	{
-		if (onAuthSuccess != null)
-		{
-			onAuthSuccess.run();
-		}
-		if (showDelay && successMessage != null)
-		{
-			showLoginStatus(successMessage, true);
-			Timer timer = new Timer(500, e ->
-			{
-				showMainPanel();
-				authTransitionTimer = null;
-			});
-			timer.setRepeats(false);
-			authTransitionTimer = timer;
-			timer.start();
-		}
-		else
-		{
-			showMainPanel();
-		}
 	}
 
 	/**
@@ -1308,14 +704,13 @@ public class FlipFinderPanel extends PluginPanel
 		apiClient.clearAuth();
 
 		// Clear stored refresh token
-		clearRefreshToken();
+		loginPanel.clearRefreshToken();
 
 		// Clear password field but keep email
-		passwordField.setText("");
+		loginPanel.clearPasswordField();
 
 		// Reset status
-		loginStatusLabel.setText("Logged out successfully");
-		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
+		loginPanel.setLoginStatusText("Logged out successfully", Color.LIGHT_GRAY);
 
 		// Show login panel
 		showLoginPanel();
@@ -1656,7 +1051,7 @@ public class FlipFinderPanel extends PluginPanel
 						statusLabel.setText(String.format("%d active %s | %s invested",
 							itemCount,
 							itemCount == 1 ? "flip" : "flips",
-							formatGP(invested)));
+							PanelFormat.formatGP(invested)));
 					}
 				}
 				else if (!pendingOrders.isEmpty())
@@ -1717,7 +1112,7 @@ public class FlipFinderPanel extends PluginPanel
 				{
 					statusLabel.setText(String.format("%d flips (30d) | %s profit",
 						stats.getTotalFlips(),
-						formatGP(stats.getTotalProfit())));
+						PanelFormat.formatGP(stats.getTotalProfit())));
 				}
 			});
 		});
@@ -1981,7 +1376,7 @@ public class FlipFinderPanel extends PluginPanel
 				flipStyleText,
 				count,
 				itemWord,
-				formatGP(response.getCashStack())));
+				PanelFormat.formatGP(response.getCashStack())));
 		}
 		else
 		{
@@ -2243,7 +1638,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createRecommendationPanel(FlipRecommendation rec)
 	{
-		JPanel panel = createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, Integer.MAX_VALUE, true);
+		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, Integer.MAX_VALUE, true);
 
 		// Item header with icon and name
 		HeaderPanels header = createItemHeaderPanels(rec.getItemId(), rec.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
@@ -2266,7 +1661,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createRecommendationDetailsPanel(FlipRecommendation rec)
 	{
-		JPanel detailsPanel = createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel detailsPanel = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
 
 		// Apply price offset to displayed values so they match Flip Assist
 		int priceOffset = config.priceOffset();
@@ -2279,7 +1674,7 @@ public class FlipFinderPanel extends PluginPanel
 		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
 
 		// Recommended Buy/Sell prices
-		JLabel priceLabel = new JLabel(formatBuySellText(displayBuyPrice, displaySellPrice));
+		JLabel priceLabel = new JLabel(PanelFormat.formatBuySellText(displayBuyPrice, displaySellPrice));
 		priceLabel.setForeground(Color.LIGHT_GRAY);
 		priceLabel.setFont(FONT_PLAIN_12);
 
@@ -2291,26 +1686,26 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Margin and ROI
 		JLabel marginLabel = new JLabel(String.format("Margin: %s (%s ROI)",
-			formatGP(displayMargin - geTax), GpUtils.formatROI(displayRoi)));
+			PanelFormat.formatGP(displayMargin - geTax), GpUtils.formatROI(displayRoi)));
 		marginLabel.setForeground(COLOR_PROFIT_GREEN);
 		marginLabel.setFont(FONT_PLAIN_12);
 
 		// Potential profit and total cost
-		JLabel profitLabel = new JLabel(formatProfitCostText(displayProfit, displayCost));
+		JLabel profitLabel = new JLabel(PanelFormat.formatProfitCostText(displayProfit, displayCost));
 		profitLabel.setForeground(new Color(255, 215, 0));
 		profitLabel.setFont(FONT_PLAIN_12);
 
 		// Volume info
-		JLabel volumeLabel = new JLabel(formatVolumeText(rec.getDailyVolume()));
+		JLabel volumeLabel = new JLabel(PanelFormat.formatVolumeText(rec.getDailyVolume()));
 		volumeLabel.setForeground(Color.CYAN);
 		volumeLabel.setFont(FONT_PLAIN_12);
 
 		// Risk info
-		JLabel riskLabel = new JLabel(formatRiskText(rec.getRiskScore(), rec.getRiskRating()));
-		riskLabel.setForeground(getRiskColor(rec.getRiskScore()));
+		JLabel riskLabel = new JLabel(PanelFormat.formatRiskText(rec.getRiskScore(), rec.getRiskRating()));
+		riskLabel.setForeground(PanelFormat.getRiskColor(rec.getRiskScore()));
 		riskLabel.setFont(FONT_PLAIN_12);
 
-		addLabelsWithSpacing(detailsPanel, priceLabel, quantityLabel, marginLabel,
+		CardWidgets.addLabelsWithSpacing(detailsPanel, priceLabel, quantityLabel, marginLabel,
 			profitLabel, volumeLabel, riskLabel);
 
 		return detailsPanel;
@@ -2427,45 +1822,6 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Get color based on risk score
-	 */
-	private Color getRiskColor(double score)
-	{
-		if (score <= 20)
-		{
-			return COLOR_PROFIT_GREEN; // Green
-		}
-		else if (score <= 40)
-		{
-			return new Color(150, 255, 100); // Yellow-green
-		}
-		else if (score <= 60)
-		{
-			return COLOR_YELLOW; // Yellow
-		}
-		else
-		{
-			return COLOR_LOSS_RED; // Red
-		}
-	}
-
-	/**
-	 * Format GP amount for display
-	 */
-	private String formatGP(int amount)
-	{
-		return GpUtils.formatGPSigned(amount);
-	}
-
-	/**
-	 * Format GP amount with commas for exact input (e.g., "1,234,567")
-	 */
-	private String formatGPExact(int amount)
-	{
-		return GpUtils.formatGPExact(amount);
-	}
-
-	/**
 	 * Holder for header panels (needed for hover effects)
 	 */
 	private static class HeaderPanels
@@ -2494,10 +1850,10 @@ public class FlipFinderPanel extends PluginPanel
 		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(itemId);
 		JLabel iconLabel = new JLabel();
-		setupIconLabel(iconLabel, itemImage);
+		CardWidgets.setupIconLabel(iconLabel, itemImage);
 
 		// Use HTML to allow text wrapping for long item names
-		String escapedName = escapeHtml(itemName);
+		String escapedName = PanelFormat.escapeHtml(itemName);
 		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(FONT_BOLD_13);
@@ -2528,54 +1884,12 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Escape HTML special characters in a string.
-	 * Used when embedding text in HTML labels.
-	 */
-	private String escapeHtml(String text)
-	{
-		if (text == null)
-		{
-			return "";
-		}
-		return text
-			.replace("&", "&amp;")
-			.replace("<", "&lt;")
-			.replace(">", "&gt;")
-			.replace("\"", "&quot;");
-	}
-	
-	/**
-	 * Draw a bar chart icon onto a 14x14 image with the given colors.
-	 */
-	private java.awt.image.BufferedImage drawChartIcon(Color barColor, Color baselineColor)
-	{
-		java.awt.image.BufferedImage icon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-		java.awt.Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(java.awt.AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(java.awt.AlphaComposite.SrcOver);
-
-		g.setColor(barColor);
-		g.fillRect(1, 9, 3, 4);   // Short bar
-		g.fillRect(5, 5, 3, 8);   // Medium bar
-		g.fillRect(9, 2, 3, 11);  // Tall bar
-
-		g.setColor(baselineColor);
-		g.drawLine(0, 13, 13, 13);
-
-		g.dispose();
-		return icon;
-	}
-
-	/**
 	 * Create a clickable chart icon label that opens the item's page on the website.
 	 * Uses a simple bar chart icon drawn with Java 2D graphics.
 	 */
 	private JLabel createChartIconLabel(int itemId)
 	{
-		java.awt.image.BufferedImage chartIcon = drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
+		java.awt.image.BufferedImage chartIcon = PanelFormat.drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
 
 		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
 		chartLabel.setToolTipText("View price history on FlipSmart website");
@@ -2597,7 +1911,7 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				chartLabel.setIcon(new ImageIcon(drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200))));
+				chartLabel.setIcon(new ImageIcon(PanelFormat.drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200))));
 			}
 
 			@Override
@@ -2611,34 +1925,12 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Draw a ban/circle-slash icon onto a 14x14 image with the given color.
-	 */
-	private java.awt.image.BufferedImage drawBlockIcon(Color color)
-	{
-		java.awt.image.BufferedImage icon = new java.awt.image.BufferedImage(14, 14, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-		java.awt.Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(java.awt.AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(java.awt.AlphaComposite.SrcOver);
-
-		g.setColor(color);
-		g.setStroke(new java.awt.BasicStroke(1.5f));
-		g.drawOval(1, 1, 11, 11);
-		g.drawLine(3, 11, 11, 3);
-
-		g.dispose();
-		return icon;
-	}
-
-	/**
 	 * Create a clickable block icon label that adds the item to a blocklist.
 	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
 	 */
 	private JLabel createBlockIconLabel(int itemId, String itemName)
 	{
-		java.awt.image.BufferedImage blockIcon = drawBlockIcon(new Color(180, 100, 100));
+		java.awt.image.BufferedImage blockIcon = PanelFormat.drawBlockIcon(new Color(180, 100, 100));
 
 		JLabel blockLabel = new JLabel(new ImageIcon(blockIcon));
 		blockLabel.setToolTipText("Block this item from recommendations");
@@ -2659,7 +1951,7 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				blockLabel.setIcon(new ImageIcon(drawBlockIcon(new Color(255, 100, 100))));
+				blockLabel.setIcon(new ImageIcon(PanelFormat.drawBlockIcon(new Color(255, 100, 100))));
 			}
 
 			@Override
@@ -2808,163 +2100,12 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Format liquidity text for display
-	 */
-	private String formatLiquidityText(Double score, String rating, Double volumePerHour)
-	{
-		if (score == null)
-		{
-			return LIQUIDITY_NA;
-		}
-		String displayRating = rating != null ? rating : UNKNOWN_RATING;
-		String volText = volumePerHour != null ? formatGP(volumePerHour.intValue()) + "/hr" : "";
-		return String.format(FORMAT_LIQUIDITY, score, displayRating, volText);
-	}
-
-	/**
-	 * Format daily volume text for display
-	 */
-	private String formatVolumeText(int dailyVolume)
-	{
-		if (dailyVolume <= 0)
-		{
-			return VOLUME_NA;
-		}
-		return String.format(FORMAT_VOLUME, formatGP(dailyVolume));
-	}
-
-	/**
-	 * Format risk text for display
-	 */
-	private String formatRiskText(Double score, String rating)
-	{
-		if (score == null)
-		{
-			return RISK_NA;
-		}
-		String displayRating = rating != null ? rating : UNKNOWN_RATING;
-		return String.format(FORMAT_RISK, score, displayRating);
-	}
-
-	/**
-	 * Format margin text with ROI for display
-	 */
-	private String formatMarginText(int marginPerItem, double roi, boolean isLoss)
-	{
-		String marginText = Math.abs(marginPerItem) >= 1000 
-			? formatGP(marginPerItem) 
-			: formatGPExact(marginPerItem);
-		
-		// Handle Infinity/NaN ROI (happens when cost is 0, e.g. pending orders with no fills)
-		if (Double.isInfinite(roi) || Double.isNaN(roi))
-		{
-			return String.format("Margin: %s (pending)", marginText);
-		}
-		
-		if (isLoss)
-		{
-			return String.format(FORMAT_MARGIN_ROI_LOSS, marginText, roi);
-		}
-		return String.format(FORMAT_MARGIN_ROI, marginText, roi);
-	}
-
-	/**
-	 * Format profit and cost text for display
-	 */
-	private String formatProfitCostText(int totalProfit, int totalCost)
-	{
-		String profitText = Math.abs(totalProfit) >= 1000 
-			? formatGP(totalProfit) 
-			: formatGPExact(totalProfit);
-		return String.format(FORMAT_PROFIT_COST, profitText, formatGP(totalCost));
-	}
-
-	/**
-	 * Format buy/sell prices text for display
-	 */
-	private String formatBuySellText(int buyPrice, Integer sellPrice)
-	{
-		String sellText = sellPrice != null && sellPrice > 0 
-			? formatGPExact(sellPrice) 
-			: "N/A";
-		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
-	}
-
-	/**
-	 * Create a styled JLabel with common settings for detail rows
-	 */
-	private JLabel createStyledLabel(String text, Color foreground)
-	{
-		JLabel label = new JLabel(text);
-		label.setForeground(foreground);
-		label.setFont(FONT_PLAIN_12);
-		label.setAlignmentX(Component.LEFT_ALIGNMENT);
-		return label;
-	}
-
-	/**
-	 * Create a details panel with BoxLayout for vertical rows
-	 */
-	private JPanel createDetailsPanel(Color bgColor)
-	{
-		JPanel detailsPanel = new JPanel();
-		detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
-		detailsPanel.setBackground(bgColor);
-		detailsPanel.setBorder(new EmptyBorder(5, 0, 0, 0));
-		return detailsPanel;
-	}
-
-	/**
-	 * Add labels to a details panel with standard 2px vertical spacing
-	 */
-	private void addLabelsWithSpacing(JPanel panel, JLabel... labels)
-	{
-		for (int i = 0; i < labels.length; i++)
-		{
-			panel.add(labels[i]);
-			if (i < labels.length - 1)
-			{
-				panel.add(Box.createRigidArea(new Dimension(0, 2)));
-			}
-		}
-	}
-
-	/**
-	 * Update background color for multiple panels (used in mouse listeners)
-	 */
-	private void setPanelBackgrounds(Color color, JPanel... panels)
-	{
-		for (JPanel panel : panels)
-		{
-			panel.setBackground(color);
-		}
-	}
-
-	/**
-	 * Create a base panel with common settings for flip/recommendation items
-	 */
-	private JPanel createBaseItemPanel(Color bgColor, int maxHeight, boolean handCursor)
-	{
-		JPanel panel = new JPanel();
-		panel.setLayout(new BorderLayout());
-		panel.setBackground(bgColor);
-		panel.setBorder(new EmptyBorder(8, 8, 8, 8));
-		panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-		panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, maxHeight));
-		if (handCursor)
-		{
-			panel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		}
-		return panel;
-	}
-
-	/**
 	 * Update liquidity label with data from analysis
 	 */
 	private void updateLiquidityLabel(JLabel label, FlipAnalysis.Liquidity liquidity)
 	{
 		label.setText(liquidity != null 
-			? formatLiquidityText(liquidity.getScore(), liquidity.getRating(), liquidity.getTotalVolumePerHour())
+			? PanelFormat.formatLiquidityText(liquidity.getScore(), liquidity.getRating(), liquidity.getTotalVolumePerHour())
 			: LIQUIDITY_NA);
 	}
 
@@ -2975,76 +2116,13 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		if (risk != null && risk.getScore() != null)
 		{
-			label.setText(formatRiskText(risk.getScore(), risk.getRating()));
-			label.setForeground(getRiskColor(risk.getScore()));
+			label.setText(PanelFormat.formatRiskText(risk.getScore(), risk.getRating()));
+			label.setForeground(PanelFormat.getRiskColor(risk.getScore()));
 		}
 		else
 		{
 			label.setText(RISK_NA);
 		}
-	}
-
-	/**
-	 * Setup icon label with async image loading
-	 */
-	private void setupIconLabel(JLabel iconLabel, AsyncBufferedImage itemImage)
-	{
-		if (itemImage != null)
-		{
-			iconLabel.setIcon(new ImageIcon(itemImage));
-			itemImage.onLoaded(() ->
-			{
-				iconLabel.setIcon(new ImageIcon(itemImage));
-				iconLabel.revalidate();
-				iconLabel.repaint();
-			});
-		}
-		else
-		{
-			iconLabel.setPreferredSize(new Dimension(32, 32));
-		}
-	}
-	
-	/**
-	 * Apply a price indicator background color to the active flip panel and its children.
-	 * Used to visually indicate whether the sell price is higher or lower than the original recommendation.
-	 */
-	private void applyPriceIndicatorBackground(JPanel panel, JPanel topPanel, JPanel namePanel, JPanel detailsPanel, Color bgColor)
-	{
-		panel.setBackground(bgColor);
-		topPanel.setBackground(bgColor);
-		namePanel.setBackground(bgColor);
-		detailsPanel.setBackground(bgColor);
-		// Store the base color as a client property so hover handlers can access it
-		panel.putClientProperty("baseBackgroundColor", bgColor);
-		panel.repaint();
-	}
-	
-	/**
-	 * Brighten a color for hover effects.
-	 * Increases RGB values by a fixed amount while keeping them within valid range.
-	 */
-	private Color brightenColor(Color color, int amount)
-	{
-		return new Color(
-			Math.min(255, color.getRed() + amount),
-			Math.min(255, color.getGreen() + amount),
-			Math.min(255, color.getBlue() + amount)
-		);
-	}
-	
-	/**
-	 * Get the base background color for a panel (either price indicator color or default).
-	 * Checks for stored client property first, falls back to default color.
-	 */
-	private Color getBaseBackgroundColor(JPanel panel, Color defaultColor)
-	{
-		Object stored = panel.getClientProperty("baseBackgroundColor");
-		if (stored instanceof Color)
-		{
-			return (Color) stored;
-		}
-		return defaultColor;
 	}
 
 	/**
@@ -3154,12 +2232,17 @@ public class FlipFinderPanel extends PluginPanel
 	private static String activeOfferVerb(OfferAction action, Integer netProfitEstimate)
 	{
 		boolean isLoss = netProfitEstimate != null && netProfitEstimate < 0;
+		boolean isProfit = netProfitEstimate != null && netProfitEstimate > 0;
 		switch (action)
 		{
 			case MOVE_PRICE_DOWN:
 				return "Move price down";
 			case EXIT_AT_BREAKEVEN:
-				return isLoss ? "Exit at a loss" : "Exit at breakeven";
+				if (isLoss)
+				{
+					return "Exit at a loss";
+				}
+				return isProfit ? "Take profit" : "Exit at breakeven";
 			case EXIT_AT_LOSS:
 				return "Exit at a loss";
 			default:
@@ -3256,8 +2339,8 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				
 				// Calculate smart sell price
-				Integer smartSellPrice = calculateSmartSellPrice(flip, currentMarketPrice);
-				int sellPrice = smartSellPrice != null ? smartSellPrice : calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
+				Integer smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
+				int sellPrice = smartSellPrice != null ? smartSellPrice : SmartSellPricer.calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
 				
 				// Cache this price for future use
 				displayedSellPrices.put(flip.getItemId(), sellPrice);
@@ -3479,7 +2562,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createActiveFlipPanel(ActiveFlip flip)
 	{
-		JPanel panel = createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 180, true);
+		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 180, true);
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
@@ -3487,34 +2570,34 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel namePanel = header.namePanel;
 
 		// Details section using BoxLayout for vertical rows
-		JPanel detailsPanel = createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel detailsPanel = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
 
 		// Row 1: Buy: X | Sell: Y (placeholders until data loads)
-		JLabel pricesLabel = createStyledLabel(
-			String.format("Buy: %s | Sell: ...", formatGPExact(flip.getAverageBuyPrice())), Color.WHITE);
+		JLabel pricesLabel = CardWidgets.createStyledLabel(
+			String.format("Buy: %s | Sell: ...", PanelFormat.formatGPExact(flip.getAverageBuyPrice())), Color.WHITE);
 
 		// Row 2: Qty: X (Limit: Y)
-		JLabel qtyLabel = createStyledLabel(
+		JLabel qtyLabel = CardWidgets.createStyledLabel(
 			String.format("Qty: %d (Limit: ...)", flip.getTotalQuantity()), COLOR_TEXT_GRAY);
 
 		// Row 3: Tax = Z
-		JLabel taxLabel = createStyledLabel("Tax = ...", Color.CYAN);
+		JLabel taxLabel = CardWidgets.createStyledLabel("Tax = ...", Color.CYAN);
 
 		// Row 4: Margin: X (Y% ROI)
-		JLabel marginLabel = createStyledLabel("Margin: ...", COLOR_YELLOW);
+		JLabel marginLabel = CardWidgets.createStyledLabel("Margin: ...", COLOR_YELLOW);
 
 		// Row 5: Profit: X | Cost: Y
-		JLabel profitCostLabel = createStyledLabel(
-			String.format("Profit: ... | Cost: %s", formatGP(flip.getTotalInvested())), COLOR_PROFIT_GREEN);
+		JLabel profitCostLabel = CardWidgets.createStyledLabel(
+			String.format("Profit: ... | Cost: %s", PanelFormat.formatGP(flip.getTotalInvested())), COLOR_PROFIT_GREEN);
 
 		// Row 6: Liquidity: X (Rating) | Y/hr
-		JLabel liquidityLabel = createStyledLabel("Liquidity: ...", Color.CYAN);
+		JLabel liquidityLabel = CardWidgets.createStyledLabel("Liquidity: ...", Color.CYAN);
 
 		// Row 7: Risk: X (Rating)
-		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
+		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
-		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel,
+		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel,
 			profitCostLabel, liquidityLabel, riskLabel);
 
 		if (offerDispositionLookup != null)
@@ -3530,7 +2613,7 @@ public class FlipFinderPanel extends PluginPanel
 				String verbLine = advice.getNewPrice() != null
 					? verb + ": " + String.format("%,d", advice.getNewPrice()) + "gp"
 					: verb;
-				JLabel verbLabel = createStyledLabel(verbLine, Color.ORANGE);
+				JLabel verbLabel = CardWidgets.createStyledLabel(verbLine, Color.ORANGE);
 				verbLabel.setToolTipText(advice.getReason());
 				detailsPanel.add(verbLabel);
 
@@ -3539,7 +2622,7 @@ public class FlipFinderPanel extends PluginPanel
 					int net = advice.getNetProfitEstimate();
 					String keyword = net < 0 ? "Loss" : (net > 0 ? "Profit" : "Breakeven");
 					Color netColor = net < 0 ? new Color(255, 100, 100) : new Color(80, 255, 120);
-					detailsPanel.add(createStyledLabel(keyword + ": " + formatSignedGp(net), netColor));
+					detailsPanel.add(CardWidgets.createStyledLabel(keyword + ": " + formatSignedGp(net), netColor));
 				}
 			}
 		}
@@ -3584,8 +2667,8 @@ public class FlipFinderPanel extends PluginPanel
 				Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
 				Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
 					? sessionPrice
-					: calculateSmartSellPrice(flip, currentMarketPrice);
-				boolean pastThreshold = shouldUseLossMinimizingPrice(flip, dailyVolume);
+					: SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
+				boolean pastThreshold = SmartSellPricer.shouldUseLossMinimizingPrice(flip, dailyVolume);
 
 				if (smartSellPrice != null && smartSellPrice > 0)
 				{
@@ -3607,7 +2690,7 @@ public class FlipFinderPanel extends PluginPanel
 						// Apply to panel and all child panels (not focused panel - that has its own style)
 						if (currentFocus == null || currentFocus.getItemId() != flip.getItemId())
 						{
-							applyPriceIndicatorBackground(panel, topPanel, namePanel, detailsPanel, priceIndicatorBg);
+							CardWidgets.applyPriceIndicatorBackground(panel, topPanel, namePanel, detailsPanel, priceIndicatorBg);
 						}
 					}
 					
@@ -3632,8 +2715,8 @@ public class FlipFinderPanel extends PluginPanel
 					// Row 1: Update Buy | Sell prices
 					String priceSuffix = pastThreshold ? "*" : "";
 					pricesLabel.setText(String.format("Buy: %s | Sell: %s%s", 
-						formatGPExact(flip.getAverageBuyPrice()),
-						formatGPExact(smartSellPrice),
+						PanelFormat.formatGPExact(flip.getAverageBuyPrice()),
+						PanelFormat.formatGPExact(smartSellPrice),
 						priceSuffix));
 
 					int geTax = GeTax.taxFor(flip.getItemId(), smartSellPrice);
@@ -3646,14 +2729,14 @@ public class FlipFinderPanel extends PluginPanel
 					// Row 2: Update Qty (Limit) | Tax
 					String limitText = buyLimit != null ? String.valueOf(buyLimit) : "?";
 					qtyLabel.setText(String.format("Qty: %d (Limit: %s)", flip.getTotalQuantity(), limitText));
-					taxLabel.setText(String.format("Tax = %s", formatGP(geTax * flip.getTotalQuantity())));
+					taxLabel.setText(String.format("Tax = %s", PanelFormat.formatGP(geTax * flip.getTotalQuantity())));
 					
 					// Row 3: Update Margin with ROI (show warning color if not profitable)
-					marginLabel.setText(formatMarginText(marginPerItem, roi, totalProfit <= 0));
+					marginLabel.setText(PanelFormat.formatMarginText(marginPerItem, roi, totalProfit <= 0));
 					marginLabel.setForeground(totalProfit <= 0 ? COLOR_LOSS_RED : COLOR_YELLOW);
 					
 					// Row 4: Update Profit | Cost - use cyan for higher sell, orange for lower
-					profitCostLabel.setText(formatProfitCostText(totalProfit, flip.getTotalInvested()));
+					profitCostLabel.setText(PanelFormat.formatProfitCostText(totalProfit, flip.getTotalInvested()));
 					if (totalProfit <= 0)
 					{
 						profitCostLabel.setForeground(COLOR_LOSS_RED);
@@ -3675,9 +2758,9 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				else
 				{
-					pricesLabel.setText(formatBuySellText(flip.getAverageBuyPrice(), null));
+					pricesLabel.setText(PanelFormat.formatBuySellText(flip.getAverageBuyPrice(), null));
 					marginLabel.setText("Margin: N/A");
-					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", formatGP(flip.getTotalInvested())));
+					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", PanelFormat.formatGP(flip.getTotalInvested())));
 				}
 				
 				// Row 5: Update Liquidity
@@ -3711,9 +2794,9 @@ public class FlipFinderPanel extends PluginPanel
 					|| !currentFocus.isSelling())
 				{
 					// Get the base color (may be price indicator color) and brighten it for hover
-					Color baseColor = getBaseBackgroundColor(panel, ColorScheme.DARKER_GRAY_COLOR);
-					Color hoverColor = brightenColor(baseColor, 15);
-					setPanelBackgrounds(hoverColor, panel, topPanel, namePanel, detailsPanel);
+					Color baseColor = PanelFormat.getBaseBackgroundColor(panel, ColorScheme.DARKER_GRAY_COLOR);
+					Color hoverColor = PanelFormat.brightenColor(baseColor, 15);
+					CardWidgets.setPanelBackgrounds(hoverColor, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 
@@ -3724,8 +2807,8 @@ public class FlipFinderPanel extends PluginPanel
 					|| !currentFocus.isSelling())
 				{
 					// Restore the base color (may be price indicator color)
-					Color baseColor = getBaseBackgroundColor(panel, ColorScheme.DARKER_GRAY_COLOR);
-					setPanelBackgrounds(baseColor, panel, topPanel, namePanel, detailsPanel);
+					Color baseColor = PanelFormat.getBaseBackgroundColor(panel, ColorScheme.DARKER_GRAY_COLOR);
+					CardWidgets.setPanelBackgrounds(baseColor, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 
@@ -3773,7 +2856,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JPanel createPendingOrderPanel(PendingOrder pending)
 	{
 		Color bgColor = new Color(55, 55, 65); // Slightly different color for pending
-		JPanel panel = createBaseItemPanel(bgColor, 180, false);
+		JPanel panel = CardWidgets.createBaseItemPanel(bgColor, 180, false);
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor);
@@ -3781,37 +2864,37 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel namePanel = header.namePanel;
 
 		// Details section using BoxLayout for vertical rows
-		JPanel detailsPanel = createDetailsPanel(bgColor);
+		JPanel detailsPanel = CardWidgets.createDetailsPanel(bgColor);
 
 		// Row 1: Buy: X | Sell: Y (with placeholders until data loads)
 		String sellText = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
-			? formatGPExact(pending.recommendedSellPrice) : "...";
-		JLabel pricesLabel = createStyledLabel(
-			String.format(FORMAT_BUY_SELL, formatGPExact(pending.pricePerItem), sellText), Color.WHITE);
+			? PanelFormat.formatGPExact(pending.recommendedSellPrice) : "...";
+		JLabel pricesLabel = CardWidgets.createStyledLabel(
+			String.format(FORMAT_BUY_SELL, PanelFormat.formatGPExact(pending.pricePerItem), sellText), Color.WHITE);
 
 		// Row 2: Qty: X/Y (Limit: Z)
-		JLabel qtyLabel = createStyledLabel(
+		JLabel qtyLabel = CardWidgets.createStyledLabel(
 			String.format("Qty: %d/%d (Limit: ...)", pending.quantityFilled, pending.quantity), COLOR_TEXT_GRAY);
 
 		// Row 3: Tax = W
-		JLabel taxLabel = createStyledLabel("Tax = ...", Color.CYAN);
+		JLabel taxLabel = CardWidgets.createStyledLabel("Tax = ...", Color.CYAN);
 
 		// Row 4: Margin: X (Y% ROI)
-		JLabel marginLabel = createStyledLabel("Margin: ...", COLOR_YELLOW);
+		JLabel marginLabel = CardWidgets.createStyledLabel("Margin: ...", COLOR_YELLOW);
 
 		// Row 5: Profit: X | Cost: Y
 		int potentialInvestment = pending.quantity * pending.pricePerItem;
-		JLabel profitCostLabel = createStyledLabel(
-			String.format("Profit: ... | Cost: %s", formatGP(potentialInvestment)), COLOR_PROFIT_GREEN);
+		JLabel profitCostLabel = CardWidgets.createStyledLabel(
+			String.format("Profit: ... | Cost: %s", PanelFormat.formatGP(potentialInvestment)), COLOR_PROFIT_GREEN);
 
 		// Row 6: Liquidity: X (Rating) | Y/hr
-		JLabel liquidityLabel = createStyledLabel("Liquidity: ...", Color.CYAN);
+		JLabel liquidityLabel = CardWidgets.createStyledLabel("Liquidity: ...", Color.CYAN);
 
 		// Row 7: Risk: X (Rating)
-		JLabel riskLabel = createStyledLabel("Risk: ...", COLOR_YELLOW);
+		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		// Add all rows with small spacing
-		addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
+		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
 			profitCostLabel, liquidityLabel, riskLabel);
 
 		panel.add(topPanel, BorderLayout.NORTH);
@@ -3846,7 +2929,7 @@ public class FlipFinderPanel extends PluginPanel
 				if (sellPrice != null && sellPrice > 0)
 				{
 					// Row 1: Update prices
-					pricesLabel.setText(formatBuySellText(pending.pricePerItem, sellPrice));
+					pricesLabel.setText(PanelFormat.formatBuySellText(pending.pricePerItem, sellPrice));
 
 					int geTax = GeTax.taxFor(pending.itemId, sellPrice);
 
@@ -3859,21 +2942,21 @@ public class FlipFinderPanel extends PluginPanel
 					String limitText = buyLimit != null ? String.valueOf(buyLimit) : "?";
 					qtyLabel.setText(String.format("Qty: %d/%d (Limit: %s)", 
 						pending.quantityFilled, pending.quantity, limitText));
-					taxLabel.setText(String.format("Tax = %s", formatGP(geTax * pending.quantity)));
+					taxLabel.setText(String.format("Tax = %s", PanelFormat.formatGP(geTax * pending.quantity)));
 					
 					// Row 3: Update Margin
-					marginLabel.setText(formatMarginText(marginPerItem, roi, totalProfit <= 0));
+					marginLabel.setText(PanelFormat.formatMarginText(marginPerItem, roi, totalProfit <= 0));
 					marginLabel.setForeground(totalProfit <= 0 ? COLOR_LOSS_RED : COLOR_YELLOW);
 					
 					// Row 4: Update Profit | Cost
-					profitCostLabel.setText(formatProfitCostText(totalProfit, potentialInvestment));
+					profitCostLabel.setText(PanelFormat.formatProfitCostText(totalProfit, potentialInvestment));
 					profitCostLabel.setForeground(totalProfit > 0 ? COLOR_PROFIT_GREEN : COLOR_LOSS_RED);
 				}
 				else
 				{
-					pricesLabel.setText(formatBuySellText(pending.pricePerItem, null));
+					pricesLabel.setText(PanelFormat.formatBuySellText(pending.pricePerItem, null));
 					marginLabel.setText("Margin: N/A");
-					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", formatGP(potentialInvestment)));
+					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", PanelFormat.formatGP(potentialInvestment)));
 				}
 				
 				// Row 5: Update Liquidity
@@ -3902,7 +2985,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (currentFocus == null || currentFocus.getItemId() != pending.itemId)
 				{
-					setPanelBackgrounds(new Color(65, 65, 75), panel, topPanel, namePanel, detailsPanel);
+					CardWidgets.setPanelBackgrounds(new Color(65, 65, 75), panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 			
@@ -3911,7 +2994,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (currentFocus == null || currentFocus.getItemId() != pending.itemId)
 				{
-					setPanelBackgrounds(bgColor, panel, topPanel, namePanel, detailsPanel);
+					CardWidgets.setPanelBackgrounds(bgColor, panel, topPanel, namePanel, detailsPanel);
 				}
 			}
 		});
@@ -3934,7 +3017,7 @@ public class FlipFinderPanel extends PluginPanel
 		Color backgroundColor = flip.isSuccessful() ? 
 			new Color(40, 60, 40) : // Dark green for profit
 			new Color(60, 40, 40);  // Dark red for loss
-		JPanel panel = createBaseItemPanel(backgroundColor, 110, false);
+		JPanel panel = CardWidgets.createBaseItemPanel(backgroundColor, 110, false);
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
@@ -3954,21 +3037,21 @@ public class FlipFinderPanel extends PluginPanel
 		qtyLabel.setForeground(COLOR_TEXT_GRAY);
 		qtyLabel.setFont(FONT_PLAIN_12);
 
-		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", formatGPExact(flip.getBuyPricePerItem())));
+		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", PanelFormat.formatGPExact(flip.getBuyPricePerItem())));
 		buyPriceLabel.setForeground(COLOR_BUY_RED);
 		buyPriceLabel.setFont(FONT_PLAIN_12);
 
 		// Row 2: Invested and Sell Price
-		JLabel investedLabel = new JLabel(String.format("Cost: %s", formatGP(flip.getBuyTotal())));
+		JLabel investedLabel = new JLabel(String.format("Cost: %s", PanelFormat.formatGP(flip.getBuyTotal())));
 		investedLabel.setForeground(COLOR_TEXT_GRAY);
 		investedLabel.setFont(FONT_PLAIN_12);
 
-		JLabel sellPriceLabel = new JLabel(String.format(FORMAT_SELL, formatGPExact(flip.getSellPricePerItem())));
+		JLabel sellPriceLabel = new JLabel(String.format(FORMAT_SELL, PanelFormat.formatGPExact(flip.getSellPricePerItem())));
 		sellPriceLabel.setForeground(COLOR_SELL_GREEN);
 		sellPriceLabel.setFont(FONT_PLAIN_12);
 
 		// Row 3: Net Profit and ROI
-		JLabel profitLabel = new JLabel(String.format("Profit: %s", formatGP(flip.getNetProfit())));
+		JLabel profitLabel = new JLabel(String.format("Profit: %s", PanelFormat.formatGP(flip.getNetProfit())));
 		Color profitColor = flip.isSuccessful() ? 
 			COLOR_PROFIT_GREEN : // Bright green
 			COLOR_LOSS_RED;  // Bright red
@@ -4023,7 +3106,7 @@ public class FlipFinderPanel extends PluginPanel
 					durationLabel.setFont(FONT_PLAIN_12);
 
 					// GE Tax
-					JLabel taxLabel = new JLabel(String.format("GE Tax: %s", formatGP(flip.getGeTax())));
+					JLabel taxLabel = new JLabel(String.format("GE Tax: %s", PanelFormat.formatGP(flip.getGeTax())));
 					taxLabel.setForeground(COLOR_TEXT_DIM_GRAY);
 					taxLabel.setFont(FONT_PLAIN_12);
 
@@ -4122,101 +3205,6 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		// Use invokeLater to restore after layout is complete
 		SwingUtilities.invokeLater(() -> scrollPane.getVerticalScrollBar().setValue(position));
-	}
-	
-	
-	/**
-	 * Calculate the sell price threshold time for an active flip.
-	 * Returns the number of minutes after which we should switch from 
-	 * profit-first to loss-minimizing strategy.
-	 * 
-	 * Rules:
-	 * - High volume items (>500k daily): 10 minutes
-	 * - High value items (>250M buy price): 30 minutes
-	 * - Regular items: 20 minutes
-	 */
-	private int getSellPriceThresholdMinutes(ActiveFlip flip, Integer dailyVolume)
-	{
-		// High value items get more time
-		if (flip.getAverageBuyPrice() >= HIGH_VALUE_THRESHOLD)
-		{
-			return HIGH_VALUE_TIME_MINUTES;
-		}
-		
-		// High volume items should sell quickly
-		if (dailyVolume != null && dailyVolume >= HIGH_VOLUME_THRESHOLD)
-		{
-			return HIGH_VOLUME_TIME_MINUTES;
-		}
-		
-		// Regular items
-		return REGULAR_TIME_MINUTES;
-	}
-	
-	/**
-	 * Check if an active flip has exceeded its time threshold and should
-	 * switch to loss-minimizing sell price.
-	 */
-	private boolean shouldUseLossMinimizingPrice(ActiveFlip flip, Integer dailyVolume)
-	{
-		String buyTimeStr = flip.getLastBuyTime();
-		if (buyTimeStr == null || buyTimeStr.isEmpty())
-		{
-			return false;
-		}
-		
-		try
-		{
-			Instant buyTime = Instant.parse(buyTimeStr);
-			Duration elapsed = Duration.between(buyTime, Instant.now());
-			int thresholdMinutes = getSellPriceThresholdMinutes(flip, dailyVolume);
-			return elapsed.toMinutes() >= thresholdMinutes;
-		}
-		catch (DateTimeParseException e)
-		{
-			log.debug("Failed to parse buy time: {}", buyTimeStr);
-			return false;
-		}
-	}
-	
-	/**
-	 * Calculate the minimum profitable sell price for an active flip.
-	 * This is the price that would result in zero profit after tax.
-	 * Formula: minSellPrice = buyPrice / (1 - taxRate)
-	 * Adding 1gp ensures a small profit.
-	 */
-	private int calculateMinProfitableSellPrice(int buyPrice)
-	{
-		// GE tax is 2%, so to break even: sellPrice * 0.98 = buyPrice
-		// sellPrice = buyPrice / 0.98
-		// Add 1gp to ensure profit
-		return (int) Math.ceil(buyPrice / 0.98) + 1;
-	}
-	
-	private Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice)
-	{
-		int buyPrice = flip.getAverageBuyPrice();
-		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
-
-		// Use recommended price if it's profitable
-		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
-		{
-			return flip.getRecommendedSellPrice();
-		}
-
-		// No recommended price or it's not profitable - use minimum profitable price
-		// but only if market price is higher (otherwise the flip was never good)
-		if (currentMarketPrice != null && currentMarketPrice >= minProfitablePrice)
-		{
-			return minProfitablePrice;
-		}
-
-		if (flip.getRecommendedSellPrice() != null)
-		{
-			return flip.getRecommendedSellPrice();
-		}
-
-		return minProfitablePrice;
 	}
 
 	/**
