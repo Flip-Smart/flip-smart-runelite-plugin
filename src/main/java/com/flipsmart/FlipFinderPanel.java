@@ -2232,12 +2232,17 @@ public class FlipFinderPanel extends PluginPanel
 	private static String activeOfferVerb(OfferAction action, Integer netProfitEstimate)
 	{
 		boolean isLoss = netProfitEstimate != null && netProfitEstimate < 0;
+		boolean isProfit = netProfitEstimate != null && netProfitEstimate > 0;
 		switch (action)
 		{
 			case MOVE_PRICE_DOWN:
 				return "Move price down";
 			case EXIT_AT_BREAKEVEN:
-				return isLoss ? "Exit at a loss" : "Exit at breakeven";
+				if (isLoss)
+				{
+					return "Exit at a loss";
+				}
+				return isProfit ? "Take profit" : "Exit at breakeven";
 			case EXIT_AT_LOSS:
 				return "Exit at a loss";
 			default:
