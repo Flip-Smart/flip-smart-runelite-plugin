@@ -867,7 +867,8 @@ public class GrandExchangeTracker
 			clearPendingSellFocus();
 			return;
 		}
-		if (--pendingSellFocusTicksLeft <= 0)
+		pendingSellFocusTicksLeft--;
+		if (pendingSellFocusTicksLeft <= 0)
 		{
 			log.debug("Auto-focus sell retry budget exhausted for {}", itemName);
 			clearPendingSellFocus();
