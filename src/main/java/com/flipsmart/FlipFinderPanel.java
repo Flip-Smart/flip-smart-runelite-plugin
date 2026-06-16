@@ -1822,9 +1822,6 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Get color based on risk score
-	 */
-	/**
 	 * Holder for header panels (needed for hover effects)
 	 */
 	private static class HeaderPanels
