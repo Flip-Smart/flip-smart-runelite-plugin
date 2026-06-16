@@ -1,5 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
@@ -252,7 +253,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			return null;
 		}
 
-		TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
+		OfferRecord trackedOffer = plugin.getOfferStore().bySlot(slot);
 		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
 
 		// Render the indicator bar with colored background and timer
@@ -266,7 +267,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Render the slot overlay with colored border around the entire slot
 	 * and timer in the top-right corner (like Flipping Utilities).
 	 */
-	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, TrackedOffer trackedOffer,
+	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, OfferRecord trackedOffer,
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
 		// Draw colored border around the entire slot
@@ -290,12 +291,13 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		// Draw timer in top-right corner — uses locally persisted timestamps
 		// that survive plugin restarts via OfflineSyncService
-		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.getEffectiveLastActivityAtMillis() > 0)
+		long effectiveLastActivity = trackedOffer == null ? 0L : effectiveLastActivityMillis(trackedOffer);
+		if (config.showOfferTimers() && trackedOffer != null && effectiveLastActivity > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
 								 offer.getState() == GrandExchangeOfferState.SOLD;
 
-			long realStartTime = trackedOffer.getEffectiveLastActivityAtMillis();
+			long realStartTime = effectiveLastActivity;
 
 			String timerText;
 			if (isComplete && trackedOffer.getCompletedAtMillis() > 0)
@@ -324,6 +326,14 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 			graphics.setFont(originalFont);
 		}
+	}
+
+	// Falls back to creation time for records persisted before lastActivity was tracked.
+	private static long effectiveLastActivityMillis(OfferRecord record)
+	{
+		return record.getLastActivityAtMillis() > 0
+			? record.getLastActivityAtMillis()
+			: record.getCreatedAtMillis();
 	}
 
 	/**

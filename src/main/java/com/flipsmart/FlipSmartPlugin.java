@@ -236,6 +236,14 @@ public class FlipSmartPlugin extends Plugin
 		return session;
 	}
 
+	/**
+	 * Authoritative offer-state store (for overlay/panel reads).
+	 */
+	public com.flipsmart.trading.OfferStore getOfferStore()
+	{
+		return offerStore;
+	}
+
 	public FlipSmartApiClient getApiClient()
 	{
 		return apiClient;
@@ -445,14 +453,27 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
+		return calculateCompetitiveness(offer.getItemId(), offer.getPrice(), offer.isBuy());
+	}
 
+	public OfferCompetitiveness calculateCompetitiveness(com.flipsmart.domain.offer.OfferRecord record)
+	{
+		if (record == null)
+		{
+			return OfferCompetitiveness.UNKNOWN;
+		}
+		return calculateCompetitiveness(record.getItemId(), record.getPrice(), record.isBuy());
+	}
+
+	private OfferCompetitiveness calculateCompetitiveness(int itemId, int price, boolean isBuy)
+	{
 		// Try to get real-time wiki prices first
-		WikiPrice wikiPrice = apiClient.getWikiPrice(offer.getItemId());
+		WikiPrice wikiPrice = apiClient.getWikiPrice(itemId);
 
 		if (wikiPrice != null)
 		{
-			int targetPrice = offer.isBuy() ? wikiPrice.instaSell : wikiPrice.instaBuy;
-			return compareOfferPrice(offer.getPrice(), targetPrice, offer.isBuy());
+			int targetPrice = isBuy ? wikiPrice.instaSell : wikiPrice.instaBuy;
+			return compareOfferPrice(price, targetPrice, isBuy);
 		}
 
 		// Fallback to GE guide price if real-time prices unavailable.
@@ -461,13 +482,13 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
-		int guidePrice = itemManager.getItemPrice(offer.getItemId());
+		int guidePrice = itemManager.getItemPrice(itemId);
 		if (guidePrice <= 0)
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
 
-		return compareOfferPrice(offer.getPrice(), guidePrice, offer.isBuy());
+		return compareOfferPrice(price, guidePrice, isBuy);
 	}
 
 	/**
@@ -506,30 +527,28 @@ public class FlipSmartPlugin extends Plugin
 	public java.util.List<PendingOrder> getPendingBuyOrders()
 	{
 		java.util.List<PendingOrder> pendingOrders = new java.util.ArrayList<>();
-		
-		for (java.util.Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
+
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			TrackedOffer offer = entry.getValue();
-			
 			// Include all buy orders (pending or partially filled)
-			if (offer.isBuy())
+			if (offer.isBuy() && offer.getSlot() != null)
 			{
 				Integer recommendedSellPrice = session.getRecommendedPrice(offer.getItemId());
-				
+
 				PendingOrder pending = new PendingOrder(
 					offer.getItemId(),
 					offer.getItemName(),
 					offer.getTotalQuantity(),
-					offer.getPreviousQuantitySold(), // How many filled so far
+					offer.getFilledQuantity(), // How many filled so far
 					offer.getPrice(),
 					recommendedSellPrice,
-					entry.getKey() // slot
+					offer.getSlot()
 				);
-				
+
 				pendingOrders.add(pending);
 			}
 		}
-		
+
 		return pendingOrders;
 	}
 	
