@@ -6,7 +6,12 @@ import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
+import com.flipsmart.trading.OfferEventMapper;
+import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.ItemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +44,10 @@ public class GrandExchangeTracker
 	private final ActiveFlipTracker activeFlipTracker;
 	private final ItemManager itemManager;
 	private final TradeActivityLog tradeActivityLog;
+
+	// State owner for offer lifecycle decisions (delta/transition kind). Injected by the
+	// plugin; self-provisioned when absent so the tracker is always backed by the new core.
+	private OfferStore offerStore = new OfferStore();
 
 	// Set after construction (created in plugin startUp)
 	private AutoRecommendService autoRecommendService;
@@ -103,6 +112,14 @@ public class GrandExchangeTracker
 	// =====================
 	// Setter wiring
 	// =====================
+
+	public void setOfferStore(OfferStore offerStore)
+	{
+		if (offerStore != null)
+		{
+			this.offerStore = offerStore;
+		}
+	}
 
 	public void setAutoRecommendService(AutoRecommendService service)
 	{
@@ -186,6 +203,9 @@ public class GrandExchangeTracker
 
 		if (ctx.state == GrandExchangeOfferState.EMPTY)
 		{
+			// Mirror the collect/clear into the offer store before the session-driven
+			// bookkeeping removes the slot's tracked offer.
+			offerStore.apply(toSignal(ctx), System.currentTimeMillis());
 			handleEmptyOffer(ctx.slot);
 			return;
 		}
@@ -205,6 +225,10 @@ public class GrandExchangeTracker
 			log.debug("Ignoring duplicate cancellation event for slot {}", ctx.slot);
 			return;
 		}
+
+		// Mirror the cancellation into the offer store so it stays the authoritative record.
+		seedStoreFromSession(ctx.slot);
+		offerStore.apply(toSignal(ctx), System.currentTimeMillis());
 
 		// Clear manual adjustment timer on cancellation
 		if (manualAdjustmentTracker != null)
@@ -485,9 +509,16 @@ public class GrandExchangeTracker
 	{
 		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
 
+		// OfferStore is the authority for the fill-delta / transition decision. Seed it from
+		// the session baseline first so preloaded persisted offers are honored, then apply
+		// the signal and drive the side-effects below from the returned transition.
+		seedStoreFromSession(ctx.slot);
+		long priorSpent = baselineSpent(ctx.slot);
+		OfferTransition transition = offerStore.apply(toSignal(ctx), System.currentTimeMillis());
+
 		if (ctx.quantitySold > 0)
 		{
-			handleOfferWithFills(ctx, previousOffer);
+			handleOfferWithFills(ctx, previousOffer, transition, priorSpent);
 		}
 		else
 		{
@@ -495,13 +526,27 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void handleOfferWithFills(OfferContext ctx, TrackedOffer previousOffer)
+	private long baselineSpent(int slot)
 	{
-		int newQuantity = calculateNewFillQuantity(ctx, previousOffer);
+		OfferRecord record = offerStore.bySlot(slot);
+		return record != null ? record.getSpent() : 0L;
+	}
+
+	private void handleOfferWithFills(OfferContext ctx, TrackedOffer previousOffer,
+		OfferTransition transition, long priorSpent)
+	{
+		int newQuantity = newlyFilledFrom(transition);
+
+		// First sight of this offer already showing fills (immediate/offline fill): capture
+		// the recommended sell price before recording, mirroring the old first-fill path.
+		if (previousOffer == null && newQuantity > 0)
+		{
+			preStoreImmediateFillSellPrice(ctx);
+		}
 
 		if (newQuantity > 0)
 		{
-			recordFillTransaction(ctx, newQuantity, previousOffer);
+			recordFillTransaction(ctx, newQuantity, priorSpent, previousOffer == null);
 		}
 
 		// Reset adjustment timer on partial fills (not yet fully completed)
@@ -554,16 +599,17 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private int calculateNewFillQuantity(OfferContext ctx, TrackedOffer previousOffer)
+	private int newlyFilledFrom(OfferTransition transition)
 	{
-		if (previousOffer != null)
+		switch (transition.kind)
 		{
-			return ctx.quantitySold - previousOffer.getPreviousQuantitySold();
+			case PLACED:
+			case FILLED_DELTA:
+			case COMPLETED:
+				return transition.newlyFilledQuantity;
+			default:
+				return 0;
 		}
-
-		// First time seeing this offer with fills — immediate fill on placement
-		preStoreImmediateFillSellPrice(ctx);
-		return ctx.quantitySold;
 	}
 
 	private void preStoreImmediateFillSellPrice(OfferContext ctx)
@@ -581,22 +627,19 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void recordFillTransaction(OfferContext ctx, int newQuantity, TrackedOffer previousOffer)
+	private void recordFillTransaction(OfferContext ctx, int newQuantity, long priorSpent, boolean noBaseline)
 	{
-		long previousSpent = (previousOffer != null) ? previousOffer.getPreviousSpent() : 0L;
-		long incrementalSpent = ctx.spent - previousSpent;
+		long incrementalSpent = ctx.spent - priorSpent;
 		int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
-		// Diagnostic: when previousOffer is null we have no baseline to subtract,
-		// so incrementalSpent == ctx.spent. If ctx.spent reflects an earlier order's
-		// allocation (slot reuse, plugin reload, world hop, login-burst miss), the
-		// recorded pricePerItem will equal the *placed* price of that earlier order
-		// rather than the actual fill. Surface the conditions so we can correlate
-		// to a specific code path. Restricted to newQuantity > 0 so we only log
-		// real fills (placements have newQuantity == 0 and would otherwise spam).
-		if (previousOffer == null && newQuantity > 0)
+		// Diagnostic: when there was no baseline tracked offer, incrementalSpent == ctx.spent.
+		// If ctx.spent reflects an earlier order's allocation (slot reuse, plugin reload,
+		// world hop, login-burst miss), the recorded pricePerItem will equal the *placed*
+		// price of that earlier order rather than the actual fill. Surface the conditions so
+		// we can correlate to a specific code path.
+		if (noBaseline && newQuantity > 0)
 		{
-			log.warn("[FlipSmart][previousOffer==null] Recording fill with no baseline state — "
+			log.warn("[FlipSmart][no-baseline] Recording fill with no prior baseline state — "
 					+ "slot={} item={} ({}) newQty={} ctxSpent={} placedPrice={} qtySold={} totalQty={} state={} pricePerItem={}",
 				ctx.slot, ctx.itemId, ctx.itemName, newQuantity, ctx.spent, ctx.price,
 				ctx.quantitySold, ctx.totalQuantity, ctx.state, pricePerItem);
@@ -1016,6 +1059,49 @@ public class GrandExchangeTracker
 	// =====================
 	// Utility
 	// =====================
+
+	// =====================
+	// OfferStore routing
+	// =====================
+
+	/**
+	 * Mirror the slot's current session baseline into the store before applying a signal.
+	 * Persisted offers are preloaded into the {@link PlayerSession} (not the store) during
+	 * login; seeding here keeps the store's fill baseline in lockstep so its delta decisions
+	 * match the session-derived baseline until the preload path is migrated to the store.
+	 */
+	private void seedStoreFromSession(int slot)
+	{
+		if (offerStore.bySlot(slot) != null)
+		{
+			return;
+		}
+		TrackedOffer existing = session.getTrackedOffer(slot);
+		if (existing == null)
+		{
+			return;
+		}
+
+		GrandExchangeOfferState seedState = existing.isBuy()
+			? GrandExchangeOfferState.BUYING : GrandExchangeOfferState.SELLING;
+		OfferSignal seed = OfferEventMapper.toSignal(
+			slot,
+			seedState,
+			existing.getItemId(),
+			existing.getItemName(),
+			existing.getTotalQuantity(),
+			existing.getPrice(),
+			existing.getPreviousQuantitySold(),
+			existing.getPreviousSpent());
+		offerStore.apply(seed, existing.getCreatedAtMillis() > 0 ? existing.getCreatedAtMillis() : System.currentTimeMillis());
+	}
+
+	private OfferSignal toSignal(OfferContext ctx)
+	{
+		return OfferEventMapper.toSignal(
+			ctx.slot, ctx.state, ctx.itemId, ctx.itemName,
+			ctx.totalQuantity, ctx.price, ctx.quantitySold, ctx.spent);
+	}
 
 	private boolean isAutoRecommendActive()
 	{

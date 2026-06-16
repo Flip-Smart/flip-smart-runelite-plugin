@@ -135,6 +135,9 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeTracker grandExchangeTracker;
 
 	@Inject
+	private com.flipsmart.trading.OfferStore offerStore;
+
+	@Inject
 	private WebhookSyncService webhookSyncService;
 
 	@Inject
@@ -608,6 +611,7 @@ public class FlipSmartPlugin extends Plugin
 		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService);
+		grandExchangeTracker.setOfferStore(offerStore);
 		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService);
 
 		// Build the event router now that all collaborators exist

@@ -11,12 +11,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
+import javax.inject.Singleton;
+
 /**
  * Single source of truth for offer state. Keyed by a monotonic offerId; indexed by slot
  * (event resolution) and item (consumer queries). The sole writer of offer state.
  * Thread-safe: every compound mutation runs under this monitor; reads return snapshots.
  * Listeners are notified after the monitor is released so a slow listener cannot stall readers.
  */
+@Singleton
 public final class OfferStore
 {
     private final Map<Long, OfferRecord> byOfferId = new HashMap<>();
