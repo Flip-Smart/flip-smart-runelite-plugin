@@ -111,6 +111,20 @@ public class OfferStoreTest
     }
 
     @Test
+    public void hasActiveSellOfferForItem_terminalRecordDoesNotMaskLiveSell()
+    {
+        OfferStore store = new OfferStore();
+        // slot 0: complete the buy lifecycle so a terminal COLLECTED record exists for item 1234
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 5), NOW);
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 5, 5), NOW);
+        store.apply(sig(0, GrandExchangeOfferState.EMPTY, 1234, 5, 5), NOW); // COLLECTED (terminal)
+        // slot 1: open a live sell for the same item
+        store.apply(sig(1, GrandExchangeOfferState.SELLING, 1234, 0, 5), NOW); // NEW sell
+        assertTrue("live sell must be visible even when a terminal record for the same item exists",
+            store.hasActiveSellOfferForItem(1234));
+    }
+
+    @Test
     public void hasLiveBuyOfferForItem_coversInFlightAndUncollected()
     {
         OfferStore store = new OfferStore();
@@ -147,12 +161,23 @@ public class OfferStoreTest
     }
 
     @Test
-    public void completedAwaitingCollection_excludesCancelledPartial()
+    public void completedAwaitingCollection_includesCancelledPartial()
     {
         OfferStore store = new OfferStore();
         store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 3, 10), NOW); // PARTIAL_FILL
         store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 1234, 3, 10), NOW); // CANCELLED_PARTIAL
-        assertTrue("cancelled-partial is not a completed BOUGHT/SOLD offer",
+        assertEquals("cancelled-partial has collectable fills and must trigger collect prompt",
+            1, store.completedAwaitingCollection().size());
+        assertEquals(1234, store.completedAwaitingCollection().get(0).getItemId());
+    }
+
+    @Test
+    public void completedAwaitingCollection_excludesInFlightOffers()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW); // NEW
+        store.apply(sig(1, GrandExchangeOfferState.BUYING, 5678, 3, 10), NOW); // PARTIAL_FILL
+        assertTrue("in-flight offers have nothing to collect yet",
             store.completedAwaitingCollection().isEmpty());
     }
 

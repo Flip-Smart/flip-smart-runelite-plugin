@@ -137,16 +137,16 @@ public final class OfferStore
     }
 
     /**
-     * Records that are fully filled but not yet collected (state FILLED). These
-     * are the offers awaiting a collect action in the GE. Cancelled-partial
-     * offers are excluded — they were never "completed" in the BOUGHT/SOLD sense.
+     * Records with collectable fills awaiting a GE collect action: fully filled
+     * (FILLED) or partially-cancelled (CANCELLED_PARTIAL). Matches the prior
+     * getCompletedOffers behaviour so the "collect profit" prompt fires for both.
      */
     public synchronized List<OfferRecord> completedAwaitingCollection()
     {
         List<OfferRecord> out = new ArrayList<>();
         for (OfferRecord r : byOfferId.values())
         {
-            if (r.getState() == OfferState.FILLED)
+            if (r.getState() == OfferState.FILLED || r.getState() == OfferState.CANCELLED_PARTIAL)
             {
                 out.add(r);
             }
