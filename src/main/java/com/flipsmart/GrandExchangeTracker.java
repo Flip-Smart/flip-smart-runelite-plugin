@@ -215,8 +215,7 @@ public class GrandExchangeTracker
 
 	private void handleCancelledOffer(OfferContext ctx)
 	{
-		// Duplicate cancellation guard (RuneLite bug #12037): a previously-removed slot
-		// (zero-fill cancel / sell-cancel with nothing remaining) is terminal in the store.
+		// Guard against the RuneLite client re-firing a CANCELLED offer event twice for the same slot.
 		OfferRecord previousOffer = offerStore.bySlot(ctx.slot);
 		if (previousOffer == null)
 		{

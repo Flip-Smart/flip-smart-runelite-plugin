@@ -22,4 +22,13 @@ public class OfferRecordStageTest
 		OfferRecord restored = gson.fromJson(gson.toJson(offer), OfferRecord.class);
 		assertEquals("breakeven_relist", restored.getOfferStage());
 	}
+
+	@Test
+	public void nullOfferStageCoalescesToInitial()
+	{
+		Gson gson = new Gson();
+		String json = "{\"offerId\":1,\"slot\":0,\"itemId\":1,\"itemName\":\"Item\",\"buy\":true,\"totalQuantity\":10,\"price\":1000}";
+		OfferRecord restored = gson.fromJson(json, OfferRecord.class);
+		assertEquals(OfferRecord.STAGE_INITIAL, restored.getOfferStage());
+	}
 }

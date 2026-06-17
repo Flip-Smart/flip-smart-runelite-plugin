@@ -100,6 +100,11 @@ public final class OfferRecord
             filledQuantity, spent, state, createdAtMillis, completedAtMillis, lastActivityAtMillis, newStage);
     }
 
+    public String getOfferStage()
+    {
+        return offerStage != null ? offerStage : STAGE_INITIAL;
+    }
+
     /** Last activity time, falling back to creation time for records persisted before the field existed. */
     public long getEffectiveLastActivityAtMillis()
     {
