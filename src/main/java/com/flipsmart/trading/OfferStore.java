@@ -28,11 +28,17 @@ public final class OfferStore
     private long nextOfferId = 1;
     private final List<Consumer<OfferEvent>> listeners = new ArrayList<>();
 
+    /** Register a listener to receive an {@link OfferEvent} after each successful state change. */
     public synchronized void addListener(Consumer<OfferEvent> listener)
     {
         listeners.add(listener);
     }
 
+    /**
+     * Apply {@code signal} to the current offer for its slot, delegating to
+     * {@link OfferStateMachine#decide decide()} for the transition. Notifies listeners after
+     * the monitor is released. Returns the transition (including REJECTED/NONE) for the caller.
+     */
     public OfferTransition apply(OfferSignal signal, long now)
     {
         OfferTransition t;
@@ -77,12 +83,14 @@ public final class OfferStore
         return t;
     }
 
+    /** Live offer currently occupying {@code slot} (0–7), or {@code null} if the slot is empty. */
     public synchronized OfferRecord bySlot(int slot)
     {
         Long id = slotToOfferId.get(slot);
         return id == null ? null : byOfferId.get(id);
     }
 
+    /** All records (live and terminal) for {@code itemId}, as an unmodifiable snapshot. */
     public synchronized List<OfferRecord> forItem(int itemId)
     {
         List<OfferRecord> out = new ArrayList<>();
@@ -96,6 +104,7 @@ public final class OfferStore
         return Collections.unmodifiableList(out);
     }
 
+    /** All records known to the store (live and terminal), as an unmodifiable snapshot. */
     public synchronized List<OfferRecord> allRecords()
     {
         return Collections.unmodifiableList(new ArrayList<>(byOfferId.values()));

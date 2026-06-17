@@ -13,6 +13,10 @@ public final class OfferStateMachine
 {
     private OfferStateMachine() {}
 
+    /**
+     * Pure transition function. {@code current} is null when the slot has no known offer (new placement).
+     * Returns the resulting {@link com.flipsmart.domain.offer.OfferTransition}; never mutates its arguments.
+     */
     public static OfferTransition decide(OfferRecord current, OfferSignal signal, long offerIdForNew, long now)
     {
         final GrandExchangeOfferState ge = signal.geState;
