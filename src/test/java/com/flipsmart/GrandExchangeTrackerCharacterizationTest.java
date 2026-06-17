@@ -1,9 +1,10 @@
 package com.flipsmart;
 
 import com.flipsmart.api.dto.TransactionRequest;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
+import com.flipsmart.trading.OfferStore;
 
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import net.runelite.api.GrandExchangeOfferState;
@@ -14,13 +15,12 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,8 +32,9 @@ import static org.mockito.Mockito.when;
  * path so that the #735 refactor (routing offers through OfferStore +
  * OfferStateMachine) can be proven behavior-preserving. They drive the real
  * tracker with sequences of GE events and assert on the observable outputs:
- * Mockito {@code verify(...)} counts/arguments on {@link FlipSmartApiClient} and
- * state on a REAL {@link PlayerSession}.
+ * Mockito {@code verify(...)} counts/arguments on {@link FlipSmartApiClient},
+ * collected-item state on a REAL {@link PlayerSession}, and slot/lifecycle state
+ * on a REAL {@link OfferStore} (the sole offer-state owner).
  *
  * <p>Per the spirit of characterization testing, these encode what the code does
  * TODAY, including a couple of surprising-but-real behaviors that are flagged
@@ -48,7 +49,8 @@ public class GrandExchangeTrackerCharacterizationTest
 	private static final String RSN = "TestPlayer";
 	private static final int SLOT = 0;
 
-	private PlayerSession session;            // real instance — assert on its state
+	private PlayerSession session;            // real instance — assert on collected-item state
+	private OfferStore store;                 // real instance — assert on slot/lifecycle state
 	private FlipSmartApiClient apiClient;     // mock — verify transaction recording
 	private ActiveFlipTracker activeFlipTracker;
 	private ItemManager itemManager;
@@ -61,6 +63,8 @@ public class GrandExchangeTrackerCharacterizationTest
 	{
 		session = new PlayerSession();
 		session.setRsn(RSN);
+
+		store = new OfferStore();
 
 		apiClient = mock(FlipSmartApiClient.class);
 		activeFlipTracker = mock(ActiveFlipTracker.class);
@@ -83,6 +87,10 @@ public class GrandExchangeTrackerCharacterizationTest
 		// REAL constructor argument order: (session, apiClient, activeFlipTracker, itemManager, tradeActivityLog).
 		tracker = new GrandExchangeTracker(
 			session, apiClient, activeFlipTracker, itemManager, tradeActivityLog);
+
+		// Inject the SAME store the test seeds/asserts on, so the tracker is the sole writer
+		// of the offer state the test inspects.
+		tracker.setOfferStore(store);
 
 		// AutoRecommendService / ManualAdjustmentTracker are left unset (null) — the
 		// tracker treats that as "auto-recommend inactive, no manual adjustment", which
@@ -120,6 +128,21 @@ public class GrandExchangeTrackerCharacterizationTest
 		return state == GrandExchangeOfferState.BUYING
 			|| state == GrandExchangeOfferState.BOUGHT
 			|| state == GrandExchangeOfferState.CANCELLED_BUY;
+	}
+
+	/**
+	 * Seed a baseline offer into the store directly (mirrors the production reload path:
+	 * persistence reconcile imports records into the store before any live event). The
+	 * record carries the preloaded cumulative fill/spend so the next live event records
+	 * only the DELTA, not the cumulative total.
+	 */
+	private void seedBaseline(int slot, int itemId, String itemName, boolean buy,
+		int totalQuantity, int price, int filledQuantity, long spent, OfferState state)
+	{
+		OfferRecord baseline = OfferRecord
+			.newOffer(1L, slot, itemId, itemName, buy, totalQuantity, price, 1L)
+			.withFill(filledQuantity, spent, state, 1L);
+		store.importRecords(java.util.Arrays.asList(baseline));
 	}
 
 	private ArgumentCaptor<TransactionRequest> captureFills()
@@ -191,10 +214,10 @@ public class GrandExchangeTrackerCharacterizationTest
 		// Observable: a zero-fill BUY cancel dismisses the active flip on the backend.
 		verify(apiClient, times(1)).dismissActiveFlipAsync(eq(ITEM_A), any());
 
-		// The slot's tracked offer is removed (zero-fill cancel path).
-		assertEquals("tracked offer removed on zero-fill cancel", null, session.getTrackedOffer(SLOT));
+		// The slot's offer is freed (zero-fill cancel path — store record is terminal).
+		assertNull("offer removed from slot on zero-fill cancel", store.bySlot(SLOT));
 		// Recommended price is cleaned up on a zero-fill buy cancel.
-		assertEquals(null, session.getRecommendedPrice(ITEM_A));
+		assertNull(session.getRecommendedPrice(ITEM_A));
 	}
 
 	// ==================================================================
@@ -210,14 +233,14 @@ public class GrandExchangeTrackerCharacterizationTest
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.CANCELLED_BUY, ITEM_A, NAME_A, 10, 100, 4, 400));
 
 		// On the partial-fill cancel, syncCancelledPartialBuy adds the 4 filled items
-		// to the collected set immediately. The tracked offer is kept (marked completed)
+		// to the collected set immediately. The offer is kept live (CANCELLED_PARTIAL)
 		// so the later collect routes through the resell flow.
 		assertEquals("4 partial-buy items added to collected on cancel",
 			4, session.getCollectedQuantity(ITEM_A));
 		assertTrue(session.getCollectedItemIds().contains(ITEM_A));
 
-		// Now the player collects: EMPTY event on the same slot. previousQuantitySold==4,
-		// so handleCollectedBuyOffer runs and adds the collected qty again.
+		// Now the player collects: EMPTY event on the same slot. The record is still live
+		// with filled==4, so handleCollectedBuyOffer runs and adds the collected qty again.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 100, 0, 0));
 
 		// CHARACTERIZATION NOTE: the item remains collected after collect (this is the
@@ -251,11 +274,11 @@ public class GrandExchangeTrackerCharacterizationTest
 	@Test
 	public void scenario4_offlineFill_firstEventShowsHigherSold_correctedQtyRecordedOnce()
 	{
-		// No prior tracked offer for this slot (login burst). First live event shows the
+		// No prior offer for this slot (login burst). First live event shows the
 		// offer already 7/10 filled with spent 700 — the fills happened offline.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 7, 700));
 
-		// Observable: with no baseline (previousOffer == null), calculateNewFillQuantity
+		// Observable: with no baseline (no prior store record), calculateNewFillQuantity
 		// returns the full quantitySold (7), so a single transaction for 7 is recorded.
 		expectedRecords = 1;
 		ArgumentCaptor<TransactionRequest> captor = captureFills();
@@ -264,8 +287,8 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals("price-per-item = 700/7", 100, req.pricePerItem);
 		assertTrue(req.isBuy);
 
-		// A second identical event (same cumulative 7) must NOT re-record — the tracked
-		// offer now has previousQuantitySold==7, so the delta is 0.
+		// A second identical event (same cumulative 7) must NOT re-record — the store
+		// record now has filledQuantity==7, so the delta is 0.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 7, 700));
 		verify(apiClient, times(1)).recordTransactionAsync(any(TransactionRequest.class));
 	}
@@ -283,8 +306,8 @@ public class GrandExchangeTrackerCharacterizationTest
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 5, 100, 5, 500));
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 5, 100, 0, 0));
 
-		// Slot is now free (EMPTY removed the tracked offer).
-		assertEquals("slot freed after collect of item A", null, session.getTrackedOffer(SLOT));
+		// Slot is now free (EMPTY collected item A — store record is terminal).
+		assertNull("slot freed after collect of item A", store.bySlot(SLOT));
 
 		// Item B placed in the SAME slot, then a fill.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_B, NAME_B, 3, 200, 0, 0));
@@ -304,8 +327,8 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals(0, reqs.get(2).quantity);
 
 		// The critical assertion: B's fill records delta of 3 at B's own price (200),
-		// NOT polluted by item A's baseline. createWithPreservedTimestamps drops the
-		// existing offer when itemId differs, so there is no cross-item baseline.
+		// NOT polluted by item A's baseline. A's record went terminal on collect and the
+		// slot was freed, so B mints a fresh record with no cross-item baseline.
 		TransactionRequest bFill = reqs.get(3);
 		assertEquals("B fill is for item B", ITEM_B, bFill.itemId);
 		assertEquals("B fill delta is its own 3, not 3+A's 5", 3, bFill.quantity);
@@ -314,18 +337,16 @@ public class GrandExchangeTrackerCharacterizationTest
 
 	// ==================================================================
 	// Scenario 6 — Reload mid-offer: a persisted offer preloaded into the
-	// session, then a live fill event -> only the DELTA recorded, not the
+	// store, then a live fill event -> only the DELTA recorded, not the
 	// cumulative total.
 	// ==================================================================
 	@Test
 	public void scenario6_reloadMidOffer_preloadedOffer_onlyDeltaRecorded()
 	{
-		// Simulate the plugin's preload: a persisted offer with 6 already filled is put
-		// into the session BEFORE any live event (this is the real putTrackedOffer API
-		// that OfflineSyncService.preloadPersistedOffers uses).
-		TrackedOffer preloaded = new TrackedOffer(ITEM_A, NAME_A, true, 10, 100, 6);
-		preloaded.setPreviousSpent(600L);
-		session.putTrackedOffer(SLOT, preloaded);
+		// Simulate the plugin's reload: a persisted offer with 6 already filled is imported
+		// into the store BEFORE any live event (this mirrors the production reconcile path
+		// that imports persisted records into the store on startup).
+		seedBaseline(SLOT, ITEM_A, NAME_A, true, 10, 100, 6, 600L, OfferState.PARTIAL_FILL);
 
 		// Live event arrives showing cumulative 9/10 filled, spent 900.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 9, 900));
@@ -350,7 +371,7 @@ public class GrandExchangeTrackerCharacterizationTest
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 4, 400));
 
 		// World-hop re-delivers the SAME cumulative state (4/10) on the same slot —
-		// the tracked offer survived the hop in-session, so the delta is 0.
+		// the store record survived the hop, so the delta is 0.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 4, 400));
 
 		// Then real progress to 7/10 after the hop.
@@ -375,34 +396,33 @@ public class GrandExchangeTrackerCharacterizationTest
 	// -> the second event is a no-op (RuneLite #12037 guard).
 	//
 	// CHARACTERIZATION NOTE: the #12037 guard at the top of handleCancelledOffer
-	// only fires when the tracked offer for the slot was REMOVED by the first
-	// cancel. A partial-BUY cancel KEEPS the offer (marked completed) so the
-	// collect flow can fire — so the guard does NOT protect partial cancels;
-	// only zero-fill cancels (and sell cancels with nothing remaining) leave the
-	// slot empty and are therefore truly idempotent. We pin the guard with a
-	// zero-fill buy cancel, the case it actually covers.
+	// only fires when the offer for the slot was FREED by the first cancel. A
+	// partial-BUY cancel KEEPS the offer live (CANCELLED_PARTIAL) so the collect
+	// flow can fire — so the guard does NOT protect partial cancels; only zero-fill
+	// cancels (and sell cancels with nothing remaining) leave the slot empty and are
+	// therefore truly idempotent. We pin the guard with a zero-fill buy cancel, the
+	// case it actually covers.
 	// ==================================================================
 	@Test
 	public void scenario8_duplicateZeroFillCancellation_secondEventIsNoOp()
 	{
-		// Place a buy, then cancel before any fill (zero-fill cancel removes the offer).
+		// Place a buy, then cancel before any fill (zero-fill cancel frees the slot).
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 0, 0));
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.CANCELLED_BUY, ITEM_A, NAME_A, 10, 100, 0, 0));
 
 		int recordsAfterFirstCancel = mockingDetailsRecordCount();
 		int dismissAfterFirstCancel = mockingDetailsDismissCount();
-		assertEquals("first zero-fill cancel removed the tracked offer",
-			null, session.getTrackedOffer(SLOT));
+		assertNull("first zero-fill cancel freed the slot", store.bySlot(SLOT));
 
 		// Duplicate cancellation event for the SAME (now-empty) slot. The #12037 guard
-		// short-circuits because getTrackedOffer(slot) == null.
+		// short-circuits because store.bySlot(slot) == null.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.CANCELLED_BUY, ITEM_A, NAME_A, 10, 100, 0, 0));
 
 		assertEquals("duplicate cancellation records no new transaction",
 			recordsAfterFirstCancel, mockingDetailsRecordCount());
 		assertEquals("duplicate cancellation issues no new active-flip dismiss",
 			dismissAfterFirstCancel, mockingDetailsDismissCount());
-		assertEquals("slot stays empty after the duplicate", null, session.getTrackedOffer(SLOT));
+		assertNull("slot stays empty after the duplicate", store.bySlot(SLOT));
 	}
 
 	private int mockingDetailsDismissCount()
