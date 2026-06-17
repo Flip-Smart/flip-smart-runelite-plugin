@@ -15,6 +15,7 @@ import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
 import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.trading.OfferStore;
+import com.flipsmart.trading.TransactionLogger;
 
 import javax.swing.SwingUtilities;
 
@@ -126,6 +127,21 @@ public class ServiceWiring
 		grandExchangeTracker.setConfig(config);
 
 		return manualAdjustmentTracker;
+	}
+
+	/**
+	 * Register the single transaction-recording listener on the shared OfferStore.
+	 *
+	 * The logger uses the SAME rsn supplier the tracker was wired with
+	 * ({@code plugin::getCurrentRsnSafe}) so recorded RSN is identical to the old inline
+	 * recording path. It must subscribe to the same OfferStore instance the tracker writes
+	 * to, so every state change the tracker applies is recorded exactly once.
+	 */
+	public void wireTransactionLogger(FlipSmartPlugin plugin, PlayerSession session, OfferStore offerStore)
+	{
+		TransactionLogger logger = new TransactionLogger(
+			plugin.getApiClient(), session, plugin::getCurrentRsnSafe);
+		offerStore.addListener(logger::onOfferEvent);
 	}
 
 	/**

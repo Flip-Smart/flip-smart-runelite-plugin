@@ -68,6 +68,11 @@ public class GrandExchangeTrackerCharacterizationTest
 		store = new OfferStore();
 
 		apiClient = mock(FlipSmartApiClient.class);
+		// Recording now flows through the TransactionLogger listener on the store, exactly as
+		// production wires it. The apiClient mock + captor below capture the listener's calls.
+		com.flipsmart.trading.TransactionLogger logger =
+			new com.flipsmart.trading.TransactionLogger(apiClient, session, () -> java.util.Optional.of(RSN));
+		store.addListener(logger::onOfferEvent);
 		activeFlipTracker = mock(ActiveFlipTracker.class);
 		itemManager = mock(ItemManager.class);
 		tradeActivityLog = mock(TradeActivityLog.class);
@@ -234,12 +239,13 @@ public class GrandExchangeTrackerCharacterizationTest
 	// ==================================================================
 	// B1-Scenario 2 — Full sell lifecycle: place -> partial -> complete ->
 	// collect.
-	// Bug #3 (current behavior): sell PLACEMENT fires recordNewSellOrder,
-	// which calls markActiveFlipSellingAsync but does NOT call
-	// recordTransactionAsync. Only fills are recorded. B6 will flip this.
+	// INTENDED CHANGE: routing all recording through the TransactionLogger
+	// listener fixes bug #3 — the sell PLACEMENT now records a qty-0
+	// transaction off the PLACED event, just like a buy placement.
+	// markActiveFlipSellingAsync still fires at placement as before.
 	// ==================================================================
 	@Test
-	public void scenarioB2_sellLifecycle_placementRecordsNothing_fillsRecorded()
+	public void scenarioB2_sellLifecycle_placementRecordsThenFills()
 	{
 		// Sell placement: SELLING, 0 filled.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 0, 0));
@@ -250,16 +256,22 @@ public class GrandExchangeTrackerCharacterizationTest
 		// Collect: EMPTY event on the slot.
 		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 5, 200, 0, 0));
 
-		// Bug #3 — current behavior: sell placement (SELLING, 0 filled) goes through
-		// recordNewSellOrder, which calls markActiveFlipSellingAsync only — no
-		// recordTransactionAsync is issued at placement time.
-		// B6 will introduce sell-placement recording; update this assertion when it does.
+		// Three records now: sell placement (qty 0) + partial fill (+2) + completion (+3).
 		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
-		verify(apiClient, times(2)).recordTransactionAsync(captor.capture());
+		verify(apiClient, times(3)).recordTransactionAsync(captor.capture());
 		java.util.List<TransactionRequest> reqs = captor.getAllValues();
 
+		// Sell placement (qty 0) — the bug-#3 fix.
+		TransactionRequest placement = reqs.get(0);
+		assertEquals("placement itemId", ITEM_A, placement.itemId);
+		assertFalse("placement is a sell (not buy)", placement.isBuy);
+		assertEquals("placement quantity 0", 0, placement.quantity);
+		assertEquals("placement pricePerItem = placed price", 200, placement.pricePerItem);
+		assertEquals("placement geSlot", (Integer) SLOT, placement.geSlot);
+		assertEquals("placement totalQuantity", (Integer) 5, placement.totalQuantity);
+
 		// Partial sell fill (+2 delta).
-		TransactionRequest sellFill1 = reqs.get(0);
+		TransactionRequest sellFill1 = reqs.get(1);
 		assertEquals("sellFill1 itemId", ITEM_A, sellFill1.itemId);
 		assertFalse("sellFill1 is a sell (not buy)", sellFill1.isBuy);
 		assertEquals("sellFill1 quantity +2", 2, sellFill1.quantity);
@@ -268,7 +280,7 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals("sellFill1 totalQuantity", (Integer) 5, sellFill1.totalQuantity);
 
 		// Completion fill (+3 delta: 5 cumulative - 2 prior).
-		TransactionRequest sellFill2 = reqs.get(1);
+		TransactionRequest sellFill2 = reqs.get(2);
 		assertEquals("sellFill2 itemId", ITEM_A, sellFill2.itemId);
 		assertFalse("sellFill2 is a sell (not buy)", sellFill2.isBuy);
 		assertEquals("sellFill2 quantity +3 (5-2)", 3, sellFill2.quantity);
@@ -277,9 +289,9 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals("sellFill2 totalQuantity", (Integer) 5, sellFill2.totalQuantity);
 
 		int totalSold = reqs.stream().mapToInt(r -> r.quantity).sum();
-		assertEquals("total recorded sell qty = 5 (no sell-placement double-count)", 5, totalSold);
+		assertEquals("total recorded sell qty = 5 (placement 0 + deltas 2+3)", 5, totalSold);
 
-		// Placement fired markActiveFlipSellingAsync instead of recordTransactionAsync.
+		// Placement still fires markActiveFlipSellingAsync.
 		verify(apiClient, times(1)).markActiveFlipSellingAsync(eq(ITEM_A), any());
 	}
 
@@ -377,10 +389,9 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals("current behavior: collected qty stays at the partial 4 (put overwrites, no accumulation)",
 			4, session.getCollectedQuantity(ITEM_A));
 
-		// Transactions recorded: placement (0) + partial fill (+4) + final cancellation
-		// fill. recordFinalCancellationFill only records when quantitySold >
-		// previousQuantitySold; here previousQuantitySold==4 and quantitySold==4, so it
-		// records NOTHING extra at cancel time. So only 2 records total.
+		// Transactions recorded: placement (0) + partial fill (+4). The cancel's CANCELLED
+		// event carries a zero residual (store filled==4, quantitySold==4), so the listener
+		// records nothing extra at cancel time. So only 2 records total.
 		expectedRecords = 2;
 		ArgumentCaptor<TransactionRequest> captor = captureFills();
 		java.util.List<TransactionRequest> reqs = captor.getAllValues();

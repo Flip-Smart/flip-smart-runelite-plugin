@@ -634,6 +634,7 @@ public class FlipSmartPlugin extends Plugin
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
+		serviceWiring.wireTransactionLogger(this, session, offerStore);
 		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService);
 
 		// Build the event router now that all collaborators exist

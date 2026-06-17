@@ -104,16 +104,19 @@ public class TransactionLoggerTest
     }
 
     @Test
-    public void placedWithFillRecordsBothPlacementAndFill()
+    public void placedWithImmediateFillRecordsOnlyTheFill()
     {
+        // A PLACED event already carrying a fill is an immediate/offline fill: record the fill
+        // only, with no separate qty-0 placement row. This matches the single fill the old
+        // recording path produced and avoids a phantom placement row for already-filling offers.
         TransactionLogger logger = newLogger("Zezima");
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 2_000_000, 1700000000000L)
             .withFill(1, 2_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 1, 2_000_000L));
         List<TransactionRequest> reqs = captureAll();
-        assertEquals(2, reqs.size());
-        assertTrue(reqs.stream().anyMatch(q -> q.quantity == 0 && q.idempotencyKey.endsWith("PLACE:0")));
-        assertTrue(reqs.stream().anyMatch(q -> q.quantity == 1 && q.idempotencyKey.endsWith("FILL:1")));
+        assertEquals(1, reqs.size());
+        assertEquals(1, reqs.get(0).quantity);
+        assertTrue(reqs.get(0).idempotencyKey.endsWith("FILL:1"));
     }
 
     @Test

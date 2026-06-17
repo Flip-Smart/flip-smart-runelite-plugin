@@ -7,8 +7,8 @@ public final class OfferTransition
 
     public final Kind kind;
     public final OfferRecord record;      // updated record (null only when REJECTED with no prior)
-    public final int newlyFilledQuantity; // delta for this signal (0 unless FILLED_DELTA/COMPLETED)
-    public final long newlySpent;         // GP delta for this signal (0 unless FILLED_DELTA/COMPLETED)
+    public final int newlyFilledQuantity; // fill delta for this signal (also nonzero on PLACED with an immediate fill, and on CANCELLED carrying a residual fill)
+    public final long newlySpent;         // GP delta for this signal (nonzero on the same transitions as newlyFilledQuantity)
 
     private OfferTransition(Kind kind, OfferRecord record, int newlyFilledQuantity, long newlySpent)
     {

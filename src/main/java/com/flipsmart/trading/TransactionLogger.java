@@ -59,10 +59,17 @@ public final class TransactionLogger
         switch (e.kind)
         {
             case PLACED:
-                recordPlacement(e.record);
+                // An offer first seen already filling (immediate / offline fill) records the
+                // fill only — never a separate qty-0 placement row. The placement row is for
+                // genuine 0-filled placements; emitting both here would double-log the order
+                // versus the single fill the old recording path produced.
                 if (e.newlyFilledQuantity > 0)
                 {
                     recordFill(e.record, e.newlyFilledQuantity, e.newlySpent);
+                }
+                else
+                {
+                    recordPlacement(e.record);
                 }
                 break;
             case FILLED_DELTA:
