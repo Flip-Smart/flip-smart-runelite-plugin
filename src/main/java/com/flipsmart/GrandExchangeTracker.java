@@ -488,6 +488,17 @@ public class GrandExchangeTracker
 		// is the slot's current record (null on first sight); apply the signal, then drive the
 		// side-effects below from the returned transition and the pre-apply baseline spend.
 		OfferRecord previousOffer = offerStore.bySlot(ctx.slot);
+
+		// For an immediate-fill buy (first sight already showing fills), the session must
+		// hold the recommended sell price before offerStore.apply fires the TransactionLogger
+		// listener — the logger reads the price from session at record time. Any case where
+		// this is not an immediate-fill buy is a no-op inside preStoreImmediateFillSellPrice
+		// because its own guards check isBuy, totalQuantity, and isAutoRecommendActive.
+		if (previousOffer == null && ctx.quantitySold > 0)
+		{
+			preStoreImmediateFillSellPrice(ctx);
+		}
+
 		OfferTransition transition = offerStore.apply(toSignal(ctx), System.currentTimeMillis());
 
 		if (ctx.quantitySold > 0)
@@ -504,13 +515,6 @@ public class GrandExchangeTracker
 		OfferTransition transition)
 	{
 		int newQuantity = newlyFilledFrom(transition);
-
-		// First sight of this offer already showing fills (immediate/offline fill): capture
-		// the recommended sell price before the listener records it, mirroring the old first-fill path.
-		if (previousOffer == null && newQuantity > 0)
-		{
-			preStoreImmediateFillSellPrice(ctx);
-		}
 
 		if (newQuantity > 0)
 		{

@@ -600,6 +600,46 @@ public class GrandExchangeTrackerCharacterizationTest
 			OfferState.CANCELLED_PARTIAL, store.bySlot(SLOT).getState());
 	}
 
+	// ==================================================================
+	// Scenario 10 — Immediate-fill buy while auto-recommend is active:
+	// the recorded transaction must carry the recommended sell price from
+	// the current recommendation, not null.
+	//
+	// Regression guard: TransactionLogger reads session.getRecommendedPrice
+	// inside offerStore.apply, so the price must be seeded into session
+	// BEFORE apply fires. Moving preStoreImmediateFillSellPrice ahead of
+	// apply in handleActiveOffer is the fix; this test fails without it.
+	// ==================================================================
+	@Test
+	public void scenario10_immediateFilledBuy_autoRecommendActive_recommendedSellPriceRecorded()
+	{
+		int recommendedSell = 95_000;
+
+		AutoRecommendService autoRecommend = mock(AutoRecommendService.class);
+		when(autoRecommend.isActive()).thenReturn(true);
+
+		com.flipsmart.domain.flip.FlipRecommendation rec =
+			new com.flipsmart.domain.flip.FlipRecommendation();
+		rec.setItemId(ITEM_A);
+		rec.setRecommendedSellPrice(recommendedSell);
+		when(autoRecommend.getCurrentRecommendation()).thenReturn(rec);
+
+		tracker.setAutoRecommendService(autoRecommend);
+
+		// First-sight event already showing fills: previousOffer == null, quantitySold > 0.
+		tracker.handleOfferChanged(
+			ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 90_000, 10, 900_000));
+
+		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
+		verify(apiClient, times(1)).recordTransactionAsync(captor.capture());
+
+		TransactionRequest req = captor.getValue();
+		assertEquals("immediate-fill buy records the recommended sell price from auto-recommend",
+			(Integer) recommendedSell, req.recommendedSellPrice);
+		assertTrue("recorded transaction is a buy", req.isBuy);
+		assertEquals("item id matches", ITEM_A, req.itemId);
+	}
+
 	private int mockingDetailsSyncCount()
 	{
 		return (int) org.mockito.Mockito.mockingDetails(apiClient).getInvocations().stream()
