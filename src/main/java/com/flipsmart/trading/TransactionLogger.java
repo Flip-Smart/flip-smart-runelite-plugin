@@ -30,15 +30,16 @@ public final class TransactionLogger
     private final PlayerSession session;
     private final Supplier<Optional<String>> rsnSupplier;
 
-    private final Set<String> seenKeys = Collections.newSetFromMap(
-        new LinkedHashMap<String, Boolean>()
-        {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest)
+    private final Set<String> seenKeys = Collections.synchronizedSet(
+        Collections.newSetFromMap(
+            new LinkedHashMap<String, Boolean>()
             {
-                return size() > SEEN_KEYS_CAPACITY;
-            }
-        });
+                @Override
+                protected boolean removeEldestEntry(Map.Entry<String, Boolean> eldest)
+                {
+                    return size() > SEEN_KEYS_CAPACITY;
+                }
+            }));
 
     @Inject
     public TransactionLogger(FlipSmartApiClient apiClient, PlayerSession session)
