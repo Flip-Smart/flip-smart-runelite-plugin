@@ -1,6 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.HistoryBackfillEntry;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.trading.OfferStore;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -43,9 +44,10 @@ public class GEHistoryService
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
 	private final ChatMessageManager chatMessageManager;
+	private final OfferStore offerStore;
 
 	private final Set<Integer> pendingOfflineFillItemIds = ConcurrentHashMap.newKeySet();
-	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
+	private final Map<Integer, OfferRecord> recentlyPersistedOffers = new ConcurrentHashMap<>();
 	private final AtomicInteger pendingHistoryReadTicks = new AtomicInteger(0);
 	private volatile boolean historyReadThisSession = false;
 	private volatile boolean chatPromptSent = false;
@@ -56,12 +58,14 @@ public class GEHistoryService
 		Client client,
 		FlipSmartApiClient apiClient,
 		PlayerSession session,
-		ChatMessageManager chatMessageManager)
+		ChatMessageManager chatMessageManager,
+		OfferStore offerStore)
 	{
 		this.client = client;
 		this.apiClient = apiClient;
 		this.session = session;
 		this.chatMessageManager = chatMessageManager;
+		this.offerStore = offerStore;
 	}
 
 	public void onHistoryWidgetLoaded()
@@ -159,12 +163,15 @@ public class GEHistoryService
 	 * for the chat prompt (any persisted state means there might be offline
 	 * activity worth backfilling).
 	 */
-	public void setRecentlyPersistedOffers(Map<Integer, TrackedOffer> offers)
+	public void setRecentlyPersistedOffers(List<OfferRecord> offers)
 	{
 		recentlyPersistedOffers.clear();
 		if (offers != null)
 		{
-			recentlyPersistedOffers.putAll(offers);
+			for (OfferRecord o : offers)
+			{
+				recentlyPersistedOffers.put(o.getItemId(), o);
+			}
 		}
 		// Any prior-session activity is reason enough to prompt the user to
 		// open History. Backend dedup makes the backfill safe regardless:
@@ -413,8 +420,8 @@ public class GEHistoryService
 		// The backend tolerates null but resolves from prior transactions on
 		// its side too; this just gives nicer logs.
 		Map<Integer, String> nameByItem = new HashMap<>();
-		for (TrackedOffer o : session.getTrackedOffers().values()) nameByItem.put(o.getItemId(), o.getItemName());
-		for (TrackedOffer o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
+		for (OfferRecord o : offerStore.allRecords()) nameByItem.put(o.getItemId(), o.getItemName());
+		for (OfferRecord o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
 
 		List<HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
 		for (GEHistoryEntry e : entries)

@@ -1,7 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.BankItemId;
 import com.flipsmart.api.dto.BankItem;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.ItemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -362,7 +362,7 @@ public class BankSnapshotService
 			itemPrice = price;
 		}
 
-		if (TrackedOffer.isBuyState(offer.getState()))
+		if (OfferSignal.isBuyState(offer.getState()))
 		{
 			return (long) remainingQty * price + (long) filledQty * itemPrice;
 		}

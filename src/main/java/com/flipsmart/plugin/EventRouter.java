@@ -9,6 +9,7 @@ import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
 import com.flipsmart.WebhookSyncService;
+import com.flipsmart.trading.OfferStore;
 
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -58,11 +59,13 @@ public class EventRouter
 	private final GEHistoryService geHistoryService;
 	private final GeOfferDescriptionService geOfferDescriptionService;
 	private final GrandExchangeTracker grandExchangeTracker;
+	private final OfferStore offerStore;
 
 	public EventRouter(FlipSmartPlugin plugin, Client client, FlipSmartConfig config,
 		PlayerSession session, WebhookSyncService webhookSyncService, OfflineSyncService offlineSyncService,
 		BankSnapshotService bankSnapshotService, GEHistoryService geHistoryService,
-		GeOfferDescriptionService geOfferDescriptionService, GrandExchangeTracker grandExchangeTracker)
+		GeOfferDescriptionService geOfferDescriptionService, GrandExchangeTracker grandExchangeTracker,
+		OfferStore offerStore)
 	{
 		this.plugin = plugin;
 		this.client = client;
@@ -74,6 +77,7 @@ public class EventRouter
 		this.geHistoryService = geHistoryService;
 		this.geOfferDescriptionService = geOfferDescriptionService;
 		this.grandExchangeTracker = grandExchangeTracker;
+		this.offerStore = offerStore;
 	}
 
 	public void onConfigChanged(ConfigChanged configChanged)
@@ -115,7 +119,7 @@ public class EventRouter
 		{
 			session.onLoginStateChange(client.getTickCount());
 
-			if (!session.getTrackedOffers().isEmpty())
+			if (!offerStore.export().isEmpty())
 			{
 				offlineSyncService.persistOfferState();
 			}

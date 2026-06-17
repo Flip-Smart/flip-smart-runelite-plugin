@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.trading.OfferStore;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -21,7 +22,7 @@ public class AutoRecommendServiceLockTest
 	{
 		FlipSmartConfig config = mock(FlipSmartConfig.class);
 		FlipSmartPlugin plugin = mock(FlipSmartPlugin.class);
-		service = new AutoRecommendService(config, plugin);
+		service = new AutoRecommendService(config, plugin, new OfferStore());
 	}
 
 	@Test

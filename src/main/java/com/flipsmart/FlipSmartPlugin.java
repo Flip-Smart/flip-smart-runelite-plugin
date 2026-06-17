@@ -1,6 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.offer.PendingOrder;
@@ -135,6 +135,9 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeTracker grandExchangeTracker;
 
 	@Inject
+	private com.flipsmart.trading.OfferStore offerStore;
+
+	@Inject
 	private WebhookSyncService webhookSyncService;
 
 	@Inject
@@ -233,6 +236,14 @@ public class FlipSmartPlugin extends Plugin
 		return session;
 	}
 
+	/**
+	 * Authoritative offer-state store (for overlay/panel reads).
+	 */
+	public com.flipsmart.trading.OfferStore getOfferStore()
+	{
+		return offerStore;
+	}
+
 	public FlipSmartApiClient getApiClient()
 	{
 		return apiClient;
@@ -314,6 +325,12 @@ public class FlipSmartPlugin extends Plugin
 	public int getFlipSlotLimit()
 	{
 		return isPremium() ? 8 : 2;
+	}
+
+	/** Whether the player has a free GE slot below {@code slotLimit}, per the offer store. */
+	public boolean hasAvailableGESlots(int slotLimit)
+	{
+		return offerStore.liveOffers().size() < slotLimit;
 	}
 
 	public List<ActiveFlip> getCurrentActiveFlips()
@@ -401,14 +418,6 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Get tracked offer for a specific GE slot (for overlay access)
-	 */
-	public TrackedOffer getTrackedOffer(int slot)
-	{
-		return session.getTrackedOffer(slot);
-	}
-
-	/**
 	 * Get the current flip assist step for GE button highlighting
 	 */
 	public FlipAssistOverlay.FlipAssistStep getFlipAssistStep()
@@ -436,20 +445,24 @@ public class FlipSmartPlugin extends Plugin
 	 *
 	 * This shows if your offer is "in the margin" and likely to fill.
 	 */
-	public OfferCompetitiveness calculateCompetitiveness(TrackedOffer offer)
+	public OfferCompetitiveness calculateCompetitiveness(com.flipsmart.domain.offer.OfferRecord record)
 	{
-		if (offer == null)
+		if (record == null)
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
+		return calculateCompetitiveness(record.getItemId(), record.getPrice(), record.isBuy());
+	}
 
+	private OfferCompetitiveness calculateCompetitiveness(int itemId, int price, boolean isBuy)
+	{
 		// Try to get real-time wiki prices first
-		WikiPrice wikiPrice = apiClient.getWikiPrice(offer.getItemId());
+		WikiPrice wikiPrice = apiClient.getWikiPrice(itemId);
 
 		if (wikiPrice != null)
 		{
-			int targetPrice = offer.isBuy() ? wikiPrice.instaSell : wikiPrice.instaBuy;
-			return compareOfferPrice(offer.getPrice(), targetPrice, offer.isBuy());
+			int targetPrice = isBuy ? wikiPrice.instaSell : wikiPrice.instaBuy;
+			return compareOfferPrice(price, targetPrice, isBuy);
 		}
 
 		// Fallback to GE guide price if real-time prices unavailable.
@@ -458,13 +471,13 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
-		int guidePrice = itemManager.getItemPrice(offer.getItemId());
+		int guidePrice = itemManager.getItemPrice(itemId);
 		if (guidePrice <= 0)
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
 
-		return compareOfferPrice(offer.getPrice(), guidePrice, offer.isBuy());
+		return compareOfferPrice(price, guidePrice, isBuy);
 	}
 
 	/**
@@ -503,30 +516,28 @@ public class FlipSmartPlugin extends Plugin
 	public java.util.List<PendingOrder> getPendingBuyOrders()
 	{
 		java.util.List<PendingOrder> pendingOrders = new java.util.ArrayList<>();
-		
-		for (java.util.Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
+
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			TrackedOffer offer = entry.getValue();
-			
 			// Include all buy orders (pending or partially filled)
-			if (offer.isBuy())
+			if (offer.isBuy() && offer.getSlot() != null)
 			{
 				Integer recommendedSellPrice = session.getRecommendedPrice(offer.getItemId());
-				
+
 				PendingOrder pending = new PendingOrder(
 					offer.getItemId(),
 					offer.getItemName(),
 					offer.getTotalQuantity(),
-					offer.getPreviousQuantitySold(), // How many filled so far
+					offer.getFilledQuantity(),
 					offer.getPrice(),
 					recommendedSellPrice,
-					entry.getKey() // slot
+					offer.getSlot()
 				);
-				
+
 				pendingOrders.add(pending);
 			}
 		}
-		
+
 		return pendingOrders;
 	}
 	
@@ -535,7 +546,15 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public java.util.Set<Integer> getCurrentGEBuyItemIds()
 	{
-		return session.getCurrentGEBuyItemIds();
+		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			if (offer.isBuy())
+			{
+				itemIds.add(offer.getItemId());
+			}
+		}
+		return itemIds;
 	}
 
 	/**
@@ -547,7 +566,13 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public java.util.Set<Integer> getActiveFlipItemIds()
 	{
-		return session.getActiveFlipItemIds();
+		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			itemIds.add(offer.getItemId());
+		}
+		itemIds.addAll(session.getCollectedItemIds());
+		return itemIds;
 	}
 	
 	/**
@@ -603,17 +628,18 @@ public class FlipSmartPlugin extends Plugin
 
 		// Wire service callbacks and initialize auto-recommend
 		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker);
-		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay);
+		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
-			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService);
+			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
+		grandExchangeTracker.setOfferStore(offerStore);
 		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService);
 
 		// Build the event router now that all collaborators exist
 		eventRouter = new EventRouter(this, client, config, session, webhookSyncService,
 			offlineSyncService, bankSnapshotService, geHistoryService, geOfferDescriptionService,
-			grandExchangeTracker);
+			grandExchangeTracker, offerStore);
 
 		// Start dump alert service
 		dumpAlertService.start();
@@ -629,11 +655,11 @@ public class FlipSmartPlugin extends Plugin
 	public void highlightSlotForItem(int itemId)
 	{
 		geSlotOverlay.clearAllAdjustmentHighlights();
-		for (Map.Entry<Integer, TrackedOffer> entry : session.getTrackedOffers().entrySet())
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			if (entry.getValue().getItemId() == itemId)
+			if (offer.getItemId() == itemId && offer.getSlot() != null)
 			{
-				geSlotOverlay.setAdjustmentHighlight(entry.getKey(), 0);
+				geSlotOverlay.setAdjustmentHighlight(offer.getSlot(), 0);
 				return;
 			}
 		}
@@ -739,7 +765,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			session.setRsn(rsnForPersistence);
 		}
-		if (!session.getTrackedOffers().isEmpty())
+		if (!offerStore.export().isEmpty())
 		{
 			offlineSyncService.persistOfferState();
 			log.debug("Persisted offer state on shutdown for {}", rsnForPersistence);
@@ -990,7 +1016,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void backfillMissingTimestamps()
 	{
-		Map<Integer, TrackedOffer> tracked = session.getTrackedOffers();
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> tracked = offerStore.liveOffers();
 		if (tracked.isEmpty())
 		{
 			return;
@@ -1012,7 +1038,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			int corrected = 0;
-			for (TrackedOffer offer : tracked.values())
+			for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 			{
 				if (correctOfferTimestamp(offer, flipsByItem))
 				{
@@ -1037,7 +1063,7 @@ public class FlipSmartPlugin extends Plugin
 	 * local timestamps, since they're more accurate (set at offer placement time).
 	 * The backend's last_buy_time can be from older transactions for the same item.
 	 */
-	private boolean correctOfferTimestamp(TrackedOffer offer, Map<Integer, ActiveFlip> flipsByItem)
+	private boolean correctOfferTimestamp(com.flipsmart.domain.offer.OfferRecord offer, Map<Integer, ActiveFlip> flipsByItem)
 	{
 		if (offer.getCreatedAtMillis() > 0)
 		{
@@ -1058,7 +1084,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("Backfilled missing timestamp for {} from backend ({}m ago)",
 				offer.getItemName(), (System.currentTimeMillis() - backendMs) / 60000);
-			offer.setCreatedAtMillis(backendMs);
+			offerStore.correctCreatedAt(offer.getOfferId(), backendMs);
 			return true;
 		}
 		return false;
@@ -1066,7 +1092,7 @@ public class FlipSmartPlugin extends Plugin
 
 	private void performStaleFlipCleanup()
 	{
-		if (!session.getTrackedOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())
+		if (!offerStore.liveOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())
 		{
 			activeFlipTracker.cleanupStaleActiveFlips();
 			scheduleOneShot(PluginScheduler.INVENTORY_VALIDATION_DELAY_MS, () ->
@@ -1093,10 +1119,9 @@ public class FlipSmartPlugin extends Plugin
 		if (sess != null)
 		{
 			autoRecommendService.checkAdjustmentTimers(
-				sess.getTrackedOffers(),
 				flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null
 			);
-			autoRecommendService.checkSellAdjustmentTimers(sess.getTrackedOffers());
+			autoRecommendService.checkSellAdjustmentTimers();
 		}
 	}
 
@@ -1237,11 +1262,12 @@ public class FlipSmartPlugin extends Plugin
 		if (isLoginBurst && state != GrandExchangeOfferState.EMPTY)
 		{
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
-			TrackedOffer existing = session.getTrackedOffer(slot);
-			TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
-				itemId, itemName, totalQuantity, price, quantitySold, existing, state);
-			updated.setPreviousSpent(spent);
-			session.putTrackedOffer(slot, updated);
+			// Seed the offer store baseline (cumulative fill/spend) without recording a
+			// transaction, so the first live event after the burst records only the delta.
+			offerStore.apply(
+				com.flipsmart.trading.OfferEventMapper.toSignal(
+					slot, state, itemId, itemName, totalQuantity, price, quantitySold, spent),
+				System.currentTimeMillis());
 			return;
 		}
 
@@ -1253,7 +1279,7 @@ public class FlipSmartPlugin extends Plugin
 			.totalQuantity(totalQuantity)
 			.price(price)
 			.spent(spent)
-			.isBuy(TrackedOffer.isBuyState(state))
+			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
 	}
@@ -1516,7 +1542,6 @@ public class FlipSmartPlugin extends Plugin
 		if (autoRecommendService != null && autoRecommendService.isActive() && flipFinderPanel != null)
 		{
 			autoRecommendService.checkInactiveOffers(
-				session.getTrackedOffers(),
 				flipFinderPanel.getCurrentRecommendations()
 			);
 		}
@@ -1555,16 +1580,15 @@ public class FlipSmartPlugin extends Plugin
 				});
 			}
 
-			java.util.Map<Integer, TrackedOffer> offers = session.getTrackedOffers();
-			autoRecommendService.ensureAllOffersHaveTimers(offers);
+			autoRecommendService.ensureAllOffersHaveTimers();
 			autoRecommendService.checkAdjustmentTimers(
-				offers, flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
-			autoRecommendService.checkSellAdjustmentTimers(offers);
+				flipFinderPanel != null ? flipFinderPanel.getCurrentRecommendations() : null);
+			autoRecommendService.checkSellAdjustmentTimers();
 		}
 
 		if (manualAdjustmentTracker != null)
 		{
-			manualAdjustmentTracker.checkTimers(session.getTrackedOffers());
+			manualAdjustmentTracker.checkTimers();
 		}
 	}
 
@@ -1599,10 +1623,11 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		lastAdvisorPollMs = System.currentTimeMillis();
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveOffers = offerStore.liveOffers();
 		java.util.Set<Integer> activeItemIds = new java.util.HashSet<>();
-		for (TrackedOffer o : sess.getTrackedOffers().values())
+		for (com.flipsmart.domain.offer.OfferRecord o : liveOffers)
 		{
-			if (o != null && !o.isCompleted())
+			if (o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
 			{
 				activeItemIds.add(o.getItemId());
 			}
@@ -1612,10 +1637,9 @@ public class FlipSmartPlugin extends Plugin
 			activeOfferAdvisorService.reconcile(activeItemIds);
 		}
 		java.util.List<OfferAdviceRequest> requests = new java.util.ArrayList<>();
-		for (Map.Entry<Integer, TrackedOffer> entry : sess.getTrackedOffers().entrySet())
+		for (com.flipsmart.domain.offer.OfferRecord offer : liveOffers)
 		{
-			TrackedOffer offer = entry.getValue();
-			if (offer == null || offer.isCompleted())
+			if (offer.getState() == com.flipsmart.domain.offer.OfferState.FILLED)
 			{
 				continue;
 			}
@@ -1712,10 +1736,9 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		sess.setRecommendedPrice(itemId, resp.getNewPrice());
-		Integer slot = findSlotForItem(sess, itemId);
-		if (slot != null && autoRecommendService != null)
+		if (autoRecommendService != null)
 		{
-			TrackedOffer offer = sess.getTrackedOffer(slot);
+			com.flipsmart.domain.offer.OfferRecord offer = findLiveOfferForItem(itemId);
 			if (offer != null)
 			{
 				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
@@ -1731,14 +1754,13 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private Integer findSlotForItem(PlayerSession sess, int itemId)
+	private com.flipsmart.domain.offer.OfferRecord findLiveOfferForItem(int itemId)
 	{
-		for (Map.Entry<Integer, TrackedOffer> e : sess.getTrackedOffers().entrySet())
+		for (com.flipsmart.domain.offer.OfferRecord o : offerStore.liveOffers())
 		{
-			TrackedOffer o = e.getValue();
-			if (o != null && o.getItemId() == itemId && !o.isCompleted())
+			if (o.getItemId() == itemId && o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
 			{
-				return e.getKey();
+				return o;
 			}
 		}
 		return null;
@@ -1755,9 +1777,9 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		for (TrackedOffer offer : sess.getTrackedOffers().values())
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			if (offer != null && offer.getItemId() == itemId)
+			if (offer.getItemId() == itemId)
 			{
 				autoRecommendService.addToStaleQueue(offer);
 				break;

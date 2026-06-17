@@ -2,12 +2,14 @@ package com.flipsmart;
 import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.recommend.AdjustmentService;
 import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
 import com.flipsmart.recommend.RecommendationQueue;
 import com.flipsmart.recommend.StaleOfferQueue;
+import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
 
 import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
@@ -52,6 +54,7 @@ public class AutoRecommendService
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
+	private final OfferStore offerStore;
 
 	// Buy queue + cursor + item names + offer-screen lock + last-refresh timestamp.
 	private final RecommendationQueue queue = new RecommendationQueue();
@@ -115,10 +118,11 @@ public class AutoRecommendService
 		Map<Integer, Integer> buyPrices;
 	}
 
-	public AutoRecommendService(FlipSmartConfig config, FlipSmartPlugin plugin)
+	public AutoRecommendService(FlipSmartConfig config, FlipSmartPlugin plugin, OfferStore offerStore)
 	{
 		this.config = config;
 		this.plugin = plugin;
+		this.offerStore = offerStore;
 	}
 
 	public void setOnFocusChanged(Consumer<FocusedFlip> callback)
@@ -234,11 +238,7 @@ public class AutoRecommendService
 		rescheduleSellAdjustmentTimersAfterLogin();
 
 		// Immediately check timers that are already past deadline (don't wait for 2-min cycle)
-		PlayerSession s = plugin.getSession();
-		if (s != null)
-		{
-			ensureAllOffersHaveTimers(s.getTrackedOffers());
-		}
+		ensureAllOffersHaveTimers();
 	}
 
 	/**
@@ -405,7 +405,7 @@ public class AutoRecommendService
 		}
 
 		// Don't re-show sell overlay if this item already has an active sell order
-		if (session.hasActiveSellSlotForItem(itemId))
+		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
 			return SellFocusResult.ALREADY_SELLING;
@@ -625,8 +625,8 @@ public class AutoRecommendService
 	 *
 	 * @param itemId The item that was collected
 	 * @param wasBuy Whether the collected offer was a buy order
-	 * @param itemName The item name (from the collected TrackedOffer, since it's already removed from session)
-	 * @param quantity The filled quantity (from the collected TrackedOffer)
+	 * @param itemName The item name (from the collected offer, since it's already removed from session)
+	 * @param quantity The filled quantity (from the collected offer)
 	 */
 	public synchronized void onOfferCollected(int itemId, boolean wasBuy, String itemName, int quantity)
 	{
@@ -715,8 +715,7 @@ public class AutoRecommendService
 		// completed slot sits uncollected — and may even recommend a flip for
 		// an item the user has already sold, because the slot has not been
 		// freed.
-		PlayerSession session = plugin.getSession();
-		if (session != null && !session.getCompletedOffers().isEmpty())
+		if (!offerStore.completedAwaitingCollection().isEmpty())
 		{
 			promptCollection();
 			return;
@@ -999,10 +998,9 @@ public class AutoRecommendService
 	 * Updates status to prompt user action. Does NOT auto-cancel.
 	 */
 	public synchronized void checkInactiveOffers(
-		Map<Integer, TrackedOffer> trackedOffers,
 		List<FlipRecommendation> currentRecommendations)
 	{
-		if (!active || trackedOffers == null)
+		if (!active)
 		{
 			return;
 		}
@@ -1011,7 +1009,7 @@ public class AutoRecommendService
 		PlayerSession session = plugin.getSession();
 
 		// Find the first stale buy offer that hasn't been notified yet
-		TrackedOffer staleOffer = findFirstStaleOffer(trackedOffers, session, now);
+		OfferRecord staleOffer = findFirstStaleOffer(session, now);
 		if (staleOffer == null)
 		{
 			return;
@@ -1039,14 +1037,13 @@ public class AutoRecommendService
 	/**
 	 * Find the first tracked buy offer that is stale and hasn't been notified yet.
 	 */
-	private TrackedOffer findFirstStaleOffer(
-		Map<Integer, TrackedOffer> trackedOffers,
+	private OfferRecord findFirstStaleOffer(
 		PlayerSession session,
 		long now)
 	{
-		for (TrackedOffer offer : trackedOffers.values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
-			if (!offer.isBuy() || offer.getCompletedAtMillis() > 0)
+			if (!offer.isBuy() || offer.getState() == OfferState.FILLED)
 			{
 				continue;
 			}
@@ -1129,17 +1126,16 @@ public class AutoRecommendService
 	 * Called periodically from the auto-recommend refresh timer (2-minute interval).
 	 */
 	public synchronized void checkAdjustmentTimers(
-		Map<Integer, TrackedOffer> trackedOffers,
 		List<FlipRecommendation> currentRecommendations)
 	{
 		if (!shouldRunLegacyAdjustment(config.flipTimeframe().getApiValue(), config.enableActiveOfferAdvisor()))
 		{
 			return;
 		}
-		if (!active || !adjustments.hasBuyDeadlines() || trackedOffers == null)
+		if (!active || !adjustments.hasBuyDeadlines())
 		{
-			log.debug("Auto-recommend: checkAdjustmentTimers skipped (active={}, deadlines={}, offers={})",
-				active, adjustments.buyDeadlineCount(), trackedOffers != null ? trackedOffers.size() : "null");
+			log.debug("Auto-recommend: checkAdjustmentTimers skipped (active={}, deadlines={})",
+				active, adjustments.buyDeadlineCount());
 			return;
 		}
 
@@ -1159,7 +1155,7 @@ public class AutoRecommendService
 			{
 				log.debug("Auto-recommend: Timer expired for {} (overdue by {}s)",
 					itemName, (now - deadline) / 1000);
-				processExpiredAdjustmentTimer(entry, trackedOffers, currentRecommendations, iter, now);
+				processExpiredAdjustmentTimer(entry, currentRecommendations, iter, now);
 			}
 			else
 			{
@@ -1175,15 +1171,14 @@ public class AutoRecommendService
 	 */
 	private void processExpiredAdjustmentTimer(
 		Map.Entry<Integer, Long> entry,
-		Map<Integer, TrackedOffer> trackedOffers,
 		List<FlipRecommendation> currentRecommendations,
 		Iterator<Map.Entry<Integer, Long>> iter,
 		long now)
 	{
 		int itemId = entry.getKey();
 
-		TrackedOffer offer = findTrackedBuyOffer(trackedOffers, itemId);
-		if (offer == null || offer.isCompleted())
+		OfferRecord offer = findTrackedBuyOffer(itemId);
+		if (offer == null || offer.getState() == OfferState.FILLED)
 		{
 			iter.remove();
 			return;
@@ -1209,7 +1204,7 @@ public class AutoRecommendService
 			.averageBuyPrice(costBasis)
 			.minutesSinceOffer(minutesSince)
 			.adjustmentCount(0)
-			.quantityFilled(offer.getPreviousQuantitySold())
+			.quantityFilled(offer.getFilledQuantity())
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
 			.build()
@@ -1234,7 +1229,7 @@ public class AutoRecommendService
 	/**
 	 * Handle the response from the buy adjustment API.
 	 */
-	private void handleBuyAdjustmentResponse(int itemId, TrackedOffer offer,
+	private void handleBuyAdjustmentResponse(int itemId, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
 		if (response == null)
@@ -1283,8 +1278,8 @@ public class AutoRecommendService
 	 * Reschedule adjustment timers after login for any active unfilled buy offers
 	 * that don't already have a timer.
 	 *
-	 * Uses locally persisted TrackedOffer.createdAtMillis for offer age
-	 * (preserved across sessions via OfflineSyncService).
+	 * Reads offer age from the live offer store (createdAtMillis is preserved
+	 * across sessions when offers are restored).
 	 *
 	 * @return true if any offers are already past their adjustment threshold
 	 */
@@ -1299,9 +1294,9 @@ public class AutoRecommendService
 		long now = System.currentTimeMillis();
 		boolean anyAlreadyStale = false;
 
-		for (TrackedOffer offer : session.getTrackedOffers().values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
-			if (!offer.isBuy() || offer.isCompleted()
+			if (!offer.isBuy() || offer.getState() == OfferState.FILLED
 				|| adjustments.hasBuyDeadline(offer.getItemId()))
 			{
 				continue;
@@ -1334,17 +1329,17 @@ public class AutoRecommendService
 	 * Called on each 2-minute refresh cycle to catch offers that were
 	 * missed (e.g., placed before a plugin rebuild or not present at login).
 	 */
-	public synchronized void ensureAllOffersHaveTimers(Map<Integer, TrackedOffer> trackedOffers)
+	public synchronized void ensureAllOffersHaveTimers()
 	{
-		if (!active || trackedOffers == null)
+		if (!active)
 		{
 			return;
 		}
 
 		long now = System.currentTimeMillis();
-		for (TrackedOffer offer : trackedOffers.values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
-			if (offer.isCompleted())
+			if (offer.getState() == OfferState.FILLED)
 			{
 				continue;
 			}
@@ -1360,7 +1355,7 @@ public class AutoRecommendService
 		}
 	}
 
-	private void scheduleMissingBuyTimer(TrackedOffer offer, long now)
+	private void scheduleMissingBuyTimer(OfferRecord offer, long now)
 	{
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
@@ -1370,7 +1365,7 @@ public class AutoRecommendService
 			offer.getItemName(), offerAgeMs / 60000);
 	}
 
-	private void scheduleMissingSellTimer(TrackedOffer offer, long now)
+	private void scheduleMissingSellTimer(OfferRecord offer, long now)
 	{
 		Integer buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
@@ -1400,11 +1395,11 @@ public class AutoRecommendService
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
-			Map<Integer, TrackedOffer> currentOffers = session.getTrackedOffers();
+			List<OfferRecord> currentOffers = offerStore.liveOffers();
 			staleOffers.pruneIrrelevant(o ->
 			{
-				TrackedOffer current = currentOffers.values().stream()
-					.filter(t -> t.getItemId() == o.getItemId() && !t.isCompleted())
+				OfferRecord current = currentOffers.stream()
+					.filter(t -> t.getItemId() == o.getItemId() && t.getState() != OfferState.FILLED)
 					.findFirst().orElse(null);
 				if (current == null)
 				{
@@ -1427,7 +1422,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		TrackedOffer next = staleOffers.head();
+		OfferRecord next = staleOffers.head();
 		Integer resellPrice = staleOffers.getResellPrice(next.getItemId());
 		String overlayMsg;
 		if (!next.isBuy() && resellPrice != null)
@@ -1458,7 +1453,7 @@ public class AutoRecommendService
 	 * Add a tracked offer to the stale queue if not already present.
 	 * If the queue was empty, immediately shows the first prompt.
 	 */
-	void addToStaleQueue(TrackedOffer offer)
+	void addToStaleQueue(OfferRecord offer)
 	{
 		StaleOfferQueue.AddResult result = staleOffers.addIfAbsent(offer);
 		if (result == StaleOfferQueue.AddResult.ALREADY_PRESENT)
@@ -1482,7 +1477,7 @@ public class AutoRecommendService
 	 * uses the advised price. Idempotent — addToStaleQueue dedupes by item, and the price
 	 * map is refreshed on each poll.
 	 */
-	public synchronized void surfaceAdvisorResell(TrackedOffer offer, int newPrice, Integer netProfitEstimate)
+	public synchronized void surfaceAdvisorResell(OfferRecord offer, int newPrice, Integer netProfitEstimate)
 	{
 		if (offer == null)
 		{
@@ -1537,7 +1532,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		TrackedOffer sellOffer = findTrackedSellOffer(session.getTrackedOffers(), itemId);
+		OfferRecord sellOffer = findTrackedSellOffer(itemId);
 		if (sellOffer == null)
 		{
 			return;
@@ -1614,13 +1609,13 @@ public class AutoRecommendService
 	 * Check all sell adjustment timers and call the API for expired ones.
 	 * Called periodically from the auto-recommend refresh timer (2-minute interval).
 	 */
-	public synchronized void checkSellAdjustmentTimers(Map<Integer, TrackedOffer> trackedOffers)
+	public synchronized void checkSellAdjustmentTimers()
 	{
 		if (!shouldRunLegacyAdjustment(config.flipTimeframe().getApiValue(), config.enableActiveOfferAdvisor()))
 		{
 			return;
 		}
-		if (!active || !adjustments.hasSellStates() || trackedOffers == null)
+		if (!active || !adjustments.hasSellStates())
 		{
 			return;
 		}
@@ -1632,11 +1627,11 @@ public class AutoRecommendService
 		{
 			Map.Entry<Integer, SellAdjustmentState> entry = iter.next();
 			SellAdjustmentState state = entry.getValue();
-			processOneSellTimer(state, trackedOffers, now, iter);
+			processOneSellTimer(state, now, iter);
 		}
 	}
 
-	private void processOneSellTimer(SellAdjustmentState state, Map<Integer, TrackedOffer> trackedOffers,
+	private void processOneSellTimer(SellAdjustmentState state,
 		long now, Iterator<Map.Entry<Integer, SellAdjustmentState>> iter)
 	{
 		if (now < state.deadline)
@@ -1644,8 +1639,8 @@ public class AutoRecommendService
 			return;
 		}
 
-		TrackedOffer offer = findTrackedSellOffer(trackedOffers, state.itemId);
-		if (offer == null || offer.isCompleted())
+		OfferRecord offer = findTrackedSellOffer(state.itemId);
+		if (offer == null || offer.getState() == OfferState.FILLED)
 		{
 			iter.remove();
 			return;
@@ -1662,7 +1657,7 @@ public class AutoRecommendService
 	/**
 	 * Call the /flips/adjustment API for a sell offer and handle the response.
 	 */
-	private void callSellAdjustmentApi(SellAdjustmentState state, TrackedOffer offer, int minutesSince)
+	private void callSellAdjustmentApi(SellAdjustmentState state, OfferRecord offer, int minutesSince)
 	{
 		String timeframe = config.flipTimeframe().getApiValue();
 
@@ -1679,7 +1674,7 @@ public class AutoRecommendService
 			.averageBuyPrice(state.averageBuyPrice)
 			.minutesSinceOffer(minutesSince)
 			.adjustmentCount(state.adjustmentCount)
-			.quantityFilled(offer.getPreviousQuantitySold())
+			.quantityFilled(offer.getFilledQuantity())
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
 			.rsn(rsn)
@@ -1702,7 +1697,7 @@ public class AutoRecommendService
 	/**
 	 * Handle the response from the sell adjustment API.
 	 */
-	private void handleSellAdjustmentResponse(SellAdjustmentState state, TrackedOffer offer, FlipAdjustmentResponse response)
+	private void handleSellAdjustmentResponse(SellAdjustmentState state, OfferRecord offer, FlipAdjustmentResponse response)
 	{
 		if (response == null)
 		{
@@ -1768,9 +1763,9 @@ public class AutoRecommendService
 
 		long now = System.currentTimeMillis();
 
-		for (TrackedOffer offer : session.getTrackedOffers().values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
-			if (offer.isBuy() || offer.isCompleted()
+			if (offer.isBuy() || offer.getState() == OfferState.FILLED
 				|| adjustments.hasSellState(offer.getItemId()))
 			{
 				continue;
@@ -1810,9 +1805,9 @@ public class AutoRecommendService
 	/**
 	 * Find a tracked sell offer for the given item ID.
 	 */
-	private TrackedOffer findTrackedSellOffer(Map<Integer, TrackedOffer> trackedOffers, int itemId)
+	private OfferRecord findTrackedSellOffer(int itemId)
 	{
-		for (TrackedOffer offer : trackedOffers.values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId && !offer.isBuy())
 			{
@@ -1825,9 +1820,9 @@ public class AutoRecommendService
 	/**
 	 * Find a tracked buy offer for the given item ID.
 	 */
-	private TrackedOffer findTrackedBuyOffer(Map<Integer, TrackedOffer> trackedOffers, int itemId)
+	private OfferRecord findTrackedBuyOffer(int itemId)
 	{
-		for (TrackedOffer offer : trackedOffers.values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId && offer.isBuy())
 			{
@@ -1934,7 +1929,7 @@ public class AutoRecommendService
 
 		if (!staleOffers.isEmpty())
 		{
-			TrackedOffer skipped = staleOffers.removeHead();
+			OfferRecord skipped = staleOffers.removeHead();
 			log.debug("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
 			focusNextAvailableAction();
 			return;
@@ -2033,7 +2028,7 @@ public class AutoRecommendService
 
 	/**
 	 * Focus the sell side for a specific item with known name and quantity.
-	 * Used when we have direct info from the just-collected TrackedOffer.
+	 * Used when we have direct info from the just-collected offer.
 	 */
 	private void focusSellForItem(int itemId, String itemName, int quantity)
 	{
@@ -2137,12 +2132,12 @@ public class AutoRecommendService
 
 		for (int itemId : session.getCollectedItemIds())
 		{
-			if (session.hasActiveSellSlotForItem(itemId))
+			if (offerStore.hasActiveSellOfferForItem(itemId))
 			{
 				continue;
 			}
 
-			int result = evaluateCollectedItem(itemId, session, staleItems);
+			int result = evaluateCollectedItem(itemId, staleItems);
 			if (result >= 0)
 			{
 				return result;
@@ -2164,14 +2159,13 @@ public class AutoRecommendService
 	 * to promptCollection. Anything else is stale — collectedQuantity alone does not
 	 * keep an entry alive (that fallback was the root cause of stuck sell prompts).
 	 */
-	private int evaluateCollectedItem(int itemId, PlayerSession session, List<Integer> staleItems)
+	private int evaluateCollectedItem(int itemId, List<Integer> staleItems)
 	{
 		if (isItemInInventory(itemId))
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
-		if (session.hasInFlightBuyOfferForItem(itemId)
-			|| session.hasUncollectedBuyOfferForItem(itemId))
+		if (offerStore.hasLiveBuyOfferForItem(itemId))
 		{
 			return -1;
 		}
@@ -2281,10 +2275,10 @@ public class AutoRecommendService
 		// Clear the buy overlay so it doesn't show a buy instruction when slots are full
 		invokeFocusCallback(null);
 
-		List<TrackedOffer> completed = plugin.getSession().getCompletedOffers();
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
 		if (!completed.isEmpty() && plugin.hasCollectableGEOffers())
 		{
-			TrackedOffer first = completed.get(0);
+			OfferRecord first = completed.get(0);
 			if (first.isBuy())
 			{
 				updateStatus("Auto: Collect " + first.getItemName() + " from GE");

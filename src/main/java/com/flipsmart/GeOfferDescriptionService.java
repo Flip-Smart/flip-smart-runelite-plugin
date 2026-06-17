@@ -1,6 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.BuyPriceLookup;
 
 import lombok.extern.slf4j.Slf4j;
@@ -300,7 +300,7 @@ public class GeOfferDescriptionService
 			return null;
 		}
 		Boolean uiIsBuy = readSlotDirectionFromUi(slot);
-		boolean isBuy = uiIsBuy != null ? uiIsBuy : TrackedOffer.isBuyState(offer.getState());
+		boolean isBuy = uiIsBuy != null ? uiIsBuy : OfferSignal.isBuyState(offer.getState());
 		return new int[]{offer.getItemId(), isBuy ? 1 : 0, offer.getPrice(), offer.getTotalQuantity()};
 	}
 

@@ -900,7 +900,7 @@ public class FlipFinderPanel extends PluginPanel
 			// but keep currentRecommendations populated so auto-flip can still use them
 			PlayerSession session = plugin.getSession();
 			if (session != null && !response.isPremium()
-				&& !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
+				&& !plugin.hasAvailableGESlots(plugin.getFlipSlotLimit()))
 			{
 				showSlotLimitMessage();
 			}
@@ -1472,7 +1472,7 @@ public class FlipFinderPanel extends PluginPanel
 				return;
 			}
 
-			boolean atLimit = !plugin.isPremium() && !session.hasAvailableGESlots(plugin.getFlipSlotLimit());
+			boolean atLimit = !plugin.isPremium() && !plugin.hasAvailableGESlots(plugin.getFlipSlotLimit());
 
 			if (atLimit)
 			{
@@ -2273,7 +2273,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Block new buy-side flips when free user has hit their slot limit
 		PlayerSession session = plugin.getSession();
 		if (session != null && !plugin.isPremium()
-			&& !session.hasAvailableGESlots(plugin.getFlipSlotLimit()))
+			&& !plugin.hasAvailableGESlots(plugin.getFlipSlotLimit()))
 		{
 			return;
 		}

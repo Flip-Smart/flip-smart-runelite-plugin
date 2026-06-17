@@ -1,6 +1,7 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.trading.OfferStore;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -33,6 +34,7 @@ public class ActiveFlipTracker
 	private final Client client;
 	private final ClientThread clientThread;
 	private final ItemManager itemManager;
+	private final OfferStore offerStore;
 
 	private Runnable onPanelRefreshNeeded;
 	private Runnable onActiveFlipsRefreshNeeded;
@@ -43,13 +45,15 @@ public class ActiveFlipTracker
 		FlipSmartApiClient apiClient,
 		Client client,
 		ClientThread clientThread,
-		ItemManager itemManager)
+		ItemManager itemManager,
+		OfferStore offerStore)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
 		this.client = client;
 		this.clientThread = clientThread;
 		this.itemManager = itemManager;
+		this.offerStore = offerStore;
 	}
 
 	public void setOnPanelRefreshNeeded(Runnable callback)
@@ -75,7 +79,7 @@ public class ActiveFlipTracker
 			log.debug("Removed item {} from collected tracking (sold)", itemId);
 		}
 
-		if (session.hasActiveSellSlotForItem(itemId))
+		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Item {} still has active sell slot, keeping flip open", itemId);
 			return;
@@ -176,11 +180,16 @@ public class ActiveFlipTracker
 
 	private Set<Integer> collectAllActiveItemIds()
 	{
-		Set<Integer> itemIds = session.getActiveFlipItemIds();
+		Set<Integer> itemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			itemIds.add(offer.getItemId());
+		}
+		itemIds.addAll(session.getCollectedItemIds());
 
 		// Also read directly from the game client's GE state as the definitive
-		// source of truth. This protects against the race condition where
-		// trackedOffers may not be fully populated from login burst events.
+		// source of truth. This protects against the race condition where the
+		// offer store may not be fully populated from login burst events.
 		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		if (offers != null)
 		{
@@ -309,14 +318,7 @@ public class ActiveFlipTracker
 
 	private boolean isItemInActiveBuySlot(int itemId)
 	{
-		for (TrackedOffer offer : session.getTrackedOffers().values())
-		{
-			if (offer.getItemId() == itemId && offer.isBuy())
-			{
-				return true;
-			}
-		}
-		return false;
+		return offerStore.hasLiveBuyOfferForItem(itemId);
 	}
 
 	private Map<Integer, Integer> getTotalItemCounts()
@@ -336,11 +338,11 @@ public class ActiveFlipTracker
 			}
 		}
 
-		for (TrackedOffer offer : session.getTrackedOffers().values())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (!offer.isBuy() && offer.getItemId() > 0)
 			{
-				int remainingInSlot = offer.getTotalQuantity() - offer.getPreviousQuantitySold();
+				int remainingInSlot = offer.getTotalQuantity() - offer.getFilledQuantity();
 				if (remainingInSlot > 0)
 				{
 					counts.merge(offer.getItemId(), remainingInSlot, Integer::sum);

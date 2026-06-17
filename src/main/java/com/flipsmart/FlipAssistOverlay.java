@@ -672,8 +672,8 @@ public class FlipAssistOverlay extends Overlay
 		else
 		{
 			// Show "MODIFY" if there's already an active sell order for this item
-			PlayerSession sess = flipSmartPlugin.getSession();
-			boolean hasActiveSell = sess != null && sess.hasActiveSellSlotForItem(flip.getItemId());
+			com.flipsmart.trading.OfferStore store = flipSmartPlugin.getOfferStore();
+			boolean hasActiveSell = store != null && store.hasActiveSellOfferForItem(flip.getItemId());
 			stepLabel = hasActiveSell ? "MODIFY" : "SELLING";
 		}
 		graphics.drawString(stepLabel, SECTION_PADDING + ICON_SIZE + 6, y + 24);

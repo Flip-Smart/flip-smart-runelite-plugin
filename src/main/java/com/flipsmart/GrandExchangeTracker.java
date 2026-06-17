@@ -2,11 +2,15 @@ package com.flipsmart;
 import com.flipsmart.api.dto.TransactionRequest;
 import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
-import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
+import com.flipsmart.trading.OfferEventMapper;
+import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.ItemUtils;
 
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +43,10 @@ public class GrandExchangeTracker
 	private final ActiveFlipTracker activeFlipTracker;
 	private final ItemManager itemManager;
 	private final TradeActivityLog tradeActivityLog;
+
+	// State owner for offer lifecycle decisions (delta/transition kind). Injected by the
+	// plugin; self-provisioned when absent so the tracker is always backed by the new core.
+	private OfferStore offerStore = new OfferStore();
 
 	// Set after construction (created in plugin startUp)
 	private AutoRecommendService autoRecommendService;
@@ -103,6 +111,14 @@ public class GrandExchangeTracker
 	// =====================
 	// Setter wiring
 	// =====================
+
+	public void setOfferStore(OfferStore offerStore)
+	{
+		if (offerStore != null)
+		{
+			this.offerStore = offerStore;
+		}
+	}
 
 	public void setAutoRecommendService(AutoRecommendService service)
 	{
@@ -199,8 +215,16 @@ public class GrandExchangeTracker
 
 	private void handleCancelledOffer(OfferContext ctx)
 	{
-		// Duplicate cancellation guard (RuneLite bug #12037)
-		if (session.getTrackedOffer(ctx.slot) == null)
+		// Guard against the RuneLite client re-firing a CANCELLED offer event twice for the
+		// same slot. A removing cancel (zero-fill / nothing remaining) frees the slot, so the
+		// duplicate sees a null record. A partial cancel keeps its slot live as
+		// CANCELLED_PARTIAL, so the null check alone misses the re-fire — also short-circuit
+		// when the slot already holds a partial-cancel record, making partial cancels
+		// idempotent. A re-listed offer holds a fresh NEW/PARTIAL_FILL record, not
+		// CANCELLED_PARTIAL, so a legitimate later cancel still proceeds.
+		OfferRecord previousOffer = offerStore.bySlot(ctx.slot);
+		if (previousOffer == null
+			|| previousOffer.getState() == com.flipsmart.domain.offer.OfferState.CANCELLED_PARTIAL)
 		{
 			log.debug("Ignoring duplicate cancellation event for slot {}", ctx.slot);
 			return;
@@ -214,7 +238,7 @@ public class GrandExchangeTracker
 
 		if (ctx.quantitySold > 0)
 		{
-			recordFinalCancellationFill(ctx);
+			recordFinalCancellationFill(ctx, previousOffer);
 		}
 		else
 		{
@@ -223,38 +247,42 @@ public class GrandExchangeTracker
 
 		if (ctx.isBuy && ctx.quantitySold > 0)
 		{
-			syncCancelledPartialBuy(ctx);
+			syncCancelledPartialBuy(ctx, previousOffer);
 		}
 
 		if (!ctx.isBuy)
 		{
-			reAddUnsoldItemsOnSellCancel(ctx);
+			reAddUnsoldItemsOnSellCancel(ctx, previousOffer);
 		}
 
-		// Capture total quantity before removing tracked offer
-		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
-		int totalQuantity = cancelledOffer != null ? cancelledOffer.getTotalQuantity() : ctx.totalQuantity;
+		int totalQuantity = previousOffer.getTotalQuantity() > 0
+			? previousOffer.getTotalQuantity() : ctx.totalQuantity;
 
 		// A cancel that leaves items in the GE collection box must stay collectable so
 		// the items route through the normal collect -> (re)sell flow instead of being
-		// orphaned. Removing the offer here would leave the later collect (EMPTY) event
-		// with no tracked offer, so no (re)sell prompt would ever surface proactively.
+		// orphaned. The store keeps a partial-cancel record live (CANCELLED_PARTIAL) and
+		// frees the slot on a zero-fill cancel (CANCELLED_EMPTY), mirroring the prior
+		// keep/remove split:
 		//  - partial BUY cancel: the bought items still need selling
 		//  - SELL cancel with unsold items: the returned items need re-listing
 		boolean partialBuyCancel = ctx.isBuy && ctx.quantitySold > 0;
 		boolean sellCancelWithRemaining = !ctx.isBuy && (totalQuantity - ctx.quantitySold) > 0;
-		if ((partialBuyCancel || sellCancelWithRemaining) && cancelledOffer != null)
+		if ((partialBuyCancel || sellCancelWithRemaining) && previousOffer.getFilledQuantity() == 0)
 		{
-			// Mark it completed: a Collect prompt now (the slot still counts as occupied),
-			// then a (re)sell prompt once the player collects the items.
-			cancelledOffer.setPreviousQuantitySold(ctx.quantitySold);
-			cancelledOffer.setCompletedAtMillis(System.currentTimeMillis());
+			// Edge: a "cancel with remaining" that the store recorded as zero-filled still
+			// needs to stay collectable; promote it to a partial-cancel via a fill replay so
+			// bySlot keeps returning it for the later collect.
+			OfferRecord promoted = previousOffer
+				.withFill(ctx.quantitySold, ctx.spent, com.flipsmart.domain.offer.OfferState.CANCELLED_PARTIAL,
+					System.currentTimeMillis());
+			offerStore.importRecords(replaceInStore(promoted));
 		}
 		else
 		{
-			// Remove tracked offer BEFORE notifying auto-recommend so hasActiveSellSlotForItem
-			// returns false and findNextSellableCollectedItem can find the re-added items
-			session.removeTrackedOffer(ctx.slot);
+			// Apply the cancellation: partial keeps the slot (CANCELLED_PARTIAL), zero-fill
+			// frees it (CANCELLED_EMPTY) so hasActiveSellOfferForItem returns false and
+			// findNextSellableCollectedItem can find the re-added items.
+			offerStore.apply(toSignal(ctx), System.currentTimeMillis());
 		}
 
 		// Only remove recommended price for zero-fill buy cancels — partial fills need the
@@ -264,17 +292,24 @@ public class GrandExchangeTracker
 			session.removeRecommendedPrice(ctx.itemId);
 		}
 
-		// Notify auto-recommend AFTER tracked offer removal
+		// Notify auto-recommend AFTER the store cancellation is applied
 		if (isAutoRecommendActive())
 		{
 			autoRecommendService.onOfferCancelled(ctx.itemId, ctx.itemName, ctx.isBuy, ctx.quantitySold, totalQuantity);
 		}
 	}
 
-	private void reAddUnsoldItemsOnSellCancel(OfferContext ctx)
+	private java.util.List<OfferRecord> replaceInStore(OfferRecord replacement)
 	{
-		TrackedOffer sellOffer = session.getTrackedOffer(ctx.slot);
-		int orderTotal = sellOffer != null ? sellOffer.getTotalQuantity() : ctx.totalQuantity;
+		java.util.List<OfferRecord> records = new java.util.ArrayList<>(offerStore.allRecords());
+		records.removeIf(r -> r.getOfferId() == replacement.getOfferId());
+		records.add(replacement);
+		return records;
+	}
+
+	private void reAddUnsoldItemsOnSellCancel(OfferContext ctx, OfferRecord sellOffer)
+	{
+		int orderTotal = sellOffer.getTotalQuantity() > 0 ? sellOffer.getTotalQuantity() : ctx.totalQuantity;
 		int remaining = orderTotal - ctx.quantitySold;
 		if (remaining > 0)
 		{
@@ -284,14 +319,12 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void recordFinalCancellationFill(OfferContext ctx)
+	private void recordFinalCancellationFill(OfferContext ctx, OfferRecord previousOffer)
 	{
-		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
-
-		if (previousOffer != null && ctx.quantitySold > previousOffer.getPreviousQuantitySold())
+		if (ctx.quantitySold > previousOffer.getFilledQuantity())
 		{
-			int newQuantity = ctx.quantitySold - previousOffer.getPreviousQuantitySold();
-			long previousSpent = previousOffer.getPreviousSpent();
+			int newQuantity = ctx.quantitySold - previousOffer.getFilledQuantity();
+			long previousSpent = previousOffer.getSpent();
 			long incrementalSpent = ctx.spent - previousSpent;
 			int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
@@ -322,7 +355,6 @@ public class GrandExchangeTracker
 
 	private void handleZeroFillCancellation(OfferContext ctx)
 	{
-		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
 		log.debug("Order cancelled with no fills: {} {}",
 			ctx.isBuy ? "BUY" : "SELL",
 			ctx.itemName);
@@ -335,15 +367,14 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void syncCancelledPartialBuy(OfferContext ctx)
+	private void syncCancelledPartialBuy(OfferContext ctx, OfferRecord cancelledOffer)
 	{
-		TrackedOffer cancelledOffer = session.getTrackedOffer(ctx.slot);
 		log.debug("Cancelled buy order had {} items filled (ordered {}) - syncing actual quantity and tracking until sold",
-			ctx.quantitySold, cancelledOffer != null ? cancelledOffer.getTotalQuantity() : "?");
+			ctx.quantitySold, cancelledOffer.getTotalQuantity());
 		session.addCollectedItem(ctx.itemId, ctx.quantitySold);
 
 		String rsn = getRsn().orElse(null);
-		if (rsn != null && cancelledOffer != null)
+		if (rsn != null)
 		{
 			int pricePerItem = (ctx.quantitySold > 0) ? (int)((long) ctx.spent / ctx.quantitySold) : 0;
 			log.debug("Syncing cancelled order quantity to backend: {} x{} (was {})",
@@ -367,14 +398,18 @@ public class GrandExchangeTracker
 
 	private void handleEmptyOffer(int slot)
 	{
-		TrackedOffer collectedOffer = session.removeTrackedOffer(slot);
+		// Capture the record before the collect transition frees the slot, then mirror the
+		// collect into the store (terminal COLLECTED) so it stops occupying the slot.
+		OfferRecord collectedOffer = offerStore.bySlot(slot);
 
 		if (collectedOffer == null)
 		{
 			return;
 		}
 
-		if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() > 0)
+		offerStore.apply(emptySignal(slot, collectedOffer), System.currentTimeMillis());
+
+		if (collectedOffer.isBuy() && collectedOffer.getFilledQuantity() > 0)
 		{
 			handleCollectedBuyOffer(collectedOffer);
 		}
@@ -382,7 +417,7 @@ public class GrandExchangeTracker
 		{
 			handleCollectedSellOffer(collectedOffer);
 		}
-		else if (collectedOffer.isBuy() && collectedOffer.getPreviousQuantitySold() == 0)
+		else if (collectedOffer.isBuy() && collectedOffer.getFilledQuantity() == 0)
 		{
 			handleEmptyBuyWithZeroFills(collectedOffer);
 		}
@@ -391,10 +426,17 @@ public class GrandExchangeTracker
 		schedulePanelRefresh();
 	}
 
-	private void handleCollectedBuyOffer(TrackedOffer collectedOffer)
+	private OfferSignal emptySignal(int slot, OfferRecord record)
+	{
+		return OfferEventMapper.toSignal(
+			slot, GrandExchangeOfferState.EMPTY, record.getItemId(), record.getItemName(),
+			record.getTotalQuantity(), record.getPrice(), record.getFilledQuantity(), record.getSpent());
+	}
+
+	private void handleCollectedBuyOffer(OfferRecord collectedOffer)
 	{
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
-		int trackedFills = collectedOffer.getPreviousQuantitySold();
+		int trackedFills = collectedOffer.getFilledQuantity();
 		int collectedQty = trackedFills;
 
 		if (inventoryCount > trackedFills)
@@ -411,8 +453,8 @@ public class GrandExchangeTracker
 					collectedOffer.getItemName(),
 					collectedQty,
 					collectedOffer.getTotalQuantity(),
-					collectedOffer.getPreviousSpent() > 0 && collectedOffer.getPreviousQuantitySold() > 0
-						? (int)(collectedOffer.getPreviousSpent() / collectedOffer.getPreviousQuantitySold())
+					collectedOffer.getSpent() > 0 && collectedOffer.getFilledQuantity() > 0
+						? (int)(collectedOffer.getSpent() / collectedOffer.getFilledQuantity())
 						: collectedOffer.getPrice(),
 					rsn
 				);
@@ -424,7 +466,7 @@ public class GrandExchangeTracker
 		session.addCollectedItem(collectedOffer.getItemId(), collectedQty);
 	}
 
-	private void handleCollectedSellOffer(TrackedOffer collectedOffer)
+	private void handleCollectedSellOffer(OfferRecord collectedOffer)
 	{
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
 		if (inventoryCount > 0)
@@ -441,7 +483,7 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void handleEmptyBuyWithZeroFills(TrackedOffer collectedOffer)
+	private void handleEmptyBuyWithZeroFills(OfferRecord collectedOffer)
 	{
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
 		if (inventoryCount > 0)
@@ -452,13 +494,13 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void notifyAutoRecommendCollection(TrackedOffer collectedOffer)
+	private void notifyAutoRecommendCollection(OfferRecord collectedOffer)
 	{
 		if (isAutoRecommendActive())
 		{
 			// Use the session's collected quantity (which accounts for offline fills)
-			// rather than the tracked offer's stale previousQuantitySold
-			int quantity = collectedOffer.getPreviousQuantitySold();
+			// rather than the record's stale filled quantity
+			int quantity = collectedOffer.getFilledQuantity();
 			if (collectedOffer.isBuy())
 			{
 				int sessionQty = session.getCollectedQuantity(collectedOffer.getItemId());
@@ -483,11 +525,16 @@ public class GrandExchangeTracker
 
 	private void handleActiveOffer(OfferContext ctx)
 	{
-		TrackedOffer previousOffer = session.getTrackedOffer(ctx.slot);
+		// OfferStore is the authority for the fill-delta / transition decision. The baseline
+		// is the slot's current record (null on first sight); apply the signal, then drive the
+		// side-effects below from the returned transition and the pre-apply baseline spend.
+		OfferRecord previousOffer = offerStore.bySlot(ctx.slot);
+		long priorSpent = previousOffer != null ? previousOffer.getSpent() : 0L;
+		OfferTransition transition = offerStore.apply(toSignal(ctx), System.currentTimeMillis());
 
 		if (ctx.quantitySold > 0)
 		{
-			handleOfferWithFills(ctx, previousOffer);
+			handleOfferWithFills(ctx, previousOffer, transition, priorSpent);
 		}
 		else
 		{
@@ -495,13 +542,21 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void handleOfferWithFills(OfferContext ctx, TrackedOffer previousOffer)
+	private void handleOfferWithFills(OfferContext ctx, OfferRecord previousOffer,
+		OfferTransition transition, long priorSpent)
 	{
-		int newQuantity = calculateNewFillQuantity(ctx, previousOffer);
+		int newQuantity = newlyFilledFrom(transition);
+
+		// First sight of this offer already showing fills (immediate/offline fill): capture
+		// the recommended sell price before recording, mirroring the old first-fill path.
+		if (previousOffer == null && newQuantity > 0)
+		{
+			preStoreImmediateFillSellPrice(ctx);
+		}
 
 		if (newQuantity > 0)
 		{
-			recordFillTransaction(ctx, newQuantity, previousOffer);
+			recordFillTransaction(ctx, newQuantity, priorSpent, previousOffer == null);
 		}
 
 		// Reset adjustment timer on partial fills (not yet fully completed)
@@ -532,20 +587,9 @@ public class GrandExchangeTracker
 			manualAdjustmentTracker.clearTimer(ctx.slot);
 		}
 
-		// Update tracked offer BEFORE notifying auto-recommend so getCompletedOffers()
-		// sees the BOUGHT/SOLD state when promptCollection() is called
-		TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
-			ctx.itemId, ctx.itemName, ctx.totalQuantity, ctx.price, ctx.quantitySold, previousOffer, ctx.state);
-		updated.setPreviousSpent(ctx.spent);
-
-		// Reset activity timestamp on every fill for timer display & stale detection
-		if (newQuantity > 0)
-		{
-			updated.setLastActivityAtMillis(System.currentTimeMillis());
-		}
-
-		session.putTrackedOffer(ctx.slot, updated);
-
+		// The store record was already advanced by apply() above (state, fill, spend,
+		// completion + activity timestamps), so getCompletedOffers() sees the BOUGHT/SOLD
+		// state when promptCollection() runs.
 		notifyAutoRecommendOnCompletion(ctx);
 
 		if (previousOffer == null && ctx.totalQuantity > 0)
@@ -554,16 +598,17 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private int calculateNewFillQuantity(OfferContext ctx, TrackedOffer previousOffer)
+	private int newlyFilledFrom(OfferTransition transition)
 	{
-		if (previousOffer != null)
+		switch (transition.kind)
 		{
-			return ctx.quantitySold - previousOffer.getPreviousQuantitySold();
+			case PLACED:
+			case FILLED_DELTA:
+			case COMPLETED:
+				return transition.newlyFilledQuantity;
+			default:
+				return 0;
 		}
-
-		// First time seeing this offer with fills — immediate fill on placement
-		preStoreImmediateFillSellPrice(ctx);
-		return ctx.quantitySold;
 	}
 
 	private void preStoreImmediateFillSellPrice(OfferContext ctx)
@@ -581,22 +626,19 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void recordFillTransaction(OfferContext ctx, int newQuantity, TrackedOffer previousOffer)
+	private void recordFillTransaction(OfferContext ctx, int newQuantity, long priorSpent, boolean noBaseline)
 	{
-		long previousSpent = (previousOffer != null) ? previousOffer.getPreviousSpent() : 0L;
-		long incrementalSpent = ctx.spent - previousSpent;
+		long incrementalSpent = ctx.spent - priorSpent;
 		int pricePerItem = (newQuantity > 0) ? (int)(incrementalSpent / newQuantity) : 0;
 
-		// Diagnostic: when previousOffer is null we have no baseline to subtract,
-		// so incrementalSpent == ctx.spent. If ctx.spent reflects an earlier order's
-		// allocation (slot reuse, plugin reload, world hop, login-burst miss), the
-		// recorded pricePerItem will equal the *placed* price of that earlier order
-		// rather than the actual fill. Surface the conditions so we can correlate
-		// to a specific code path. Restricted to newQuantity > 0 so we only log
-		// real fills (placements have newQuantity == 0 and would otherwise spam).
-		if (previousOffer == null && newQuantity > 0)
+		// Diagnostic: when there was no baseline tracked offer, incrementalSpent == ctx.spent.
+		// If ctx.spent reflects an earlier order's allocation (slot reuse, plugin reload,
+		// world hop, login-burst miss), the recorded pricePerItem will equal the *placed*
+		// price of that earlier order rather than the actual fill. Surface the conditions so
+		// we can correlate to a specific code path.
+		if (noBaseline && newQuantity > 0)
 		{
-			log.warn("[FlipSmart][previousOffer==null] Recording fill with no baseline state — "
+			log.warn("[FlipSmart][no-baseline] Recording fill with no prior baseline state — "
 					+ "slot={} item={} ({}) newQty={} ctxSpent={} placedPrice={} qtySold={} totalQty={} state={} pricePerItem={}",
 				ctx.slot, ctx.itemId, ctx.itemName, newQuantity, ctx.spent, ctx.price,
 				ctx.quantitySold, ctx.totalQuantity, ctx.state, pricePerItem);
@@ -676,31 +718,11 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private void handleNewOfferNoFills(OfferContext ctx, TrackedOffer previousOffer)
+	private void handleNewOfferNoFills(OfferContext ctx, OfferRecord previousOffer)
 	{
-		// Preserve timestamps from existing offer if same item AND same price.
-		// Same price = re-sent state event for an unchanged offer, so the timer
-		// must NOT restart. Different price = user relisted at a new price, so
-		// the offer is effectively brand new and the timer should reset (fall
-		// through to the else branch, which creates a fresh TrackedOffer).
-		if (previousOffer != null && previousOffer.getItemId() == ctx.itemId
-			&& previousOffer.getCreatedAtMillis() > 0
-			&& previousOffer.getPrice() == ctx.price)
-		{
-			TrackedOffer preserved = new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
-				ctx.totalQuantity, ctx.price, 0, previousOffer.getCreatedAtMillis());
-			if (previousOffer.getLastActivityAtMillis() > 0)
-			{
-				preserved.setLastActivityAtMillis(previousOffer.getLastActivityAtMillis());
-			}
-			session.putTrackedOffer(ctx.slot, preserved);
-		}
-		else
-		{
-			session.putTrackedOffer(ctx.slot, new TrackedOffer(ctx.itemId, ctx.itemName, ctx.isBuy,
-				ctx.totalQuantity, ctx.price, 0));
-		}
-
+		// The store record was minted (or left unchanged on a re-sent same-price event) by
+		// apply() above, preserving the placement timestamp across re-fires; no separate
+		// session write is needed.
 		clearFlipAssistFocusIfMatches(ctx.itemId, ctx.isBuy);
 
 		if (previousOffer == null && ctx.totalQuantity > 0)
@@ -778,11 +800,12 @@ public class GrandExchangeTracker
 			&& priorAdvice.getActionEnum() == OfferAction.EXIT_AT_BREAKEVEN
 			&& priorAdvice.getNewPrice() != null)
 		{
-			TrackedOffer relisted = session.getTrackedOffer(ctx.slot);
+			OfferRecord relisted = offerStore.bySlot(ctx.slot);
 			if (relisted != null
-				&& TrackedOffer.shouldAdvanceToBreakevenRelist(true, ctx.price, priorAdvice.getNewPrice()))
+				&& OfferRecord.shouldAdvanceToBreakevenRelist(true, ctx.price, priorAdvice.getNewPrice()))
 			{
-				relisted.setOfferStage(TrackedOffer.STAGE_BREAKEVEN_RELIST);
+				offerStore.importRecords(
+					replaceInStore(relisted.withOfferStage(OfferRecord.STAGE_BREAKEVEN_RELIST)));
 			}
 		}
 	}
@@ -912,7 +935,7 @@ public class GrandExchangeTracker
 
 		// Guard against race condition: sell may have been placed between
 		// API request and response — don't override the cleared focus
-		if (session.hasActiveSellSlotForItem(itemId))
+		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Sell already placed for {} - not overriding focus", matchingFlip.getItemName());
 			return;
@@ -1014,8 +1037,15 @@ public class GrandExchangeTracker
 	}
 
 	// =====================
-	// Utility
+	// OfferStore routing
 	// =====================
+
+	private OfferSignal toSignal(OfferContext ctx)
+	{
+		return OfferEventMapper.toSignal(
+			ctx.slot, ctx.state, ctx.itemId, ctx.itemName,
+			ctx.totalQuantity, ctx.price, ctx.quantitySold, ctx.spent);
+	}
 
 	private boolean isAutoRecommendActive()
 	{
