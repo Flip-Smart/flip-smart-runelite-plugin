@@ -44,6 +44,10 @@ public final class StaleOfferQueue
 		return queue.get(0);
 	}
 
+	public List<OfferRecord> snapshot() {
+		return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(queue));
+	}
+
 	public boolean headIsItem(int itemId)
 	{
 		return !queue.isEmpty() && queue.get(0).getItemId() == itemId;
