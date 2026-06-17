@@ -5,6 +5,7 @@ import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.recommend.ActionDecision;
 import com.flipsmart.recommend.ActionKind;
+import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.recommend.CollectOrigin;
 import com.flipsmart.trading.OfferStore;
 import java.util.Arrays;
@@ -12,6 +13,7 @@ import java.util.HashSet;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.mockito.Mockito.when;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -82,5 +84,20 @@ public class AutoRecommendDispatchTest {
         ActionDecision second = service.resolveAndApply(-1);
         assertEquals(first, second);
         assertEquals(ActionKind.S1, first.getKind());
+    }
+
+    @Test
+    public void skipListedCollectedItemRemovesItFromSession() {
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        session.addCollectedItem(11, 3, CollectOrigin.PARTIAL_CANCEL, 1L);
+        session.setRecommendedPrice(11, 150);
+
+        ActionDecision decision = service.resolveAndApply(-1);
+        assertEquals(ActionKind.S1, decision.getKind());
+        assertEquals(ActionStep.LIST, decision.getStep());
+
+        service.skip();
+
+        assertFalse(session.getCollectedItemIds().contains(11));
     }
 }

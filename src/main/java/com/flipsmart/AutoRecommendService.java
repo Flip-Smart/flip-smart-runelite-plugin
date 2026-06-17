@@ -12,6 +12,7 @@ import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
 import com.flipsmart.recommend.CollectOrigin;
 import com.flipsmart.recommend.CollectedItem;
 import com.flipsmart.recommend.RecommendationQueue;
+import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.recommend.ResolverInput;
 import com.flipsmart.recommend.StaleOfferQueue;
 import com.flipsmart.trading.OfferStore;
@@ -719,13 +720,13 @@ public class AutoRecommendService
 	 */
 	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy, int excludeItemId)
 	{
-		focusedCollectedItemId = -1;
 		resolveAndApply(excludeItemId);
 	}
 
 	ActionDecision resolveAndApply(int excludeItemId)
 	{
 		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
+		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		if (decision.equals(lastDecision))
 		{
 			return decision;
