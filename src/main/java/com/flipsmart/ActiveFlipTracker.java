@@ -79,7 +79,7 @@ public class ActiveFlipTracker
 			log.debug("Removed item {} from collected tracking (sold)", itemId);
 		}
 
-		if (session.hasActiveSellSlotForItem(itemId))
+		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Item {} still has active sell slot, keeping flip open", itemId);
 			return;
@@ -180,11 +180,16 @@ public class ActiveFlipTracker
 
 	private Set<Integer> collectAllActiveItemIds()
 	{
-		Set<Integer> itemIds = session.getActiveFlipItemIds();
+		Set<Integer> itemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			itemIds.add(offer.getItemId());
+		}
+		itemIds.addAll(session.getCollectedItemIds());
 
 		// Also read directly from the game client's GE state as the definitive
-		// source of truth. This protects against the race condition where
-		// trackedOffers may not be fully populated from login burst events.
+		// source of truth. This protects against the race condition where the
+		// offer store may not be fully populated from login burst events.
 		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		if (offers != null)
 		{

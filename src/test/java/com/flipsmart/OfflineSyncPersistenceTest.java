@@ -47,7 +47,6 @@ public class OfflineSyncPersistenceTest
 		configStore = new HashMap<>();
 
 		when(session.getCollectedItemIds()).thenReturn(Collections.emptySet());
-		when(session.getTrackedOffers()).thenReturn(Collections.emptyMap());
 
 		doAnswer(inv -> {
 			configStore.put(inv.getArgument(1), inv.getArgument(2));

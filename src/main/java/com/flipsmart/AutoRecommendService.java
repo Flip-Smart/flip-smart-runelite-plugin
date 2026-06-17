@@ -625,8 +625,8 @@ public class AutoRecommendService
 	 *
 	 * @param itemId The item that was collected
 	 * @param wasBuy Whether the collected offer was a buy order
-	 * @param itemName The item name (from the collected TrackedOffer, since it's already removed from session)
-	 * @param quantity The filled quantity (from the collected TrackedOffer)
+	 * @param itemName The item name (from the collected offer, since it's already removed from session)
+	 * @param quantity The filled quantity (from the collected offer)
 	 */
 	public synchronized void onOfferCollected(int itemId, boolean wasBuy, String itemName, int quantity)
 	{
@@ -2028,7 +2028,7 @@ public class AutoRecommendService
 
 	/**
 	 * Focus the sell side for a specific item with known name and quantity.
-	 * Used when we have direct info from the just-collected TrackedOffer.
+	 * Used when we have direct info from the just-collected offer.
 	 */
 	private void focusSellForItem(int itemId, String itemName, int quantity)
 	{

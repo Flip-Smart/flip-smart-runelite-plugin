@@ -183,6 +183,21 @@ public final class OfferStore
     }
 
     /**
+     * Replace the createdAt timestamp of the record with {@code offerId}, preserving
+     * its slot index. No-op when the offerId is unknown. Used to backfill a missing
+     * placement time from an authoritative external source (e.g. backend active flips).
+     */
+    public synchronized void correctCreatedAt(long offerId, long millis)
+    {
+        OfferRecord current = byOfferId.get(offerId);
+        if (current == null)
+        {
+            return;
+        }
+        byOfferId.put(offerId, current.withCreatedAtMillis(millis));
+    }
+
+    /**
      * Records with collectable fills awaiting a GE collect action: fully filled
      * (FILLED) or partially-cancelled (CANCELLED_PARTIAL). Matches the prior
      * getCompletedOffers behaviour so the "collect profit" prompt fires for both.

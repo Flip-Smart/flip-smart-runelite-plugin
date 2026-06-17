@@ -264,4 +264,31 @@ public class OfferStoreTest
             }
         }
     }
+
+    @Test
+    public void correctCreatedAt_replacesTimestampPreservingSlotIndex()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(2, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        long offerId = store.bySlot(2).getOfferId();
+
+        store.correctCreatedAt(offerId, 42L);
+
+        OfferRecord corrected = store.bySlot(2);
+        assertEquals("createdAt is replaced", 42L, corrected.getCreatedAtMillis());
+        assertEquals("same offerId after correction", offerId, corrected.getOfferId());
+        assertEquals("slot index preserved", Integer.valueOf(2), corrected.getSlot());
+    }
+
+    @Test
+    public void correctCreatedAt_unknownOfferId_isNoOp()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(2, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        long before = store.bySlot(2).getCreatedAtMillis();
+
+        store.correctCreatedAt(999_999L, 42L);
+
+        assertEquals("no record changed for unknown id", before, store.bySlot(2).getCreatedAtMillis());
+    }
 }

@@ -1,5 +1,4 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.TrackedOffer;
 
 import org.junit.Test;
 
@@ -63,57 +62,5 @@ public class PlayerSessionTest
 
 		session.setRsn("Foo");
 		assertEquals("Foo", session.getRsnSafe().orElse(null));
-	}
-
-	private static TrackedOffer inFlightBuy(int itemId)
-	{
-		return new TrackedOffer(itemId, "x", true, 100, 1, 5);
-	}
-
-	private static TrackedOffer completedBuy(int itemId)
-	{
-		TrackedOffer offer = new TrackedOffer(itemId, "x", true, 100, 1, 100);
-		offer.setCompletedAtMillis(System.currentTimeMillis());
-		return offer;
-	}
-
-	@Test
-	public void hasInFlightBuyOffer_trueForBuyingPartialFill()
-	{
-		PlayerSession session = new PlayerSession();
-		session.putTrackedOffer(0, inFlightBuy(3827));
-
-		assertTrue(session.hasInFlightBuyOfferForItem(3827));
-		assertFalse(session.hasUncollectedBuyOfferForItem(3827));
-	}
-
-	@Test
-	public void hasUncollectedBuyOffer_trueForCompletedNotYetCollected()
-	{
-		PlayerSession session = new PlayerSession();
-		session.putTrackedOffer(0, completedBuy(3827));
-
-		assertTrue(session.hasUncollectedBuyOfferForItem(3827));
-		assertFalse(session.hasInFlightBuyOfferForItem(3827));
-	}
-
-	@Test
-	public void noBuyOfferState_bothHelpersFalse()
-	{
-		PlayerSession session = new PlayerSession();
-
-		assertFalse(session.hasInFlightBuyOfferForItem(3827));
-		assertFalse(session.hasUncollectedBuyOfferForItem(3827));
-	}
-
-	@Test
-	public void sellOffer_doesNotCountAsBuyState()
-	{
-		PlayerSession session = new PlayerSession();
-		TrackedOffer sellOffer = new TrackedOffer(3827, "x", false, 100, 1, 5);
-		session.putTrackedOffer(0, sellOffer);
-
-		assertFalse(session.hasInFlightBuyOfferForItem(3827));
-		assertFalse(session.hasUncollectedBuyOfferForItem(3827));
 	}
 }

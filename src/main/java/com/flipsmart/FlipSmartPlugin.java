@@ -328,6 +328,12 @@ public class FlipSmartPlugin extends Plugin
 		return isPremium() ? 8 : 2;
 	}
 
+	/** Whether the player has a free GE slot below {@code slotLimit}, per the offer store. */
+	public boolean hasAvailableGESlots(int slotLimit)
+	{
+		return offerStore.liveOffers().size() < slotLimit;
+	}
+
 	public List<ActiveFlip> getCurrentActiveFlips()
 	{
 		return flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null;
@@ -541,7 +547,15 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public java.util.Set<Integer> getCurrentGEBuyItemIds()
 	{
-		return session.getCurrentGEBuyItemIds();
+		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			if (offer.isBuy())
+			{
+				itemIds.add(offer.getItemId());
+			}
+		}
+		return itemIds;
 	}
 
 	/**
@@ -553,7 +567,13 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public java.util.Set<Integer> getActiveFlipItemIds()
 	{
-		return session.getActiveFlipItemIds();
+		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			itemIds.add(offer.getItemId());
+		}
+		itemIds.addAll(session.getCollectedItemIds());
+		return itemIds;
 	}
 	
 	/**
@@ -620,7 +640,7 @@ public class FlipSmartPlugin extends Plugin
 		// Build the event router now that all collaborators exist
 		eventRouter = new EventRouter(this, client, config, session, webhookSyncService,
 			offlineSyncService, bankSnapshotService, geHistoryService, geOfferDescriptionService,
-			grandExchangeTracker);
+			grandExchangeTracker, offerStore);
 
 		// Start dump alert service
 		dumpAlertService.start();
@@ -746,7 +766,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			session.setRsn(rsnForPersistence);
 		}
-		if (!session.getTrackedOffers().isEmpty())
+		if (!offerStore.export().isEmpty())
 		{
 			offlineSyncService.persistOfferState();
 			log.debug("Persisted offer state on shutdown for {}", rsnForPersistence);
@@ -997,7 +1017,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void backfillMissingTimestamps()
 	{
-		Map<Integer, TrackedOffer> tracked = session.getTrackedOffers();
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> tracked = offerStore.liveOffers();
 		if (tracked.isEmpty())
 		{
 			return;
@@ -1019,7 +1039,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 
 			int corrected = 0;
-			for (TrackedOffer offer : tracked.values())
+			for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 			{
 				if (correctOfferTimestamp(offer, flipsByItem))
 				{
@@ -1044,7 +1064,7 @@ public class FlipSmartPlugin extends Plugin
 	 * local timestamps, since they're more accurate (set at offer placement time).
 	 * The backend's last_buy_time can be from older transactions for the same item.
 	 */
-	private boolean correctOfferTimestamp(TrackedOffer offer, Map<Integer, ActiveFlip> flipsByItem)
+	private boolean correctOfferTimestamp(com.flipsmart.domain.offer.OfferRecord offer, Map<Integer, ActiveFlip> flipsByItem)
 	{
 		if (offer.getCreatedAtMillis() > 0)
 		{
@@ -1065,7 +1085,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("Backfilled missing timestamp for {} from backend ({}m ago)",
 				offer.getItemName(), (System.currentTimeMillis() - backendMs) / 60000);
-			offer.setCreatedAtMillis(backendMs);
+			offerStore.correctCreatedAt(offer.getOfferId(), backendMs);
 			return true;
 		}
 		return false;
@@ -1073,7 +1093,7 @@ public class FlipSmartPlugin extends Plugin
 
 	private void performStaleFlipCleanup()
 	{
-		if (!session.getTrackedOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())
+		if (!offerStore.liveOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())
 		{
 			activeFlipTracker.cleanupStaleActiveFlips();
 			scheduleOneShot(PluginScheduler.INVENTORY_VALIDATION_DELAY_MS, () ->

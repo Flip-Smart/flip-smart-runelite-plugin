@@ -955,7 +955,7 @@ public class GrandExchangeTracker
 
 		// Guard against race condition: sell may have been placed between
 		// API request and response — don't override the cleared focus
-		if (session.hasActiveSellSlotForItem(itemId))
+		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Sell already placed for {} - not overriding focus", matchingFlip.getItemName());
 			return;
