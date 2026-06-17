@@ -148,6 +148,22 @@ public class ActionResolverTest {
             build();
         assertEquals(ActionKind.S3, resolver.resolve(in).getKind());
     }
+    @Test public void sameTierSameTimestampSmallestSlotWins() {
+        ResolverInput in = base().completedAwaitingCollection(Arrays.asList(
+            filledSell(5, 505, 1000L),
+            filledSell(2, 502, 1000L))).build();
+        assertEquals(502, resolver.resolve(in).getItemId());
+    }
+    @Test public void sameTierSameTimestampUnboundSlotSortsAfterRealSlot() {
+        ResolverInput in = base()
+            .staleOffers(Arrays.asList(staleBuyPartial(3, 303, 1000L)))
+            .collectedAwaitingList(Arrays.asList(
+                new CollectedItem(909, CollectOrigin.PARTIAL_CANCEL, true, 1000L)))
+            .build();
+        ActionDecision d = resolver.resolve(in);
+        assertEquals(303, d.getItemId());
+        assertEquals(ActionStep.CANCEL, d.getStep());
+    }
 
     // ---- S2 gating ----
     @Test public void noS2WhenAllSlotsFull() {
