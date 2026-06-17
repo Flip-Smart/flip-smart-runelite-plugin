@@ -40,7 +40,7 @@ public class ResolverInputTest {
     }
 
     @Test(expected = UnsupportedOperationException.class)
-    public void listGettersAreUnmodifiable() {
+    public void completedAwaitingCollectionGetterIsUnmodifiable() {
         ResolverInput in = ResolverInput.builder()
             .slotLimit(8).filledSlotCount(0).surfaceableBuy(false, -1).nowMillis(0L)
             .completedAwaitingCollection(new ArrayList<>())
@@ -49,6 +49,30 @@ public class ResolverInputTest {
             .build();
         in.getCompletedAwaitingCollection().add(
             OfferRecord.newOffer(2, 1, 1, "x", true, 1, 1, 0L));
+    }
+
+    @Test(expected = UnsupportedOperationException.class)
+    public void staleOffersGetterIsUnmodifiable() {
+        ResolverInput in = ResolverInput.builder()
+            .slotLimit(8).filledSlotCount(0).surfaceableBuy(false, -1).nowMillis(0L)
+            .completedAwaitingCollection(new ArrayList<>())
+            .staleOffers(new ArrayList<>())
+            .collectedAwaitingList(new ArrayList<>())
+            .build();
+        in.getStaleOffers().add(
+            OfferRecord.newOffer(2, 1, 1, "x", true, 1, 1, 0L));
+    }
+
+    @Test(expected = UnsupportedOperationException.class)
+    public void collectedAwaitingListGetterIsUnmodifiable() {
+        ResolverInput in = ResolverInput.builder()
+            .slotLimit(8).filledSlotCount(0).surfaceableBuy(false, -1).nowMillis(0L)
+            .completedAwaitingCollection(new ArrayList<>())
+            .staleOffers(new ArrayList<>())
+            .collectedAwaitingList(new ArrayList<>())
+            .build();
+        in.getCollectedAwaitingList().add(
+            new CollectedItem(1, CollectOrigin.COMPLETED_BUY, true, 0L));
     }
 
     @Test
