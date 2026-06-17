@@ -183,9 +183,11 @@ public class OfflineSyncService
 		List<OfferRecord> offersToSave = offerStore.export();
 		if (offersToSave.isEmpty())
 		{
-			configManager.unsetConfiguration(CONFIG_GROUP, offersKey);
-			configManager.unsetConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY);
-			log.debug("No offers to persist for {}", rsn);
+			// The store is transiently empty during the logout/hop transition. Unsetting
+			// the persisted keys here would wipe still-valid saved offers; instead preserve
+			// them. Stale entries (slots no longer live) are downgraded to terminal history
+			// by OfferReconciler on restore, so leaving them is benign.
+			log.debug("Offer store empty — preserving existing persisted offers for {}", rsn);
 		}
 		else
 		{
@@ -206,10 +208,9 @@ public class OfflineSyncService
 		String savedAtKey = COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + rsn;
 		if (session.getCollectedItemIds().isEmpty())
 		{
-			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
-			configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
-			configManager.unsetConfiguration(CONFIG_GROUP, savedAtKey);
-			log.debug("No collected items to persist for {}", session.getRsn());
+			// Same don't-destroy-on-empty treatment as the offers branch: a transient
+			// empty collected set during the logout/hop window must not wipe saved data.
+			log.debug("Collected set empty — preserving existing persisted collected items for {}", rsn);
 		}
 		else
 		{
@@ -781,7 +782,10 @@ public class OfflineSyncService
 		}
 		catch (Exception e)
 		{
-			log.error("Failed to load offer records from key {}: {}", key, e.getMessage());
+			// Expected one-time migration: the old persistence format stored a JSON
+			// object, not a List<OfferRecord> array. Deserialization fails on first
+			// login after upgrade — return empty without flooding the log at ERROR.
+			log.debug("Ignoring legacy/unreadable persisted offers at key {} ({})", key, e.getMessage());
 			return new ArrayList<>();
 		}
 	}

@@ -121,6 +121,37 @@ public class OfflineSyncPersistenceTest
 	}
 
 	@Test
+	public void persist_withEmptyStore_preservesPreviouslyPersistedOffers()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// First persist with real offers in the store.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		store.apply(sig(1, GrandExchangeOfferState.BOUGHT, 5678, 5, 5), 2000L);
+		List<OfferRecord> original = store.export();
+		service.persistOfferState();
+		assertTrue("offers persisted on first save",
+			configStore.containsKey("persistedOffers_Zezima"));
+
+		// Now the store goes transiently empty (logout/hop window) and persist fires again.
+		store.importRecords(Collections.emptyList());
+		assertTrue("store is empty before second persist", store.export().isEmpty());
+		service.persistOfferState();
+
+		// The previously-persisted offers must NOT be wiped.
+		assertTrue("persisted offers key still present after empty-store persist",
+			configStore.containsKey("persistedOffers_Zezima"));
+		verify(configManager, never())
+			.unsetConfiguration(eq(CONFIG_GROUP), eq("persistedOffers_Zezima"));
+		verify(configManager, never())
+			.unsetConfiguration(eq(CONFIG_GROUP), eq("persistedOffers_lastSession"));
+
+		List<OfferRecord> loaded = service.loadPersistedOfferRecords();
+		assertEquals("previously-persisted offers survive the empty-store persist",
+			original.size(), loaded.size());
+	}
+
+	@Test
 	public void persist_fallsBackToLastKnownRsn_whenSessionRsnMissing()
 	{
 		when(session.getRsn()).thenReturn(null);
