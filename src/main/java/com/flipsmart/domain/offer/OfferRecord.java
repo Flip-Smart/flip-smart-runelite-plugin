@@ -24,6 +24,20 @@ public final class OfferRecord
     private String offerStage;     // "initial" | "breakeven_relist"
 
     public static final String STAGE_INITIAL = "initial";
+    public static final String STAGE_BREAKEVEN_RELIST = "breakeven_relist";
+
+    // 2 % keeps noise from price rounding from triggering false negatives
+    private static final double BREAKEVEN_RELIST_TOLERANCE = 0.02;
+
+    public static boolean shouldAdvanceToBreakevenRelist(boolean breakevenExitAccepted, int observedRelistPrice, int advisedPrice)
+    {
+        if (!breakevenExitAccepted || advisedPrice <= 0 || observedRelistPrice <= 0)
+        {
+            return false;
+        }
+        double delta = Math.abs(observedRelistPrice - advisedPrice);
+        return delta <= advisedPrice * BREAKEVEN_RELIST_TOLERANCE;
+    }
 
     private OfferRecord(long offerId, Integer slot, int itemId, String itemName, boolean buy,
                         int totalQuantity, int price, int filledQuantity, long spent,

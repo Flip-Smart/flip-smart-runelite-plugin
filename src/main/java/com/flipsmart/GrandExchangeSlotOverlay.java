@@ -1,7 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.OfferRecord;
-import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.TimeUtils;
@@ -481,7 +481,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private boolean isOfferBuyType(GrandExchangeOffer offer)
 	{
-		return TrackedOffer.isBuyState(offer.getState());
+		return OfferSignal.isBuyState(offer.getState());
 	}
 
 	/**

@@ -25,7 +25,6 @@ public class TrackedOffer
 	private String offerStage;
 
 	public static final String STAGE_INITIAL = "initial";
-	public static final String STAGE_BREAKEVEN_RELIST = "breakeven_relist";
 
 	public TrackedOffer(int itemId, String itemName, boolean isBuy, int totalQuantity, int price, int quantitySold)
 	{
@@ -46,16 +45,6 @@ public class TrackedOffer
 		this.createdAtMillis = createdAtMillis;
 		this.lastActivityAtMillis = createdAtMillis;
 		this.offerStage = STAGE_INITIAL;
-	}
-
-	/**
-	 * Check if a GE offer state represents a buy-side offer.
-	 */
-	public static boolean isBuyState(GrandExchangeOfferState state)
-	{
-		return state == GrandExchangeOfferState.BUYING ||
-			state == GrandExchangeOfferState.BOUGHT ||
-			state == GrandExchangeOfferState.CANCELLED_BUY;
 	}
 
 	/**
@@ -81,7 +70,7 @@ public class TrackedOffer
 			? existing.getCreatedAtMillis()
 			: System.currentTimeMillis();
 
-		TrackedOffer offer = new TrackedOffer(itemId, itemName, isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp);
+		TrackedOffer offer = new TrackedOffer(itemId, itemName, OfferSignal.isBuyState(state), totalQuantity, price, quantitySold, originalTimestamp);
 
 		// Preserve lastActivityAtMillis from existing offer (or default to creation time)
 		if (existing != null && existing.getLastActivityAtMillis() > 0)
@@ -170,18 +159,5 @@ public class TrackedOffer
 	public long getEffectiveLastActivityAtMillis()
 	{
 		return lastActivityAtMillis > 0 ? lastActivityAtMillis : createdAtMillis;
-	}
-
-	// 2 % keeps noise from price rounding from triggering false negatives
-	private static final double BREAKEVEN_RELIST_TOLERANCE = 0.02;
-
-	public static boolean shouldAdvanceToBreakevenRelist(boolean breakevenExitAccepted, int observedRelistPrice, int advisedPrice)
-	{
-		if (!breakevenExitAccepted || advisedPrice <= 0 || observedRelistPrice <= 0)
-		{
-			return false;
-		}
-		double delta = Math.abs(observedRelistPrice - advisedPrice);
-		return delta <= advisedPrice * BREAKEVEN_RELIST_TOLERANCE;
 	}
 }

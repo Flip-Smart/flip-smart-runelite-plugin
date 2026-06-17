@@ -1,5 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
@@ -409,14 +410,6 @@ public class FlipSmartPlugin extends Plugin
 	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)
 	{
 		session.setRecommendedPrice(itemId, recommendedSellPrice);
-	}
-
-	/**
-	 * Get tracked offer for a specific GE slot (for overlay access)
-	 */
-	public TrackedOffer getTrackedOffer(int slot)
-	{
-		return session.getTrackedOffer(slot);
 	}
 
 	/**
@@ -1266,7 +1259,7 @@ public class FlipSmartPlugin extends Plugin
 			.totalQuantity(totalQuantity)
 			.price(price)
 			.spent(spent)
-			.isBuy(TrackedOffer.isBuyState(state))
+			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
 	}

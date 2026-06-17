@@ -823,9 +823,9 @@ public class GrandExchangeTracker
 		{
 			TrackedOffer relisted = session.getTrackedOffer(ctx.slot);
 			if (relisted != null
-				&& TrackedOffer.shouldAdvanceToBreakevenRelist(true, ctx.price, priorAdvice.getNewPrice()))
+				&& OfferRecord.shouldAdvanceToBreakevenRelist(true, ctx.price, priorAdvice.getNewPrice()))
 			{
-				relisted.setOfferStage(TrackedOffer.STAGE_BREAKEVEN_RELIST);
+				relisted.setOfferStage(OfferRecord.STAGE_BREAKEVEN_RELIST);
 			}
 		}
 	}

@@ -29,8 +29,14 @@ public final class OfferSignal
 
     public boolean isBuy()
     {
-        return geState == GrandExchangeOfferState.BUYING
-            || geState == GrandExchangeOfferState.BOUGHT
-            || geState == GrandExchangeOfferState.CANCELLED_BUY;
+        return isBuyState(geState);
+    }
+
+    /** Whether a GE offer state is a buy-side state. */
+    public static boolean isBuyState(GrandExchangeOfferState state)
+    {
+        return state == GrandExchangeOfferState.BUYING
+            || state == GrandExchangeOfferState.BOUGHT
+            || state == GrandExchangeOfferState.CANCELLED_BUY;
     }
 }
