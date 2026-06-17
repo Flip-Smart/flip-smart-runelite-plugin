@@ -5,6 +5,7 @@ import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.recommend.ActionDecision;
 import com.flipsmart.recommend.ActionResolver;
 import com.flipsmart.recommend.AdjustmentService;
 import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
@@ -106,6 +107,8 @@ public class AutoRecommendService
 
 	// Currently-focused collected item sell prompt — used by skip() to remove stuck items
 	private volatile int focusedCollectedItemId = -1;
+
+	private ActionDecision lastDecision = ActionDecision.IDLE;
 
 
 	/**
@@ -234,6 +237,7 @@ public class AutoRecommendService
 		queue.sortByVolumeAscending();
 
 		active = true;
+		lastDecision = ActionDecision.IDLE;
 		queue.setLastQueueRefreshMillis(System.currentTimeMillis());
 		log.debug("Auto-recommend started with {} items in queue (sorted by volume asc)", queue.size());
 		focusCurrent();
@@ -265,6 +269,7 @@ public class AutoRecommendService
 		}
 		queue.setCurrentIndex(0);
 		focusedCollectedItemId = -1;
+		lastDecision = ActionDecision.IDLE;
 
 		invokeFocusCallback(null);
 
@@ -715,55 +720,82 @@ public class AutoRecommendService
 	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy, int excludeItemId)
 	{
 		focusedCollectedItemId = -1;
+		resolveAndApply(excludeItemId);
+	}
 
-		// Highest priority: any GE slot with a completed (BOUGHT/SOLD) offer
-		// awaiting collection must be surfaced before anything else. Otherwise
-		// auto-mode could advance to a new buy on a different slot while the
-		// completed slot sits uncollected — and may even recommend a flip for
-		// an item the user has already sold, because the slot has not been
-		// freed.
-		if (!offerStore.completedAwaitingCollection().isEmpty())
+	ActionDecision resolveAndApply(int excludeItemId)
+	{
+		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
+		if (decision.equals(lastDecision))
+		{
+			return decision;
+		}
+		lastDecision = decision;
+		applyDecision(decision);
+		return decision;
+	}
+
+	private void applyDecision(ActionDecision decision)
+	{
+		switch (decision.getStep())
+		{
+			case PLACE_BUY:
+				focusBuyForItem(decision.getItemId());
+				break;
+			case LIST:
+				applyListDecision(decision.getItemId());
+				break;
+			case CANCEL:
+			case REPRICE:
+				focusNextStaleOffer();
+				break;
+			case COLLECT:
+				promptCollection();
+				break;
+			case NONE:
+			default:
+				promptCollection();
+				break;
+		}
+	}
+
+	private void focusBuyForItem(int itemId)
+	{
+		List<FlipRecommendation> view = queue.view();
+		for (int i = 0; i < view.size(); i++)
+		{
+			if (view.get(i).getItemId() == itemId)
+			{
+				queue.setCurrentIndex(i);
+				break;
+			}
+		}
+		if (queue.cursorWithinBounds())
+		{
+			focusCurrent();
+		}
+		else
+		{
+			promptCollection();
+		}
+	}
+
+	private void applyListDecision(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session == null)
 		{
 			promptCollection();
 			return;
 		}
+		String name = resolveItemName(itemId);
+		int qty = session.getCollectedQuantity(itemId);
+		focusSellForItem(itemId, name, qty);
+	}
 
-		if (hasCollectedItemsToSell())
-		{
-			focusNextCollectedItemSell();
-		}
-		else if (!staleOffers.isEmpty())
-		{
-			// Guide user through stale offers one at a time before new recommendations
-			focusNextStaleOffer();
-		}
-		else if (hasAvailableGESlots())
-		{
-			// currentIndex only ever moves forward, so a freed slot can leave it
-			// parked past every still-valid item (including the one just freed).
-			// Rewind to the first surfaceable buy in that case so the slot is never
-			// left empty until the next full queue refresh.
-			if (rewindToFirstAvailableBuy)
-			{
-				int idx = firstAvailableBuyIndex(queue.view(),
-					plugin.getActiveFlipItemIds(), excludeItemId, config.priceOffset(), config.minimumProfit());
-				queue.setCurrentIndex((idx >= 0) ? idx : queue.size());
-			}
-			if (queue.cursorWithinBounds())
-			{
-				focusCurrent();
-			}
-			else
-			{
-				promptCollection();
-			}
-		}
-		else
-		{
-			// Slots full or queue exhausted — prompt collection if there are
-			// completed offers, otherwise show "Waiting for flips"
-			promptCollection();
-		}
+	private String resolveItemName(int itemId)
+	{
+		return queue.getItemName(itemId, plugin.getItemName(itemId));
 	}
 
 	/**
@@ -2085,7 +2117,7 @@ public class AutoRecommendService
 
 			if (sellPrice != null && sellPrice > 0)
 			{
-				String itemName = queue.getItemName(sellableItemId, plugin.getItemName(sellableItemId));
+				String itemName = resolveItemName(sellableItemId);
 				int sellQuantity = resolveSellQuantity(sellableItemId);
 
 				int priceOffset = config.priceOffset();
