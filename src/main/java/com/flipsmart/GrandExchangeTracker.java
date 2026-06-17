@@ -215,9 +215,16 @@ public class GrandExchangeTracker
 
 	private void handleCancelledOffer(OfferContext ctx)
 	{
-		// Guard against the RuneLite client re-firing a CANCELLED offer event twice for the same slot.
+		// Guard against the RuneLite client re-firing a CANCELLED offer event twice for the
+		// same slot. A removing cancel (zero-fill / nothing remaining) frees the slot, so the
+		// duplicate sees a null record. A partial cancel keeps its slot live as
+		// CANCELLED_PARTIAL, so the null check alone misses the re-fire — also short-circuit
+		// when the slot already holds a partial-cancel record, making partial cancels
+		// idempotent. A re-listed offer holds a fresh NEW/PARTIAL_FILL record, not
+		// CANCELLED_PARTIAL, so a legitimate later cancel still proceeds.
 		OfferRecord previousOffer = offerStore.bySlot(ctx.slot);
-		if (previousOffer == null)
+		if (previousOffer == null
+			|| previousOffer.getState() == com.flipsmart.domain.offer.OfferState.CANCELLED_PARTIAL)
 		{
 			log.debug("Ignoring duplicate cancellation event for slot {}", ctx.slot);
 			return;

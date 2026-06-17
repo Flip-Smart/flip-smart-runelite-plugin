@@ -425,6 +425,54 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertNull("slot stays empty after the duplicate", store.bySlot(SLOT));
 	}
 
+	// ==================================================================
+	// Scenario 9 — Duplicate PARTIAL cancellation event (same slot, partial
+	// cancel re-fired) -> the second event is a no-op.
+	//
+	// A partial-BUY cancel KEEPS the slot live as CANCELLED_PARTIAL, so the
+	// original null-only guard could not catch the re-fire. The cancel
+	// side-effects (re-add collected / sync) must run exactly once.
+	// ==================================================================
+	@Test
+	public void scenario9_duplicatePartialSellCancellation_secondEventIgnored()
+	{
+		// Place a SELL of 10, partial-fill 4, then cancel with 4 sold (6 unsold remain).
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 10, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 10, 100, 4, 400));
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.CANCELLED_SELL, ITEM_A, NAME_A, 10, 100, 4, 400));
+
+		// The cancel re-added the 6 unsold items to collected and kept the slot live as
+		// CANCELLED_PARTIAL (so the items route through the collect/re-list flow).
+		assertEquals("6 unsold items re-added to collected on the partial sell cancel",
+			6, session.getCollectedQuantity(ITEM_A));
+		assertEquals("partial sell cancel keeps the slot live as CANCELLED_PARTIAL",
+			OfferState.CANCELLED_PARTIAL, store.bySlot(SLOT).getState());
+
+		int recordsAfterFirstCancel = mockingDetailsRecordCount();
+		int syncAfterFirstCancel = mockingDetailsSyncCount();
+
+		// RuneLite re-fires the SAME cancel for the slot. The slot still holds a
+		// CANCELLED_PARTIAL record, so the idempotency guard must short-circuit and the
+		// side-effects must NOT run a second time.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.CANCELLED_SELL, ITEM_A, NAME_A, 10, 100, 4, 400));
+
+		assertEquals("duplicate partial cancel does not re-add unsold items",
+			6, session.getCollectedQuantity(ITEM_A));
+		assertEquals("duplicate partial cancel records no new transaction",
+			recordsAfterFirstCancel, mockingDetailsRecordCount());
+		assertEquals("duplicate partial cancel issues no new sync",
+			syncAfterFirstCancel, mockingDetailsSyncCount());
+		assertEquals("slot still holds the single CANCELLED_PARTIAL record",
+			OfferState.CANCELLED_PARTIAL, store.bySlot(SLOT).getState());
+	}
+
+	private int mockingDetailsSyncCount()
+	{
+		return (int) org.mockito.Mockito.mockingDetails(apiClient).getInvocations().stream()
+			.filter(i -> i.getMethod().getName().equals("syncActiveFlipAsync"))
+			.count();
+	}
+
 	private int mockingDetailsDismissCount()
 	{
 		return (int) org.mockito.Mockito.mockingDetails(apiClient).getInvocations().stream()
