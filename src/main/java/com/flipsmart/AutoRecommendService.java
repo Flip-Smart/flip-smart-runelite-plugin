@@ -5,9 +5,13 @@ import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.recommend.ActionResolver;
 import com.flipsmart.recommend.AdjustmentService;
 import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
+import com.flipsmart.recommend.CollectOrigin;
+import com.flipsmart.recommend.CollectedItem;
 import com.flipsmart.recommend.RecommendationQueue;
+import com.flipsmart.recommend.ResolverInput;
 import com.flipsmart.recommend.StaleOfferQueue;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
@@ -64,6 +68,8 @@ public class AutoRecommendService
 
 	// Buy/sell adjustment timers + buy-price cost basis.
 	private final AdjustmentService adjustments = new AdjustmentService();
+
+	private final ActionResolver actionResolver = new ActionResolver();
 
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
@@ -569,7 +575,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		session.addCollectedItem(itemId, filledQuantity);
+		session.addCollectedItem(itemId, filledQuantity, CollectOrigin.PARTIAL_CANCEL, System.currentTimeMillis());
 		ensureSellPriceAvailable(itemId);
 		ensureSellPriceFallback(itemId);
 
@@ -666,6 +672,7 @@ public class AutoRecommendService
 		}
 
 		ensureSellPriceAvailable(itemId);
+		session.addCollectedItem(itemId, quantity, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
 		Integer sellPrice = session.getRecommendedPrice(itemId);
 		log.debug("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
@@ -2446,5 +2453,48 @@ public class AutoRecommendService
 	private boolean hasAvailableGESlots()
 	{
 		return plugin.getFilledGESlotCount() < plugin.getFlipSlotLimit();
+	}
+
+	ResolverInput buildResolverInput(int excludeItemId)
+	{
+		long now = System.currentTimeMillis();
+		PlayerSession session = plugin.getSession();
+
+		List<CollectedItem> collected = new ArrayList<>();
+		if (session != null)
+		{
+			for (Integer itemId : session.getCollectedItemIds())
+			{
+				CollectOrigin origin = session.getCollectOrigin(itemId);
+				if (origin == null)
+				{
+					origin = CollectOrigin.COMPLETED_BUY;
+				}
+				boolean hasPrice = session.getRecommendedPrice(itemId) != null;
+				collected.add(new CollectedItem(itemId, origin, hasPrice,
+					session.getCollectedAtMillis(itemId)));
+			}
+		}
+
+		boolean hasSurfaceable = false;
+		int surfaceableItemId = -1;
+		List<FlipRecommendation> view = queue.view();
+		int idx = firstAvailableBuyIndex(view, plugin.getActiveFlipItemIds(),
+			excludeItemId, config.priceOffset(), config.minimumProfit());
+		if (idx >= 0 && idx < view.size())
+		{
+			hasSurfaceable = true;
+			surfaceableItemId = view.get(idx).getItemId();
+		}
+
+		return ResolverInput.builder()
+			.slotLimit(plugin.getFlipSlotLimit())
+			.filledSlotCount(plugin.getFilledGESlotCount())
+			.surfaceableBuy(hasSurfaceable, surfaceableItemId)
+			.nowMillis(now)
+			.completedAwaitingCollection(offerStore.completedAwaitingCollection())
+			.staleOffers(staleOffers.snapshot())
+			.collectedAwaitingList(collected)
+			.build();
 	}
 }
