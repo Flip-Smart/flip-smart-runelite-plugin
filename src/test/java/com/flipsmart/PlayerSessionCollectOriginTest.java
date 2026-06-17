@@ -33,4 +33,13 @@ public class PlayerSessionCollectOriginTest {
         assertNull(s.getCollectOrigin(100));
         assertEquals(0L, s.getCollectedAtMillis(100));
     }
+
+    @Test
+    public void restoreClearsStaleOriginAndTimestamp() {
+        PlayerSession s = new PlayerSession();
+        s.addCollectedItem(100, 5, CollectOrigin.COMPLETED_BUY, 1234L);
+        s.restoreCollectedItems(new java.util.HashSet<>(java.util.Arrays.asList(200)));
+        assertNull(s.getCollectOrigin(100));
+        assertEquals(0L, s.getCollectedAtMillis(100));
+    }
 }

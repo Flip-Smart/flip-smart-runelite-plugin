@@ -180,6 +180,8 @@ public class PlayerSession
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
@@ -190,6 +192,8 @@ public class PlayerSession
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
