@@ -1,6 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferReconciler;
 import com.flipsmart.trading.OfferStore;
@@ -274,7 +275,14 @@ public class OfflineSyncService
 
 		List<OfferRecord> toImport = new ArrayList<>();
 		toImport.addAll(plan.reattached);
-		toImport.addAll(plan.offlineCollected);
+		// Offline-collected records often persist as CANCELLED_PARTIAL, which is non-terminal:
+		// imported as-is they masquerade as live offers, so liveOffers() keeps returning them
+		// (auto-mode stale-prompt flap) and pruning refuses to drop them. Terminalize to COLLECTED
+		// so they read as finished history. plan.reattached (still-live slots) is left untouched.
+		for (OfferRecord collected : plan.offlineCollected)
+		{
+			toImport.add(collected.withState(OfferState.COLLECTED, now));
+		}
 		offerStore.importRecords(toImport);
 
 		log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected",
@@ -366,7 +374,14 @@ public class OfflineSyncService
 			int itemId = record.getItemId();
 			if (record.isBuy() && record.getFilledQuantity() > 0)
 			{
-				session.addCollectedItem(itemId, record.getFilledQuantity());
+				// Only re-add a collected buy that is actually still in inventory. A buy the
+				// player already sold/used offline has no inventory and must not be re-injected,
+				// or it strands a phantom collect/sell prompt every login. Backfill always fires.
+				int inventory = inventoryCountOrZero(itemId);
+				if (inventory > 0)
+				{
+					session.addCollectedItem(itemId, Math.min(inventory, record.getFilledQuantity()));
+				}
 				geHistoryService.registerOfflineFill(itemId);
 			}
 			else if (!record.isBuy())
@@ -425,6 +440,23 @@ public class OfflineSyncService
 		return toRemove.size();
 	}
 
+
+	/**
+	 * Inventory count for the add-collected path: returns 0 when inventory is genuinely empty
+	 * or unavailable. Unlike {@link #isItemKnownPresent} (which is conservative against pruning),
+	 * the add path must err toward NOT adding, since the History backfill still fires regardless.
+	 */
+	private int inventoryCountOrZero(int itemId)
+	{
+		try
+		{
+			return Math.max(0, activeFlipTracker.getInventoryCountForItem(itemId));
+		}
+		catch (Exception | AssertionError e)
+		{
+			return 0;
+		}
+	}
 
 	private boolean isItemKnownPresent(int itemId)
 	{

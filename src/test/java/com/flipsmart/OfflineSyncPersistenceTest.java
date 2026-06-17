@@ -42,6 +42,7 @@ public class OfflineSyncPersistenceTest
 	private ClientThread clientThread;
 	private GEHistoryService geHistoryService;
 	private OfferStore store;
+	private ActiveFlipTracker activeFlipTracker;
 	private OfflineSyncService service;
 	private Map<String, String> configStore;
 
@@ -78,13 +79,15 @@ public class OfflineSyncPersistenceTest
 			return null;
 		}).when(clientThread).invokeLater(any(Runnable.class));
 
+		activeFlipTracker = mock(ActiveFlipTracker.class);
+
 		service = new OfflineSyncService(
 			session,
 			configManager,
 			new Gson(),
 			client,
 			clientThread,
-			mock(ActiveFlipTracker.class),
+			activeFlipTracker,
 			geHistoryService,
 			store,
 			mock(ItemManager.class));
@@ -192,6 +195,8 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// Item still in inventory (2 traded units), so the inventory gate allows the re-add.
+		when(activeFlipTracker.getInventoryCountForItem(111)).thenReturn(2);
 
 		// Build a CANCELLED_PARTIAL record: place a buy, then cancel with 2 fills of 5.
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 111, 0, 5), 1000L);
@@ -219,6 +224,106 @@ public class OfflineSyncPersistenceTest
 		// Collected qty must be the reconciled filled qty (2), never the order total (5).
 		verify(session, times(1)).addCollectedItem(111, 2);
 		verify(session, never()).addCollectedItem(eq(111), eq(5));
+	}
+
+	/**
+	 * An offline-collected BUY (filled>0) whose item is no longer in inventory (sold/used offline)
+	 * must NOT be re-added to the collected set — only the History backfill fires. Re-adding it
+	 * strands a phantom collect/sell prompt every login (#736 regression).
+	 */
+	@Test
+	public void offlineCollectedBuyWithNoInventory_doesNotReAddCollectedItem()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 4824, 10, 10), 2000L);
+
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		verify(session, never()).addCollectedItem(eq(4824), anyInt());
+		verify(geHistoryService, times(1)).registerOfflineFill(4824);
+	}
+
+	/**
+	 * An offline-collected BUY whose item IS still in inventory is added to the collected set
+	 * at min(inventory, filled), and a History backfill fires.
+	 */
+	@Test
+	public void offlineCollectedBuyWithInventory_addsCollectedItemAtMinQty()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(7);
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 4824, 10, 10), 2000L);
+
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		verify(session, times(1)).addCollectedItem(4824, 7);
+		verify(geHistoryService, times(1)).registerOfflineFill(4824);
+	}
+
+	/**
+	 * After reconcilePersistedIntoStore (via preloadPersistedOffers), an offline-collected record
+	 * imported into the store must be TERMINAL — not returned by liveOffers() and not reported as a
+	 * live buy — so the auto-mode stale queue can't re-flag it and pruning can remove it (#736).
+	 */
+	@Test
+	public void offlineCollectedImportIsTerminal_notLive()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// A partial-cancel buy (CANCELLED_PARTIAL — non-terminal) that is gone from live slots.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 5), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 4824, 2, 5), 2000L);
+		assertEquals(OfferState.CANCELLED_PARTIAL, store.export().get(0).getState());
+
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.preloadPersistedOffers();
+
+		assertTrue("offline-collected import must not be a live offer", store.liveOffers().isEmpty());
+		assertFalse("offline-collected import must not report as a live buy",
+			store.hasLiveBuyOfferForItem(4824));
+		OfferRecord imported = store.forItem(4824).get(0);
+		assertTrue("imported offline-collected record must be terminal", imported.getState().isTerminal());
+	}
+
+	/**
+	 * End-to-end: a restored collected item whose store record is terminal and whose inventory is 0
+	 * is pruned (its phantom prompt removed). isItemKnownPresent must return false for it.
+	 */
+	@Test
+	public void restoredPhantomCollectedItem_isPruned()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.getCollectedItemIds()).thenReturn(new java.util.HashSet<>(java.util.Arrays.asList(4824)));
+		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
+
+		// Terminal store record for the item (as Part B would import it), no live offer.
+		OfferRecord terminal = OfferRecord.newOffer(1L, 0, 4824, "Rune nails", true, 5, 100, 1000L)
+			.withFill(2, 200L, OfferState.CANCELLED_PARTIAL, 2000L)
+			.withState(OfferState.COLLECTED, 3000L);
+		store.importRecords(java.util.Collections.singletonList(terminal));
+
+		int removed = service.pruneStaleCollectedItems();
+
+		assertEquals("phantom collected item with terminal record + no inventory must be pruned", 1, removed);
+		verify(session, times(1)).removeCollectedItem(4824);
 	}
 
 	private static com.flipsmart.domain.offer.OfferSignal sig(int slot, GrandExchangeOfferState s, int itemId, int sold, int total)
