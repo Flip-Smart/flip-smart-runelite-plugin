@@ -136,4 +136,17 @@ public class TransactionLoggerTest
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.REJECTED, r, 0, 0));
         verifyNoTransactionRecorded();
     }
+
+    @Test
+    public void cancelledWithResidualFillRecordsFill()
+    {
+        TransactionLogger logger = newLogger("Zezima");
+        OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
+            .withFill(3, 4_500L, OfferState.CANCELLED_PARTIAL, 1700000000500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.CANCELLED, r, 3, 4_500L));
+        TransactionRequest req = capture();
+        assertEquals(3, req.quantity);
+        assertEquals(1500, req.pricePerItem);
+        assertTrue(req.idempotencyKey.endsWith("FILL:3"));
+    }
 }
