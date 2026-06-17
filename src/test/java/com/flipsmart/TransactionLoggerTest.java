@@ -21,6 +21,8 @@ import static org.mockito.Mockito.*;
 
 public class TransactionLoggerTest
 {
+    private static final String RSN = "Zezima";
+
     private FlipSmartApiClient apiClient;
     private PlayerSession session;
 
@@ -64,39 +66,39 @@ public class TransactionLoggerTest
     {
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
             .withFill(1, 2_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        assertEquals("Zezima:5:1700000000000:FILL:1", TransactionLogger.idempotencyKey("Zezima", r, Type.FILL));
+        assertEquals(RSN + ":5:1700000000000:FILL:1", TransactionLogger.idempotencyKey(RSN, r, Type.FILL));
     }
 
     @Test
     public void placedRecordsPlacementForSell()
     {
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(7, 2, 1515, "Yew logs", false, 100, 300, 1700000000000L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 0, 0));
         TransactionRequest req = capture();
         assertEquals(1515, req.itemId);
         assertFalse(req.isBuy);
         assertEquals(0, req.quantity);
-        assertEquals("Zezima:7:1700000000000:PLACE:0", req.idempotencyKey);
+        assertEquals(RSN + ":7:1700000000000:PLACE:0", req.idempotencyKey);
     }
 
     @Test
     public void filledDeltaRecordsFillWithPricePerItem()
     {
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
             .withFill(2, 4_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L));
         TransactionRequest req = capture();
         assertEquals(2, req.quantity);
         assertEquals(2_000_000, req.pricePerItem);
-        assertEquals("Zezima:5:1700000000000:FILL:2", req.idempotencyKey);
+        assertEquals(RSN + ":5:1700000000000:FILL:2", req.idempotencyKey);
     }
 
     @Test
     public void collectedAndNoneAndRejectedRecordNothing()
     {
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 1, 1L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COLLECTED, r, 0, 0));
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.NONE, r, 0, 0));
@@ -109,7 +111,7 @@ public class TransactionLoggerTest
         // A PLACED event already carrying a fill is an immediate/offline fill: record the fill
         // only, with no separate qty-0 placement row. This matches the single fill the old
         // recording path produced and avoids a phantom placement row for already-filling offers.
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 2_000_000, 1700000000000L)
             .withFill(1, 2_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 1, 2_000_000L));
@@ -122,7 +124,7 @@ public class TransactionLoggerTest
     @Test
     public void inFlightGuardSuppressesImmediateRetry()
     {
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 2_000_000, 1700000000000L)
             .withFill(1, 2_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         OfferEvent e = new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 1, 2_000_000L);
@@ -134,7 +136,7 @@ public class TransactionLoggerTest
     @Test
     public void rejectedRecordsNothing()
     {
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 1, 1L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.REJECTED, r, 0, 0));
         verifyNoTransactionRecorded();
@@ -143,7 +145,7 @@ public class TransactionLoggerTest
     @Test
     public void cancelledWithResidualFillRecordsFill()
     {
-        TransactionLogger logger = newLogger("Zezima");
+        TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
             .withFill(3, 4_500L, OfferState.CANCELLED_PARTIAL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.CANCELLED, r, 3, 4_500L));
