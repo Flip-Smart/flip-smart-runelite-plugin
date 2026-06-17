@@ -10,10 +10,13 @@ import com.flipsmart.recommend.CollectOrigin;
 import com.flipsmart.trading.OfferStore;
 import java.util.Arrays;
 import java.util.HashSet;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -76,6 +79,7 @@ public class AutoRecommendDispatchTest {
     @Test
     public void identicalStateTwiceReturnsSameDecision() {
         when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getInventoryCountForItem(11)).thenReturn(3);
         // a partial-cancel collected item with a price → stable S1/LIST candidate
         session.addCollectedItem(11, 3, CollectOrigin.PARTIAL_CANCEL, 1L);
         session.setRecommendedPrice(11, 150);
@@ -89,6 +93,7 @@ public class AutoRecommendDispatchTest {
     @Test
     public void skipListedCollectedItemRemovesItFromSession() {
         when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getInventoryCountForItem(11)).thenReturn(3);
         session.addCollectedItem(11, 3, CollectOrigin.PARTIAL_CANCEL, 1L);
         session.setRecommendedPrice(11, 150);
 
@@ -99,5 +104,49 @@ public class AutoRecommendDispatchTest {
         service.skip();
 
         assertFalse(session.getCollectedItemIds().contains(11));
+    }
+
+    @Test
+    public void collectedItemWithActiveSellOfferIsNotSurfacedAsList() {
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+
+        OfferRecord activeSell = OfferRecord
+            .newOffer(2, 0, 42, "item-42", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(activeSell));
+
+        session.addCollectedItem(42, 5, CollectOrigin.COMPLETED_BUY, 1L);
+        session.setRecommendedPrice(42, 300);
+        when(plugin.getInventoryCountForItem(42)).thenReturn(5);
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertNotEquals(ActionStep.LIST, d.getStep());
+    }
+
+    @Test
+    public void cancelDispatchFocusesResolverChosenItemNotQueueHead() {
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+
+        OfferRecord partialBuy = OfferRecord
+            .newOffer(10, 0, 101, "item-101", true, 10, 100, 0L)
+            .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
+        OfferRecord zeroBuy = OfferRecord
+            .newOffer(11, 1, 102, "item-102", true, 10, 100, 0L)
+            .withFill(0, 0L, OfferState.NEW, 1L);
+        offerStore.importRecords(Arrays.asList(partialBuy, zeroBuy));
+
+        service.addToStaleQueue(zeroBuy);
+        service.addToStaleQueue(partialBuy);
+
+        AtomicInteger capturedId = new AtomicInteger(-1);
+        service.setOnStaleOfferPrompted(capturedId::set);
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertEquals(ActionStep.CANCEL, d.getStep());
+        assertEquals(101, d.getItemId());
+        assertEquals(101, capturedId.get());
     }
 }

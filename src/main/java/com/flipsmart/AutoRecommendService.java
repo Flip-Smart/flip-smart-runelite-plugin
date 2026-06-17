@@ -748,7 +748,7 @@ public class AutoRecommendService
 				break;
 			case CANCEL:
 			case REPRICE:
-				focusNextStaleOffer();
+				focusStaleOfferForItem(decision.getItemId());
 				break;
 			case COLLECT:
 				promptCollection();
@@ -1462,31 +1462,75 @@ public class AutoRecommendService
 			return;
 		}
 
-		OfferRecord next = staleOffers.head();
-		Integer resellPrice = staleOffers.getResellPrice(next.getItemId());
+		renderStaleOfferPrompt(staleOffers.head());
+	}
+
+	private void renderStaleOfferPrompt(OfferRecord offer)
+	{
+		Integer resellPrice = staleOffers.getResellPrice(offer.getItemId());
 		String overlayMsg;
-		if (!next.isBuy() && resellPrice != null)
+		if (!offer.isBuy() && resellPrice != null)
 		{
-			Integer net = staleOffers.getResellNet(next.getItemId());
+			Integer net = staleOffers.getResellNet(offer.getItemId());
 			String netSuffix = net == null ? ""
 				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
-			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", next.getItemName(),
+			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", offer.getItemName(),
 				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
 		{
-			overlayMsg = String.format("Consider cancelling:\n%s", next.getItemName());
+			overlayMsg = String.format("Consider cancelling:\n%s", offer.getItemName());
 		}
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
-		invokeOverlayMessageCallback(overlayMsg, next.getItemId());
+		invokeOverlayMessageCallback(overlayMsg, offer.getItemId());
 
 		java.util.function.IntConsumer staleCallback = onStaleOfferPrompted;
 		if (staleCallback != null)
 		{
-			staleCallback.accept(next.getItemId());
+			staleCallback.accept(offer.getItemId());
 		}
+	}
+
+	private void focusStaleOfferForItem(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			List<OfferRecord> currentOffers = offerStore.liveOffers();
+			staleOffers.pruneIrrelevant(o ->
+			{
+				OfferRecord current = currentOffers.stream()
+					.filter(t -> t.getItemId() == o.getItemId() && t.getState() != OfferState.FILLED)
+					.findFirst().orElse(null);
+				if (current == null)
+				{
+					return true;
+				}
+				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
+				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
+			});
+		}
+
+		if (staleOffers.isEmpty())
+		{
+			if (onClearAllHighlights != null)
+			{
+				onClearAllHighlights.run();
+			}
+			focusNextAvailableAction();
+			return;
+		}
+
+		OfferRecord target = staleOffers.findByItemId(itemId);
+		if (target == null)
+		{
+			focusNextStaleOffer();
+			return;
+		}
+
+		renderStaleOfferPrompt(target);
 	}
 
 	/**
@@ -2498,13 +2542,25 @@ public class AutoRecommendService
 		{
 			for (Integer itemId : session.getCollectedItemIds())
 			{
+				if (offerStore.hasActiveSellOfferForItem(itemId))
+				{
+					continue;
+				}
+				if (!isItemInInventory(itemId))
+				{
+					continue;
+				}
+				Integer resolvedPrice = resolveBestSellPrice(itemId);
+				if (resolvedPrice == null || resolvedPrice <= 0)
+				{
+					continue;
+				}
 				CollectOrigin origin = session.getCollectOrigin(itemId);
 				if (origin == null)
 				{
 					origin = CollectOrigin.COMPLETED_BUY;
 				}
-				boolean hasPrice = session.getRecommendedPrice(itemId) != null;
-				collected.add(new CollectedItem(itemId, origin, hasPrice,
+				collected.add(new CollectedItem(itemId, origin, true,
 					session.getCollectedAtMillis(itemId)));
 			}
 		}

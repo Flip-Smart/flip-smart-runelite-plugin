@@ -50,6 +50,7 @@ public class AutoRecommendResolverInputTest {
 
     @Test
     public void collectedItemWithPriceBecomesCollectedAwaitingListInput() {
+        when(plugin.getInventoryCountForItem(777)).thenReturn(3);
         session.addCollectedItem(777, 3,
             com.flipsmart.recommend.CollectOrigin.PARTIAL_CANCEL, 1500L);
         session.setRecommendedPrice(777, 250);
