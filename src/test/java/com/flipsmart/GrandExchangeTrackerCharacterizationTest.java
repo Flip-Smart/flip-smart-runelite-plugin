@@ -15,6 +15,7 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -158,6 +159,128 @@ public class GrandExchangeTrackerCharacterizationTest
 	private int expectedRecordCount()
 	{
 		return expectedRecords;
+	}
+
+	// ==================================================================
+	// B1-Scenario 1 — Full buy lifecycle: place -> partial -> partial ->
+	// complete -> collect.
+	// Asserts the complete (itemId, isBuy, quantity, pricePerItem, geSlot,
+	// totalQuantity) 6-tuple for every recorded transaction.
+	// ==================================================================
+	@Test
+	public void scenarioB1_fullBuyLifecycle_allTuplesVerified()
+	{
+		// Placement: BUYING, 0 filled.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 0, 0));
+		// First partial fill: 4/10, spent 400.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 4, 400));
+		// Second partial fill: 7/10, spent 700.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 7, 700));
+		// Completion: 10/10, spent 1000.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 10, 100, 10, 1000));
+		// Collect: EMPTY event on the slot.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 100, 0, 0));
+
+		// Four transactions: placement(0) + partial(+4) + partial(+3) + complete(+3).
+		// The collect (EMPTY) fires handleCollectedBuyOffer, which only calls
+		// syncActiveFlipAsync — no additional recordTransactionAsync is expected.
+		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
+		verify(apiClient, times(4)).recordTransactionAsync(captor.capture());
+		java.util.List<TransactionRequest> reqs = captor.getAllValues();
+
+		// Placement — 6-tuple assertion.
+		TransactionRequest placement = reqs.get(0);
+		assertEquals("placement itemId", ITEM_A, placement.itemId);
+		assertTrue("placement isBuy", placement.isBuy);
+		assertEquals("placement quantity 0", 0, placement.quantity);
+		assertEquals("placement pricePerItem = placed price", 100, placement.pricePerItem);
+		assertEquals("placement geSlot", (Integer) SLOT, placement.geSlot);
+		assertEquals("placement totalQuantity", (Integer) 10, placement.totalQuantity);
+
+		// First partial fill (+4 delta).
+		TransactionRequest fill1 = reqs.get(1);
+		assertEquals("fill1 itemId", ITEM_A, fill1.itemId);
+		assertTrue("fill1 isBuy", fill1.isBuy);
+		assertEquals("fill1 quantity +4", 4, fill1.quantity);
+		assertEquals("fill1 pricePerItem = 400/4", 100, fill1.pricePerItem);
+		assertEquals("fill1 geSlot", (Integer) SLOT, fill1.geSlot);
+		assertEquals("fill1 totalQuantity", (Integer) 10, fill1.totalQuantity);
+
+		// Second partial fill (+3 delta: 7 cumulative - 4 prior).
+		TransactionRequest fill2 = reqs.get(2);
+		assertEquals("fill2 itemId", ITEM_A, fill2.itemId);
+		assertTrue("fill2 isBuy", fill2.isBuy);
+		assertEquals("fill2 quantity +3 (7-4)", 3, fill2.quantity);
+		assertEquals("fill2 pricePerItem = (700-400)/3", 100, fill2.pricePerItem);
+		assertEquals("fill2 geSlot", (Integer) SLOT, fill2.geSlot);
+		assertEquals("fill2 totalQuantity", (Integer) 10, fill2.totalQuantity);
+
+		// Completion fill (+3 delta: 10 cumulative - 7 prior).
+		TransactionRequest fill3 = reqs.get(3);
+		assertEquals("fill3 itemId", ITEM_A, fill3.itemId);
+		assertTrue("fill3 isBuy", fill3.isBuy);
+		assertEquals("fill3 quantity +3 (10-7)", 3, fill3.quantity);
+		assertEquals("fill3 pricePerItem = (1000-700)/3", 100, fill3.pricePerItem);
+		assertEquals("fill3 geSlot", (Integer) SLOT, fill3.geSlot);
+		assertEquals("fill3 totalQuantity", (Integer) 10, fill3.totalQuantity);
+
+		int totalFilled = reqs.stream().mapToInt(r -> r.quantity).sum();
+		assertEquals("total recorded fills = 10 (placement 0 + deltas 4+3+3)", 10, totalFilled);
+
+		// Collect added the 10 items to the session's collected set.
+		assertEquals("collect added 10 items to session", 10, session.getCollectedQuantity(ITEM_A));
+	}
+
+	// ==================================================================
+	// B1-Scenario 2 — Full sell lifecycle: place -> partial -> complete ->
+	// collect.
+	// Bug #3 (current behavior): sell PLACEMENT fires recordNewSellOrder,
+	// which calls markActiveFlipSellingAsync but does NOT call
+	// recordTransactionAsync. Only fills are recorded. B6 will flip this.
+	// ==================================================================
+	@Test
+	public void scenarioB2_sellLifecycle_placementRecordsNothing_fillsRecorded()
+	{
+		// Sell placement: SELLING, 0 filled.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 0, 0));
+		// Partial sell fill: 2/5 sold, received 400.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 2, 400));
+		// Completion: 5/5 sold, received 1000 (SOLD).
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SOLD, ITEM_A, NAME_A, 5, 200, 5, 1000));
+		// Collect: EMPTY event on the slot.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 5, 200, 0, 0));
+
+		// Bug #3 — current behavior: sell placement (SELLING, 0 filled) goes through
+		// recordNewSellOrder, which calls markActiveFlipSellingAsync only — no
+		// recordTransactionAsync is issued at placement time.
+		// B6 will introduce sell-placement recording; update this assertion when it does.
+		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
+		verify(apiClient, times(2)).recordTransactionAsync(captor.capture());
+		java.util.List<TransactionRequest> reqs = captor.getAllValues();
+
+		// Partial sell fill (+2 delta).
+		TransactionRequest sellFill1 = reqs.get(0);
+		assertEquals("sellFill1 itemId", ITEM_A, sellFill1.itemId);
+		assertFalse("sellFill1 is a sell (not buy)", sellFill1.isBuy);
+		assertEquals("sellFill1 quantity +2", 2, sellFill1.quantity);
+		assertEquals("sellFill1 pricePerItem = 400/2", 200, sellFill1.pricePerItem);
+		assertEquals("sellFill1 geSlot", (Integer) SLOT, sellFill1.geSlot);
+		assertEquals("sellFill1 totalQuantity", (Integer) 5, sellFill1.totalQuantity);
+
+		// Completion fill (+3 delta: 5 cumulative - 2 prior).
+		TransactionRequest sellFill2 = reqs.get(1);
+		assertEquals("sellFill2 itemId", ITEM_A, sellFill2.itemId);
+		assertFalse("sellFill2 is a sell (not buy)", sellFill2.isBuy);
+		assertEquals("sellFill2 quantity +3 (5-2)", 3, sellFill2.quantity);
+		assertEquals("sellFill2 pricePerItem = (1000-400)/3", 200, sellFill2.pricePerItem);
+		assertEquals("sellFill2 geSlot", (Integer) SLOT, sellFill2.geSlot);
+		assertEquals("sellFill2 totalQuantity", (Integer) 5, sellFill2.totalQuantity);
+
+		int totalSold = reqs.stream().mapToInt(r -> r.quantity).sum();
+		assertEquals("total recorded sell qty = 5 (no sell-placement double-count)", 5, totalSold);
+
+		// Placement fired markActiveFlipSellingAsync instead of recordTransactionAsync.
+		verify(apiClient, times(1)).markActiveFlipSellingAsync(eq(ITEM_A), any());
 	}
 
 	// ==================================================================
