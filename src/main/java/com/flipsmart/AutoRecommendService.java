@@ -503,6 +503,12 @@ public class AutoRecommendService
 			return;
 		}
 
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			session.removeCollectedItem(itemId);
+		}
+
 		log.debug("Auto-recommend: Sell order placed for item {} - checking next action", itemId);
 
 		// Schedule sell adjustment timer

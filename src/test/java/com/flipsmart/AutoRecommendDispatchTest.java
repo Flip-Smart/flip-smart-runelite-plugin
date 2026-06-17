@@ -125,6 +125,25 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void onSellOrderPlacedRemovesItemFromCollectedSoAutoModeDoesNotReList() {
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getInventoryCountForItem(55)).thenReturn(5);
+        session.addCollectedItem(55, 5, CollectOrigin.COMPLETED_BUY, 1L);
+        session.setRecommendedPrice(55, 300);
+
+        ActionDecision first = service.resolveAndApply(-1);
+        assertEquals(ActionStep.LIST, first.getStep());
+        assertEquals(55, first.getItemId());
+
+        service.onSellOrderPlaced(55);
+
+        assertFalse(session.getCollectedItemIds().contains(55));
+
+        ActionDecision second = service.resolveAndApply(-1);
+        assertNotEquals(ActionStep.LIST, second.getStep());
+    }
+
+    @Test
     public void cancelDispatchFocusesResolverChosenItemNotQueueHead() {
         when(plugin.getFilledGESlotCount()).thenReturn(8);
         when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
