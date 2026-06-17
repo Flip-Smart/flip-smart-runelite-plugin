@@ -325,6 +325,15 @@ public class OfflineSyncService
 		session.setOfflineSyncCompleted(true);
 
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
+
+		// Live GE slots and item-name resolution must be read on the client thread —
+		// this method is invoked from a Swing timer, and touching client/itemManager
+		// off-thread throws.
+		clientThread.invokeLater(() -> reconcileOfflineFills(persistedRecords));
+	}
+
+	private void reconcileOfflineFills(List<OfferRecord> persistedRecords)
+	{
 		Map<Integer, OfferRecord> currentOffers = liveOffersBySlot();
 		log.debug("Loaded {} persisted offers, comparing with {} current offers",
 			persistedRecords.size(), currentOffers.size());
@@ -366,17 +375,13 @@ public class OfflineSyncService
 			}
 		}
 
-		// Inventory check requires the client thread.
-		clientThread.invokeLater(() ->
-		{
-			pruneStaleCollectedItems();
-			persistOfferState();
+		pruneStaleCollectedItems();
+		persistOfferState();
 
-			if (onSyncComplete != null)
-			{
-				onSyncComplete.run();
-			}
-		});
+		if (onSyncComplete != null)
+		{
+			onSyncComplete.run();
+		}
 	}
 
 	private OfferRecord findLiveRecordForSlot(Integer slot, Map<Integer, OfferRecord> currentOffers)
