@@ -72,7 +72,7 @@ public final class OfferStore
                 slotToOfferId.put(signal.slot, t.record.getOfferId());
             }
 
-            event = new OfferEvent(t.kind, t.record, t.newlyFilledQuantity);
+            event = new OfferEvent(t.kind, t.record, t.newlyFilledQuantity, t.newlySpent);
             snapshot = new ArrayList<>(listeners);
         }
 

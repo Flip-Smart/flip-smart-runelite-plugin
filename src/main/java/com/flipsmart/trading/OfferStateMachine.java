@@ -87,9 +87,10 @@ public final class OfferStateMachine
         {
             return OfferTransition.of(OfferTransition.Kind.NONE, base, 0);
         }
+        long newlySpent = Math.max(signal.spent - base.getSpent(), 0);
         OfferRecord updated = base.withFill(signal.quantitySold, signal.spent, target, now);
         OfferTransition.Kind kind = complete ? OfferTransition.Kind.COMPLETED
             : (newOverride != null ? newOverride : OfferTransition.Kind.FILLED_DELTA);
-        return OfferTransition.of(kind, updated, Math.max(delta, 0));
+        return OfferTransition.of(kind, updated, Math.max(delta, 0), newlySpent);
     }
 }
