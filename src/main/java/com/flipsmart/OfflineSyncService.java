@@ -1,15 +1,24 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.TrackedOffer;
+import com.flipsmart.trading.OfferEventMapper;
+import com.flipsmart.trading.OfferReconciler;
+import com.flipsmart.trading.OfferStore;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.game.ItemManager;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -38,6 +47,7 @@ public class OfflineSyncService
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
+	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
 
 	/** Persisted collected-item entries older than this are dropped on restore. */
 	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
@@ -49,6 +59,8 @@ public class OfflineSyncService
 	private final ClientThread clientThread;
 	private final ActiveFlipTracker activeFlipTracker;
 	private final GEHistoryService geHistoryService;
+	private final OfferStore offerStore;
+	private final ItemManager itemManager;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
 	private Runnable onSyncComplete;
@@ -62,7 +74,9 @@ public class OfflineSyncService
 		Client client,
 		ClientThread clientThread,
 		ActiveFlipTracker activeFlipTracker,
-		GEHistoryService geHistoryService)
+		GEHistoryService geHistoryService,
+		OfferStore offerStore,
+		ItemManager itemManager)
 	{
 		this.session = session;
 		this.apiClient = apiClient;
@@ -72,6 +86,8 @@ public class OfflineSyncService
 		this.clientThread = clientThread;
 		this.activeFlipTracker = activeFlipTracker;
 		this.geHistoryService = geHistoryService;
+		this.offerStore = offerStore;
+		this.itemManager = itemManager;
 	}
 
 	public void setOnSyncComplete(Runnable onSyncComplete)
@@ -155,35 +171,41 @@ public class OfflineSyncService
 	 */
 	public void persistOfferState()
 	{
-		String offersKey = getPersistedOffersKey();
-		String collectedKey = getCollectedItemsKey();
-		String quantitiesKey = getCollectedQuantitiesKey();
+		String rsn = resolvePersistenceRsn();
+		if (rsn == null)
+		{
+			log.debug("Skipping offer persistence: no resolvable RSN (logout window)");
+			return;
+		}
 
-		// Persist tracked offers
-		if (session.getTrackedOffers().isEmpty())
+		String offersKey = PERSISTED_OFFERS_KEY_PREFIX + rsn;
+		String collectedKey = COLLECTED_ITEMS_KEY_PREFIX + rsn;
+		String quantitiesKey = COLLECTED_QUANTITIES_KEY_PREFIX + rsn;
+
+		List<OfferRecord> offersToSave = offerStore.export();
+		if (offersToSave.isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, offersKey);
 			configManager.unsetConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY);
-			log.debug("No tracked offers to persist for {}", session.getRsn());
+			log.debug("No offers to persist for {}", rsn);
 		}
 		else
 		{
 			try
 			{
-				Map<Integer, TrackedOffer> offersToSave = session.getOffersForPersistence();
 				String json = gson.toJson(offersToSave);
 				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
 				configManager.setConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY, json);
-				log.debug("Persisted {} tracked offers for {} (offline sync)", offersToSave.size(), session.getRsn());
+				log.debug("Persisted {} offer records for {} (offline sync)", offersToSave.size(), rsn);
 			}
 			catch (Exception e)
 			{
-				log.error("Failed to persist offer state for {}: {}", session.getRsn(), e.getMessage());
+				log.error("Failed to persist offer state for {}: {}", rsn, e.getMessage());
 			}
 		}
 
 		// Persist collected item IDs (items bought but not yet sold)
-		String savedAtKey = getCollectedItemsSavedAtKey();
+		String savedAtKey = COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + rsn;
 		if (session.getCollectedItemIds().isEmpty())
 		{
 			configManager.unsetConfiguration(CONFIG_GROUP, collectedKey);
@@ -222,25 +244,29 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Preload persisted offer state into the session so that timestamps
-	 * are available during the login burst (before syncOfflineFills runs).
+	 * Preload persisted offer state before the login burst fires, so the store
+	 * holds the correct reconciled state and createWithPreservedTimestamps finds
+	 * the original timestamp.
 	 *
-	 * This mirrors the Flipping Utilities approach: load persisted data
-	 * into memory BEFORE game events fire, so createWithPreservedTimestamps
-	 * can find the existing offer with its original timestamp.
+	 * Persisted {@link OfferRecord}s are reconciled against the live GE slots:
+	 * reattached records are imported into the store (preserving offerId and
+	 * timestamps so the burst event records only a delta), offline-collected
+	 * records are imported as terminal history, and live slots with no persisted
+	 * match are left for the normal event path to mint. The slot-keyed session
+	 * view is still populated for the legacy offline-fill chain and dual-write
+	 * readers.
 	 */
 	public void preloadPersistedOffers()
 	{
-		Map<Integer, TrackedOffer> persisted = loadPersistedOffers();
-		if (persisted.isEmpty())
+		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
+		if (persistedRecords.isEmpty())
 		{
-			persisted = loadPersistedOffersByKeyScan();
-			if (persisted.isEmpty())
-			{
-				return;
-			}
+			return;
 		}
 
+		reconcilePersistedIntoStore(persistedRecords);
+
+		Map<Integer, TrackedOffer> persisted = recordsToSlotMap(persistedRecords);
 		for (Map.Entry<Integer, TrackedOffer> entry : persisted.entrySet())
 		{
 			TrackedOffer offer = entry.getValue();
@@ -252,6 +278,58 @@ public class OfflineSyncService
 
 		log.debug("Preloaded {} persisted offers into session for timestamp preservation",
 			persisted.size());
+	}
+
+	/**
+	 * Reconcile persisted records against the live GE slots and apply the plan to
+	 * the store: reattached records are imported with their slot restored; minted
+	 * live slots are left to the normal event burst; offline-collected records are
+	 * imported as terminal history so the store carries the full set.
+	 */
+	private void reconcilePersistedIntoStore(List<OfferRecord> persistedRecords)
+	{
+		long now = System.currentTimeMillis();
+		List<OfferSignal> liveSlots = buildLiveSlotSignals();
+		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now);
+
+		List<OfferRecord> toImport = new ArrayList<>();
+		toImport.addAll(plan.reattached);
+		toImport.addAll(plan.offlineCollected);
+		offerStore.importRecords(toImport);
+
+		log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected",
+			plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size());
+	}
+
+	/** Reduce the live GE slots to {@link OfferSignal}s for reconciliation. */
+	private List<OfferSignal> buildLiveSlotSignals()
+	{
+		List<OfferSignal> signals = new ArrayList<>();
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return signals;
+		}
+		for (int slot = 0; slot < offers.length; slot++)
+		{
+			GrandExchangeOffer offer = offers[slot];
+			if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
+			{
+				continue;
+			}
+			int itemId = offer.getItemId();
+			String itemName = itemManager != null ? itemManager.getItemComposition(itemId).getName() : "";
+			signals.add(OfferEventMapper.toSignal(
+				slot,
+				offer.getState(),
+				itemId,
+				itemName,
+				offer.getTotalQuantity(),
+				offer.getPrice(),
+				offer.getQuantitySold(),
+				offer.getSpent()));
+		}
+		return signals;
 	}
 
 	/**
@@ -534,6 +612,27 @@ public class OfflineSyncService
 	// Persistence Helpers
 	// =====================
 
+	/**
+	 * Single resolution point for the RSN used to key persistence: live session
+	 * RSN first, then the persisted last-known RSN. Returns null only when neither
+	 * is available (e.g. mid-logout transition) so callers skip the write rather
+	 * than emit a {@code null}-keyed config entry.
+	 */
+	String resolvePersistenceRsn()
+	{
+		String rsn = session.getRsn();
+		if (rsn != null && !rsn.isEmpty())
+		{
+			return rsn;
+		}
+		String persisted = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+		if (persisted != null && !persisted.isEmpty())
+		{
+			return persisted;
+		}
+		return null;
+	}
+
 	public String getPersistedOffersKey()
 	{
 		if (session.getRsn() == null || session.getRsn().isEmpty())
@@ -625,45 +724,42 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Load previously persisted tracked offers from config.
+	 * Load previously persisted offers as a slot-keyed {@link TrackedOffer} view,
+	 * the shape the offline-fill reconciliation chain consumes. Backed by the
+	 * {@link OfferRecord} list now written to config.
 	 */
 	private Map<Integer, TrackedOffer> loadPersistedOffers()
 	{
-		String key = getPersistedOffersKey();
+		return recordsToSlotMap(loadPersistedOfferRecords());
+	}
 
-		try
+	/**
+	 * Load the raw persisted {@link OfferRecord} list (RSN key, then fallback /
+	 * key-scan). This is the canonical persisted state restored into the store.
+	 */
+	List<OfferRecord> loadPersistedOfferRecords()
+	{
+		List<OfferRecord> records = tryLoadRecordsFromKey(getPersistedOffersKey());
+		if (!records.isEmpty())
 		{
-			String json = configManager.getConfiguration(CONFIG_GROUP, key);
-			if (json == null || json.isEmpty())
-			{
-				log.debug("No persisted offers found for {}", session.getRsn());
-				return new HashMap<>();
-			}
-
-			Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
-			Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
-			log.debug("Loaded {} persisted offers for {}", offers != null ? offers.size() : 0, session.getRsn());
-			return offers != null ? offers : new HashMap<>();
+			log.debug("Loaded {} persisted offer records for {}", records.size(), session.getRsn());
+			return records;
 		}
-		catch (Exception e)
-		{
-			log.error("Failed to load persisted offers for {}: {}", session.getRsn(), e.getMessage());
-			return new HashMap<>();
-		}
+		return loadPersistedOfferRecordsByKeyScan();
 	}
 
 	/**
 	 * Scan all config keys matching persistedOffers_* to find offer data
 	 * when the RSN-specific key lookup failed (cold start, RSN not yet available).
 	 */
-	private Map<Integer, TrackedOffer> loadPersistedOffersByKeyScan()
+	private List<OfferRecord> loadPersistedOfferRecordsByKeyScan()
 	{
 		try
 		{
-			Map<Integer, TrackedOffer> result = tryLoadOffersFromKey(PERSISTED_OFFERS_FALLBACK_KEY);
+			List<OfferRecord> result = tryLoadRecordsFromKey(PERSISTED_OFFERS_FALLBACK_KEY);
 			if (!result.isEmpty())
 			{
-				log.debug("Loaded {} offers from fallback key", result.size());
+				log.debug("Loaded {} offer records from fallback key", result.size());
 				return result;
 			}
 
@@ -676,31 +772,65 @@ public class OfflineSyncService
 				{
 					continue;
 				}
-				result = tryLoadOffersFromKey(keyPart);
+				result = tryLoadRecordsFromKey(keyPart);
 				if (!result.isEmpty())
 				{
-					log.debug("Loaded {} offers via key scan (key: {})", result.size(), keyPart);
+					log.debug("Loaded {} offer records via key scan (key: {})", result.size(), keyPart);
 					return result;
 				}
 			}
 		}
 		catch (Exception e)
 		{
-			log.error("Failed to load persisted offers by key scan: {}", e.getMessage());
+			log.error("Failed to load persisted offer records by key scan: {}", e.getMessage());
 		}
-		return new HashMap<>();
+		return new ArrayList<>();
 	}
 
-	private Map<Integer, TrackedOffer> tryLoadOffersFromKey(String key)
+	private List<OfferRecord> tryLoadRecordsFromKey(String key)
 	{
-		String json = configManager.getConfiguration(CONFIG_GROUP, key);
-		if (json == null || json.isEmpty())
+		try
 		{
-			return new HashMap<>();
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				return new ArrayList<>();
+			}
+			Type type = new TypeToken<List<OfferRecord>>(){}.getType();
+			List<OfferRecord> records = gson.fromJson(json, type);
+			return records != null ? records : new ArrayList<>();
 		}
-		Type type = new TypeToken<Map<Integer, TrackedOffer>>(){}.getType();
-		Map<Integer, TrackedOffer> offers = gson.fromJson(json, type);
-		return (offers != null) ? offers : new HashMap<>();
+		catch (Exception e)
+		{
+			log.error("Failed to load offer records from key {}: {}", key, e.getMessage());
+			return new ArrayList<>();
+		}
+	}
+
+	/**
+	 * Adapt persisted {@link OfferRecord}s into the slot-keyed {@link TrackedOffer}
+	 * map the legacy offline-sync reconciliation still consumes. Only records that
+	 * still carry a slot (live at persist time) participate; terminal/slot-less
+	 * records were already collected and have nothing to reconcile against a slot.
+	 */
+	private static Map<Integer, TrackedOffer> recordsToSlotMap(List<OfferRecord> records)
+	{
+		Map<Integer, TrackedOffer> out = new HashMap<>();
+		for (OfferRecord r : records)
+		{
+			if (r.getSlot() == null)
+			{
+				continue;
+			}
+			TrackedOffer t = new TrackedOffer(r.getItemId(), r.getItemName(), r.isBuy(),
+				r.getTotalQuantity(), r.getPrice(), r.getFilledQuantity(), r.getCreatedAtMillis());
+			t.setPreviousSpent(r.getSpent());
+			t.setLastActivityAtMillis(r.getEffectiveLastActivityAtMillis());
+			t.setCompletedAtMillis(r.getCompletedAtMillis());
+			t.setOfferStage(r.getOfferStage());
+			out.put(r.getSlot(), t);
+		}
+		return out;
 	}
 
 	// =====================

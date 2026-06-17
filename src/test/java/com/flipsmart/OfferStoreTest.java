@@ -218,4 +218,50 @@ public class OfferStoreTest
         long b = store.bySlot(1).getOfferId();
         assertTrue(b > a);
     }
+
+    @Test
+    public void exportImport_roundTripsRecordsAndRebuildsSlotIndex()
+    {
+        OfferStore source = new OfferStore();
+        source.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        source.apply(sig(1, GrandExchangeOfferState.BOUGHT, 5678, 10, 10), NOW); // FILLED (live)
+        source.apply(sig(2, GrandExchangeOfferState.BUYING, 4321, 0, 10), NOW);
+        source.apply(sig(2, GrandExchangeOfferState.CANCELLED_BUY, 4321, 0, 10), NOW); // CANCELLED_EMPTY (terminal, slot freed)
+
+        List<OfferRecord> exported = source.export();
+
+        OfferStore target = new OfferStore();
+        target.importRecords(exported);
+
+        assertEquals(source.allRecords().size(), target.allRecords().size());
+        assertEquals(1234, target.bySlot(0).getItemId());
+        assertEquals(5678, target.bySlot(1).getItemId());
+        assertNull("terminal record's slot is not re-indexed", target.bySlot(2));
+        assertEquals("terminal record is still retained", 1, target.forItem(4321).size());
+    }
+
+    @Test
+    public void importRecords_reseedsNextOfferIdAboveMax()
+    {
+        OfferStore source = new OfferStore();
+        source.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        source.apply(sig(1, GrandExchangeOfferState.BUYING, 5678, 0, 10), NOW);
+        long maxId = source.bySlot(1).getOfferId();
+
+        OfferStore target = new OfferStore();
+        target.importRecords(source.export());
+
+        // A fresh offer placed after import must get a non-colliding id above the max.
+        target.apply(sig(3, GrandExchangeOfferState.BUYING, 9999, 0, 10), NOW);
+        long newId = target.bySlot(3).getOfferId();
+        assertTrue("new id (" + newId + ") must exceed imported max (" + maxId + ")", newId > maxId);
+
+        for (OfferRecord r : target.allRecords())
+        {
+            if (r.getItemId() != 9999)
+            {
+                assertNotEquals("imported ids are preserved, not reused", newId, r.getOfferId());
+            }
+        }
+    }
 }

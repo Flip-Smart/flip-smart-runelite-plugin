@@ -101,6 +101,34 @@ public final class OfferStore
         return Collections.unmodifiableList(new ArrayList<>(byOfferId.values()));
     }
 
+    /** Snapshot of every record for persistence. */
+    public synchronized List<OfferRecord> export()
+    {
+        return new ArrayList<>(byOfferId.values());
+    }
+
+    /**
+     * Replace all state with {@code records} (e.g. restored from persistence),
+     * rebuilding the slot index for live records and re-seeding the id counter
+     * above the largest imported offerId so subsequent offers cannot collide.
+     */
+    public synchronized void importRecords(List<OfferRecord> records)
+    {
+        byOfferId.clear();
+        slotToOfferId.clear();
+        long maxId = 0;
+        for (OfferRecord r : records)
+        {
+            byOfferId.put(r.getOfferId(), r);
+            if (r.getSlot() != null && !r.getState().isTerminal())
+            {
+                slotToOfferId.put(r.getSlot(), r.getOfferId());
+            }
+            maxId = Math.max(maxId, r.getOfferId());
+        }
+        nextOfferId = maxId + 1;
+    }
+
     /**
      * Records that still occupy a GE slot (state is non-terminal). Terminal
      * records (collected / cancelled-empty) are retained by the store but
