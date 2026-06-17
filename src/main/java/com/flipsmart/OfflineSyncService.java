@@ -11,9 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.api.InventoryID;
-import net.runelite.api.Item;
-import net.runelite.api.ItemContainer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -26,7 +23,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -50,7 +46,6 @@ public class OfflineSyncService
 	/** Persisted collected-item entries older than this are dropped on restore. */
 	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
 	private final PlayerSession session;
-	private final FlipSmartApiClient apiClient;
 	private final ConfigManager configManager;
 	private final Gson gson;
 	private final Client client;
@@ -66,7 +61,6 @@ public class OfflineSyncService
 	@Inject
 	public OfflineSyncService(
 		PlayerSession session,
-		FlipSmartApiClient apiClient,
 		ConfigManager configManager,
 		Gson gson,
 		Client client,
@@ -77,7 +71,6 @@ public class OfflineSyncService
 		ItemManager itemManager)
 	{
 		this.session = session;
-		this.apiClient = apiClient;
 		this.configManager = configManager;
 		this.gson = gson;
 		this.client = client;
@@ -332,24 +325,45 @@ public class OfflineSyncService
 		session.setOfflineSyncCompleted(true);
 
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
-		Map<Integer, OfferRecord> persistedOffers = recordsToSlotMap(persistedRecords);
 		Map<Integer, OfferRecord> currentOffers = liveOffersBySlot();
 		log.debug("Loaded {} persisted offers, comparing with {} current offers",
-			persistedOffers.size(), currentOffers.size());
+			persistedRecords.size(), currentOffers.size());
 
 		// Hand the snapshot to GEHistoryService so fully-completed offline trades
 		// (whose live record no longer exists post-sync) can still be matched and
 		// backfilled when the user opens the History tab.
 		geHistoryService.setRecentlyPersistedOffers(persistedRecords);
 
-		if (!currentOffers.isEmpty())
+		// Reconcile persisted records against live slots to determine which offers
+		// completed or were cancelled while offline.
+		List<OfferSignal> liveSlots = buildLiveSlotSignals();
+		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, System.currentTimeMillis());
+
+		// Restore original timestamps on still-live offers whose persisted record is older.
+		for (OfferRecord reattached : plan.reattached)
 		{
-			syncCurrentOffersWithPersisted(persistedOffers, currentOffers);
+			OfferRecord live = findLiveRecordForSlot(reattached.getSlot(), currentOffers);
+			if (live != null)
+			{
+				restoreTimestampIfOlder(live, reattached);
+			}
 		}
 
-		if (!persistedOffers.isEmpty())
+		// Each offline-collected record represents an offer whose slot is now gone on login.
+		// Register exactly one backfill per record, using the reconciled filled qty — never
+		// the order total — so a partial-cancel contributes only what was actually traded.
+		for (OfferRecord record : plan.offlineCollected)
 		{
-			handleEmptyPersistedSlots(persistedOffers, currentOffers);
+			int itemId = record.getItemId();
+			if (record.isBuy() && record.getFilledQuantity() > 0)
+			{
+				session.addCollectedItem(itemId, record.getFilledQuantity());
+				geHistoryService.registerOfflineFill(itemId);
+			}
+			else if (!record.isBuy())
+			{
+				geHistoryService.registerOfflineFill(itemId);
+			}
 		}
 
 		// Inventory check requires the client thread.
@@ -363,6 +377,15 @@ public class OfflineSyncService
 				onSyncComplete.run();
 			}
 		});
+	}
+
+	private OfferRecord findLiveRecordForSlot(Integer slot, Map<Integer, OfferRecord> currentOffers)
+	{
+		if (slot == null)
+		{
+			return null;
+		}
+		return currentOffers.get(slot);
 	}
 
 	/**
@@ -416,40 +439,6 @@ public class OfflineSyncService
 		}
 	}
 
-	private void syncCurrentOffersWithPersisted(Map<Integer, OfferRecord> persistedOffers,
-		Map<Integer, OfferRecord> currentOffers)
-	{
-		for (Map.Entry<Integer, OfferRecord> entry : currentOffers.entrySet())
-		{
-			int slot = entry.getKey();
-			OfferRecord currentOffer = entry.getValue();
-			OfferRecord persistedOffer = persistedOffers.get(slot);
-
-			if (persistedOffer != null && persistedOffer.getItemId() == currentOffer.getItemId())
-			{
-				restoreTimestampIfOlder(currentOffer, persistedOffer);
-			}
-			else
-			{
-				if (persistedOffer != null && persistedOffer.getItemId() != currentOffer.getItemId())
-				{
-					// Slot reused with a different item — the persisted offer must
-					// have completed offline (or been cancelled). Register it so
-					// the History backfill can disambiguate via the History tab,
-					// which only shows actual completions.
-					geHistoryService.registerOfflineFill(persistedOffer.getItemId());
-				}
-				if (currentOffer.isBuy() && currentOffer.getFilledQuantity() > 0)
-				{
-					// Track inventory locally so a sell can be queued; backend rejects
-					// is_offline_fill submissions after #597, so no transaction is recorded.
-					session.addCollectedItem(currentOffer.getItemId(), currentOffer.getFilledQuantity());
-					geHistoryService.registerOfflineFill(currentOffer.getItemId());
-				}
-			}
-		}
-	}
-
 	private void restoreTimestampIfOlder(OfferRecord current, OfferRecord persisted)
 	{
 		if (persisted.getCreatedAtMillis() > 0
@@ -457,145 +446,6 @@ public class OfflineSyncService
 		{
 			offerStore.correctCreatedAt(current.getOfferId(), persisted.getCreatedAtMillis());
 		}
-	}
-
-	/**
-	 * Handle persisted slots that are now empty (offer completed or cancelled offline).
-	 */
-	private void handleEmptyPersistedSlots(Map<Integer, OfferRecord> persistedOffers,
-		Map<Integer, OfferRecord> currentOffers)
-	{
-		for (Map.Entry<Integer, OfferRecord> entry : persistedOffers.entrySet())
-		{
-			int slot = entry.getKey();
-			OfferRecord persistedOffer = entry.getValue();
-
-			if (currentOffers.containsKey(slot))
-			{
-				continue;
-			}
-
-			log.debug("Slot {} is now empty (was tracking {} x{}). Checking for offline completions.",
-				slot, persistedOffer.getItemName(), persistedOffer.getTotalQuantity());
-
-			if (persistedOffer.isBuy())
-			{
-				handleEmptyBuySlot(persistedOffer);
-			}
-			else
-			{
-				handleEmptySellSlot(persistedOffer);
-			}
-		}
-	}
-
-	/**
-	 * Handle an empty slot that was previously a sell order. Backend rejects offline-fill
-	 * submissions (#597), so we only dismiss the local flip tracking when inventory is empty.
-	 */
-	private void handleEmptySellSlot(OfferRecord persistedOffer)
-	{
-		clientThread.invokeLater(() ->
-		{
-			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
-			if (inventoryCount == 0)
-			{
-				// Register for History backfill instead of dismissing the local flip.
-				// dismissFlip marks the buy is_manually_closed=true and bumps
-				// quantity_sold=quantity on the API side, which then prevents the
-				// backfill SELL from pairing with the buy. Let the backfill close
-				// the flip naturally; the panel will refresh once it posts.
-				log.debug("Sell slot empty for {} with no inventory — flagging for History backfill",
-					persistedOffer.getItemName());
-				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
-			}
-		});
-	}
-
-	/**
-	 * Handle an empty slot that was previously a buy order.
-	 */
-	private void handleEmptyBuySlot(OfferRecord persistedOffer)
-	{
-		// getItemContainer requires the client thread
-		clientThread.invokeLater(() ->
-		{
-			int inventoryCount = getInventoryCountForItem(persistedOffer.getItemId());
-			int trackedFills = persistedOffer.getFilledQuantity();
-
-			if (inventoryCount > 0)
-			{
-				handleBuyOrderWithInventory(persistedOffer, inventoryCount, trackedFills);
-			}
-			else if (trackedFills > 0)
-			{
-				log.debug("No {} found in inventory (had {} fills tracked). Items may have been sold/used offline.",
-					persistedOffer.getItemName(), trackedFills);
-				geHistoryService.registerOfflineFill(persistedOffer.getItemId());
-			}
-		});
-	}
-
-	/**
-	 * Handle a completed buy order that has items in inventory.
-	 */
-	private void handleBuyOrderWithInventory(OfferRecord persistedOffer, int inventoryCount, int trackedFills)
-	{
-		int actualFills = calculateActualFills(persistedOffer, inventoryCount, trackedFills);
-		session.addCollectedItem(persistedOffer.getItemId(), actualFills);
-
-		if (actualFills > trackedFills)
-		{
-			syncOfflineCompletedOrder(persistedOffer, inventoryCount, trackedFills, actualFills);
-			geHistoryService.registerOfflineFill(persistedOffer.getItemId());
-		}
-		else
-		{
-			log.debug("Adding {} to collected tracking (had {} items filled before going offline)",
-				persistedOffer.getItemName(), trackedFills);
-		}
-	}
-
-	/**
-	 * Calculate actual fills based on inventory count, tracked fills, and order size.
-	 */
-	private int calculateActualFills(OfferRecord persistedOffer, int inventoryCount, int trackedFills)
-	{
-		int actualFills = Math.max(inventoryCount, trackedFills);
-
-		if (inventoryCount >= persistedOffer.getTotalQuantity())
-		{
-			actualFills = persistedOffer.getTotalQuantity();
-		}
-
-		return actualFills;
-	}
-
-	/**
-	 * Sync an offline-completed order with the backend.
-	 */
-	private void syncOfflineCompletedOrder(OfferRecord persistedOffer, int inventoryCount, int trackedFills, int actualFills)
-	{
-		log.debug("Detected offline completion for {} - tracked {} fills but have {} in inventory. Syncing {} items with backend.",
-			persistedOffer.getItemName(), trackedFills, inventoryCount, actualFills);
-
-		String rsn = getRsnSafe().orElse(null);
-		if (rsn == null)
-		{
-			return;
-		}
-
-		int syncPrice = (persistedOffer.getSpent() > 0 && persistedOffer.getFilledQuantity() > 0)
-			? (int)(persistedOffer.getSpent() / persistedOffer.getFilledQuantity())
-			: persistedOffer.getPrice();
-		apiClient.syncActiveFlipAsync(
-			persistedOffer.getItemId(),
-			persistedOffer.getItemName(),
-			actualFills,
-			persistedOffer.getTotalQuantity(),
-			syncPrice,
-			rsn
-		);
 	}
 
 	// =====================
@@ -793,25 +643,6 @@ public class OfflineSyncService
 		}
 	}
 
-	/**
-	 * Index records by GE slot for the offline-fill reconciliation. Only records
-	 * that still carry a slot (live at persist time) participate; terminal/slot-less
-	 * records were already collected and have nothing to reconcile against a slot.
-	 */
-	private static Map<Integer, OfferRecord> recordsToSlotMap(List<OfferRecord> records)
-	{
-		Map<Integer, OfferRecord> out = new HashMap<>();
-		for (OfferRecord r : records)
-		{
-			if (r.getSlot() == null)
-			{
-				continue;
-			}
-			out.put(r.getSlot(), r);
-		}
-		return out;
-	}
-
 	/** The store's current live offers indexed by GE slot. */
 	private Map<Integer, OfferRecord> liveOffersBySlot()
 	{
@@ -826,33 +657,4 @@ public class OfflineSyncService
 		return out;
 	}
 
-	// =====================
-	// Utility Methods
-	// =====================
-
-	private int getInventoryCountForItem(int itemId)
-	{
-		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
-		if (inventory == null)
-		{
-			return 0;
-		}
-
-		int count = 0;
-		Item[] items = inventory.getItems();
-		for (Item item : items)
-		{
-			if (item.getId() == itemId)
-			{
-				count += item.getQuantity();
-			}
-		}
-
-		return count;
-	}
-
-	private Optional<String> getRsnSafe()
-	{
-		return session.getRsnSafe();
-	}
 }

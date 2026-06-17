@@ -1,9 +1,11 @@
 package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
 import com.google.gson.Gson;
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
@@ -20,11 +22,13 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +38,9 @@ public class OfflineSyncPersistenceTest
 
 	private PlayerSession session;
 	private ConfigManager configManager;
+	private Client client;
+	private ClientThread clientThread;
+	private GEHistoryService geHistoryService;
 	private OfferStore store;
 	private OfflineSyncService service;
 	private Map<String, String> configStore;
@@ -43,6 +50,9 @@ public class OfflineSyncPersistenceTest
 	{
 		session = mock(PlayerSession.class);
 		configManager = mock(ConfigManager.class);
+		client = mock(Client.class);
+		clientThread = mock(ClientThread.class);
+		geHistoryService = mock(GEHistoryService.class);
 		store = new OfferStore();
 		configStore = new HashMap<>();
 
@@ -61,15 +71,21 @@ public class OfflineSyncPersistenceTest
 		when(configManager.getConfiguration(eq(CONFIG_GROUP), anyString()))
 			.thenAnswer(inv -> configStore.get(inv.<String>getArgument(1)));
 
+		// Execute clientThread.invokeLater runnables synchronously so tests can verify
+		// side-effects that happen inside the callback.
+		doAnswer(inv -> {
+			inv.<Runnable>getArgument(0).run();
+			return null;
+		}).when(clientThread).invokeLater(any(Runnable.class));
+
 		service = new OfflineSyncService(
 			session,
-			mock(FlipSmartApiClient.class),
 			configManager,
 			new Gson(),
-			mock(Client.class),
-			mock(ClientThread.class),
+			client,
+			clientThread,
 			mock(ActiveFlipTracker.class),
-			mock(GEHistoryService.class),
+			geHistoryService,
 			store,
 			mock(ItemManager.class));
 	}
@@ -164,6 +180,45 @@ public class OfflineSyncPersistenceTest
 			configStore.containsKey("persistedOffers_Durial321"));
 		assertFalse("no unknown-RSN key written",
 			configStore.containsKey("persistedOffers_unknown"));
+	}
+
+	/**
+	 * A partial-cancel buy (total=5, filled=2, CANCELLED_PARTIAL) that is gone from live slots
+	 * on login must produce exactly one offline fill registered at the reconciled filled qty (2),
+	 * never the order total (5) and never a double-count (5+2=7).
+	 */
+	@Test
+	public void offlinePartialCancelRegistersSingleBackfillAtReconciledQty()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+
+		// Build a CANCELLED_PARTIAL record: place a buy, then cancel with 2 fills of 5.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 111, 0, 5), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 111, 2, 5), 2000L);
+
+		// Confirm the store has the partial-cancel record before persisting.
+		List<OfferRecord> records = store.export();
+		assertEquals(1, records.size());
+		assertEquals(OfferState.CANCELLED_PARTIAL, records.get(0).getState());
+		assertEquals(2, records.get(0).getFilledQuantity());
+
+		// Persist this session state so syncOfflineFills can load it.
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList()); // simulate fresh login — store is empty
+
+		// Live GE slots are empty on login (the partial-cancel slot is gone).
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		// The reconciler plan routes the gone record to offlineCollected.
+		// Exactly one registerOfflineFill must fire — never twice (no double-count).
+		verify(geHistoryService, times(1)).registerOfflineFill(111);
+
+		// Collected qty must be the reconciled filled qty (2), never the order total (5).
+		verify(session, times(1)).addCollectedItem(111, 2);
+		verify(session, never()).addCollectedItem(eq(111), eq(5));
 	}
 
 	private static com.flipsmart.domain.offer.OfferSignal sig(int slot, GrandExchangeOfferState s, int itemId, int sold, int total)
