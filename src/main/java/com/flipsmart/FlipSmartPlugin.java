@@ -1,7 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.OfferSignal;
-import com.flipsmart.domain.offer.TrackedOffer;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.offer.PendingOrder;
@@ -1263,11 +1262,12 @@ public class FlipSmartPlugin extends Plugin
 		if (isLoginBurst && state != GrandExchangeOfferState.EMPTY)
 		{
 			log.debug("Login burst: initializing tracking for slot {} with {} items sold", slot, quantitySold);
-			TrackedOffer existing = session.getTrackedOffer(slot);
-			TrackedOffer updated = TrackedOffer.createWithPreservedTimestamps(
-				itemId, itemName, totalQuantity, price, quantitySold, existing, state);
-			updated.setPreviousSpent(spent);
-			session.putTrackedOffer(slot, updated);
+			// Seed the offer store baseline (cumulative fill/spend) without recording a
+			// transaction, so the first live event after the burst records only the delta.
+			offerStore.apply(
+				com.flipsmart.trading.OfferEventMapper.toSignal(
+					slot, state, itemId, itemName, totalQuantity, price, quantitySold, spent),
+				System.currentTimeMillis());
 			return;
 		}
 

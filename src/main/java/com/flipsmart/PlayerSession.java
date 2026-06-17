@@ -1,6 +1,4 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.TrackedOffer;
-
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -47,7 +45,6 @@ public class PlayerSession
 	// GE State
 	// =====================
 
-	private final Map<Integer, TrackedOffer> trackedOffers = new ConcurrentHashMap<>();
 	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
@@ -176,25 +173,6 @@ public class PlayerSession
 	}
 
 	// =====================
-	// GE State Methods
-	// =====================
-
-	public TrackedOffer getTrackedOffer(int slot)
-	{
-		return trackedOffers.get(slot);
-	}
-
-	public void putTrackedOffer(int slot, TrackedOffer offer)
-	{
-		trackedOffers.put(slot, offer);
-	}
-
-	public TrackedOffer removeTrackedOffer(int slot)
-	{
-		return trackedOffers.remove(slot);
-	}
-
-	// =====================
 	// Recommended Prices Methods
 	// =====================
 
@@ -299,7 +277,6 @@ public class PlayerSession
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
 		collectedQuantities.clear();
-		trackedOffers.clear();
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 	}
