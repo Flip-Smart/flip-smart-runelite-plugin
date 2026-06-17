@@ -15,6 +15,7 @@ import org.junit.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -67,6 +68,11 @@ public class GrandExchangeTrackerCharacterizationTest
 		store = new OfferStore();
 
 		apiClient = mock(FlipSmartApiClient.class);
+		// Recording now flows through the TransactionLogger listener on the store, exactly as
+		// production wires it. The apiClient mock + captor below capture the listener's calls.
+		com.flipsmart.trading.TransactionLogger logger =
+			new com.flipsmart.trading.TransactionLogger(apiClient, session, () -> java.util.Optional.of(RSN));
+		store.addListener(logger::onOfferEvent);
 		activeFlipTracker = mock(ActiveFlipTracker.class);
 		itemManager = mock(ItemManager.class);
 		tradeActivityLog = mock(TradeActivityLog.class);
@@ -158,6 +164,135 @@ public class GrandExchangeTrackerCharacterizationTest
 	private int expectedRecordCount()
 	{
 		return expectedRecords;
+	}
+
+	// ==================================================================
+	// B1-Scenario 1 — Full buy lifecycle: place -> partial -> partial ->
+	// complete -> collect.
+	// Asserts the complete (itemId, isBuy, quantity, pricePerItem, geSlot,
+	// totalQuantity) 6-tuple for every recorded transaction.
+	// ==================================================================
+	@Test
+	public void scenarioB1_fullBuyLifecycle_allTuplesVerified()
+	{
+		// Placement: BUYING, 0 filled.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 0, 0));
+		// First partial fill: 4/10, spent 400.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 4, 400));
+		// Second partial fill: 7/10, spent 700.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 7, 700));
+		// Completion: 10/10, spent 1000.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 10, 100, 10, 1000));
+		// Collect: EMPTY event on the slot.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 100, 0, 0));
+
+		// Four transactions: placement(0) + partial(+4) + partial(+3) + complete(+3).
+		// The collect (EMPTY) fires handleCollectedBuyOffer, which only calls
+		// syncActiveFlipAsync — no additional recordTransactionAsync is expected.
+		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
+		verify(apiClient, times(4)).recordTransactionAsync(captor.capture());
+		java.util.List<TransactionRequest> reqs = captor.getAllValues();
+
+		// Placement — 6-tuple assertion.
+		TransactionRequest placement = reqs.get(0);
+		assertEquals("placement itemId", ITEM_A, placement.itemId);
+		assertTrue("placement isBuy", placement.isBuy);
+		assertEquals("placement quantity 0", 0, placement.quantity);
+		assertEquals("placement pricePerItem = placed price", 100, placement.pricePerItem);
+		assertEquals("placement geSlot", (Integer) SLOT, placement.geSlot);
+		assertEquals("placement totalQuantity", (Integer) 10, placement.totalQuantity);
+
+		// First partial fill (+4 delta).
+		TransactionRequest fill1 = reqs.get(1);
+		assertEquals("fill1 itemId", ITEM_A, fill1.itemId);
+		assertTrue("fill1 isBuy", fill1.isBuy);
+		assertEquals("fill1 quantity +4", 4, fill1.quantity);
+		assertEquals("fill1 pricePerItem = 400/4", 100, fill1.pricePerItem);
+		assertEquals("fill1 geSlot", (Integer) SLOT, fill1.geSlot);
+		assertEquals("fill1 totalQuantity", (Integer) 10, fill1.totalQuantity);
+
+		// Second partial fill (+3 delta: 7 cumulative - 4 prior).
+		TransactionRequest fill2 = reqs.get(2);
+		assertEquals("fill2 itemId", ITEM_A, fill2.itemId);
+		assertTrue("fill2 isBuy", fill2.isBuy);
+		assertEquals("fill2 quantity +3 (7-4)", 3, fill2.quantity);
+		assertEquals("fill2 pricePerItem = (700-400)/3", 100, fill2.pricePerItem);
+		assertEquals("fill2 geSlot", (Integer) SLOT, fill2.geSlot);
+		assertEquals("fill2 totalQuantity", (Integer) 10, fill2.totalQuantity);
+
+		// Completion fill (+3 delta: 10 cumulative - 7 prior).
+		TransactionRequest fill3 = reqs.get(3);
+		assertEquals("fill3 itemId", ITEM_A, fill3.itemId);
+		assertTrue("fill3 isBuy", fill3.isBuy);
+		assertEquals("fill3 quantity +3 (10-7)", 3, fill3.quantity);
+		assertEquals("fill3 pricePerItem = (1000-700)/3", 100, fill3.pricePerItem);
+		assertEquals("fill3 geSlot", (Integer) SLOT, fill3.geSlot);
+		assertEquals("fill3 totalQuantity", (Integer) 10, fill3.totalQuantity);
+
+		int totalFilled = reqs.stream().mapToInt(r -> r.quantity).sum();
+		assertEquals("total recorded fills = 10 (placement 0 + deltas 4+3+3)", 10, totalFilled);
+
+		// Collect added the 10 items to the session's collected set.
+		assertEquals("collect added 10 items to session", 10, session.getCollectedQuantity(ITEM_A));
+	}
+
+	// ==================================================================
+	// B1-Scenario 2 — Full sell lifecycle: place -> partial -> complete ->
+	// collect.
+	// INTENDED CHANGE: routing all recording through the TransactionLogger
+	// listener fixes bug #3 — the sell PLACEMENT now records a qty-0
+	// transaction off the PLACED event, just like a buy placement.
+	// markActiveFlipSellingAsync still fires at placement as before.
+	// ==================================================================
+	@Test
+	public void scenarioB2_sellLifecycle_placementRecordsThenFills()
+	{
+		// Sell placement: SELLING, 0 filled.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 0, 0));
+		// Partial sell fill: 2/5 sold, received 400.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 2, 400));
+		// Completion: 5/5 sold, received 1000 (SOLD).
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SOLD, ITEM_A, NAME_A, 5, 200, 5, 1000));
+		// Collect: EMPTY event on the slot.
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 5, 200, 0, 0));
+
+		// Three records now: sell placement (qty 0) + partial fill (+2) + completion (+3).
+		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
+		verify(apiClient, times(3)).recordTransactionAsync(captor.capture());
+		java.util.List<TransactionRequest> reqs = captor.getAllValues();
+
+		// Sell placement (qty 0) — the bug-#3 fix.
+		TransactionRequest placement = reqs.get(0);
+		assertEquals("placement itemId", ITEM_A, placement.itemId);
+		assertFalse("placement is a sell (not buy)", placement.isBuy);
+		assertEquals("placement quantity 0", 0, placement.quantity);
+		assertEquals("placement pricePerItem = placed price", 200, placement.pricePerItem);
+		assertEquals("placement geSlot", (Integer) SLOT, placement.geSlot);
+		assertEquals("placement totalQuantity", (Integer) 5, placement.totalQuantity);
+
+		// Partial sell fill (+2 delta).
+		TransactionRequest sellFill1 = reqs.get(1);
+		assertEquals("sellFill1 itemId", ITEM_A, sellFill1.itemId);
+		assertFalse("sellFill1 is a sell (not buy)", sellFill1.isBuy);
+		assertEquals("sellFill1 quantity +2", 2, sellFill1.quantity);
+		assertEquals("sellFill1 pricePerItem = 400/2", 200, sellFill1.pricePerItem);
+		assertEquals("sellFill1 geSlot", (Integer) SLOT, sellFill1.geSlot);
+		assertEquals("sellFill1 totalQuantity", (Integer) 5, sellFill1.totalQuantity);
+
+		// Completion fill (+3 delta: 5 cumulative - 2 prior).
+		TransactionRequest sellFill2 = reqs.get(2);
+		assertEquals("sellFill2 itemId", ITEM_A, sellFill2.itemId);
+		assertFalse("sellFill2 is a sell (not buy)", sellFill2.isBuy);
+		assertEquals("sellFill2 quantity +3 (5-2)", 3, sellFill2.quantity);
+		assertEquals("sellFill2 pricePerItem = (1000-400)/3", 200, sellFill2.pricePerItem);
+		assertEquals("sellFill2 geSlot", (Integer) SLOT, sellFill2.geSlot);
+		assertEquals("sellFill2 totalQuantity", (Integer) 5, sellFill2.totalQuantity);
+
+		int totalSold = reqs.stream().mapToInt(r -> r.quantity).sum();
+		assertEquals("total recorded sell qty = 5 (placement 0 + deltas 2+3)", 5, totalSold);
+
+		// Placement still fires markActiveFlipSellingAsync.
+		verify(apiClient, times(1)).markActiveFlipSellingAsync(eq(ITEM_A), any());
 	}
 
 	// ==================================================================
@@ -254,10 +389,9 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals("current behavior: collected qty stays at the partial 4 (put overwrites, no accumulation)",
 			4, session.getCollectedQuantity(ITEM_A));
 
-		// Transactions recorded: placement (0) + partial fill (+4) + final cancellation
-		// fill. recordFinalCancellationFill only records when quantitySold >
-		// previousQuantitySold; here previousQuantitySold==4 and quantitySold==4, so it
-		// records NOTHING extra at cancel time. So only 2 records total.
+		// Transactions recorded: placement (0) + partial fill (+4). The cancel's CANCELLED
+		// event carries a zero residual (store filled==4, quantitySold==4), so the listener
+		// records nothing extra at cancel time. So only 2 records total.
 		expectedRecords = 2;
 		ArgumentCaptor<TransactionRequest> captor = captureFills();
 		java.util.List<TransactionRequest> reqs = captor.getAllValues();
@@ -464,6 +598,46 @@ public class GrandExchangeTrackerCharacterizationTest
 			syncAfterFirstCancel, mockingDetailsSyncCount());
 		assertEquals("slot still holds the single CANCELLED_PARTIAL record",
 			OfferState.CANCELLED_PARTIAL, store.bySlot(SLOT).getState());
+	}
+
+	// ==================================================================
+	// Scenario 10 — Immediate-fill buy while auto-recommend is active:
+	// the recorded transaction must carry the recommended sell price from
+	// the current recommendation, not null.
+	//
+	// Regression guard: TransactionLogger reads session.getRecommendedPrice
+	// inside offerStore.apply, so the price must be seeded into session
+	// BEFORE apply fires. Moving preStoreImmediateFillSellPrice ahead of
+	// apply in handleActiveOffer is the fix; this test fails without it.
+	// ==================================================================
+	@Test
+	public void scenario10_immediateFilledBuy_autoRecommendActive_recommendedSellPriceRecorded()
+	{
+		int recommendedSell = 95_000;
+
+		AutoRecommendService autoRecommend = mock(AutoRecommendService.class);
+		when(autoRecommend.isActive()).thenReturn(true);
+
+		com.flipsmart.domain.flip.FlipRecommendation rec =
+			new com.flipsmart.domain.flip.FlipRecommendation();
+		rec.setItemId(ITEM_A);
+		rec.setRecommendedSellPrice(recommendedSell);
+		when(autoRecommend.getCurrentRecommendation()).thenReturn(rec);
+
+		tracker.setAutoRecommendService(autoRecommend);
+
+		// First-sight event already showing fills: previousOffer == null, quantitySold > 0.
+		tracker.handleOfferChanged(
+			ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 90_000, 10, 900_000));
+
+		ArgumentCaptor<TransactionRequest> captor = ArgumentCaptor.forClass(TransactionRequest.class);
+		verify(apiClient, times(1)).recordTransactionAsync(captor.capture());
+
+		TransactionRequest req = captor.getValue();
+		assertEquals("immediate-fill buy records the recommended sell price from auto-recommend",
+			(Integer) recommendedSell, req.recommendedSellPrice);
+		assertTrue("recorded transaction is a buy", req.isBuy);
+		assertEquals("item id matches", ITEM_A, req.itemId);
 	}
 
 	private int mockingDetailsSyncCount()

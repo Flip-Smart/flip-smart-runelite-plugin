@@ -164,4 +164,35 @@ public class OfferStateMachineTest
         assertEquals(OfferTransition.Kind.REJECTED, t.kind);
         assertEquals(OfferState.NEW, t.record.getState());
     }
+
+    private static OfferSignal signal(int slot, int itemId, int totalQty, int price,
+                                      int qtySold, long spent, GrandExchangeOfferState geState)
+    {
+        return new OfferSignal(slot, geState, itemId, "Abyssal whip", totalQty, price, qtySold, spent);
+    }
+
+    @Test
+    public void partialFillReportsNewlySpent()
+    {
+        OfferRecord placed = OfferRecord.newOffer(1, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1000L);
+        OfferSignal s = signal(3, 4151, 5, 2_000_000, 2, 4_000_000, GrandExchangeOfferState.BUYING);
+        OfferTransition t = OfferStateMachine.decide(placed, s, 1, 2000L);
+        assertEquals(OfferTransition.Kind.FILLED_DELTA, t.kind);
+        assertEquals(2, t.newlyFilledQuantity);
+        assertEquals(4_000_000L, t.newlySpent);
+    }
+
+    @Test
+    public void cancelWithResidualFillReportsDelta()
+    {
+        OfferRecord partial = OfferRecord.newOffer(1, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1000L)
+            .withFill(2, 4_000_000L, OfferState.PARTIAL_FILL, 1500L);
+        OfferSignal cancel = signal(3, 4151, 5, 2_000_000, 3, 6_000_000, GrandExchangeOfferState.CANCELLED_BUY);
+        OfferTransition t = OfferStateMachine.decide(partial, cancel, 1, 2000L);
+        assertEquals(OfferTransition.Kind.CANCELLED, t.kind);
+        assertEquals(1, t.newlyFilledQuantity);
+        assertEquals(2_000_000L, t.newlySpent);
+        assertEquals(OfferState.CANCELLED_PARTIAL, t.record.getState());
+        assertEquals(3, t.record.getFilledQuantity());
+    }
 }

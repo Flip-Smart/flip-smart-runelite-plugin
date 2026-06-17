@@ -52,9 +52,14 @@ public final class OfferStateMachine
             case CANCELLED_BUY:
             case CANCELLED_SELL:
             {
-                OfferState target = current.getFilledQuantity() > 0
+                int residual = Math.max(signal.quantitySold - current.getFilledQuantity(), 0);
+                long residualSpent = Math.max(signal.spent - current.getSpent(), 0);
+                OfferState target = signal.quantitySold > 0
                     ? OfferState.CANCELLED_PARTIAL : OfferState.CANCELLED_EMPTY;
-                return OfferTransition.of(OfferTransition.Kind.CANCELLED, current.withState(target, now), 0);
+                OfferRecord updated = residual > 0
+                    ? current.withFill(signal.quantitySold, signal.spent, target, now)
+                    : current.withState(target, now);
+                return OfferTransition.of(OfferTransition.Kind.CANCELLED, updated, residual, residualSpent);
             }
 
             case EMPTY:
@@ -87,9 +92,10 @@ public final class OfferStateMachine
         {
             return OfferTransition.of(OfferTransition.Kind.NONE, base, 0);
         }
+        long newlySpent = Math.max(signal.spent - base.getSpent(), 0);
         OfferRecord updated = base.withFill(signal.quantitySold, signal.spent, target, now);
         OfferTransition.Kind kind = complete ? OfferTransition.Kind.COMPLETED
             : (newOverride != null ? newOverride : OfferTransition.Kind.FILLED_DELTA);
-        return OfferTransition.of(kind, updated, Math.max(delta, 0));
+        return OfferTransition.of(kind, updated, Math.max(delta, 0), newlySpent);
     }
 }
