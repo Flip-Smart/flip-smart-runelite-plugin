@@ -65,6 +65,10 @@ public class TransactionEndpoints
 		{
 			jsonBody.addProperty("total_quantity", request.totalQuantity);
 		}
+		if (request.idempotencyKey != null)
+		{
+			jsonBody.addProperty("idempotency_key", request.idempotencyKey);
+		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 
