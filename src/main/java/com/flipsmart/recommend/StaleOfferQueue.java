@@ -20,7 +20,7 @@ import java.util.function.Predicate;
  */
 public final class StaleOfferQueue
 {
-	private final List<OfferRecord> staleOfferQueue = new CopyOnWriteArrayList<>();
+	private final List<OfferRecord> queue = new CopyOnWriteArrayList<>();
 	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
 	// Advisor-only: net profit/loss estimate to show alongside a re-sell prompt. Kept in
 	// sync with staleResellPrices at both put-sites, so it's never read with a stale price.
@@ -31,22 +31,22 @@ public final class StaleOfferQueue
 
 	public boolean isEmpty()
 	{
-		return staleOfferQueue.isEmpty();
+		return queue.isEmpty();
 	}
 
 	public int size()
 	{
-		return staleOfferQueue.size();
+		return queue.size();
 	}
 
 	public OfferRecord head()
 	{
-		return staleOfferQueue.get(0);
+		return queue.get(0);
 	}
 
 	public boolean headIsItem(int itemId)
 	{
-		return !staleOfferQueue.isEmpty() && staleOfferQueue.get(0).getItemId() == itemId;
+		return !queue.isEmpty() && queue.get(0).getItemId() == itemId;
 	}
 
 	public Integer getResellPrice(int itemId)
@@ -92,14 +92,14 @@ public final class StaleOfferQueue
 	 */
 	public void removeOffer(int itemId)
 	{
-		staleOfferQueue.removeIf(o -> o.getItemId() == itemId);
+		queue.removeIf(o -> o.getItemId() == itemId);
 		staleResellPrices.remove(itemId);
 	}
 
 	/** Remove the head offer and clear its resell price; returns the removed offer. */
 	public OfferRecord removeHead()
 	{
-		OfferRecord skipped = staleOfferQueue.remove(0);
+		OfferRecord skipped = queue.remove(0);
 		staleResellPrices.remove(skipped.getItemId());
 		return skipped;
 	}
@@ -122,15 +122,15 @@ public final class StaleOfferQueue
 	 */
 	public AddResult addIfAbsent(OfferRecord offer)
 	{
-		for (OfferRecord existing : staleOfferQueue)
+		for (OfferRecord existing : queue)
 		{
 			if (existing.getItemId() == offer.getItemId())
 			{
 				return AddResult.ALREADY_PRESENT;
 			}
 		}
-		boolean wasEmpty = staleOfferQueue.isEmpty();
-		staleOfferQueue.add(offer);
+		boolean wasEmpty = queue.isEmpty();
+		queue.add(offer);
 		promptedStaleItems.add(offer.getItemId());
 		return wasEmpty ? AddResult.ADDED_WAS_EMPTY : AddResult.ADDED;
 	}
@@ -143,7 +143,7 @@ public final class StaleOfferQueue
 	 */
 	public void pruneIrrelevant(Predicate<OfferRecord> shouldRemove)
 	{
-		staleOfferQueue.removeIf(o ->
+		queue.removeIf(o ->
 		{
 			if (shouldRemove.test(o))
 			{
@@ -158,7 +158,7 @@ public final class StaleOfferQueue
 	public void clear()
 	{
 		promptedStaleItems.clear();
-		staleOfferQueue.clear();
+		queue.clear();
 		staleResellPrices.clear();
 		staleResellNet.clear();
 	}
