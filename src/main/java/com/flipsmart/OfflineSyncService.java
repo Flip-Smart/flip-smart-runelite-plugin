@@ -785,7 +785,10 @@ public class OfflineSyncService
 			// Expected one-time migration: the old persistence format stored a JSON
 			// object, not a List<OfferRecord> array. Deserialization fails on first
 			// login after upgrade — return empty without flooding the log at ERROR.
-			log.debug("Ignoring legacy/unreadable persisted offers at key {} ({})", key, e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Ignoring legacy/unreadable persisted offers at key {} ({})", key, e.getMessage());
+			}
 			return new ArrayList<>();
 		}
 	}
