@@ -672,9 +672,9 @@ public class AutoRecommendService
 		}
 
 		ensureSellPriceAvailable(itemId);
-		session.addCollectedItem(itemId, quantity, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
 		Integer sellPrice = session.getRecommendedPrice(itemId);
+		session.addCollectedItem(itemId, quantity, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
 		log.debug("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
 			itemId, isCollected, sellPrice);
 
