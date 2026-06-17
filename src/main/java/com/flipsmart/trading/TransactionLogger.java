@@ -94,15 +94,7 @@ public final class TransactionLogger
         {
             return;
         }
-        Integer recPrice = r.isBuy() ? session.getRecommendedPrice(r.getItemId()) : null;
-        apiClient.recordTransactionAsync(TransactionRequest
-            .builder(r.getItemId(), r.getItemName(), r.isBuy(), 0, r.getPrice())
-            .geSlot(r.getSlot())
-            .recommendedSellPrice(recPrice)
-            .rsn(rsn)
-            .totalQuantity(r.getTotalQuantity())
-            .idempotencyKey(key)
-            .build());
+        apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).build());
     }
 
     private void recordFill(com.flipsmart.domain.offer.OfferRecord r, int newlyFilled, long newlySpent)
@@ -114,15 +106,20 @@ public final class TransactionLogger
             return;
         }
         int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
+        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).build());
+    }
+
+    private TransactionRequest.Builder baseBuilder(com.flipsmart.domain.offer.OfferRecord r,
+                                                    int qty, int price, String rsn, String key)
+    {
         Integer recPrice = r.isBuy() ? session.getRecommendedPrice(r.getItemId()) : null;
-        apiClient.recordTransactionAsync(TransactionRequest
-            .builder(r.getItemId(), r.getItemName(), r.isBuy(), newlyFilled, pricePerItem)
+        return TransactionRequest
+            .builder(r.getItemId(), r.getItemName(), r.isBuy(), qty, price)
             .geSlot(r.getSlot())
             .recommendedSellPrice(recPrice)
             .rsn(rsn)
             .totalQuantity(r.getTotalQuantity())
-            .idempotencyKey(key)
-            .build());
+            .idempotencyKey(key);
     }
 
     /**
