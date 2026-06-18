@@ -754,7 +754,7 @@ public class AutoRecommendService
 				focusStaleOfferForItem(decision.getItemId());
 				break;
 			case COLLECT:
-				promptCollection();
+				promptCollectionForItem(decision.getItemId());
 				break;
 			case NONE:
 			default:
@@ -2368,6 +2368,36 @@ public class AutoRecommendService
 	 * Show a status message prompting the user to collect completed offers.
 	 * Called when all GE slots are full but auto is still active.
 	 */
+	private void promptCollectionForItem(int itemId)
+	{
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		OfferRecord target = null;
+		for (OfferRecord r : completed)
+		{
+			if (r.getItemId() == itemId)
+			{
+				target = r;
+				break;
+			}
+		}
+		if (target == null || !plugin.hasCollectableGEOffers())
+		{
+			promptCollection();
+			return;
+		}
+		invokeFocusCallback(null);
+		if (target.isBuy())
+		{
+			updateStatus("Auto: Collect " + target.getItemName() + " from GE");
+			invokeOverlayMessageCallback("Collect " + target.getItemName(), target.getItemId());
+		}
+		else
+		{
+			updateStatus("Auto: Collect profit from GE");
+			invokeOverlayMessageCallback("Collect profit from GE");
+		}
+	}
+
 	private void promptCollection()
 	{
 		// Show stale offer prompts before falling through to "Monitoring"

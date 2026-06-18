@@ -287,4 +287,34 @@ public class AutoRecommendDispatchTest {
 
         verify(plugin, never()).runOnClientThread(any(Runnable.class));
     }
+
+    @Test
+    public void collectPromptShowsResolverChosenItemNotSlotZero() {
+        // Slot 0 holds a completed SELL (itemId=100, S5). Slot 5 holds a completed BUY (itemId=200, S3).
+        // S3 < S5 in priority, so the resolver picks itemId=200.
+        // Without the fix, promptCollection() renders completedAwaitingCollection().get(0)
+        // which may be the sell offer (slot/insertion order), showing "Collect profit from GE"
+        // instead of "Collect item-200 from GE".
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.hasCollectableGEOffers()).thenReturn(true);
+
+        OfferRecord completedSell = OfferRecord
+            .newOffer(1, 0, 100, "item-100", false, 5, 300, 0L)
+            .withFill(5, 1500L, OfferState.FILLED, 1L);
+        OfferRecord completedBuy = OfferRecord
+            .newOffer(2, 5, 200, "item-200", true, 10, 100, 0L)
+            .withFill(10, 1000L, OfferState.FILLED, 2L);
+        offerStore.importRecords(Arrays.asList(completedSell, completedBuy));
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertEquals(ActionKind.S3, d.getKind());
+        assertEquals(ActionStep.COLLECT, d.getStep());
+        assertEquals(200, d.getItemId());
+
+        // lastOverlayMessage is set synchronously before the EDT callback fires — safe to read inline.
+        String overlay = service.getLastOverlayMessage();
+        assertTrue("overlay must mention item-200, not profit; got: " + overlay,
+            overlay != null && overlay.contains("item-200"));
+    }
 }
