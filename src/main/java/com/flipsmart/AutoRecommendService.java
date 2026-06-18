@@ -727,6 +727,8 @@ public class AutoRecommendService
 	ActionDecision resolveAndApply(int excludeItemId)
 	{
 		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
+		log.debug("Auto-recommend: resolver decision {}/{} item={} slot={}",
+			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		applyDecision(decision);
 		return decision;
@@ -2205,7 +2207,7 @@ public class AutoRecommendService
 	 * Returns the item ID, or -1 if none found.
 	 * Cleans up stale entries where the item is no longer in inventory or GE.
 	 */
-	private int findNextSellableCollectedItem()
+	int findNextSellableCollectedItem()
 	{
 		PlayerSession session = plugin.getSession();
 		List<Integer> staleItems = new ArrayList<>();
@@ -2241,7 +2243,12 @@ public class AutoRecommendService
 	 */
 	private int evaluateCollectedItem(int itemId, List<Integer> staleItems)
 	{
-		if (isItemInInventory(itemId))
+		Boolean inInventory = inventoryContains(itemId);
+		if (inInventory == null)
+		{
+			return -1; // cannot verify inventory off-thread — do NOT mark stale, do NOT surface this cycle
+		}
+		if (inInventory)
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
@@ -2251,6 +2258,19 @@ public class AutoRecommendService
 		}
 		staleItems.add(itemId);
 		return -1;
+	}
+
+	/** TRUE/FALSE if inventory could be read (client thread); null if undeterminable (off-thread). */
+	private Boolean inventoryContains(int itemId)
+	{
+		try
+		{
+			return plugin.getInventoryCountForItem(itemId) > 0;
+		}
+		catch (Exception | AssertionError e)
+		{
+			return null; // off-thread — cannot determine; caller must NOT treat as absent
+		}
 	}
 
 	private boolean isItemInInventory(int itemId)
@@ -2572,13 +2592,22 @@ public class AutoRecommendService
 			surfaceableItemId = view.get(idx).getItemId();
 		}
 
+		int filledSlots = plugin.getFilledGESlotCount();
+		int slotLimit = plugin.getFlipSlotLimit();
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		List<OfferRecord> staleSnapshot = staleOffers.snapshot();
+		log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
+			filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
+			view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
+			staleSnapshot.size(), completed.size());
+
 		return ResolverInput.builder()
-			.slotLimit(plugin.getFlipSlotLimit())
-			.filledSlotCount(plugin.getFilledGESlotCount())
+			.slotLimit(slotLimit)
+			.filledSlotCount(filledSlots)
 			.surfaceableBuy(hasSurfaceable, surfaceableItemId)
 			.nowMillis(now)
-			.completedAwaitingCollection(offerStore.completedAwaitingCollection())
-			.staleOffers(staleOffers.snapshot())
+			.completedAwaitingCollection(completed)
+			.staleOffers(staleSnapshot)
 			.collectedAwaitingList(collected)
 			.build();
 	}

@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
+import static org.junit.Assert.assertTrue;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -195,6 +196,32 @@ public class AutoRecommendDispatchTest {
 
         assertEquals("highlight callback must fire on every resolveAndApply cycle", 2, highlightCalls.get());
         assertEquals(77, lastHighlightItem.get());
+    }
+
+    @Test
+    public void offThreadInventoryReadDoesNotDropCollectedItem() {
+        // Regression: when inventory cannot be read (off client-thread), the item was
+        // incorrectly marked stale and removed from collectedItemIds.
+        session.addCollectedItem(5504, 1, CollectOrigin.COMPLETED_BUY, 1L);
+        when(plugin.getInventoryCountForItem(5504))
+            .thenThrow(new IllegalStateException("off thread"));
+
+        service.findNextSellableCollectedItem();
+
+        assertTrue("collected item must survive an off-thread inventory read failure",
+            session.getCollectedItemIds().contains(5504));
+    }
+
+    @Test
+    public void absentItemOnClientThreadIsRemovedAsStale() {
+        // Sanity: when inventory IS readable and item is absent (and no live buy), clean it up.
+        session.addCollectedItem(5504, 1, CollectOrigin.COMPLETED_BUY, 1L);
+        when(plugin.getInventoryCountForItem(5504)).thenReturn(0);
+
+        service.findNextSellableCollectedItem();
+
+        assertFalse("collected item with no inventory and no live buy must be pruned as stale",
+            session.getCollectedItemIds().contains(5504));
     }
 
     @Test
