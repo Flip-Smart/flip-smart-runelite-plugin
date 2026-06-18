@@ -1091,6 +1091,16 @@ public class FlipSmartPlugin extends Plugin
 		return false;
 	}
 
+	public boolean isClientThread()
+	{
+		return client.isClientThread();
+	}
+
+	public void runOnClientThread(Runnable r)
+	{
+		clientThread.invokeLater(r);
+	}
+
 	private void performStaleFlipCleanup()
 	{
 		if (!offerStore.liveOffers().isEmpty() || !session.getCollectedItemIds().isEmpty())

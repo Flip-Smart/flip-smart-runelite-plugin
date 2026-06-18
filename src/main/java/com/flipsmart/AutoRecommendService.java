@@ -721,6 +721,11 @@ public class AutoRecommendService
 	 */
 	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy, int excludeItemId)
 	{
+		if (!plugin.isClientThread())
+		{
+			plugin.runOnClientThread(() -> focusNextAvailableAction(rewindToFirstAvailableBuy, excludeItemId));
+			return;
+		}
 		resolveAndApply(excludeItemId);
 	}
 

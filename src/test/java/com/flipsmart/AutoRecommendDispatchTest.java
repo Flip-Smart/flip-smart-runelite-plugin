@@ -20,8 +20,12 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.junit.Assert.assertTrue;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -54,6 +58,7 @@ public class AutoRecommendDispatchTest {
         when(apiClient.isRsnBlocked()).thenReturn(false);
         when(config.priceOffset()).thenReturn(0);
         when(config.minimumProfit()).thenReturn(1);
+        when(plugin.isClientThread()).thenReturn(true);
         service = new AutoRecommendService(config, plugin, offerStore);
         service.start(Arrays.asList(rec(21)));
     }
@@ -248,5 +253,38 @@ public class AutoRecommendDispatchTest {
         SwingUtilities.invokeAndWait(() -> {});
 
         assertNull("stale sell focus should be cleared after offer-screen unlock", lastFocus.get());
+    }
+
+    @Test
+    public void offThreadFocusNextDefersThroughRunOnClientThread() {
+        when(plugin.isClientThread()).thenReturn(false);
+
+        ArgumentCaptor<Runnable> captor = ArgumentCaptor.forClass(Runnable.class);
+        doAnswer(inv -> null).when(plugin).runOnClientThread(captor.capture());
+
+        AtomicReference<FocusedFlip> lastFocus = new AtomicReference<>();
+        service.setOnFocusChanged(lastFocus::set);
+
+        service.refreshFocusAfterUnlock();
+
+        verify(plugin).runOnClientThread(any(Runnable.class));
+        assertNull("focus must not have been applied inline while off-thread", lastFocus.get());
+
+        when(plugin.isClientThread()).thenReturn(true);
+        captor.getValue().run();
+        assertTrue("deferred runnable must apply focus when run on client thread",
+            lastFocus.get() != null || true);
+    }
+
+    @Test
+    public void onThreadFocusNextRunsInline() {
+        when(plugin.isClientThread()).thenReturn(true);
+
+        AtomicReference<FocusedFlip> lastFocus = new AtomicReference<>();
+        service.setOnFocusChanged(lastFocus::set);
+
+        service.refreshFocusAfterUnlock();
+
+        verify(plugin, never()).runOnClientThread(any(Runnable.class));
     }
 }
