@@ -173,6 +173,31 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void cancelHighlightReAssertsEveryResolveAndApplyCycle() {
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+
+        OfferRecord staleBuy = OfferRecord
+            .newOffer(10, 0, 77, "item-77", true, 10, 100, 0L)
+            .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(staleBuy));
+        service.addToStaleQueue(staleBuy);
+
+        AtomicInteger highlightCalls = new AtomicInteger();
+        AtomicInteger lastHighlightItem = new AtomicInteger(-1);
+        service.setOnStaleOfferPrompted(id -> {
+            highlightCalls.incrementAndGet();
+            lastHighlightItem.set(id);
+        });
+
+        service.resolveAndApply(-1);
+        service.resolveAndApply(-1);
+
+        assertEquals("highlight callback must fire on every resolveAndApply cycle", 2, highlightCalls.get());
+        assertEquals(77, lastHighlightItem.get());
+    }
+
+    @Test
     public void staleFocusClearedAfterOfferScreenUnlock() throws Exception {
         // All 8 slots filled, nothing to collect or sell → resolver returns IDLE.
         when(plugin.getFilledGESlotCount()).thenReturn(8);

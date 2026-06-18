@@ -109,9 +109,6 @@ public class AutoRecommendService
 	// Currently-focused collected item sell prompt — used by skip() to remove stuck items
 	private volatile int focusedCollectedItemId = -1;
 
-	private ActionDecision lastDecision = ActionDecision.IDLE;
-
-
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
 	 * Package-private for Gson serialization.
@@ -238,7 +235,6 @@ public class AutoRecommendService
 		queue.sortByVolumeAscending();
 
 		active = true;
-		lastDecision = ActionDecision.IDLE;
 		queue.setLastQueueRefreshMillis(System.currentTimeMillis());
 		log.debug("Auto-recommend started with {} items in queue (sorted by volume asc)", queue.size());
 		focusCurrent();
@@ -270,7 +266,6 @@ public class AutoRecommendService
 		}
 		queue.setCurrentIndex(0);
 		focusedCollectedItemId = -1;
-		lastDecision = ActionDecision.IDLE;
 
 		invokeFocusCallback(null);
 
@@ -733,11 +728,6 @@ public class AutoRecommendService
 	{
 		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
-		if (decision.equals(lastDecision))
-		{
-			return decision;
-		}
-		lastDecision = decision;
 		applyDecision(decision);
 		return decision;
 	}
@@ -2477,9 +2467,6 @@ public class AutoRecommendService
 		{
 			return;
 		}
-		// A decision computed while the offer screen was locked may have had its focus
-		// change suppressed by the lock; force a fresh apply so the focus is repainted/cleared.
-		lastDecision = null;
 		focusNextAvailableAction();
 	}
 
