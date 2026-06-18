@@ -2477,6 +2477,9 @@ public class AutoRecommendService
 		{
 			return;
 		}
+		// A decision computed while the offer screen was locked may have had its focus
+		// change suppressed by the lock; force a fresh apply so the focus is repainted/cleared.
+		lastDecision = null;
 		focusNextAvailableAction();
 	}
 

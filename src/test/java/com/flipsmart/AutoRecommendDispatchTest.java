@@ -11,11 +11,14 @@ import com.flipsmart.trading.OfferStore;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.SwingUtilities;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import org.mockito.Mock;
@@ -167,5 +170,31 @@ public class AutoRecommendDispatchTest {
         assertEquals(ActionStep.CANCEL, d.getStep());
         assertEquals(101, d.getItemId());
         assertEquals(101, capturedId.get());
+    }
+
+    @Test
+    public void staleFocusClearedAfterOfferScreenUnlock() throws Exception {
+        // All 8 slots filled, nothing to collect or sell → resolver returns IDLE.
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+
+        FocusedFlip sentinel = FocusedFlip.forBuy(21, "item-21", 100, 10, 200);
+        AtomicReference<FocusedFlip> lastFocus = new AtomicReference<>(sentinel);
+        service.setOnFocusChanged(lastFocus::set);
+
+        // Lock the offer screen and run resolve so lastDecision = IDLE.
+        service.acquireOfferLock(21);
+        service.resolveAndApply(-1);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        // Confirm the focus callback has not been cleared yet (lock suppressed it).
+        assertNotEquals(null, lastFocus.get());
+
+        // Release lock and refresh. Without the fix lastDecision == IDLE so resolveAndApply
+        // short-circuits and invokeFocusCallback(null) is never called.
+        service.releaseOfferLock();
+        service.refreshFocusAfterUnlock();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertNull("stale sell focus should be cleared after offer-screen unlock", lastFocus.get());
     }
 }
