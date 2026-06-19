@@ -1,5 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
@@ -1770,6 +1771,91 @@ public class FlipSmartPlugin extends Plugin
 		if (autoRecommendService != null)
 		{
 			autoRecommendService.removeAdvisorResell(itemId);
+		}
+	}
+
+	private static final long SELL_RECALC_DEBOUNCE_MS = 2000;
+	private int last12hRecalcItemId = -1;
+	private long last12hRecalcMs;
+
+	public void maybeRecalc12hSellPrice(int itemId)
+	{
+		if (config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		Integer originalSell = sess.getRecommendedPrice(itemId);
+		if (originalSell == null || originalSell <= 0)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (itemId == last12hRecalcItemId && (now - last12hRecalcMs) < SELL_RECALC_DEBOUNCE_MS)
+		{
+			return;
+		}
+		last12hRecalcItemId = itemId;
+		last12hRecalcMs = now;
+
+		WikiPrice market = apiClient.getWikiPrice(itemId);
+		if (market == null)
+		{
+			return;
+		}
+		Integer dailyVolume = apiClient.getCachedDailyVolume(itemId);
+		SellPriceCheckRequest req = SellPriceCheckRequest.builder()
+			.itemId(itemId)
+			.originalSellPrice(originalSell)
+			.currentMarketHigh(market.instaBuy)
+			.dailyVolume(dailyVolume == null ? 0 : dailyVolume)
+			.timeframe(FlipSmartConfig.FlipTimeframe.TWELVE_HOURS.getApiValue())
+			.style(config.flipStyle().getApiValue())
+			.build();
+
+		apiClient.postSellPriceCheckAsync(req)
+			.thenAccept(resp ->
+			{
+				if (resp == null)
+				{
+					return;
+				}
+				int fresh = resp.getRecommendedSellPrice();
+				if (fresh <= 0 || fresh == originalSell)
+				{
+					return;
+				}
+				clientThread.invokeLater(() -> applyRecalced12hSellPrice(itemId, fresh));
+			})
+			.exceptionally(ex ->
+			{
+				if (log.isDebugEnabled())
+				{
+					log.debug("12h sell-price recalc failed for {}: {}", itemId, ex.getMessage());
+				}
+				return null;
+			});
+	}
+
+	private void applyRecalced12hSellPrice(int itemId, int freshSellPrice)
+	{
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		sess.setRecommendedPrice(itemId, freshSellPrice);
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.setDisplayedSellPrice(itemId, freshSellPrice);
+		}
+		if (grandExchangeTracker != null)
+		{
+			grandExchangeTracker.refreshSellFocus(itemId);
 		}
 	}
 
