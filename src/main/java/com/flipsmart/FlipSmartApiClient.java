@@ -24,6 +24,8 @@ import com.flipsmart.api.dto.DumpEvent;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.BankSnapshotStatusResponse;
 import com.flipsmart.api.dto.OfferAdviceRequest;
+import com.flipsmart.api.dto.SellPriceCheckRequest;
+import com.flipsmart.api.dto.SellPriceCheckResponse;
 import com.flipsmart.api.dto.AuthResult;
 import com.flipsmart.api.dto.DeviceAuthResponse;
 import com.flipsmart.api.dto.DeviceStatusResponse;
@@ -403,6 +405,11 @@ public class FlipSmartApiClient
 		return offerActions.postOfferActionsBatchAsync(reqs);
 	}
 
+	public CompletableFuture<SellPriceCheckResponse> postSellPriceCheckAsync(SellPriceCheckRequest req)
+	{
+		return offerActions.postSellPriceCheckAsync(req);
+	}
+
 	// ============================================================================
 	// Webhooks
 	// ============================================================================
@@ -499,6 +506,24 @@ public class FlipSmartApiClient
 			offers.add(buildOfferActionBody(req));
 		}
 		body.add("offers", offers);
+		return body;
+	}
+
+	public static JsonObject buildSellPriceCheckBody(SellPriceCheckRequest req)
+	{
+		JsonObject body = new JsonObject();
+		body.addProperty(JSON_KEY_ITEM_ID, req.getItemId());
+		body.addProperty("original_sell_price", req.getOriginalSellPrice());
+		body.addProperty("current_market_high", req.getCurrentMarketHigh());
+		body.addProperty("daily_volume", req.getDailyVolume());
+		if (req.getTimeframe() != null)
+		{
+			body.addProperty("timeframe", req.getTimeframe());
+		}
+		if (req.getStyle() != null)
+		{
+			body.addProperty("style", req.getStyle());
+		}
 		return body;
 	}
 
