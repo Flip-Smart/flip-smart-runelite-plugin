@@ -681,7 +681,13 @@ public class AutoRecommendService
 		ensureSellPriceAvailable(itemId);
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
 		Integer sellPrice = session.getRecommendedPrice(itemId);
-		session.addCollectedItem(itemId, quantity, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
+		// Collecting must not downgrade a partial-cancel (S1 list) to a completed-buy (S3),
+		// or the resolver lets an empty-slot buy (S2) outrank listing the held items.
+		CollectOrigin priorOrigin = session.getCollectOrigin(itemId);
+		CollectOrigin origin = priorOrigin == CollectOrigin.PARTIAL_CANCEL
+			? CollectOrigin.PARTIAL_CANCEL
+			: CollectOrigin.COMPLETED_BUY;
+		session.addCollectedItem(itemId, quantity, origin, System.currentTimeMillis());
 		log.debug("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
 			itemId, isCollected, sellPrice);
 

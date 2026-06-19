@@ -289,6 +289,40 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void collectingPartialCancelKeepsS1OriginOverEmptySlotBuy() {
+        // Regression: user cancelled a partial buy (tagged PARTIAL_CANCEL -> S1 list), then
+        // collected the filled items. handleBuyCollected re-tagged the origin COMPLETED_BUY (S3),
+        // so an empty-slot buy (S2) outranked listing the held items ("buy X" instead of "sell").
+        when(plugin.getInventoryCountForItem(30)).thenReturn(3);
+        session.addCollectedItem(30, 3, CollectOrigin.PARTIAL_CANCEL, 1L);
+        session.setRecommendedPrice(30, 150);
+
+        service.onOfferCollected(30, true, "item-30", 3);
+
+        assertEquals("collect must not downgrade a partial-cancel origin",
+            CollectOrigin.PARTIAL_CANCEL, session.getCollectOrigin(30));
+
+        // One empty slot + a surfaceable buy (item 21 from start) → S1 list must still win.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertEquals(ActionKind.S1, d.getKind());
+        assertEquals(ActionStep.LIST, d.getStep());
+        assertEquals(30, d.getItemId());
+    }
+
+    @Test
+    public void collectingNormalCompletedBuyStillTagsCompletedBuy() {
+        // Guard: a plain completed buy (no prior partial-cancel) keeps COMPLETED_BUY (S3).
+        when(plugin.getInventoryCountForItem(40)).thenReturn(5);
+        session.setRecommendedPrice(40, 150);
+
+        service.onOfferCollected(40, true, "item-40", 5);
+
+        assertEquals(CollectOrigin.COMPLETED_BUY, session.getCollectOrigin(40));
+    }
+
+    @Test
     public void collectPromptShowsResolverChosenItemNotSlotZero() {
         // Slot 0 holds a completed SELL (itemId=100, S5). Slot 5 holds a completed BUY (itemId=200, S3).
         // S3 < S5 in priority, so the resolver picks itemId=200.
