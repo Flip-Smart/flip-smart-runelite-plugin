@@ -411,11 +411,24 @@ public class AutoRecommendService
 			return SellFocusResult.UNAVAILABLE;
 		}
 
-		// Don't re-show sell overlay if this item already has an active sell order
-		if (offerStore.hasActiveSellOfferForItem(itemId))
+		// Don't re-show sell overlay if this item already has an active sell order — unless the
+		// advisor has a pending reprice, in which case surface the new price on the setup screen
+		// immediately instead of blanking until the old offer clears.
+		Integer resellPrice = staleOffers.getResellPrice(itemId);
+		boolean repricePending = resellPrice != null && resellPrice > 0;
+		if (offerStore.hasActiveSellOfferForItem(itemId) && !repricePending)
 		{
 			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
 			return SellFocusResult.ALREADY_SELLING;
+		}
+
+		if (repricePending)
+		{
+			int repriceQty = resolveRepriceQuantity(itemId);
+			FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, resellPrice, repriceQty, config.priceOffset());
+			invokeFocusCallback(focus);
+			updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(resellPrice)));
+			return SellFocusResult.FOCUSED;
 		}
 
 		Integer sellPrice = resolveBestSellPrice(itemId);
@@ -2327,6 +2340,24 @@ public class AutoRecommendService
 		// Last resort: check recommendation quantity
 		FlipRecommendation rec = findRecommendationForItem(itemId);
 		return rec != null ? rec.getRecommendedQuantity() : 0;
+	}
+
+	/**
+	 * Quantity for a reprice prompt. During a reprice the items sit in the still-active sell
+	 * offer (not inventory), so prefer the offer's unsold remainder over inventory.
+	 */
+	private int resolveRepriceQuantity(int itemId)
+	{
+		OfferRecord staleSell = staleOffers.findByItemId(itemId);
+		if (staleSell != null)
+		{
+			int remaining = staleSell.getTotalQuantity() - staleSell.getFilledQuantity();
+			if (remaining > 0)
+			{
+				return remaining;
+			}
+		}
+		return Math.max(1, resolveSellQuantity(itemId));
 	}
 
 	/**

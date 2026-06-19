@@ -312,6 +312,43 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void repriceSurfacesOnSetupScreenEvenWhileSellActive() throws Exception {
+        // Bug 2: opening the reprice setup while the sell is still active hit the
+        // ALREADY_SELLING guard and painted nothing (the 10-15s blank). With a pending
+        // advisor reprice, the new price must surface on the setup screen immediately.
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        OfferRecord activeSell = OfferRecord
+            .newOffer(2, 0, 42, "item-42", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(activeSell));
+
+        service.surfaceAdvisorResell(activeSell, 250, 1000);
+
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        AutoRecommendService.SellFocusResult result = service.overrideFocusForSell(42, "item-42");
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertEquals(AutoRecommendService.SellFocusResult.FOCUSED, result);
+        assertTrue("setup screen must paint a focus for the reprice", painted.get() != null);
+        assertEquals("setup screen must autofill the reprice price",
+            250, painted.get().getCurrentStepPrice());
+    }
+
+    @Test
+    public void activeSellWithoutPendingRepriceStillBailsAlreadySelling() {
+        // Guard: the ALREADY_SELLING short-circuit still holds when no reprice is pending.
+        OfferRecord activeSell = OfferRecord
+            .newOffer(2, 0, 42, "item-42", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(activeSell));
+
+        assertEquals(AutoRecommendService.SellFocusResult.ALREADY_SELLING,
+            service.overrideFocusForSell(42, "item-42"));
+    }
+
+    @Test
     public void collectingNormalCompletedBuyStillTagsCompletedBuy() {
         // Guard: a plain completed buy (no prior partial-cancel) keeps COMPLETED_BUY (S3).
         when(plugin.getInventoryCountForItem(40)).thenReturn(5);
