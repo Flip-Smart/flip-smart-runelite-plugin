@@ -427,6 +427,20 @@ public class AutoRecommendService
 		boolean repricePending = resellPrice != null && resellPrice > 0;
 		if (offerStore.hasActiveSellOfferForItem(itemId) && !repricePending)
 		{
+			// When the player has the modify/setup screen open for this active sell (offer lock
+			// held for it), paint the already-known recommended price instantly instead of
+			// returning blank — the price lives in session state, so there's no need to wait for
+			// a later event/tick. Off-screen we still bail, to avoid re-surfacing a listed sell.
+			boolean setupScreenOpen = java.util.Objects.equals(queue.getLockedItemId(), itemId);
+			Integer knownPrice = resolveBestSellPrice(itemId);
+			if (setupScreenOpen && knownPrice != null && knownPrice > 0)
+			{
+				int qty = resolveRepriceQuantity(itemId);
+				FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, knownPrice, qty, config.priceOffset());
+				invokeFocusCallback(focus);
+				updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(knownPrice)));
+				return SellFocusResult.FOCUSED;
+			}
 			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
 			return SellFocusResult.ALREADY_SELLING;
 		}

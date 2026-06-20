@@ -423,6 +423,29 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void modifyActiveSellPaintsKnownPriceInsteadOfBlanking() throws Exception {
+        // The ~9s re-sell delay: opening Modify on an active sell with no pending reprice bailed
+        // ALREADY_SELLING and painted nothing. With the setup screen open (lock held for the item)
+        // and a known recommended price in session, it must paint immediately from local state.
+        OfferRecord activeSell = OfferRecord
+            .newOffer(2, 0, 42, "item-42", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(activeSell));
+        session.setRecommendedPrice(42, 305);
+        service.acquireOfferLock(42); // modify/setup screen open for this item
+
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        AutoRecommendService.SellFocusResult result = service.overrideFocusForSell(42, "item-42");
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertEquals(AutoRecommendService.SellFocusResult.FOCUSED, result);
+        assertTrue("modify-active-sell must paint the known price", painted.get() != null);
+        assertEquals(305, painted.get().getCurrentStepPrice());
+    }
+
+    @Test
     public void activeSellWithoutPendingRepriceStillBailsAlreadySelling() {
         // Guard: the ALREADY_SELLING short-circuit still holds when no reprice is pending.
         OfferRecord activeSell = OfferRecord
