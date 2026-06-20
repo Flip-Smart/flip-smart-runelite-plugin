@@ -326,7 +326,7 @@ public class AutoRecommendService
 		FlipRecommendation current = getCurrentRecommendation();
 		if (current == null || current.getItemId() != itemId)
 		{
-			// Non-focused buy: store sell price from queue but don't advance
+			// Non-focused buy: store sell price from queue.
 			FlipRecommendation rec = findRecommendationForItem(itemId);
 			if (rec != null && rec.getRecommendedSellPrice() > 0)
 			{
@@ -336,22 +336,19 @@ public class AutoRecommendService
 				log.debug("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
 					itemId, rec.getRecommendedSellPrice());
 			}
-
-			if (!hasAvailableGESlots())
-			{
-				log.debug("Auto-recommend: Non-focused buy filled last GE slot - clearing focus");
-				promptCollection();
-			}
-			return;
+		}
+		else
+		{
+			plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
+			adjustments.putBuyPrice(itemId, current.getRecommendedBuyPrice());
+			scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
+			log.debug("Auto-recommend: Buy order placed for {} - re-resolving", current.getItemName());
 		}
 
-		plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
-		adjustments.putBuyPrice(itemId, current.getRecommendedBuyPrice());
-
-		scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
-
-		log.debug("Auto-recommend: Buy order placed for {} - advancing to next", current.getItemName());
-		advanceToNext();
+		// Route through the resolver so a still-open slot surfaces the next buy deterministically
+		// (full-queue scan), instead of the cursor-only advanceToNext that could miss a buyable
+		// item earlier in the queue and fall to "monitoring" until the user pressed Skip.
+		focusNextAvailableAction(true, itemId);
 	}
 
 	/**

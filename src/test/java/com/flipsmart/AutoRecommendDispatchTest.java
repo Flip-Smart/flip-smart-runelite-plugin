@@ -312,6 +312,25 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void buyPlacedWithOpenSlotSurfacesNextBuyViaResolver() throws Exception {
+        // Bug 3: placing a focused buy used the cursor-only advanceToNext, which could miss a
+        // buyable item earlier in the queue and fall to "monitoring" until Skip. Routing through
+        // the resolver must surface the next buy for the still-open slot (full-queue scan).
+        service.start(Arrays.asList(rec(21), rec(22)));
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // one slot still open (limit 8)
+        when(plugin.getActiveFlipItemIds()).thenReturn(new HashSet<>(Arrays.asList(21))); // 21 now live
+
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        service.onBuyOrderPlaced(21);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertTrue("a buy must surface for the still-open slot", painted.get() != null);
+        assertEquals(22, painted.get().getItemId());
+    }
+
+    @Test
     public void repriceSurfacesOnSetupScreenEvenWhileSellActive() throws Exception {
         // Bug 2: opening the reprice setup while the sell is still active hit the
         // ALREADY_SELLING guard and painted nothing (the 10-15s blank). With a pending
