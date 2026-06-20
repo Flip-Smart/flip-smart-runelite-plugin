@@ -113,6 +113,12 @@ public class AutoRecommendService
 	// detection so the per-tick re-resolve only repaints (and logs) when the action changes.
 	private ActionDecision lastAppliedDecision;
 
+	// Whether a FocusedFlip (buy/sell setup overlay) is currently shown. The game-tick
+	// re-resolve heals BLANK overlays only — it must never override an action already shown,
+	// so it stays out of the way of a direct focus (e.g. collect -> sell) that the resolver's
+	// slower view would otherwise replace with an empty-slot buy.
+	private volatile boolean overlayFocusShown;
+
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
 	 * Package-private for Gson serialization.
@@ -271,6 +277,7 @@ public class AutoRecommendService
 		queue.setCurrentIndex(0);
 		focusedCollectedItemId = -1;
 		lastAppliedDecision = null;
+		overlayFocusShown = false;
 
 		invokeFocusCallback(null);
 
@@ -772,6 +779,13 @@ public class AutoRecommendService
 	public synchronized void onGameTickReresolve()
 	{
 		if (!active || !plugin.isClientThread() || queue.getLockedItemId() != null)
+		{
+			return;
+		}
+		// Heal blanks only: never override an action already shown on the overlay. A direct
+		// focus (e.g. collect -> sell) sets a FocusedFlip the resolver's slower view would
+		// replace with an empty-slot buy (S2 outranks S3); the tick must not fight it.
+		if (overlayFocusShown)
 		{
 			return;
 		}
@@ -2541,6 +2555,7 @@ public class AutoRecommendService
 			return;
 		}
 
+		overlayFocusShown = focus != null;
 		Consumer<FocusedFlip> callback = onFocusChanged;
 		if (callback != null)
 		{

@@ -312,35 +312,43 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
-    public void gameTickReresolveSurfacesActionWhenNothingApplied() throws Exception {
-        // The per-tick re-resolve heals transient blanks: with an open slot and a surfaceable
-        // buy, a tick must paint the buy even with no preceding offer event.
+    public void gameTickReresolveHealsBlankOverlay() throws Exception {
+        // Start blank: all slots full, nothing actionable → IDLE clears the focus overlay.
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        service.resolveAndApply(-1);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        // A slot frees up — a tick must heal the blank by surfacing the buy (no offer event).
         when(plugin.getFilledGESlotCount()).thenReturn(7);
+        service.onGameTickReresolve();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertTrue("tick must heal a blank overlay", painted.get() != null);
+        assertEquals(21, painted.get().getItemId());
+    }
+
+    @Test
+    public void gameTickReresolveDoesNotOverrideShownFocus() throws Exception {
+        // A sell focus is shown (as collect→sell does). With an open slot the resolver would
+        // pick S2 buy (S2 outranks S3), but the tick must NOT override the shown sell.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        when(plugin.getInventoryCountForItem(55)).thenReturn(5);
+        session.addCollectedItem(55, 5, CollectOrigin.COMPLETED_BUY, 1L);
+        session.setRecommendedPrice(55, 300);
+        AutoRecommendService.SellFocusResult shown = service.overrideFocusForSell(55, "item-55");
+        SwingUtilities.invokeAndWait(() -> {});
+        assertEquals(AutoRecommendService.SellFocusResult.FOCUSED, shown);
+
         AtomicReference<FocusedFlip> painted = new AtomicReference<>();
         service.setOnFocusChanged(painted::set);
 
         service.onGameTickReresolve();
         SwingUtilities.invokeAndWait(() -> {});
 
-        assertTrue("tick re-resolve must surface an action", painted.get() != null);
-        assertEquals(21, painted.get().getItemId());
-    }
-
-    @Test
-    public void gameTickReresolveDedupesWhenDecisionUnchanged() throws Exception {
-        // Deduped: a second identical tick must not repaint (no flicker / no log spam).
-        when(plugin.getFilledGESlotCount()).thenReturn(7);
-        AtomicInteger paints = new AtomicInteger();
-        service.setOnFocusChanged(f -> paints.incrementAndGet());
-
-        service.onGameTickReresolve();
-        SwingUtilities.invokeAndWait(() -> {});
-        int afterFirst = paints.get();
-        assertTrue("first tick must paint", afterFirst >= 1);
-
-        service.onGameTickReresolve();
-        SwingUtilities.invokeAndWait(() -> {});
-        assertEquals("identical second tick must not repaint", afterFirst, paints.get());
+        assertNull("tick must not override an already-shown focus", painted.get());
     }
 
     @Test
