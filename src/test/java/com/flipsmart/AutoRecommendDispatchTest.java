@@ -312,6 +312,65 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void gameTickReresolveSurfacesActionWhenNothingApplied() throws Exception {
+        // The per-tick re-resolve heals transient blanks: with an open slot and a surfaceable
+        // buy, a tick must paint the buy even with no preceding offer event.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        service.onGameTickReresolve();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertTrue("tick re-resolve must surface an action", painted.get() != null);
+        assertEquals(21, painted.get().getItemId());
+    }
+
+    @Test
+    public void gameTickReresolveDedupesWhenDecisionUnchanged() throws Exception {
+        // Deduped: a second identical tick must not repaint (no flicker / no log spam).
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        AtomicInteger paints = new AtomicInteger();
+        service.setOnFocusChanged(f -> paints.incrementAndGet());
+
+        service.onGameTickReresolve();
+        SwingUtilities.invokeAndWait(() -> {});
+        int afterFirst = paints.get();
+        assertTrue("first tick must paint", afterFirst >= 1);
+
+        service.onGameTickReresolve();
+        SwingUtilities.invokeAndWait(() -> {});
+        assertEquals("identical second tick must not repaint", afterFirst, paints.get());
+    }
+
+    @Test
+    public void gameTickReresolveSkipsWhileOfferLockHeld() throws Exception {
+        // While the offer-setup screen lock is held, the tick must not run — it would fight the
+        // setup-screen autofill the event path owns.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        service.acquireOfferLock(999);
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        service.onGameTickReresolve();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertNull("locked tick must not paint", painted.get());
+    }
+
+    @Test
+    public void gameTickReresolveSkipsWhenInactive() throws Exception {
+        service.stop();
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        service.onGameTickReresolve();
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertNull("inactive tick must not paint", painted.get());
+    }
+
+    @Test
     public void buyPlacedWithOpenSlotSurfacesNextBuyViaResolver() throws Exception {
         // Bug 3: placing a focused buy used the cursor-only advanceToNext, which could miss a
         // buyable item earlier in the queue and fall to "monitoring" until Skip. Routing through

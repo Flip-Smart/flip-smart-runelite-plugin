@@ -109,6 +109,10 @@ public class AutoRecommendService
 	// Currently-focused collected item sell prompt — used by skip() to remove stuck items
 	private volatile int focusedCollectedItemId = -1;
 
+	// Last decision applied by resolveAndApply / the game-tick re-resolve. Drives change
+	// detection so the per-tick re-resolve only repaints (and logs) when the action changes.
+	private ActionDecision lastAppliedDecision;
+
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
 	 * Package-private for Gson serialization.
@@ -266,6 +270,7 @@ public class AutoRecommendService
 		}
 		queue.setCurrentIndex(0);
 		focusedCollectedItemId = -1;
+		lastAppliedDecision = null;
 
 		invokeFocusCallback(null);
 
@@ -751,8 +756,35 @@ public class AutoRecommendService
 		log.debug("Auto-recommend: resolver decision {}/{} item={} slot={}",
 			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
+		lastAppliedDecision = decision;
 		applyDecision(decision);
 		return decision;
+	}
+
+	/**
+	 * Per-game-tick re-resolve. Auto-mode selection is otherwise only re-run on discrete GE
+	 * offer events (~8-15s apart) plus a 2-minute refresh, so a transient blank/IDLE produced
+	 * when game state hadn't settled at event time would linger until the next event. Running
+	 * the (cheap, deterministic) resolver each tick heals those gaps within ~1s. Deduped against
+	 * the last applied decision so it repaints/logs only when the action actually changes, and
+	 * skipped while the offer-setup screen lock is held so it never fights the setup autofill.
+	 */
+	public synchronized void onGameTickReresolve()
+	{
+		if (!active || !plugin.isClientThread() || queue.getLockedItemId() != null)
+		{
+			return;
+		}
+		ActionDecision decision = actionResolver.resolve(buildResolverInput(-1, false));
+		if (decision.equals(lastAppliedDecision))
+		{
+			return;
+		}
+		log.debug("Auto-recommend: tick re-resolve {}/{} item={} slot={}",
+			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
+		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
+		lastAppliedDecision = decision;
+		applyDecision(decision);
 	}
 
 	private void applyDecision(ActionDecision decision)
@@ -2619,6 +2651,11 @@ public class AutoRecommendService
 
 	ResolverInput buildResolverInput(int excludeItemId)
 	{
+		return buildResolverInput(excludeItemId, true);
+	}
+
+	ResolverInput buildResolverInput(int excludeItemId, boolean logInput)
+	{
 		long now = System.currentTimeMillis();
 		PlayerSession session = plugin.getSession();
 
@@ -2665,10 +2702,13 @@ public class AutoRecommendService
 		int slotLimit = plugin.getFlipSlotLimit();
 		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
 		List<OfferRecord> staleSnapshot = staleOffers.snapshot();
-		log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
-			filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
-			view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
-			staleSnapshot.size(), completed.size());
+		if (logInput)
+		{
+			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
+				filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
+				view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
+				staleSnapshot.size(), completed.size());
+		}
 
 		return ResolverInput.builder()
 			.slotLimit(slotLimit)

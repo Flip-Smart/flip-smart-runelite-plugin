@@ -874,6 +874,13 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.retryPendingSellFocusTick();
 
 		releaseOfferLockIfSetupClosed();
+
+		// Heal transient auto-mode blanks within ~1s instead of waiting for the next GE offer
+		// event. Cheap, deterministic, deduped, and gated on the offer-screen lock internally.
+		if (autoRecommendService != null)
+		{
+			autoRecommendService.onGameTickReresolve();
+		}
 	}
 
 	private void releaseOfferLockIfSetupClosed()
