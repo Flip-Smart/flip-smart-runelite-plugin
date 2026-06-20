@@ -423,6 +423,44 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void modifyingSellRelistsReturnedItemNotNewBuy() throws Exception {
+        // Bug: Modify on an active sell returns items to inventory and frees the slot; the
+        // sell-collected path advanced to the resolver, which picked S2 (empty-slot buy) over
+        // re-listing. It must re-list the returned item directly, mirroring buy-collected.
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // slot freed by the modify
+        when(plugin.getInventoryCountForItem(55)).thenReturn(5);
+        session.addCollectedItem(55, 5, CollectOrigin.COMPLETED_BUY, 1L); // re-added on sell cancel
+        session.setRecommendedPrice(55, 300);
+
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        service.onOfferCollected(55, false, "item-55", 5);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertTrue("must re-list the returned item", painted.get() != null);
+        assertEquals(55, painted.get().getItemId());
+        assertFalse("must be a sell, not a buy", painted.get().isBuying());
+    }
+
+    @Test
+    public void fullySoldSellAdvancesToNextAction() throws Exception {
+        // Guard: a fully-sold sell (nothing returned to inventory, not in collected) must still
+        // advance to the next action rather than trying to re-list.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+
+        service.onOfferCollected(99, false, "item-99", 5); // 99 not in collected
+        SwingUtilities.invokeAndWait(() -> {});
+
+        // Advanced via resolver to the surfaceable buy (item 21), not a re-list of 99.
+        assertTrue(painted.get() != null);
+        assertEquals(21, painted.get().getItemId());
+        assertTrue(painted.get().isBuying());
+    }
+
+    @Test
     public void modifyActiveSellPaintsKnownPriceInsteadOfBlanking() throws Exception {
         // The ~9s re-sell delay: opening Modify on an active sell with no pending reprice bailed
         // ALREADY_SELLING and painted nothing. With the setup screen open (lock held for the item)

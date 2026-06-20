@@ -694,8 +694,22 @@ public class AutoRecommendService
 		{
 			clearSellAdjustmentTimer(itemId);
 			adjustments.removeBuyPrice(itemId);
+
+			// Modify/cancel of a sell returns the items to inventory (re-added to collected by
+			// handleCollectedSellOffer). The player is mid-flip on that item, so re-list it —
+			// directly, mirroring handleBuyCollected — instead of advancing to a new buy for the
+			// freed slot (where the resolver's S2 empty-slot buy would outrank the S3 re-list).
+			PlayerSession session = plugin.getSession();
+			Integer sellPrice = session != null ? session.getRecommendedPrice(itemId) : null;
+			if (session != null && session.getCollectedItemIds().contains(itemId) && sellPrice != null && sellPrice > 0)
+			{
+				log.debug("Auto-recommend: Sell modified/returned for {} - re-listing", itemName);
+				focusSellForItem(itemId, itemName, quantity);
+				return;
+			}
+
 			log.debug("Auto-recommend: Sell collected for {} - advancing", itemName);
-			// Collecting a sell frees the slot — rewind so a new buy surfaces.
+			// Fully sold (nothing returned) — rewind so a new buy surfaces.
 			focusNextAvailableAction(true);
 		}
 	}
