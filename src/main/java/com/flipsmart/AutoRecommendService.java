@@ -5,9 +5,15 @@ import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.recommend.ActionDecision;
+import com.flipsmart.recommend.ActionResolver;
 import com.flipsmart.recommend.AdjustmentService;
 import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
+import com.flipsmart.recommend.CollectOrigin;
+import com.flipsmart.recommend.CollectedItem;
 import com.flipsmart.recommend.RecommendationQueue;
+import com.flipsmart.recommend.ActionStep;
+import com.flipsmart.recommend.ResolverInput;
 import com.flipsmart.recommend.StaleOfferQueue;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
@@ -65,6 +71,8 @@ public class AutoRecommendService
 	// Buy/sell adjustment timers + buy-price cost basis.
 	private final AdjustmentService adjustments = new AdjustmentService();
 
+	private final ActionResolver actionResolver = new ActionResolver();
+
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
 	private volatile boolean active;
@@ -101,6 +109,15 @@ public class AutoRecommendService
 	// Currently-focused collected item sell prompt — used by skip() to remove stuck items
 	private volatile int focusedCollectedItemId = -1;
 
+	// Last decision applied by resolveAndApply / the game-tick re-resolve. Drives change
+	// detection so the per-tick re-resolve only repaints (and logs) when the action changes.
+	private ActionDecision lastAppliedDecision;
+
+	// Whether a FocusedFlip (buy/sell setup overlay) is currently shown. The game-tick
+	// re-resolve heals BLANK overlays only — it must never override an action already shown,
+	// so it stays out of the way of a direct focus (e.g. collect -> sell) that the resolver's
+	// slower view would otherwise replace with an empty-slot buy.
+	private volatile boolean overlayFocusShown;
 
 	/**
 	 * Serializable snapshot of auto-recommend state for persistence.
@@ -259,6 +276,8 @@ public class AutoRecommendService
 		}
 		queue.setCurrentIndex(0);
 		focusedCollectedItemId = -1;
+		lastAppliedDecision = null;
+		overlayFocusShown = false;
 
 		invokeFocusCallback(null);
 
@@ -319,7 +338,7 @@ public class AutoRecommendService
 		FlipRecommendation current = getCurrentRecommendation();
 		if (current == null || current.getItemId() != itemId)
 		{
-			// Non-focused buy: store sell price from queue but don't advance
+			// Non-focused buy: store sell price from queue.
 			FlipRecommendation rec = findRecommendationForItem(itemId);
 			if (rec != null && rec.getRecommendedSellPrice() > 0)
 			{
@@ -329,22 +348,19 @@ public class AutoRecommendService
 				log.debug("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
 					itemId, rec.getRecommendedSellPrice());
 			}
-
-			if (!hasAvailableGESlots())
-			{
-				log.debug("Auto-recommend: Non-focused buy filled last GE slot - clearing focus");
-				promptCollection();
-			}
-			return;
+		}
+		else
+		{
+			plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
+			adjustments.putBuyPrice(itemId, current.getRecommendedBuyPrice());
+			scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
+			log.debug("Auto-recommend: Buy order placed for {} - re-resolving", current.getItemName());
 		}
 
-		plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
-		adjustments.putBuyPrice(itemId, current.getRecommendedBuyPrice());
-
-		scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
-
-		log.debug("Auto-recommend: Buy order placed for {} - advancing to next", current.getItemName());
-		advanceToNext();
+		// Route through the resolver so a still-open slot surfaces the next buy deterministically
+		// (full-queue scan), instead of the cursor-only advanceToNext that could miss a buyable
+		// item earlier in the queue and fall to "monitoring" until the user pressed Skip.
+		focusNextAvailableAction(true, itemId);
 	}
 
 	/**
@@ -404,11 +420,38 @@ public class AutoRecommendService
 			return SellFocusResult.UNAVAILABLE;
 		}
 
-		// Don't re-show sell overlay if this item already has an active sell order
-		if (offerStore.hasActiveSellOfferForItem(itemId))
+		// Don't re-show sell overlay if this item already has an active sell order — unless the
+		// advisor has a pending reprice, in which case surface the new price on the setup screen
+		// immediately instead of blanking until the old offer clears.
+		Integer resellPrice = staleOffers.getResellPrice(itemId);
+		boolean repricePending = resellPrice != null && resellPrice > 0;
+		if (offerStore.hasActiveSellOfferForItem(itemId) && !repricePending)
 		{
+			// When the player has the modify/setup screen open for this active sell (offer lock
+			// held for it), paint the already-known recommended price instantly instead of
+			// returning blank — the price lives in session state, so there's no need to wait for
+			// a later event/tick. Off-screen we still bail, to avoid re-surfacing a listed sell.
+			boolean setupScreenOpen = java.util.Objects.equals(queue.getLockedItemId(), itemId);
+			Integer knownPrice = resolveBestSellPrice(itemId);
+			if (setupScreenOpen && knownPrice != null && knownPrice > 0)
+			{
+				int qty = resolveRepriceQuantity(itemId);
+				FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, knownPrice, qty, config.priceOffset());
+				invokeFocusCallback(focus);
+				updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(knownPrice)));
+				return SellFocusResult.FOCUSED;
+			}
 			log.debug("Auto-recommend: Sell already active for {} - ignoring override", itemName);
 			return SellFocusResult.ALREADY_SELLING;
+		}
+
+		if (repricePending)
+		{
+			int repriceQty = resolveRepriceQuantity(itemId);
+			FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, resellPrice, repriceQty, config.priceOffset());
+			invokeFocusCallback(focus);
+			updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(resellPrice)));
+			return SellFocusResult.FOCUSED;
 		}
 
 		Integer sellPrice = resolveBestSellPrice(itemId);
@@ -491,6 +534,12 @@ public class AutoRecommendService
 			return;
 		}
 
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			session.removeCollectedItem(itemId);
+		}
+
 		log.debug("Auto-recommend: Sell order placed for item {} - checking next action", itemId);
 
 		// Schedule sell adjustment timer
@@ -569,7 +618,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		session.addCollectedItem(itemId, filledQuantity);
+		session.addCollectedItem(itemId, filledQuantity, CollectOrigin.PARTIAL_CANCEL, System.currentTimeMillis());
 		ensureSellPriceAvailable(itemId);
 		ensureSellPriceFallback(itemId);
 
@@ -645,8 +694,22 @@ public class AutoRecommendService
 		{
 			clearSellAdjustmentTimer(itemId);
 			adjustments.removeBuyPrice(itemId);
+
+			// Modify/cancel of a sell returns the items to inventory (re-added to collected by
+			// handleCollectedSellOffer). The player is mid-flip on that item, so re-list it —
+			// directly, mirroring handleBuyCollected — instead of advancing to a new buy for the
+			// freed slot (where the resolver's S2 empty-slot buy would outrank the S3 re-list).
+			PlayerSession session = plugin.getSession();
+			Integer sellPrice = session != null ? session.getRecommendedPrice(itemId) : null;
+			if (session != null && session.getCollectedItemIds().contains(itemId) && sellPrice != null && sellPrice > 0)
+			{
+				log.debug("Auto-recommend: Sell modified/returned for {} - re-listing", itemName);
+				focusSellForItem(itemId, itemName, quantity);
+				return;
+			}
+
 			log.debug("Auto-recommend: Sell collected for {} - advancing", itemName);
-			// Collecting a sell frees the slot — rewind so a new buy surfaces.
+			// Fully sold (nothing returned) — rewind so a new buy surfaces.
 			focusNextAvailableAction(true);
 		}
 	}
@@ -668,6 +731,13 @@ public class AutoRecommendService
 		ensureSellPriceAvailable(itemId);
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
 		Integer sellPrice = session.getRecommendedPrice(itemId);
+		// Collecting must not downgrade a partial-cancel (S1 list) to a completed-buy (S3),
+		// or the resolver lets an empty-slot buy (S2) outrank listing the held items.
+		CollectOrigin priorOrigin = session.getCollectOrigin(itemId);
+		CollectOrigin origin = priorOrigin == CollectOrigin.PARTIAL_CANCEL
+			? CollectOrigin.PARTIAL_CANCEL
+			: CollectOrigin.COMPLETED_BUY;
+		session.addCollectedItem(itemId, quantity, origin, System.currentTimeMillis());
 		log.debug("Auto-recommend: Buy collected check - itemId={}, isCollected={}, sellPrice={}",
 			itemId, isCollected, sellPrice);
 
@@ -707,56 +777,119 @@ public class AutoRecommendService
 	 */
 	private void focusNextAvailableAction(boolean rewindToFirstAvailableBuy, int excludeItemId)
 	{
-		focusedCollectedItemId = -1;
+		if (!plugin.isClientThread())
+		{
+			plugin.runOnClientThread(() -> focusNextAvailableAction(rewindToFirstAvailableBuy, excludeItemId));
+			return;
+		}
+		resolveAndApply(excludeItemId);
+	}
 
-		// Highest priority: any GE slot with a completed (BOUGHT/SOLD) offer
-		// awaiting collection must be surfaced before anything else. Otherwise
-		// auto-mode could advance to a new buy on a different slot while the
-		// completed slot sits uncollected — and may even recommend a flip for
-		// an item the user has already sold, because the slot has not been
-		// freed.
-		if (!offerStore.completedAwaitingCollection().isEmpty())
+	ActionDecision resolveAndApply(int excludeItemId)
+	{
+		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
+		log.debug("Auto-recommend: resolver decision {}/{} item={} slot={}",
+			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
+		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
+		lastAppliedDecision = decision;
+		applyDecision(decision);
+		return decision;
+	}
+
+	/**
+	 * Per-game-tick re-resolve. Auto-mode selection is otherwise only re-run on discrete GE
+	 * offer events (~8-15s apart) plus a 2-minute refresh, so a transient blank/IDLE produced
+	 * when game state hadn't settled at event time would linger until the next event. Running
+	 * the (cheap, deterministic) resolver each tick heals those gaps within ~1s. Deduped against
+	 * the last applied decision so it repaints/logs only when the action actually changes, and
+	 * skipped while the offer-setup screen lock is held so it never fights the setup autofill.
+	 */
+	public synchronized void onGameTickReresolve()
+	{
+		if (!active || !plugin.isClientThread() || queue.getLockedItemId() != null)
+		{
+			return;
+		}
+		// Heal blanks only: never override an action already shown on the overlay. A direct
+		// focus (e.g. collect -> sell) sets a FocusedFlip the resolver's slower view would
+		// replace with an empty-slot buy (S2 outranks S3); the tick must not fight it.
+		if (overlayFocusShown)
+		{
+			return;
+		}
+		ActionDecision decision = actionResolver.resolve(buildResolverInput(-1, false));
+		if (decision.equals(lastAppliedDecision))
+		{
+			return;
+		}
+		log.debug("Auto-recommend: tick re-resolve {}/{} item={} slot={}",
+			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
+		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
+		lastAppliedDecision = decision;
+		applyDecision(decision);
+	}
+
+	private void applyDecision(ActionDecision decision)
+	{
+		switch (decision.getStep())
+		{
+			case PLACE_BUY:
+				focusBuyForItem(decision.getItemId());
+				break;
+			case LIST:
+				applyListDecision(decision.getItemId());
+				break;
+			case CANCEL:
+			case REPRICE:
+				focusStaleOfferForItem(decision.getItemId());
+				break;
+			case COLLECT:
+				promptCollectionForItem(decision.getItemId());
+				break;
+			case NONE:
+			default:
+				promptCollection();
+				break;
+		}
+	}
+
+	private void focusBuyForItem(int itemId)
+	{
+		List<FlipRecommendation> view = queue.view();
+		for (int i = 0; i < view.size(); i++)
+		{
+			if (view.get(i).getItemId() == itemId)
+			{
+				queue.setCurrentIndex(i);
+				break;
+			}
+		}
+		if (queue.cursorWithinBounds())
+		{
+			focusCurrent();
+		}
+		else
+		{
+			promptCollection();
+		}
+	}
+
+	private void applyListDecision(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session == null)
 		{
 			promptCollection();
 			return;
 		}
+		String name = resolveItemName(itemId);
+		int qty = session.getCollectedQuantity(itemId);
+		focusSellForItem(itemId, name, qty);
+	}
 
-		if (hasCollectedItemsToSell())
-		{
-			focusNextCollectedItemSell();
-		}
-		else if (!staleOffers.isEmpty())
-		{
-			// Guide user through stale offers one at a time before new recommendations
-			focusNextStaleOffer();
-		}
-		else if (hasAvailableGESlots())
-		{
-			// currentIndex only ever moves forward, so a freed slot can leave it
-			// parked past every still-valid item (including the one just freed).
-			// Rewind to the first surfaceable buy in that case so the slot is never
-			// left empty until the next full queue refresh.
-			if (rewindToFirstAvailableBuy)
-			{
-				int idx = firstAvailableBuyIndex(queue.view(),
-					plugin.getActiveFlipItemIds(), excludeItemId, config.priceOffset(), config.minimumProfit());
-				queue.setCurrentIndex((idx >= 0) ? idx : queue.size());
-			}
-			if (queue.cursorWithinBounds())
-			{
-				focusCurrent();
-			}
-			else
-			{
-				promptCollection();
-			}
-		}
-		else
-		{
-			// Slots full or queue exhausted — prompt collection if there are
-			// completed offers, otherwise show "Waiting for flips"
-			promptCollection();
-		}
+	private String resolveItemName(int itemId)
+	{
+		return queue.getItemName(itemId, plugin.getItemName(itemId));
 	}
 
 	/**
@@ -1422,31 +1555,75 @@ public class AutoRecommendService
 			return;
 		}
 
-		OfferRecord next = staleOffers.head();
-		Integer resellPrice = staleOffers.getResellPrice(next.getItemId());
+		renderStaleOfferPrompt(staleOffers.head());
+	}
+
+	private void renderStaleOfferPrompt(OfferRecord offer)
+	{
+		Integer resellPrice = staleOffers.getResellPrice(offer.getItemId());
 		String overlayMsg;
-		if (!next.isBuy() && resellPrice != null)
+		if (!offer.isBuy() && resellPrice != null)
 		{
-			Integer net = staleOffers.getResellNet(next.getItemId());
+			Integer net = staleOffers.getResellNet(offer.getItemId());
 			String netSuffix = net == null ? ""
 				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
-			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", next.getItemName(),
+			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", offer.getItemName(),
 				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
 		{
-			overlayMsg = String.format("Consider cancelling:\n%s", next.getItemName());
+			overlayMsg = String.format("Consider cancelling:\n%s", offer.getItemName());
 		}
 
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
-		invokeOverlayMessageCallback(overlayMsg, next.getItemId());
+		invokeOverlayMessageCallback(overlayMsg, offer.getItemId());
 
 		java.util.function.IntConsumer staleCallback = onStaleOfferPrompted;
 		if (staleCallback != null)
 		{
-			staleCallback.accept(next.getItemId());
+			staleCallback.accept(offer.getItemId());
 		}
+	}
+
+	private void focusStaleOfferForItem(int itemId)
+	{
+		PlayerSession session = plugin.getSession();
+		if (session != null)
+		{
+			List<OfferRecord> currentOffers = offerStore.liveOffers();
+			staleOffers.pruneIrrelevant(o ->
+			{
+				OfferRecord current = currentOffers.stream()
+					.filter(t -> t.getItemId() == o.getItemId() && t.getState() != OfferState.FILLED)
+					.findFirst().orElse(null);
+				if (current == null)
+				{
+					return true;
+				}
+				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
+				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
+			});
+		}
+
+		if (staleOffers.isEmpty())
+		{
+			if (onClearAllHighlights != null)
+			{
+				onClearAllHighlights.run();
+			}
+			focusNextAvailableAction();
+			return;
+		}
+
+		OfferRecord target = staleOffers.findByItemId(itemId);
+		if (target == null)
+		{
+			focusNextStaleOffer();
+			return;
+		}
+
+		renderStaleOfferPrompt(target);
 	}
 
 	/**
@@ -2078,7 +2255,7 @@ public class AutoRecommendService
 
 			if (sellPrice != null && sellPrice > 0)
 			{
-				String itemName = queue.getItemName(sellableItemId, plugin.getItemName(sellableItemId));
+				String itemName = resolveItemName(sellableItemId);
 				int sellQuantity = resolveSellQuantity(sellableItemId);
 
 				int priceOffset = config.priceOffset();
@@ -2125,7 +2302,7 @@ public class AutoRecommendService
 	 * Returns the item ID, or -1 if none found.
 	 * Cleans up stale entries where the item is no longer in inventory or GE.
 	 */
-	private int findNextSellableCollectedItem()
+	int findNextSellableCollectedItem()
 	{
 		PlayerSession session = plugin.getSession();
 		List<Integer> staleItems = new ArrayList<>();
@@ -2161,7 +2338,12 @@ public class AutoRecommendService
 	 */
 	private int evaluateCollectedItem(int itemId, List<Integer> staleItems)
 	{
-		if (isItemInInventory(itemId))
+		Boolean inInventory = inventoryContains(itemId);
+		if (inInventory == null)
+		{
+			return -1; // cannot verify inventory off-thread — do NOT mark stale, do NOT surface this cycle
+		}
+		if (inInventory)
 		{
 			return hasSellPrice(itemId) ? itemId : -1;
 		}
@@ -2171,6 +2353,19 @@ public class AutoRecommendService
 		}
 		staleItems.add(itemId);
 		return -1;
+	}
+
+	/** TRUE/FALSE if inventory could be read (client thread); null if undeterminable (off-thread). */
+	private Boolean inventoryContains(int itemId)
+	{
+		try
+		{
+			return plugin.getInventoryCountForItem(itemId) > 0;
+		}
+		catch (Exception | AssertionError e)
+		{
+			return null; // off-thread — cannot determine; caller must NOT treat as absent
+		}
 	}
 
 	private boolean isItemInInventory(int itemId)
@@ -2219,6 +2414,24 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * Quantity for a reprice prompt. During a reprice the items sit in the still-active sell
+	 * offer (not inventory), so prefer the offer's unsold remainder over inventory.
+	 */
+	private int resolveRepriceQuantity(int itemId)
+	{
+		OfferRecord staleSell = staleOffers.findByItemId(itemId);
+		if (staleSell != null)
+		{
+			int remaining = staleSell.getTotalQuantity() - staleSell.getFilledQuantity();
+			if (remaining > 0)
+			{
+				return remaining;
+			}
+		}
+		return Math.max(1, resolveSellQuantity(itemId));
+	}
+
+	/**
 	 * Find a recommendation matching the given item ID from the queue.
 	 */
 	private FlipRecommendation findRecommendationForItem(int itemId)
@@ -2263,6 +2476,36 @@ public class AutoRecommendService
 	 * Show a status message prompting the user to collect completed offers.
 	 * Called when all GE slots are full but auto is still active.
 	 */
+	private void promptCollectionForItem(int itemId)
+	{
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		OfferRecord target = null;
+		for (OfferRecord r : completed)
+		{
+			if (r.getItemId() == itemId)
+			{
+				target = r;
+				break;
+			}
+		}
+		if (target == null || !plugin.hasCollectableGEOffers())
+		{
+			promptCollection();
+			return;
+		}
+		invokeFocusCallback(null);
+		if (target.isBuy())
+		{
+			updateStatus("Auto: Collect " + target.getItemName() + " from GE");
+			invokeOverlayMessageCallback("Collect " + target.getItemName(), target.getItemId());
+		}
+		else
+		{
+			updateStatus("Auto: Collect profit from GE");
+			invokeOverlayMessageCallback("Collect profit from GE");
+		}
+	}
+
 	private void promptCollection()
 	{
 		// Show stale offer prompts before falling through to "Monitoring"
@@ -2340,6 +2583,7 @@ public class AutoRecommendService
 			return;
 		}
 
+		overlayFocusShown = focus != null;
 		Consumer<FocusedFlip> callback = onFocusChanged;
 		if (callback != null)
 		{
@@ -2446,5 +2690,77 @@ public class AutoRecommendService
 	private boolean hasAvailableGESlots()
 	{
 		return plugin.getFilledGESlotCount() < plugin.getFlipSlotLimit();
+	}
+
+	ResolverInput buildResolverInput(int excludeItemId)
+	{
+		return buildResolverInput(excludeItemId, true);
+	}
+
+	ResolverInput buildResolverInput(int excludeItemId, boolean logInput)
+	{
+		long now = System.currentTimeMillis();
+		PlayerSession session = plugin.getSession();
+
+		List<CollectedItem> collected = new ArrayList<>();
+		if (session != null)
+		{
+			for (Integer itemId : session.getCollectedItemIds())
+			{
+				if (offerStore.hasActiveSellOfferForItem(itemId))
+				{
+					continue;
+				}
+				if (!isItemInInventory(itemId))
+				{
+					continue;
+				}
+				Integer resolvedPrice = resolveBestSellPrice(itemId);
+				if (resolvedPrice == null || resolvedPrice <= 0)
+				{
+					continue;
+				}
+				CollectOrigin origin = session.getCollectOrigin(itemId);
+				if (origin == null)
+				{
+					origin = CollectOrigin.COMPLETED_BUY;
+				}
+				collected.add(new CollectedItem(itemId, origin, true,
+					session.getCollectedAtMillis(itemId)));
+			}
+		}
+
+		boolean hasSurfaceable = false;
+		int surfaceableItemId = -1;
+		List<FlipRecommendation> view = queue.view();
+		int idx = firstAvailableBuyIndex(view, plugin.getActiveFlipItemIds(),
+			excludeItemId, config.priceOffset(), config.minimumProfit());
+		if (idx >= 0 && idx < view.size())
+		{
+			hasSurfaceable = true;
+			surfaceableItemId = view.get(idx).getItemId();
+		}
+
+		int filledSlots = plugin.getFilledGESlotCount();
+		int slotLimit = plugin.getFlipSlotLimit();
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		List<OfferRecord> staleSnapshot = staleOffers.snapshot();
+		if (logInput)
+		{
+			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
+				filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
+				view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
+				staleSnapshot.size(), completed.size());
+		}
+
+		return ResolverInput.builder()
+			.slotLimit(slotLimit)
+			.filledSlotCount(filledSlots)
+			.surfaceableBuy(hasSurfaceable, surfaceableItemId)
+			.nowMillis(now)
+			.completedAwaitingCollection(completed)
+			.staleOffers(staleSnapshot)
+			.collectedAwaitingList(collected)
+			.build();
 	}
 }

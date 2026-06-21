@@ -238,18 +238,30 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return FlipAssistStep.SELECT_ITEM;
 		}
-		boolean qtyCorrect = isValueWithinTolerance(getCurrentQuantityFromGE(), flip.getCurrentStepQuantity());
-		boolean priceCorrect = isValueWithinTolerance(getCurrentPriceFromGE(), flip.getCurrentStepPrice());
+		return offerSetupStep(getCurrentQuantityFromGE(), flip.getCurrentStepQuantity(),
+			getCurrentPriceFromGE(), flip.getCurrentStepPrice(), flip.isBuying());
+	}
+
+	/**
+	 * Pure step decision for the offer-setup screen. Quantity must match EXACTLY — it is an
+	 * integer count with no rounding, so the ±1 price tolerance would wrongly accept the
+	 * default qty 1 when the target is 2. Price keeps the ±1 tolerance. Package-private for tests.
+	 */
+	static FlipAssistStep offerSetupStep(int currentQty, int targetQty, int currentPrice, int targetPrice,
+		boolean buying)
+	{
+		boolean qtyCorrect = targetQty > 0 && currentQty == targetQty;
+		boolean priceCorrect = isValueWithinTolerance(currentPrice, targetPrice);
 
 		if (qtyCorrect && priceCorrect)
 		{
-			return flip.isBuying() ? FlipAssistStep.CONFIRM_OFFER : FlipAssistStep.CONFIRM_SELL;
+			return buying ? FlipAssistStep.CONFIRM_OFFER : FlipAssistStep.CONFIRM_SELL;
 		}
 		if (!qtyCorrect)
 		{
 			return FlipAssistStep.SET_QUANTITY;
 		}
-		return flip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
+		return buying ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
 	}
 	
 	/**
@@ -257,7 +269,7 @@ public class FlipAssistOverlay extends Overlay
 	 * Tolerance is needed because GE can have slight rounding differences
 	 * when displaying prices/quantities (e.g., 1gp variance in price).
 	 */
-	private boolean isValueWithinTolerance(int current, int target)
+	private static boolean isValueWithinTolerance(int current, int target)
 	{
 		return current > 0 && target > 0 && Math.abs(current - target) <= 1;
 	}

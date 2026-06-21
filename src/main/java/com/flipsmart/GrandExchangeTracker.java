@@ -8,6 +8,7 @@ import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
+import com.flipsmart.recommend.CollectOrigin;
 import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.ItemUtils;
@@ -306,7 +307,7 @@ public class GrandExchangeTracker
 		int remaining = orderTotal - ctx.quantitySold;
 		if (remaining > 0)
 		{
-			session.addCollectedItem(ctx.itemId, remaining);
+			session.addCollectedItem(ctx.itemId, remaining, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
 			log.debug("Sell cancelled for {} - re-added {} unsold items to collected",
 				ctx.itemName, remaining);
 		}

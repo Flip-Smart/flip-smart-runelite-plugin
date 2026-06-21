@@ -685,10 +685,14 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("Auto-recommend focus set: {} {} @ {} gp",
 				focus.getStep(), focus.getItemName(), focus.getCurrentStepPrice());
 			// Keep panel focus in sync so the active flip refresh cycle doesn't
-			// re-create a stale sell overlay for a previously focused item
+			// re-create a stale sell overlay for a previously focused item. Run
+			// synchronously (we are already on the EDT, like setFocusedFlip above):
+			// deferring this left currentFocus stale for one EDT turn, during which
+			// the active-flip refresh re-emitted the old sell focus and clobbered a
+			// just-set buy after a sell order was placed.
 			if (flipFinderPanel != null)
 			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
+				flipFinderPanel.setExternalFocus(focus);
 			}
 		}
 		else
@@ -874,6 +878,13 @@ public class FlipSmartPlugin extends Plugin
 		grandExchangeTracker.retryPendingSellFocusTick();
 
 		releaseOfferLockIfSetupClosed();
+
+		// Heal transient auto-mode blanks within ~1s instead of waiting for the next GE offer
+		// event. Cheap, deterministic, deduped, and gated on the offer-screen lock internally.
+		if (autoRecommendService != null)
+		{
+			autoRecommendService.onGameTickReresolve();
+		}
 	}
 
 	private void releaseOfferLockIfSetupClosed()
@@ -1089,6 +1100,16 @@ public class FlipSmartPlugin extends Plugin
 			return true;
 		}
 		return false;
+	}
+
+	public boolean isClientThread()
+	{
+		return client.isClientThread();
+	}
+
+	public void runOnClientThread(Runnable r)
+	{
+		clientThread.invokeLater(r);
 	}
 
 	private void performStaleFlipCleanup()

@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.recommend.CollectOrigin;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
@@ -40,6 +41,8 @@ public class PlayerSession
 
 	private final Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
 	private final Map<Integer, Integer> collectedQuantities = new ConcurrentHashMap<>();
+	private final Map<Integer, CollectOrigin> collectOrigins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> collectedAtMillis = new ConcurrentHashMap<>();
 
 	// =====================
 	// GE State
@@ -130,15 +133,38 @@ public class PlayerSession
 		}
 	}
 
+	public void addCollectedItem(int itemId, int quantity, CollectOrigin origin, long nowMillis)
+	{
+		addCollectedItem(itemId, quantity);
+		if (origin != null)
+		{
+			collectOrigins.put(itemId, origin);
+		}
+		collectedAtMillis.put(itemId, nowMillis);
+	}
+
 	public int getCollectedQuantity(int itemId)
 	{
 		Integer qty = collectedQuantities.get(itemId);
 		return qty != null ? qty : 0;
 	}
 
+	public CollectOrigin getCollectOrigin(int itemId)
+	{
+		return collectOrigins.get(itemId);
+	}
+
+	public long getCollectedAtMillis(int itemId)
+	{
+		Long ts = collectedAtMillis.get(itemId);
+		return ts == null ? 0L : ts;
+	}
+
 	public boolean removeCollectedItem(int itemId)
 	{
 		collectedQuantities.remove(itemId);
+		collectOrigins.remove(itemId);
+		collectedAtMillis.remove(itemId);
 		return collectedItemIds.remove(itemId);
 	}
 
@@ -146,12 +172,16 @@ public class PlayerSession
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 	}
 
 	public void restoreCollectedItems(Set<Integer> items)
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
@@ -162,6 +192,8 @@ public class PlayerSession
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
@@ -277,6 +309,8 @@ public class PlayerSession
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 	}
