@@ -2,7 +2,7 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
@@ -268,10 +268,15 @@ public class FlipAssistInputListener implements KeyListener
 	{
 		String valueStr = String.valueOf(value);
 		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, valueStr);
-		
-		// Run the script to rebuild/refresh the chatbox input display
-		// This makes the value visible in the input field
-		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, valueStr);
+
+		// Redraw the chatbox input line directly instead of invoking the rebuild
+		// script: write the value plus the cursor glyph into the input widget so it
+		// is visible. The GE confirms off the VarClientStr above, not this text.
+		Widget input = client.getWidget(InterfaceID.Chatbox.INPUT);
+		if (input != null)
+		{
+			input.setText(valueStr + "*");
+		}
 	}
 	
 	/**
