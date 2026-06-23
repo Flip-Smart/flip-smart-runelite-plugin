@@ -270,9 +270,10 @@ public class FlipAssistInputListener implements KeyListener
 		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, valueStr);
 
 		// Redraw the chatbox input line directly instead of invoking the rebuild
-		// script: write the value plus the cursor glyph into the input widget so it
-		// is visible. The GE confirms off the VarClientStr above, not this text.
-		Widget input = client.getWidget(InterfaceID.Chatbox.INPUT);
+		// script: write the value plus the cursor glyph into the full-input widget
+		// (MES_TEXT2 == CHATBOX_FULL_INPUT) so it is visible. The GE confirms off the
+		// VarClientStr above, not this text.
+		Widget input = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
 		if (input != null)
 		{
 			input.setText(valueStr + "*");
