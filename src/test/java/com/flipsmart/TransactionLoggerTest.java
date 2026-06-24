@@ -126,6 +126,8 @@ public class TransactionLoggerTest
         TransactionRequest req = capture();
         assertEquals(9093, req.quantity);
         assertFalse(req.isBuy);
+        assertEquals(28924, req.itemId);
+        assertEquals(384, req.pricePerItem);
     }
 
     @Test
