@@ -403,6 +403,30 @@ public class GEHistoryService
 		return (text == null) ? "" : text.replaceAll("<[^>]*>", "");
 	}
 
+	/**
+	 * Conservatively resolve a History row to a tracked OfferStore offerId so the
+	 * backend can reconcile it per-offer. Matches on (itemId, isBuy, price) and
+	 * returns the offerId ONLY when exactly one distinct offer matches — a wrong
+	 * offerId is worse than none, so any ambiguity (or no match) returns null and
+	 * the backend falls back to the item-level path.
+	 */
+	static Long matchOfferId(List<OfferRecord> candidates, int itemId, boolean isBuy, int pricePerItem)
+	{
+		Long found = null;
+		for (OfferRecord o : candidates)
+		{
+			if (o.getItemId() == itemId && o.isBuy() == isBuy && o.getPrice() == pricePerItem)
+			{
+				if (found != null && found.longValue() != o.getOfferId())
+				{
+					return null;
+				}
+				found = o.getOfferId();
+			}
+		}
+		return found;
+	}
+
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
 	{
 		if (!session.isOfflineSyncCompleted() || entries.isEmpty())
@@ -423,12 +447,17 @@ public class GEHistoryService
 		for (OfferRecord o : offerStore.allRecords()) nameByItem.put(o.getItemId(), o.getItemName());
 		for (OfferRecord o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
 
+		// Candidate offers for offer_id linkage: live + recently-persisted.
+		List<OfferRecord> candidates = new ArrayList<>(offerStore.allRecords());
+		candidates.addAll(recentlyPersistedOffers.values());
+
 		List<HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
 		for (GEHistoryEntry e : entries)
 		{
+			Long offerId = matchOfferId(candidates, e.getItemId(), e.isBuy(), e.getPricePerItem());
 			batch.add(new HistoryBackfillEntry(
 				e.getItemId(), nameByItem.get(e.getItemId()),
-				e.isBuy(), e.getQuantity(), e.getPricePerItem()
+				e.isBuy(), e.getQuantity(), e.getPricePerItem(), offerId
 			));
 		}
 

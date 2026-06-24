@@ -129,6 +129,19 @@ public class TransactionLoggerTest
     }
 
     @Test
+    public void fillRecordsOfferIdFromRecord()
+    {
+        // #759: every recorded fill carries the OfferStore offerId so the backend
+        // can reconcile fills of the same offer per-offer (not summed at item level).
+        TransactionLogger logger = newLogger(RSN);
+        OfferRecord r = OfferRecord.newOffer(77, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
+            .withFill(2, 4_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L));
+        TransactionRequest req = capture();
+        assertEquals(Long.valueOf(77), req.offerId);
+    }
+
+    @Test
     public void collectedAndNoneAndRejectedRecordNothing()
     {
         TransactionLogger logger = newLogger(RSN);

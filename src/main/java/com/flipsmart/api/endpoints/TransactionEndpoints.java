@@ -69,6 +69,10 @@ public class TransactionEndpoints
 		{
 			jsonBody.addProperty("idempotency_key", request.idempotencyKey);
 		}
+		if (request.offerId != null)
+		{
+			jsonBody.addProperty("offer_id", request.offerId);
+		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 
@@ -122,6 +126,7 @@ public class TransactionEndpoints
 			o.addProperty("is_buy", e.isBuy);
 			o.addProperty(JSON_KEY_QUANTITY, e.quantity);
 			o.addProperty(JSON_KEY_PRICE_PER_ITEM, e.pricePerItem);
+			if (e.offerId != null) o.addProperty("offer_id", e.offerId);
 			arr.add(o);
 		}
 		body.add("entries", arr);
