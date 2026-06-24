@@ -5,8 +5,11 @@ import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.trading.OfferEvent;
+import com.flipsmart.trading.OfferEventMapper;
+import com.flipsmart.trading.OfferStore;
 import com.flipsmart.trading.TransactionLogger;
 import com.flipsmart.trading.TransactionLogger.Type;
+import net.runelite.api.GrandExchangeOfferState;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -93,6 +96,36 @@ public class TransactionLoggerTest
         assertEquals(2, req.quantity);
         assertEquals(2_000_000, req.pricePerItem);
         assertEquals(RSN + ":5:1700000000000:FILL:2", req.idempotencyKey);
+    }
+
+    @Test
+    public void offlineCompletedTailInSlotOnLoginRecordsDelta()
+    {
+        // #759 case 1: a 30,000 sell partially filled to 20,907 online (persisted),
+        // then completed offline to 30,000. On next login the offer is still in its
+        // slot (OSRS does not auto-collect). With the persisted baseline preloaded
+        // into OfferStore, the login signal must record ONLY the 9,093 offline delta
+        // — not 0 (the loss this fix targets) and not 30,000 (a double count).
+        OfferStore store = new OfferStore();
+        TransactionLogger logger = newLogger(RSN);
+        store.addListener(logger::onOfferEvent);
+
+        // OfflineSyncService.preloadPersistedOffers seeds the store WITHOUT firing
+        // listeners (no spurious record); model that with importRecords.
+        OfferRecord persisted = OfferRecord
+            .newOffer(42L, 3, 28924, "Sunfire splinters", false, 30000, 384, 1700000000000L)
+            .withFill(20907, 20907L * 384, OfferState.PARTIAL_FILL, 1700000000500L);
+        store.importRecords(java.util.Collections.singletonList(persisted));
+
+        // Login burst: the offer now reads 30,000 sold (the tail filled offline).
+        store.apply(
+            OfferEventMapper.toSignal(3, GrandExchangeOfferState.SOLD, 28924,
+                "Sunfire splinters", 30000, 384, 30000, 30000L * 384),
+            1700000600000L);
+
+        TransactionRequest req = capture();
+        assertEquals(9093, req.quantity);
+        assertFalse(req.isBuy);
     }
 
     @Test
