@@ -158,10 +158,12 @@ public class GEHistoryService
 	}
 
 	/**
-	 * Snapshot of offers persisted at the previous session's logout — used
-	 * for item-name resolution in the backfill payload, and as the trigger
-	 * for the chat prompt (any persisted state means there might be offline
-	 * activity worth backfilling).
+	 * Snapshot of offers persisted at the previous session's logout — used for
+	 * item-name resolution and offerId matching in the backfill payload. This
+	 * does NOT prompt: merely having tracked offers last session is not missing
+	 * data. The prompt is driven solely by genuinely-unverified offline fills
+	 * registered via {@link #registerOfflineFill} (offers the reconciler found
+	 * gone from their slot on login).
 	 */
 	public void setRecentlyPersistedOffers(List<OfferRecord> offers)
 	{
@@ -173,23 +175,15 @@ public class GEHistoryService
 				recentlyPersistedOffers.put(o.getItemId(), o);
 			}
 		}
-		// Any prior-session activity is reason enough to prompt the user to
-		// open History. Backend dedup makes the backfill safe regardless:
-		// covered rows dedupe, missing ones get inserted.
-		if (!recentlyPersistedOffers.isEmpty())
-		{
-			maybeSendChatPrompt();
-		}
 	}
 
 	public boolean hasUnverifiedOfflineFills()
 	{
-		// Prompt the overlay banner whenever we haven't yet read the History
-		// this session and there's *any* signal that offline activity might
-		// have happened — either the narrow per-item detection registered
-		// something, or the user simply had persisted offer state from the
-		// prior session.
-		return !historyReadThisSession && (!pendingOfflineFillItemIds.isEmpty() || !recentlyPersistedOffers.isEmpty());
+		// Only prompt/flag when we haven't read History yet this session AND the
+		// reconciler registered a genuinely-unverified offline fill. Persisted
+		// offer state alone is not missing data — the live OfferStore pipeline
+		// already records in-slot offline completions.
+		return !historyReadThisSession && !pendingOfflineFillItemIds.isEmpty();
 	}
 
 	public void reset()

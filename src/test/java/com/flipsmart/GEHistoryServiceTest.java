@@ -1,6 +1,9 @@
 package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.trading.OfferStore;
+import net.runelite.api.Client;
+import net.runelite.client.chat.ChatMessageManager;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -8,7 +11,14 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * Unit tests for {@link GEHistoryService}'s widget-text parsing helpers.
@@ -150,5 +160,40 @@ public class GEHistoryServiceTest
 	{
 		OfferRecord same = offer(42, 28924, false, 30000, 384);
 		assertEquals(Long.valueOf(42), GEHistoryService.matchOfferId(Arrays.asList(same, same), 28924, false, 384));
+	}
+
+	// ----- prompt de-nag: only prompt when GE data is genuinely missing (#759) -----
+
+	private ChatMessageManager chatMessageManager;
+
+	private GEHistoryService newService()
+	{
+		chatMessageManager = mock(ChatMessageManager.class);
+		return new GEHistoryService(
+			mock(Client.class),
+			mock(FlipSmartApiClient.class),
+			mock(PlayerSession.class),
+			chatMessageManager,
+			new OfferStore());
+	}
+
+	@Test
+	public void persistedStateWithoutOfflineFillsDoesNotPromptOrFlagBanner()
+	{
+		// Having tracked offers last session is NOT a reason to nag — only a
+		// genuinely-unverified offline fill is. No prompt, no overlay banner.
+		GEHistoryService svc = newService();
+		svc.setRecentlyPersistedOffers(Collections.singletonList(offer(42, 28924, false, 30000, 384)));
+		assertFalse(svc.hasUnverifiedOfflineFills());
+		verify(chatMessageManager, never()).queue(any());
+	}
+
+	@Test
+	public void genuineOfflineFillPromptsAndFlagsBanner()
+	{
+		GEHistoryService svc = newService();
+		svc.registerOfflineFill(28924);
+		assertTrue(svc.hasUnverifiedOfflineFills());
+		verify(chatMessageManager, times(1)).queue(any());
 	}
 }
