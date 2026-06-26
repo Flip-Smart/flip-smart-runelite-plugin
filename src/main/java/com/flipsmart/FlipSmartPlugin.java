@@ -643,7 +643,6 @@ public class FlipSmartPlugin extends Plugin
 
 		// Start dump alert service
 		dumpAlertService.start();
-		motdService.start();
 
 		// Sync webhook config to backend if configured
 		webhookSyncService.syncIfChanged();
@@ -809,7 +808,6 @@ public class FlipSmartPlugin extends Plugin
 
 		// Stop dump alert service
 		dumpAlertService.stop();
-		motdService.stop();
 
 		// Stop auto-recommend service and timer
 		scheduler.stopAutoRecommendRefreshTimer();
