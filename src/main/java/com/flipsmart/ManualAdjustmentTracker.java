@@ -304,6 +304,7 @@ public class ManualAdjustmentTracker
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
 			.rsn(rsn)
+			.style(config.flipStyle().getApiValue())
 			.build()
 		).thenAccept(response ->
 		{

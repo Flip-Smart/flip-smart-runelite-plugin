@@ -177,6 +177,10 @@ public class FlipsEndpoints
 		{
 			jsonBody.addProperty("rsn", req.rsn);
 		}
+		if (req.style != null)
+		{
+			jsonBody.addProperty("style", req.style);
+		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 
