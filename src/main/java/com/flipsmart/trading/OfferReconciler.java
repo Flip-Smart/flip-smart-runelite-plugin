@@ -44,7 +44,15 @@ public final class OfferReconciler
                 plan.minted.add(live);
             }
         }
-        plan.offlineCollected.addAll(remaining);
+        // Terminal (collected/cancelled-empty) records are already-reconciled history, not
+        // offline fills — including them re-flagged the whole backlog every login (false nag).
+        for (OfferRecord r : remaining)
+        {
+            if (!r.getState().isTerminal())
+            {
+                plan.offlineCollected.add(r);
+            }
+        }
         return plan;
     }
 

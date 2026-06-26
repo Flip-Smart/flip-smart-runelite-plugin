@@ -15,6 +15,7 @@ public class TransactionRequest
 	public final String rsn;
 	public final Integer totalQuantity;
 	public final String idempotencyKey;
+	public final Long offerId;
 
 	private TransactionRequest(Builder builder)
 	{
@@ -28,6 +29,7 @@ public class TransactionRequest
 		this.rsn = builder.rsn;
 		this.totalQuantity = builder.totalQuantity;
 		this.idempotencyKey = builder.idempotencyKey;
+		this.offerId = builder.offerId;
 	}
 
 	public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
@@ -47,6 +49,7 @@ public class TransactionRequest
 		private String rsn;
 		private Integer totalQuantity;
 		private String idempotencyKey;
+		private Long offerId;
 
 		private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
 		{
@@ -62,6 +65,7 @@ public class TransactionRequest
 		public Builder rsn(String rsn) { this.rsn = rsn; return this; }
 		public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
 		public Builder idempotencyKey(String key) { this.idempotencyKey = key; return this; }
+		public Builder offerId(Long offerId) { this.offerId = offerId; return this; }
 
 		public TransactionRequest build() { return new TransactionRequest(this); }
 	}
