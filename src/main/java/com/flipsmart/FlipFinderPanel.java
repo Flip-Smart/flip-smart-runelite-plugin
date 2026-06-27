@@ -2505,6 +2505,14 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		return displayedSellPrices.get(itemId);
 	}
+
+	public void setDisplayedSellPrice(int itemId, int sellPrice)
+	{
+		if (sellPrice > 0)
+		{
+			displayedSellPrices.put(itemId, sellPrice);
+		}
+	}
 	
 	/**
 	 * Clear the current focus

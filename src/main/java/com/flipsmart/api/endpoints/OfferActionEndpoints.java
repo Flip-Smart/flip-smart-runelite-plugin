@@ -5,6 +5,8 @@ import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.dto.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.SellPriceCheckRequest;
+import com.flipsmart.api.dto.SellPriceCheckResponse;
 import com.google.gson.Gson;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -48,5 +50,14 @@ public class OfferActionEndpoints
 		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			gson.fromJson(jsonData, OfferAdviceBatchResponse.class));
+	}
+
+	public CompletableFuture<SellPriceCheckResponse> postSellPriceCheckAsync(SellPriceCheckRequest req)
+	{
+		String url = String.format("%s/flip-finder/active/sell-price-check", transport.getApiUrl());
+		RequestBody body = RequestBody.create(JSON, FlipSmartApiClient.buildSellPriceCheckBody(req).toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
+			gson.fromJson(jsonData, SellPriceCheckResponse.class));
 	}
 }

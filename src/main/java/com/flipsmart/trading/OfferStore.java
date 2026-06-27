@@ -207,6 +207,21 @@ public final class OfferStore
     }
 
     /**
+     * Replace the last-activity timestamp of the record with {@code offerId}. No-op when
+     * the offerId is unknown. Used on relog to restore an offer's true age after the live
+     * record was re-anchored to login time.
+     */
+    public synchronized void correctActivityAt(long offerId, long millis)
+    {
+        OfferRecord current = byOfferId.get(offerId);
+        if (current == null)
+        {
+            return;
+        }
+        byOfferId.put(offerId, current.withActivityAtMillis(millis));
+    }
+
+    /**
      * Records with collectable fills awaiting a GE collect action: fully filled
      * (FILLED) or partially-cancelled (CANCELLED_PARTIAL). Matches the prior
      * getCompletedOffers behaviour so the "collect profit" prompt fires for both.

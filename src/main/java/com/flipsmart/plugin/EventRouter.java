@@ -201,6 +201,7 @@ public class EventRouter
 		}
 
 		grandExchangeTracker.autoFocusOnActiveFlip(openItemId);
+		plugin.maybeRecalc12hSellPrice(openItemId);
 	}
 
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged offerEvent)

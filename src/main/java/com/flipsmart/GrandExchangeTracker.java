@@ -750,6 +750,17 @@ public class GrandExchangeTracker
 	 * Auto-focus on an active flip when the player sets up a sell offer for that item.
 	 * During auto-recommend, overrides focus if the item is a collected item with a sell price.
 	 */
+	/**
+	 * Re-run the sell focus after the recommended price changed underneath an
+	 * already-open sell screen (e.g. a fresh 12h sell-price recalc). Clears the
+	 * per-item debounce so the refreshed price is not swallowed as a duplicate.
+	 */
+	public void refreshSellFocus(int itemId)
+	{
+		lastAutoFocusItemId = -1;
+		autoFocusOnActiveFlip(itemId);
+	}
+
 	public void autoFocusOnActiveFlip(int itemId)
 	{
 		// Debounce: GE_OFFERS_SETUP_BUILD fires multiple times per interaction

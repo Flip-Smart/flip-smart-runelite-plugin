@@ -290,7 +290,7 @@ public class ManualAdjustmentTracker
 	{
 		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
-
+		String style = config.flipStyle().getApiValue();
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
 
 		apiClient.getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
@@ -304,6 +304,7 @@ public class ManualAdjustmentTracker
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
 			.rsn(rsn)
+			.style(style)
 			.build()
 		).thenAccept(response ->
 		{
@@ -346,6 +347,29 @@ public class ManualAdjustmentTracker
 			handleSellAdjustment(state, offer, response);
 		}
 		else if (response.isCancelAndSell())
+		{
+			handleCancelAndSell(state, response);
+		}
+	}
+
+	private void handleCancelAndSell(OfferAdjustmentState state, FlipAdjustmentResponse response)
+	{
+		if (response.getMessage() != null && !response.getMessage().isEmpty())
+		{
+			notifyPrompt(response.getMessage(), state.itemId);
+		}
+		if (response.getRecommendedPrice() != null)
+		{
+			// Overnight exit that already bought items: surface the sell price to list at.
+			notifyHighlight(state.geSlot, response.getRecommendedPrice());
+			notifyInventoryHighlight(state.itemId);
+			BiConsumer<Integer, Integer> cb = onSellPriceAdjusted;
+			if (cb != null)
+			{
+				cb.accept(state.itemId, response.getRecommendedPrice());
+			}
+		}
+		else
 		{
 			log.debug("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
 			fetchReplacementRecommendation(state);
