@@ -524,6 +524,10 @@ public class FlipSmartApiClient
 		{
 			body.addProperty("style", req.getStyle());
 		}
+		if (req.getRsn() != null)
+		{
+			body.addProperty("rsn", req.getRsn());
+		}
 		return body;
 	}
 

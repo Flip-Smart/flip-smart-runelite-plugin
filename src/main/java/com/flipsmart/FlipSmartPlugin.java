@@ -1853,6 +1853,7 @@ public class FlipSmartPlugin extends Plugin
 			.dailyVolume(dailyVolume == null ? 0 : dailyVolume)
 			.timeframe(FlipSmartConfig.FlipTimeframe.TWELVE_HOURS.getApiValue())
 			.style(config.flipStyle().getApiValue())
+			.rsn(sess.getRsn())
 			.build();
 
 		apiClient.postSellPriceCheckAsync(req)

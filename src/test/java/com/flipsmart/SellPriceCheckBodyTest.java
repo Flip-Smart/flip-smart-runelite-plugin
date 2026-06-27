@@ -19,6 +19,7 @@ public class SellPriceCheckBodyTest
 			.dailyVolume(5_000_000)
 			.timeframe("12h")
 			.style("balanced")
+			.rsn("Zezima")
 			.build();
 
 		JsonObject body = FlipSmartApiClient.buildSellPriceCheckBody(req);
@@ -29,6 +30,7 @@ public class SellPriceCheckBodyTest
 		assertEquals(5_000_000, body.get("daily_volume").getAsInt());
 		assertEquals("12h", body.get("timeframe").getAsString());
 		assertEquals("balanced", body.get("style").getAsString());
+		assertEquals("Zezima", body.get("rsn").getAsString());
 	}
 
 	@Test
@@ -40,6 +42,7 @@ public class SellPriceCheckBodyTest
 		JsonObject body = FlipSmartApiClient.buildSellPriceCheckBody(req);
 		assertFalse(body.has("timeframe"));
 		assertFalse(body.has("style"));
+		assertFalse(body.has("rsn"));
 		assertTrue(body.has("item_id"));
 	}
 }

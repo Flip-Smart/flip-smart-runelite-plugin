@@ -13,4 +13,5 @@ public class SellPriceCheckRequest
 	private final int dailyVolume;
 	private final String timeframe;
 	private final String style;
+	private final String rsn;
 }
