@@ -31,4 +31,24 @@ public class AutoRecommend12hBuyHoldTest
 		assertTrue(AutoRecommendService.localBuyStaleDetectionEnabled(
 			FlipSmartConfig.FlipTimeframe.FOUR_HOURS));
 	}
+
+	@Test
+	public void twelveHourLadderPromptsBypassCompetitivenessGate()
+	{
+		// The backend is authoritative for 12h (rung readjusts / 8h exit); the local
+		// green/red-border competitiveness check must not drop those prompts.
+		assertFalse(AutoRecommendService.competitivenessGateApplies(
+			FlipSmartConfig.FlipTimeframe.TWELVE_HOURS));
+	}
+
+	@Test
+	public void shorterTimeframesKeepCompetitivenessGate()
+	{
+		assertTrue(AutoRecommendService.competitivenessGateApplies(
+			FlipSmartConfig.FlipTimeframe.ACTIVE));
+		assertTrue(AutoRecommendService.competitivenessGateApplies(
+			FlipSmartConfig.FlipTimeframe.TWO_HOURS));
+		assertTrue(AutoRecommendService.competitivenessGateApplies(
+			FlipSmartConfig.FlipTimeframe.FOUR_HOURS));
+	}
 }

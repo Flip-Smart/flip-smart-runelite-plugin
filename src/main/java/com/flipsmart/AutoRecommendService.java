@@ -81,6 +81,13 @@ public class AutoRecommendService
 			? now - 1
 			: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
 	}
+
+	static boolean competitivenessGateApplies(FlipSmartConfig.FlipTimeframe timeframe)
+	{
+		// For 12h the backend is authoritative (rung readjusts / 8h exit); the local
+		// green/red-border competitiveness check must not suppress those prompts.
+		return timeframe != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS;
+	}
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
@@ -1415,15 +1422,18 @@ public class AutoRecommendService
 			return;
 		}
 
-		// Only prompt if the offer is actually uncompetitive (red border).
-		// Green-bordered offers are still within the market spread and likely to fill.
-		FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
-		if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+		// Only prompt if the offer is actually uncompetitive (red border) — except for 12h,
+		// where the backend's exit/readjust decision is authoritative and must surface.
+		if (competitivenessGateApplies(config.flipTimeframe()))
 		{
-			log.debug("Auto-recommend: API suggests action for {} but offer is still competitive — rescheduling",
-				offer.getItemName());
-			adjustments.putBuyDeadline(itemId, System.currentTimeMillis() + nextDelay);
-			return;
+			FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
+			if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+			{
+				log.debug("Auto-recommend: API suggests action for {} but offer is still competitive — rescheduling",
+					offer.getItemName());
+				adjustments.putBuyDeadline(itemId, System.currentTimeMillis() + nextDelay);
+				return;
+			}
 		}
 
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
@@ -1570,6 +1580,11 @@ public class AutoRecommendService
 				{
 					return true; // No longer in GE
 				}
+				// 12h ladder prompts are backend-authoritative — keep them regardless of competitiveness.
+				if (!competitivenessGateApplies(config.flipTimeframe()))
+				{
+					return false;
+				}
 				// Re-check competitiveness — wiki prices may have refreshed
 				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
 				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
@@ -1632,6 +1647,10 @@ public class AutoRecommendService
 				if (current == null)
 				{
 					return true;
+				}
+				if (!competitivenessGateApplies(config.flipTimeframe()))
+				{
+					return false;
 				}
 				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
 				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
