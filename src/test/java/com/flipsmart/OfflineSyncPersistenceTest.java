@@ -7,6 +7,7 @@ import com.google.gson.Gson;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.api.ItemComposition;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -44,6 +45,7 @@ public class OfflineSyncPersistenceTest
 	private OfferStore store;
 	private ActiveFlipTracker activeFlipTracker;
 	private OfflineSyncService service;
+	private ItemManager itemManager;
 	private Map<String, String> configStore;
 
 	@Before
@@ -80,6 +82,7 @@ public class OfflineSyncPersistenceTest
 		}).when(clientThread).invokeLater(any(Runnable.class));
 
 		activeFlipTracker = mock(ActiveFlipTracker.class);
+		itemManager = mock(ItemManager.class);
 
 		service = new OfflineSyncService(
 			session,
@@ -90,7 +93,7 @@ public class OfflineSyncPersistenceTest
 			activeFlipTracker,
 			geHistoryService,
 			store,
-			mock(ItemManager.class));
+			itemManager);
 	}
 
 	@Test
@@ -324,6 +327,52 @@ public class OfflineSyncPersistenceTest
 
 		assertEquals("phantom collected item with terminal record + no inventory must be pruned", 1, removed);
 		verify(session, times(1)).removeCollectedItem(4824);
+	}
+
+	@Test
+	public void relog_restoresOfferAge_forStillLiveOffer()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+
+		// Offer placed long ago — activity anchored at 1000.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 111, 0, 5), 1000L);
+		service.persistOfferState();
+
+		// Fresh login re-anchors the still-live offer to "now" (9000).
+		store.importRecords(Collections.emptyList());
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 111, 0, 5), 9000L);
+		assertEquals("re-anchored to login time before restore", 9000L,
+			store.bySlot(0).getEffectiveLastActivityAtMillis());
+
+		ItemComposition comp = itemComp("i111");
+		when(itemManager.getItemComposition(111)).thenReturn(comp);
+		GrandExchangeOffer live = geOffer(111, GrandExchangeOfferState.BUYING, 5, 100);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[]{live});
+
+		service.syncOfflineFills();
+
+		assertEquals("offer age restored across relog", 1000L,
+			store.bySlot(0).getEffectiveLastActivityAtMillis());
+	}
+
+	private static GrandExchangeOffer geOffer(int itemId, GrandExchangeOfferState state, int total, int price)
+	{
+		GrandExchangeOffer o = mock(GrandExchangeOffer.class);
+		when(o.getItemId()).thenReturn(itemId);
+		when(o.getState()).thenReturn(state);
+		when(o.getTotalQuantity()).thenReturn(total);
+		when(o.getPrice()).thenReturn(price);
+		when(o.getQuantitySold()).thenReturn(0);
+		when(o.getSpent()).thenReturn(0);
+		return o;
+	}
+
+	private static ItemComposition itemComp(String name)
+	{
+		ItemComposition c = mock(ItemComposition.class);
+		when(c.getName()).thenReturn(name);
+		return c;
 	}
 
 	private static com.flipsmart.domain.offer.OfferSignal sig(int slot, GrandExchangeOfferState s, int itemId, int sold, int total)

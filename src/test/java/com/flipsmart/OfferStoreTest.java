@@ -291,4 +291,33 @@ public class OfferStoreTest
 
         assertEquals("no record changed for unknown id", before, store.bySlot(2).getCreatedAtMillis());
     }
+
+    @Test
+    public void correctActivityAt_restoresEffectiveLastActivity()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(2, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        long offerId = store.bySlot(2).getOfferId();
+        assertEquals("freshly seen offer anchors activity to now", NOW,
+            store.bySlot(2).getEffectiveLastActivityAtMillis());
+
+        store.correctActivityAt(offerId, 42L);
+
+        assertEquals("activity restored to the older value", 42L,
+            store.bySlot(2).getEffectiveLastActivityAtMillis());
+        assertEquals("slot index preserved", Integer.valueOf(2), store.bySlot(2).getSlot());
+    }
+
+    @Test
+    public void correctActivityAt_unknownOfferId_isNoOp()
+    {
+        OfferStore store = new OfferStore();
+        store.apply(sig(2, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        long before = store.bySlot(2).getEffectiveLastActivityAtMillis();
+
+        store.correctActivityAt(999_999L, 42L);
+
+        assertEquals("no record changed for unknown id", before,
+            store.bySlot(2).getEffectiveLastActivityAtMillis());
+    }
 }
