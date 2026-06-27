@@ -51,6 +51,13 @@ public class AutoRecommendService
 {
 	/** How long before a buy offer is considered stale (15 minutes) */
 	private static final long INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000L;
+
+	static boolean localBuyStaleDetectionEnabled(FlipSmartConfig.FlipTimeframe timeframe)
+	{
+		// 12h buys hold until the backend's 8h exit timer; the short local inactivity
+		// threshold would queue a "consider cancelling" prompt far too early.
+		return timeframe != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS;
+	}
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
@@ -1174,6 +1181,10 @@ public class AutoRecommendService
 		PlayerSession session,
 		long now)
 	{
+		if (!localBuyStaleDetectionEnabled(config.flipTimeframe()))
+		{
+			return null;
+		}
 		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (!offer.isBuy() || offer.getState() == OfferState.FILLED)
