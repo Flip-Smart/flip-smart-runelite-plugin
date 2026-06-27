@@ -348,6 +348,29 @@ public class ManualAdjustmentTracker
 		}
 		else if (response.isCancelAndSell())
 		{
+			handleCancelAndSell(state, response);
+		}
+	}
+
+	private void handleCancelAndSell(OfferAdjustmentState state, FlipAdjustmentResponse response)
+	{
+		if (response.getMessage() != null && !response.getMessage().isEmpty())
+		{
+			notifyPrompt(response.getMessage(), state.itemId);
+		}
+		if (response.getRecommendedPrice() != null)
+		{
+			// Overnight exit that already bought items: surface the sell price to list at.
+			notifyHighlight(state.geSlot, response.getRecommendedPrice());
+			notifyInventoryHighlight(state.itemId);
+			BiConsumer<Integer, Integer> cb = onSellPriceAdjusted;
+			if (cb != null)
+			{
+				cb.accept(state.itemId, response.getRecommendedPrice());
+			}
+		}
+		else
+		{
 			log.debug("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
 			fetchReplacementRecommendation(state);
 		}

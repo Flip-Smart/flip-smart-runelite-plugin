@@ -54,6 +54,11 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.api.ChatMessageType;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 
 import javax.inject.Inject;
 import java.awt.Point;
@@ -97,7 +102,10 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private FlipSmartApiClient apiClient;
-	
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
 	@Inject
 	private KeyManager keyManager;
 	
@@ -1857,6 +1865,26 @@ public class FlipSmartPlugin extends Plugin
 		{
 			grandExchangeTracker.refreshSellFocus(itemId);
 		}
+		notifyRecalced12hSellPrice(itemId, freshSellPrice);
+	}
+
+	private void notifyRecalced12hSellPrice(int itemId, int freshSellPrice)
+	{
+		String itemName = itemManager.getItemComposition(itemId).getName();
+		String message = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[FlipSmart] ")
+			.append(ChatColorType.NORMAL)
+			.append("Refreshed overnight sell price for " + itemName + " to ")
+			.append(ChatColorType.HIGHLIGHT)
+			.append(GpUtils.formatGPWithSuffix(freshSellPrice) + " gp")
+			.append(ChatColorType.NORMAL)
+			.append(".")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(message)
+			.build());
 	}
 
 	private com.flipsmart.domain.offer.OfferRecord findLiveOfferForItem(int itemId)
