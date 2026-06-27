@@ -58,6 +58,29 @@ public class AutoRecommendService
 		// threshold would queue a "consider cancelling" prompt far too early.
 		return timeframe != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS;
 	}
+
+	private static final long TWELVE_H_SELL_CHECK_DELAY_MS = 30 * 60 * 1000L;
+
+	static long sellInitialCheckDelayMs(FlipSmartConfig.FlipTimeframe timeframe)
+	{
+		// 12h overnight sells re-check on the backend's 30-min cadence; a fresh 5-min timer
+		// re-armed on every relist would re-prompt far too often for an overnight flip.
+		if (timeframe == FlipSmartConfig.FlipTimeframe.TWELVE_HOURS)
+		{
+			return TWELVE_H_SELL_CHECK_DELAY_MS;
+		}
+		return AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+	}
+
+	static long loginCheckDeadlineMs(long offerAgeMs, long now)
+	{
+		// An offer already past the initial check delay is re-checked immediately on login
+		// (now-1); otherwise it waits out the remaining delay. This surfaces a 12h buy's 8h
+		// exit right after login when the timer elapsed while logged off.
+		return offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+			? now - 1
+			: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+	}
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
@@ -1502,8 +1525,7 @@ public class AutoRecommendService
 	private void scheduleMissingBuyTimer(OfferRecord offer, long now)
 	{
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
-		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
-			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		adjustments.putBuyDeadline(offer.getItemId(), deadline);
 		log.debug("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
 			offer.getItemName(), offerAgeMs / 60000);
@@ -1513,8 +1535,7 @@ public class AutoRecommendService
 	{
 		Integer buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
-		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
-			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		SellAdjustmentState state = new SellAdjustmentState(
 			offer.getItemId(), offer.getItemName(), buyPrice, deadline);
 		adjustments.putSellState(offer.getItemId(), state);
@@ -1743,7 +1764,7 @@ public class AutoRecommendService
 			buyPrice = sellOffer.getPrice();
 		}
 
-		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+		long delay = sellInitialCheckDelayMs(config.flipTimeframe());
 		long deadline = System.currentTimeMillis() + delay;
 
 		SellAdjustmentState state = new SellAdjustmentState(
