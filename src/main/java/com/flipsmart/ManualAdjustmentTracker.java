@@ -290,7 +290,7 @@ public class ManualAdjustmentTracker
 	{
 		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
-
+		String style = config.flipStyle().getApiValue();
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
 
 		apiClient.getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
@@ -304,7 +304,7 @@ public class ManualAdjustmentTracker
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
 			.rsn(rsn)
-			.style(config.flipStyle().getApiValue())
+			.style(style)
 			.build()
 		).thenAccept(response ->
 		{
