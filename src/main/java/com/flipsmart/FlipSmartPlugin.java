@@ -1783,8 +1783,34 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	private static final long SELL_RECALC_DEBOUNCE_MS = 2000;
+	// Once a 12h sell is older than the rung-1 boundary, the /flips/adjustment ladder owns
+	// its price; re-anchoring to the fresh overnight estimate here would fight the ladder.
+	static final long LADDER_HANDOFF_MINUTES = 360;
 	private int last12hRecalcItemId = -1;
 	private long last12hRecalcMs;
+
+	static boolean ladderOwnsSell(com.flipsmart.domain.offer.OfferRecord liveSell, long now)
+	{
+		if (liveSell == null)
+		{
+			return false;
+		}
+		long ageMinutes = (now - liveSell.getEffectiveLastActivityAtMillis()) / 60_000L;
+		return ageMinutes >= LADDER_HANDOFF_MINUTES;
+	}
+
+	private com.flipsmart.domain.offer.OfferRecord findLiveSellForItem(int itemId)
+	{
+		for (com.flipsmart.domain.offer.OfferRecord o : offerStore.liveOffers())
+		{
+			if (o.getItemId() == itemId && !o.isBuy()
+				&& o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
+			{
+				return o;
+			}
+		}
+		return null;
+	}
 
 	public void maybeRecalc12hSellPrice(int itemId)
 	{
@@ -1803,6 +1829,10 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		long now = System.currentTimeMillis();
+		if (ladderOwnsSell(findLiveSellForItem(itemId), now))
+		{
+			return;
+		}
 		if (itemId == last12hRecalcItemId && (now - last12hRecalcMs) < SELL_RECALC_DEBOUNCE_MS)
 		{
 			return;
@@ -1877,7 +1907,7 @@ public class FlipSmartPlugin extends Plugin
 			.append(ChatColorType.NORMAL)
 			.append("Refreshed overnight sell price for " + itemName + " to ")
 			.append(ChatColorType.HIGHLIGHT)
-			.append(GpUtils.formatGPWithSuffix(freshSellPrice) + " gp")
+			.append(GpUtils.formatGPWithSuffix(freshSellPrice))
 			.append(ChatColorType.NORMAL)
 			.append(".")
 			.build();
