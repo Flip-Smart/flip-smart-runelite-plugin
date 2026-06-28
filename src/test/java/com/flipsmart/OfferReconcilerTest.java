@@ -92,4 +92,52 @@ public class OfferReconcilerTest
         assertEquals(1, plan.offlineCollected.size());
         assertEquals(20L, plan.offlineCollected.get(0).getOfferId());
     }
+
+    @Test
+    public void staleNonTerminalRecord_olderThanFreshness_isHistoryNotOfflineCollected()
+    {
+        // A non-terminal record last active before the freshness cutoff is a leftover from an
+        // older session (already known to the backend). It must not drive an offline-fill prompt;
+        // it belongs to staleHistory so the caller can terminalize it without nagging.
+        OfferRecord stale = OfferRecord.newOffer(30L, 1, 400, "i400", false, 3, 100, NOW - 10_000)
+            .withActivityAtMillis(NOW - 10_000);
+        long freshnessThreshold = NOW - 5_000;
+
+        OfferReconciler.Plan plan = OfferReconciler.reconcile(
+            Collections.singletonList(stale), Collections.emptyList(), NOW, freshnessThreshold);
+
+        assertTrue("stale leftover must not be an offline fill", plan.offlineCollected.isEmpty());
+        assertEquals(1, plan.staleHistory.size());
+        assertEquals(30L, plan.staleHistory.get(0).getOfferId());
+    }
+
+    @Test
+    public void recentNonTerminalRecord_newerThanFreshness_isOfflineCollected()
+    {
+        OfferRecord fresh = OfferRecord.newOffer(31L, 2, 500, "i500", false, 3, 100, NOW - 2_000)
+            .withActivityAtMillis(NOW - 2_000);
+        long freshnessThreshold = NOW - 5_000;
+
+        OfferReconciler.Plan plan = OfferReconciler.reconcile(
+            Collections.singletonList(fresh), Collections.emptyList(), NOW, freshnessThreshold);
+
+        assertEquals(1, plan.offlineCollected.size());
+        assertEquals(31L, plan.offlineCollected.get(0).getOfferId());
+        assertTrue(plan.staleHistory.isEmpty());
+    }
+
+    @Test
+    public void threeArgReconcile_appliesNoFreshnessGate()
+    {
+        // Back-compat: the 3-arg form (used by the preload pass, which terminalizes everything
+        // anyway) keeps treating every non-terminal unmatched record as offline-collected.
+        OfferRecord old = OfferRecord.newOffer(32L, 1, 600, "i600", false, 3, 100, NOW - 999_999)
+            .withActivityAtMillis(NOW - 999_999);
+
+        OfferReconciler.Plan plan = OfferReconciler.reconcile(
+            Collections.singletonList(old), Collections.emptyList(), NOW);
+
+        assertEquals(1, plan.offlineCollected.size());
+        assertTrue(plan.staleHistory.isEmpty());
+    }
 }

@@ -16,9 +16,25 @@ public final class OfferReconciler
         public final List<OfferRecord> reattached = new ArrayList<>();
         public final List<OfferSignal> minted = new ArrayList<>();
         public final List<OfferRecord> offlineCollected = new ArrayList<>();
+        // Non-terminal records last active before the freshness cutoff: leftovers from older
+        // sessions (already known to the backend). Terminalize them, but never prompt.
+        public final List<OfferRecord> staleHistory = new ArrayList<>();
     }
 
     public static Plan reconcile(List<OfferRecord> persisted, List<OfferSignal> liveSlots, long now)
+    {
+        // No freshness gate: every non-terminal unmatched record is treated as offline-collected.
+        // Used by the preload pass, which terminalizes both buckets regardless.
+        return reconcile(persisted, liveSlots, now, Long.MIN_VALUE);
+    }
+
+    /**
+     * @param freshnessThresholdMillis a non-terminal unmatched record counts as a genuine offline
+     *     fill only if its last activity is at or after this cutoff; older records are leftovers
+     *     from prior sessions and go to {@link Plan#staleHistory} instead of driving a prompt.
+     */
+    public static Plan reconcile(List<OfferRecord> persisted, List<OfferSignal> liveSlots, long now,
+        long freshnessThresholdMillis)
     {
         Plan plan = new Plan();
         List<OfferRecord> remaining = new ArrayList<>(persisted);
@@ -48,7 +64,15 @@ public final class OfferReconciler
         // offline fills — including them re-flagged the whole backlog every login (false nag).
         for (OfferRecord r : remaining)
         {
-            if (!r.getState().isTerminal())
+            if (r.getState().isTerminal())
+            {
+                continue;
+            }
+            if (r.getEffectiveLastActivityAtMillis() < freshnessThresholdMillis)
+            {
+                plan.staleHistory.add(r);
+            }
+            else
             {
                 plan.offlineCollected.add(r);
             }

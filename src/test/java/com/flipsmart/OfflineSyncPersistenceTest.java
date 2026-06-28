@@ -198,6 +198,8 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// We've synced before (marker 500) and this fill is fresh since then (activity 2000).
+		configStore.put("offlineSyncAt_Zezima", "500");
 		// Item still in inventory (2 traded units), so the inventory gate allows the re-add.
 		when(activeFlipTracker.getInventoryCountForItem(111)).thenReturn(2);
 
@@ -239,6 +241,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put("offlineSyncAt_Zezima", "500"); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -263,6 +266,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put("offlineSyncAt_Zezima", "500"); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(7);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -327,6 +331,55 @@ public class OfflineSyncPersistenceTest
 
 		assertEquals("phantom collected item with terminal record + no inventory must be pruned", 1, removed);
 		verify(session, times(1)).removeCollectedItem(4824);
+	}
+
+	/**
+	 * A non-terminal persisted record last active BEFORE the previous sync is a leftover from an
+	 * earlier session (already backfilled) — relogging must not re-fire the "open GE History" prompt
+	 * for it. This is the false-nag the user hit: a relog with no new trades still prompted.
+	 */
+	@Test
+	public void staleOfflineRecordOlderThanLastSync_doesNotPrompt()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// Last sync ran at 5000; this record's last activity (2000) predates it → already-known history.
+		configStore.put("offlineSyncAt_Zezima", "5000");
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 222, 0, 5), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 222, 2, 5), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		verify(geHistoryService, never()).registerOfflineFill(222);
+	}
+
+	/**
+	 * First sync for an account (no marker yet): the persisted blob predates the feature and is
+	 * already known to the backend, so nothing is prompted — and the marker is written so genuinely
+	 * new offline fills on later logins are detected.
+	 */
+	@Test
+	public void firstSyncWithNoMarker_suppressesPreExistingBlob_andWritesMarker()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// No offlineSyncAt_Zezima marker present.
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 333, 0, 5), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 333, 2, 5), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		verify(geHistoryService, never()).registerOfflineFill(333);
+		assertTrue("a sync marker is written so later genuine fills are detected",
+			configStore.containsKey("offlineSyncAt_Zezima"));
 	}
 
 	@Test
