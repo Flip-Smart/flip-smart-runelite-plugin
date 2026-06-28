@@ -18,4 +18,5 @@ public class FlipAdjustmentRequest
 	public final int totalQuantity;
 	public final String timeframe;
 	public final String rsn;
+	public final String style;
 }

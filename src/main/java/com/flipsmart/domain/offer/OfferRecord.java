@@ -94,6 +94,12 @@ public final class OfferRecord
             filledQuantity, spent, state, newCreatedAtMillis, completedAtMillis, lastActivityAtMillis, offerStage);
     }
 
+    public OfferRecord withActivityAtMillis(long newLastActivityAtMillis)
+    {
+        return new OfferRecord(offerId, slot, itemId, itemName, buy, totalQuantity, price,
+            filledQuantity, spent, state, createdAtMillis, completedAtMillis, newLastActivityAtMillis, offerStage);
+    }
+
     public OfferRecord withOfferStage(String newStage)
     {
         return new OfferRecord(offerId, slot, itemId, itemName, buy, totalQuantity, price,
