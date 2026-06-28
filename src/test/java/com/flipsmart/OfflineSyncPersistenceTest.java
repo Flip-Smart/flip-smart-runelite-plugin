@@ -36,6 +36,7 @@ import static org.mockito.Mockito.when;
 public class OfflineSyncPersistenceTest
 {
 	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String SYNC_MARKER_ZEZIMA = "offlineSyncAt_Zezima";
 
 	private PlayerSession session;
 	private ConfigManager configManager;
@@ -199,7 +200,7 @@ public class OfflineSyncPersistenceTest
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
 		// We've synced before (marker 500) and this fill is fresh since then (activity 2000).
-		configStore.put("offlineSyncAt_Zezima", "500");
+		configStore.put(SYNC_MARKER_ZEZIMA, "500");
 		// Item still in inventory (2 traded units), so the inventory gate allows the re-add.
 		when(activeFlipTracker.getInventoryCountForItem(111)).thenReturn(2);
 
@@ -241,7 +242,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put("offlineSyncAt_Zezima", "500"); // fresh since last sync (activity 2000)
+		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -266,7 +267,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put("offlineSyncAt_Zezima", "500"); // fresh since last sync (activity 2000)
+		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(7);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -344,7 +345,7 @@ public class OfflineSyncPersistenceTest
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
 		// Last sync ran at 5000; this record's last activity (2000) predates it → already-known history.
-		configStore.put("offlineSyncAt_Zezima", "5000");
+		configStore.put(SYNC_MARKER_ZEZIMA, "5000");
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 222, 0, 5), 1000L);
 		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 222, 2, 5), 2000L);
@@ -379,7 +380,7 @@ public class OfflineSyncPersistenceTest
 
 		verify(geHistoryService, never()).registerOfflineFill(333);
 		assertTrue("a sync marker is written so later genuine fills are detected",
-			configStore.containsKey("offlineSyncAt_Zezima"));
+			configStore.containsKey(SYNC_MARKER_ZEZIMA));
 	}
 
 	@Test

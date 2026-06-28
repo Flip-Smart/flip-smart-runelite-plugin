@@ -397,7 +397,7 @@ public class OfflineSyncService
 			}
 		}
 
-		if (!plan.staleHistory.isEmpty())
+		if (!plan.staleHistory.isEmpty() && log.isDebugEnabled())
 		{
 			log.debug("Skipped {} stale persisted offer(s) older than last sync — already-known history, not prompted",
 				plan.staleHistory.size());
