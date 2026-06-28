@@ -1,5 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
@@ -53,6 +54,11 @@ import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.api.ChatMessageType;
+import net.runelite.client.chat.ChatColorType;
+import net.runelite.client.chat.ChatMessageBuilder;
+import net.runelite.client.chat.ChatMessageManager;
+import net.runelite.client.chat.QueuedMessage;
 
 import javax.inject.Inject;
 import java.awt.Point;
@@ -96,7 +102,10 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private FlipSmartApiClient apiClient;
-	
+
+	@Inject
+	private ChatMessageManager chatMessageManager;
+
 	@Inject
 	private KeyManager keyManager;
 	
@@ -1771,6 +1780,142 @@ public class FlipSmartPlugin extends Plugin
 		{
 			autoRecommendService.removeAdvisorResell(itemId);
 		}
+	}
+
+	private static final long SELL_RECALC_DEBOUNCE_MS = 2000;
+	// Once a 12h sell is older than the rung-1 boundary, the /flips/adjustment ladder owns
+	// its price; re-anchoring to the fresh overnight estimate here would fight the ladder.
+	static final long LADDER_HANDOFF_MINUTES = 360;
+	private int last12hRecalcItemId = -1;
+	private long last12hRecalcMs;
+
+	static boolean ladderOwnsSell(com.flipsmart.domain.offer.OfferRecord liveSell, long now)
+	{
+		if (liveSell == null)
+		{
+			return false;
+		}
+		long ageMinutes = (now - liveSell.getEffectiveLastActivityAtMillis()) / 60_000L;
+		return ageMinutes >= LADDER_HANDOFF_MINUTES;
+	}
+
+	private com.flipsmart.domain.offer.OfferRecord findLiveSellForItem(int itemId)
+	{
+		for (com.flipsmart.domain.offer.OfferRecord o : offerStore.liveOffers())
+		{
+			if (o.getItemId() == itemId && !o.isBuy()
+				&& o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
+			{
+				return o;
+			}
+		}
+		return null;
+	}
+
+	public void maybeRecalc12hSellPrice(int itemId)
+	{
+		if (config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS)
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		Integer originalSell = sess.getRecommendedPrice(itemId);
+		if (originalSell == null || originalSell <= 0)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		if (ladderOwnsSell(findLiveSellForItem(itemId), now))
+		{
+			return;
+		}
+		if (itemId == last12hRecalcItemId && (now - last12hRecalcMs) < SELL_RECALC_DEBOUNCE_MS)
+		{
+			return;
+		}
+		last12hRecalcItemId = itemId;
+		last12hRecalcMs = now;
+
+		WikiPrice market = apiClient.getWikiPrice(itemId);
+		if (market == null)
+		{
+			return;
+		}
+		Integer dailyVolume = apiClient.getCachedDailyVolume(itemId);
+		SellPriceCheckRequest req = SellPriceCheckRequest.builder()
+			.itemId(itemId)
+			.originalSellPrice(originalSell)
+			.currentMarketHigh(market.instaBuy)
+			.dailyVolume(dailyVolume == null ? 0 : dailyVolume)
+			.timeframe(FlipSmartConfig.FlipTimeframe.TWELVE_HOURS.getApiValue())
+			.style(config.flipStyle().getApiValue())
+			.rsn(sess.getRsn())
+			.build();
+
+		apiClient.postSellPriceCheckAsync(req)
+			.thenAccept(resp ->
+			{
+				if (resp == null)
+				{
+					return;
+				}
+				int fresh = resp.getRecommendedSellPrice();
+				if (fresh <= 0 || fresh == originalSell)
+				{
+					return;
+				}
+				clientThread.invokeLater(() -> applyRecalced12hSellPrice(itemId, fresh));
+			})
+			.exceptionally(ex ->
+			{
+				if (log.isDebugEnabled())
+				{
+					log.debug("12h sell-price recalc failed for {}: {}", itemId, ex.getMessage());
+				}
+				return null;
+			});
+	}
+
+	private void applyRecalced12hSellPrice(int itemId, int freshSellPrice)
+	{
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		sess.setRecommendedPrice(itemId, freshSellPrice);
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.setDisplayedSellPrice(itemId, freshSellPrice);
+		}
+		if (grandExchangeTracker != null)
+		{
+			grandExchangeTracker.refreshSellFocus(itemId);
+		}
+		notifyRecalced12hSellPrice(itemId, freshSellPrice);
+	}
+
+	private void notifyRecalced12hSellPrice(int itemId, int freshSellPrice)
+	{
+		String itemName = itemManager.getItemComposition(itemId).getName();
+		String message = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[FlipSmart] ")
+			.append(ChatColorType.NORMAL)
+			.append("Refreshed overnight sell price for " + itemName + " to ")
+			.append(ChatColorType.HIGHLIGHT)
+			.append(GpUtils.formatGPWithSuffix(freshSellPrice))
+			.append(ChatColorType.NORMAL)
+			.append(".")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(message)
+			.build());
 	}
 
 	private com.flipsmart.domain.offer.OfferRecord findLiveOfferForItem(int itemId)

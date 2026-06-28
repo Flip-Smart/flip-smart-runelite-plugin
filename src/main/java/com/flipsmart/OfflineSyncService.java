@@ -483,6 +483,14 @@ public class OfflineSyncService
 		{
 			offerStore.correctCreatedAt(current.getOfferId(), persisted.getCreatedAtMillis());
 		}
+		// The adjustment timer reads getEffectiveLastActivityAtMillis(), which prefers
+		// lastActivityAtMillis — re-anchored to login on a fresh sighting — so restoring
+		// createdAt alone leaves the offer's age reset across a relog.
+		long persistedActivity = persisted.getEffectiveLastActivityAtMillis();
+		if (persistedActivity > 0 && persistedActivity < current.getEffectiveLastActivityAtMillis())
+		{
+			offerStore.correctActivityAt(current.getOfferId(), persistedActivity);
+		}
 	}
 
 	// =====================

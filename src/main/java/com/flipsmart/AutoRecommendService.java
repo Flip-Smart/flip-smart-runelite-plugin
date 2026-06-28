@@ -51,6 +51,43 @@ public class AutoRecommendService
 {
 	/** How long before a buy offer is considered stale (15 minutes) */
 	private static final long INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000L;
+
+	static boolean localBuyStaleDetectionEnabled(FlipSmartConfig.FlipTimeframe timeframe)
+	{
+		// 12h buys hold until the backend's 8h exit timer; the short local inactivity
+		// threshold would queue a "consider cancelling" prompt far too early.
+		return timeframe != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS;
+	}
+
+	private static final long TWELVE_H_SELL_CHECK_DELAY_MS = 30 * 60 * 1000L;
+
+	static long sellInitialCheckDelayMs(FlipSmartConfig.FlipTimeframe timeframe)
+	{
+		// 12h overnight sells re-check on the backend's 30-min cadence; a fresh 5-min timer
+		// re-armed on every relist would re-prompt far too often for an overnight flip.
+		if (timeframe == FlipSmartConfig.FlipTimeframe.TWELVE_HOURS)
+		{
+			return TWELVE_H_SELL_CHECK_DELAY_MS;
+		}
+		return AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+	}
+
+	static long loginCheckDeadlineMs(long offerAgeMs, long now)
+	{
+		// An offer already past the initial check delay is re-checked immediately on login
+		// (now-1); otherwise it waits out the remaining delay. This surfaces a 12h buy's 8h
+		// exit right after login when the timer elapsed while logged off.
+		return offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+			? now - 1
+			: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+	}
+
+	static boolean competitivenessGateApplies(FlipSmartConfig.FlipTimeframe timeframe)
+	{
+		// For 12h the backend is authoritative (rung readjusts / 8h exit); the local
+		// green/red-border competitiveness check must not suppress those prompts.
+		return timeframe != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS;
+	}
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
@@ -1174,6 +1211,10 @@ public class AutoRecommendService
 		PlayerSession session,
 		long now)
 	{
+		if (!localBuyStaleDetectionEnabled(config.flipTimeframe()))
+		{
+			return null;
+		}
 		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (!offer.isBuy() || offer.getState() == OfferState.FILLED)
@@ -1381,15 +1422,18 @@ public class AutoRecommendService
 			return;
 		}
 
-		// Only prompt if the offer is actually uncompetitive (red border).
-		// Green-bordered offers are still within the market spread and likely to fill.
-		FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
-		if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+		// Only prompt if the offer is actually uncompetitive (red border) — except for 12h,
+		// where the backend's exit/readjust decision is authoritative and must surface.
+		if (competitivenessGateApplies(config.flipTimeframe()))
 		{
-			log.debug("Auto-recommend: API suggests action for {} but offer is still competitive — rescheduling",
-				offer.getItemName());
-			adjustments.putBuyDeadline(itemId, System.currentTimeMillis() + nextDelay);
-			return;
+			FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(offer);
+			if (comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE)
+			{
+				log.debug("Auto-recommend: API suggests action for {} but offer is still competitive — rescheduling",
+					offer.getItemName());
+				adjustments.putBuyDeadline(itemId, System.currentTimeMillis() + nextDelay);
+				return;
+			}
 		}
 
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
@@ -1491,8 +1535,7 @@ public class AutoRecommendService
 	private void scheduleMissingBuyTimer(OfferRecord offer, long now)
 	{
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
-		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
-			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		adjustments.putBuyDeadline(offer.getItemId(), deadline);
 		log.debug("Auto-recommend: Scheduled missing buy timer for {} (age={}m)",
 			offer.getItemName(), offerAgeMs / 60000);
@@ -1502,8 +1545,7 @@ public class AutoRecommendService
 	{
 		Integer buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
-		long deadline = offerAgeMs >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
-			? now - 1 : now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - offerAgeMs);
+		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		SellAdjustmentState state = new SellAdjustmentState(
 			offer.getItemId(), offer.getItemName(), buyPrice, deadline);
 		adjustments.putSellState(offer.getItemId(), state);
@@ -1537,6 +1579,11 @@ public class AutoRecommendService
 				if (current == null)
 				{
 					return true; // No longer in GE
+				}
+				// 12h ladder prompts are backend-authoritative — keep them regardless of competitiveness.
+				if (!competitivenessGateApplies(config.flipTimeframe()))
+				{
+					return false;
 				}
 				// Re-check competitiveness — wiki prices may have refreshed
 				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
@@ -1600,6 +1647,10 @@ public class AutoRecommendService
 				if (current == null)
 				{
 					return true;
+				}
+				if (!competitivenessGateApplies(config.flipTimeframe()))
+				{
+					return false;
 				}
 				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
 				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
@@ -1732,7 +1783,7 @@ public class AutoRecommendService
 			buyPrice = sellOffer.getPrice();
 		}
 
-		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+		long delay = sellInitialCheckDelayMs(config.flipTimeframe());
 		long deadline = System.currentTimeMillis() + delay;
 
 		SellAdjustmentState state = new SellAdjustmentState(
