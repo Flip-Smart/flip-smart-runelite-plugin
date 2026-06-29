@@ -120,7 +120,8 @@ public final class TransactionLogger
             .recommendedSellPrice(recPrice)
             .rsn(rsn)
             .totalQuantity(r.getTotalQuantity())
-            .idempotencyKey(key);
+            .idempotencyKey(key)
+            .offerId(r.getOfferId());
     }
 
     /**

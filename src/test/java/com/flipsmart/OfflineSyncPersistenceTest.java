@@ -36,6 +36,7 @@ import static org.mockito.Mockito.when;
 public class OfflineSyncPersistenceTest
 {
 	private static final String CONFIG_GROUP = "flipsmart";
+	private static final String SYNC_MARKER_ZEZIMA = "offlineSyncAt_Zezima";
 
 	private PlayerSession session;
 	private ConfigManager configManager;
@@ -198,6 +199,8 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// We've synced before (marker 500) and this fill is fresh since then (activity 2000).
+		configStore.put(SYNC_MARKER_ZEZIMA, "500");
 		// Item still in inventory (2 traded units), so the inventory gate allows the re-add.
 		when(activeFlipTracker.getInventoryCountForItem(111)).thenReturn(2);
 
@@ -239,6 +242,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -263,6 +267,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(7);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -295,7 +300,12 @@ public class OfflineSyncPersistenceTest
 
 		service.persistOfferState();
 		store.importRecords(Collections.emptyList());
-		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		// Live slots ARE readable (a different offer occupies slot 1), so reconcile can correctly
+		// classify the gone 4824 record as offline-collected and terminalize it.
+		ItemComposition comp999 = itemComp("i999");
+		when(itemManager.getItemComposition(999)).thenReturn(comp999);
+		GrandExchangeOffer live999 = geOffer(999, GrandExchangeOfferState.BUYING, 5, 100);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[]{null, live999});
 
 		service.preloadPersistedOffers();
 
@@ -327,6 +337,80 @@ public class OfflineSyncPersistenceTest
 
 		assertEquals("phantom collected item with terminal record + no inventory must be pruned", 1, removed);
 		verify(session, times(1)).removeCollectedItem(4824);
+	}
+
+	/**
+	 * A non-terminal persisted record last active BEFORE the previous sync is a leftover from an
+	 * earlier session (already backfilled) — relogging must not re-fire the "open GE History" prompt
+	 * for it. This is the false-nag the user hit: a relog with no new trades still prompted.
+	 */
+	@Test
+	public void staleOfflineRecordOlderThanLastSync_doesNotPrompt()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// Last sync ran at 5000; this record's last activity (2000) predates it → already-known history.
+		configStore.put(SYNC_MARKER_ZEZIMA, "5000");
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 222, 0, 5), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 222, 2, 5), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		verify(geHistoryService, never()).registerOfflineFill(222);
+	}
+
+	/**
+	 * First sync for an account (no marker yet): the persisted blob predates the feature and is
+	 * already known to the backend, so nothing is prompted — and the marker is written so genuinely
+	 * new offline fills on later logins are detected.
+	 */
+	@Test
+	public void firstSyncWithNoMarker_suppressesPreExistingBlob_andWritesMarker()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		// No offlineSyncAt_Zezima marker present.
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 333, 0, 5), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 333, 2, 5), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		verify(geHistoryService, never()).registerOfflineFill(333);
+		assertTrue("a sync marker is written so later genuine fills are detected",
+			configStore.containsKey(SYNC_MARKER_ZEZIMA));
+	}
+
+	/**
+	 * Blob-growth guard (#759 release): at preload the GE slots are usually not loaded yet, so the
+	 * live snapshot is empty. Reconciling a still-live persisted offer against that empty snapshot
+	 * must NOT manufacture a terminal COLLECTED duplicate — doing so grew the persisted blob ~8
+	 * records every login. When slots are unreadable, classification is deferred to the +2s sync.
+	 */
+	@Test
+	public void preloadWithUnloadedSlots_doesNotManufactureTerminalDuplicate()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// A still-live BUY offer persisted from last session (NEW, slot 0).
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 7777, 0, 10), 1000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// GE slots not loaded yet at preload time (the login-timing race) → empty snapshot.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.preloadPersistedOffers();
+
+		assertTrue("no COLLECTED duplicate manufactured when GE slots are unloaded",
+			store.forItem(7777).isEmpty());
 	}
 
 	@Test

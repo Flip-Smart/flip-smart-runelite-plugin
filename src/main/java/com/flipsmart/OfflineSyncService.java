@@ -43,6 +43,9 @@ public class OfflineSyncService
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
+	// Wall-clock of the last completed offline sync, per RSN. A persisted offer is only a genuine
+	// offline fill if it was active since this marker; older leftovers are already-known history.
+	private static final String OFFLINE_SYNC_MARKER_KEY_PREFIX = "offlineSyncAt_";
 
 	/** Persisted collected-item entries older than this are dropped on restore. */
 	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
@@ -275,18 +278,28 @@ public class OfflineSyncService
 
 		List<OfferRecord> toImport = new ArrayList<>();
 		toImport.addAll(plan.reattached);
-		// Offline-collected records often persist as CANCELLED_PARTIAL, which is non-terminal:
-		// imported as-is they masquerade as live offers, so liveOffers() keeps returning them
-		// (auto-mode stale-prompt flap) and pruning refuses to drop them. Terminalize to COLLECTED
-		// so they read as finished history. plan.reattached (still-live slots) is left untouched.
-		for (OfferRecord collected : plan.offlineCollected)
+		// Terminalize offline-collected records to COLLECTED only when we can actually read the live
+		// slots. At preload time the GE slots are usually NOT loaded yet (empty snapshot), and
+		// reconciling against that would misclassify every still-live offer as offline-collected and
+		// import a COLLECTED duplicate — growing the persisted blob every login. When the snapshot is
+		// unreadable, defer classification to the +2s offline sync, which runs once slots are loaded.
+		// When slots ARE readable, terminalizing keeps genuinely-gone records (often CANCELLED_PARTIAL,
+		// non-terminal) from masquerading as live offers (auto-mode stale-prompt flap) and lets pruning
+		// drop them. plan.reattached (still-live slots) is left untouched.
+		if (!liveSlots.isEmpty())
 		{
-			toImport.add(collected.withState(OfferState.COLLECTED, now));
+			for (OfferRecord collected : plan.offlineCollected)
+			{
+				toImport.add(collected.withState(OfferState.COLLECTED, now));
+			}
 		}
 		offerStore.importRecords(toImport);
 
-		log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected",
-			plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size());
+		if (log.isDebugEnabled())
+		{
+			log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected (slots readable: {})",
+				plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size(), !liveSlots.isEmpty());
+		}
 	}
 
 	/** Reduce the live GE slots to {@link OfferSignal}s for reconciliation. */
@@ -342,6 +355,8 @@ public class OfflineSyncService
 
 	private void reconcileOfflineFills(List<OfferRecord> persistedRecords)
 	{
+		long now = System.currentTimeMillis();
+		long freshnessThreshold = readOfflineFillFreshnessThreshold(now);
 		Map<Integer, OfferRecord> currentOffers = liveOffersBySlot();
 		log.debug("Loaded {} persisted offers, comparing with {} current offers",
 			persistedRecords.size(), currentOffers.size());
@@ -352,9 +367,11 @@ public class OfflineSyncService
 		geHistoryService.setRecentlyPersistedOffers(persistedRecords);
 
 		// Reconcile persisted records against live slots to determine which offers
-		// completed or were cancelled while offline.
+		// completed or were cancelled while offline. Records last active before the
+		// freshness cutoff are leftovers from prior sessions (already backfilled) and
+		// are routed to staleHistory so they never re-fire the "open GE History" prompt.
 		List<OfferSignal> liveSlots = buildLiveSlotSignals();
-		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, System.currentTimeMillis());
+		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now, freshnessThreshold);
 
 		// Restore original timestamps on still-live offers whose persisted record is older.
 		for (OfferRecord reattached : plan.reattached)
@@ -390,12 +407,56 @@ public class OfflineSyncService
 			}
 		}
 
+		if (!plan.staleHistory.isEmpty() && log.isDebugEnabled())
+		{
+			log.debug("Skipped {} stale persisted offer(s) older than last sync — already-known history, not prompted",
+				plan.staleHistory.size());
+		}
+
 		pruneStaleCollectedItems();
+		writeOfflineSyncMarker(now);
 		persistOfferState();
 
 		if (onSyncComplete != null)
 		{
 			onSyncComplete.run();
+		}
+	}
+
+	/**
+	 * Freshness cutoff for treating a persisted offer as a genuine offline fill: the wall-clock of
+	 * the previous completed offline sync. On the first sync for an account (marker absent) the whole
+	 * persisted blob predates the marker, so we return {@code now} — every existing record is treated
+	 * as already-known history and suppressed, rather than nagging for a backlog the backend already has.
+	 */
+	private long readOfflineFillFreshnessThreshold(long now)
+	{
+		String rsn = resolvePersistenceRsn();
+		if (rsn == null)
+		{
+			return now;
+		}
+		String raw = configManager.getConfiguration(CONFIG_GROUP, OFFLINE_SYNC_MARKER_KEY_PREFIX + rsn);
+		if (raw == null || raw.isEmpty())
+		{
+			return now;
+		}
+		try
+		{
+			return Long.parseLong(raw);
+		}
+		catch (NumberFormatException e)
+		{
+			return now;
+		}
+	}
+
+	private void writeOfflineSyncMarker(long now)
+	{
+		String rsn = resolvePersistenceRsn();
+		if (rsn != null)
+		{
+			configManager.setConfiguration(CONFIG_GROUP, OFFLINE_SYNC_MARKER_KEY_PREFIX + rsn, Long.toString(now));
 		}
 	}
 

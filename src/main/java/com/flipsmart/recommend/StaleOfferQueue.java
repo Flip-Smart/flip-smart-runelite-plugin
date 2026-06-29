@@ -41,7 +41,7 @@ public final class StaleOfferQueue
 
 	public OfferRecord head()
 	{
-		return queue.get(0);
+		return queue.isEmpty() ? null : queue.get(0);
 	}
 
 	public List<OfferRecord> snapshot() {
