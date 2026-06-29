@@ -1330,12 +1330,15 @@ public class FlipFinderPanel extends PluginPanel
 		sortByLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
 		row.add(sortByLabel);
 
+		Font tabFont = new Font(FONT_ARIAL, Font.BOLD, 11);
+		EmptyBorder tabBorder = new EmptyBorder(2, 7, 2, 7);
+		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
 		for (CompletedSort sort : CompletedSort.values())
 		{
 			JLabel tab = new JLabel(sort.label);
-			tab.setFont(new Font(FONT_ARIAL, Font.BOLD, 11));
-			tab.setBorder(new EmptyBorder(2, 7, 2, 7));
-			tab.setCursor(new Cursor(Cursor.HAND_CURSOR));
+			tab.setFont(tabFont);
+			tab.setBorder(tabBorder);
+			tab.setCursor(handCursor);
 			tab.setOpaque(true);
 			tab.addMouseListener(new MouseAdapter()
 			{
