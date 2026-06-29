@@ -295,8 +295,11 @@ public class OfflineSyncService
 		}
 		offerStore.importRecords(toImport);
 
-		log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected (slots readable: {})",
-			plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size(), !liveSlots.isEmpty());
+		if (log.isDebugEnabled())
+		{
+			log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected (slots readable: {})",
+				plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size(), !liveSlots.isEmpty());
+		}
 	}
 
 	/** Reduce the live GE slots to {@link OfferSignal}s for reconciliation. */
