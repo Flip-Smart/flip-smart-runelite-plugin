@@ -22,12 +22,16 @@ public final class ActionResolver {
             }
         }
 
+        boolean slotFree = in.getFilledSlotCount() < in.getSlotLimit();
         for (CollectedItem c : in.getCollectedAwaitingList()) {
             if (!c.hasSellPrice()) {
                 continue;
             }
-            ActionKind kind = c.getOrigin() == CollectOrigin.PARTIAL_CANCEL ? ActionKind.S1 : ActionKind.S3;
-            candidates.add(new ActionDecision(kind, ActionStep.LIST, c.getItemId(), -1, c.getDetectedAtMillis()));
+            if (!slotFree) {
+                continue;
+            }
+            candidates.add(new ActionDecision(ActionKind.SELL_WAITING, ActionStep.LIST,
+                c.getItemId(), -1, c.getDetectedAtMillis()));
         }
 
         for (OfferRecord r : in.getStaleOffers()) {
