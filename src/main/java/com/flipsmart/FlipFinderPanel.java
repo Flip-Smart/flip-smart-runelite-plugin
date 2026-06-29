@@ -1306,8 +1306,13 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		else
 		{
+			java.util.Map<CompletedFlip, Long> tsCache = new java.util.IdentityHashMap<>();
+			for (CompletedFlip f : sorted)
+			{
+				tsCache.put(f, TimeUtils.parseIsoToMillis(f.getSellTime()));
+			}
 			comparator = java.util.Comparator
-				.comparingLong((CompletedFlip f) -> TimeUtils.parseIsoToMillis(f.getSellTime()))
+				.comparingLong((CompletedFlip f) -> tsCache.get(f))
 				.thenComparingInt(CompletedFlip::getId)
 				.reversed();
 		}

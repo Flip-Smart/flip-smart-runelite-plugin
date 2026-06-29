@@ -28,7 +28,7 @@ public final class ActionResolver {
                 continue;
             }
             if (!slotFree) {
-                continue;
+                break;
             }
             candidates.add(new ActionDecision(ActionKind.SELL_WAITING, ActionStep.LIST,
                 c.getItemId(), -1, c.getDetectedAtMillis()));
