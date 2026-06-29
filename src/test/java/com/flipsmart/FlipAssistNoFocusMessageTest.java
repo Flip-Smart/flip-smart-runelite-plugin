@@ -90,14 +90,14 @@ public class FlipAssistNoFocusMessageTest
 		assertEquals(HINT, select(false, false, null, null, true));
 	}
 
-	// #814 AC11: with no GE activity, the default state is the generic hint, regardless of Auto.
+	// AC11: with no GE activity, the default state is the generic hint, regardless of Auto.
 	@Test
 	public void defaultsToHintWhenNoTradeActivity()
 	{
 		assertEquals(HINT, select(false, false, null, null, true, false));
 	}
 
-	// #814 AC12/AC13: GE activity opens the monitoring log even when Auto is off (no auto messages).
+	// AC12/AC13: GE activity opens the monitoring log even when Auto is off (no auto messages).
 	@Test
 	public void showsMonitoringOnTradeActivityWithoutAuto()
 	{

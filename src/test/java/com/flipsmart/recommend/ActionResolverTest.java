@@ -183,7 +183,7 @@ public class ActionResolverTest {
         assertEquals(ActionDecision.IDLE, resolver.resolve(in));
     }
 
-    // ---- #814 AC1-4: sell-priority around GE slot availability ----
+    // ---- AC1-4: sell-priority around GE slot availability ----
     @Test public void ac1_noSellPromptWhenAllSlotsFull() {
         // 8/8 slots filled → a held item awaiting list must NOT surface (no slot to act on).
         ResolverInput in = base().filledSlotCount(8).collectedAwaitingList(Arrays.asList(
