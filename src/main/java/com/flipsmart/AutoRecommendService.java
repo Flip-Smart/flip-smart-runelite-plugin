@@ -1602,7 +1602,14 @@ public class AutoRecommendService
 			return;
 		}
 
-		renderStaleOfferPrompt(staleOffers.head());
+		OfferRecord next = staleOffers.head();
+		if (next == null)
+		{
+			// The queue drained between the isEmpty() check above and here; nothing to prompt.
+			focusNextAvailableAction();
+			return;
+		}
+		renderStaleOfferPrompt(next);
 	}
 
 	private void renderStaleOfferPrompt(OfferRecord offer)
