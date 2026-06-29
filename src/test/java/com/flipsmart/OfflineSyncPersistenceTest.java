@@ -300,7 +300,12 @@ public class OfflineSyncPersistenceTest
 
 		service.persistOfferState();
 		store.importRecords(Collections.emptyList());
-		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		// Live slots ARE readable (a different offer occupies slot 1), so reconcile can correctly
+		// classify the gone 4824 record as offline-collected and terminalize it.
+		ItemComposition comp999 = itemComp("i999");
+		when(itemManager.getItemComposition(999)).thenReturn(comp999);
+		GrandExchangeOffer live999 = geOffer(999, GrandExchangeOfferState.BUYING, 5, 100);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[]{null, live999});
 
 		service.preloadPersistedOffers();
 
@@ -381,6 +386,31 @@ public class OfflineSyncPersistenceTest
 		verify(geHistoryService, never()).registerOfflineFill(333);
 		assertTrue("a sync marker is written so later genuine fills are detected",
 			configStore.containsKey(SYNC_MARKER_ZEZIMA));
+	}
+
+	/**
+	 * Blob-growth guard (#759 release): at preload the GE slots are usually not loaded yet, so the
+	 * live snapshot is empty. Reconciling a still-live persisted offer against that empty snapshot
+	 * must NOT manufacture a terminal COLLECTED duplicate — doing so grew the persisted blob ~8
+	 * records every login. When slots are unreadable, classification is deferred to the +2s sync.
+	 */
+	@Test
+	public void preloadWithUnloadedSlots_doesNotManufactureTerminalDuplicate()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// A still-live BUY offer persisted from last session (NEW, slot 0).
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 7777, 0, 10), 1000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// GE slots not loaded yet at preload time (the login-timing race) → empty snapshot.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.preloadPersistedOffers();
+
+		assertTrue("no COLLECTED duplicate manufactured when GE slots are unloaded",
+			store.forItem(7777).isEmpty());
 	}
 
 	@Test
