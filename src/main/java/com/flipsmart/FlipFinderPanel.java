@@ -141,7 +141,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JScrollPane activeFlipsScrollPane;
 	private JScrollPane completedFlipsScrollPane;
 
-	// Completed tab sort controls (#814)
+	// Completed tab sort controls
 	private CompletedSort completedSort = CompletedSort.RECENCY;
 	private final java.util.Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
 
@@ -171,7 +171,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton skipButton;
 	private JLabel autoRecommendStatusLabel;
 
-	// Recommendation refresh countdown (#814) — fixed-interval, top-right, low-emphasis
+	// Recommendation refresh countdown — fixed-interval, top-right, low-emphasis
 	private JLabel refreshCountdownLabel;
 	private transient javax.swing.Timer refreshCountdownTimer;
 	private volatile long nextRefreshAtMillis;
@@ -310,7 +310,7 @@ public class FlipFinderPanel extends PluginPanel
 		headerPanel.add(titleBox, BorderLayout.WEST);
 		headerPanel.add(headerButtons, BorderLayout.EAST);
 
-		// Low-emphasis refresh countdown, right-aligned beneath the header buttons (#814)
+		// Low-emphasis refresh countdown, right-aligned beneath the header buttons
 		JPanel countdownRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
 		countdownRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		refreshCountdownLabel = new JLabel();
@@ -588,7 +588,7 @@ public class FlipFinderPanel extends PluginPanel
 		tabbedPane.addTab("Recommended", recommendedScrollPane);
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
 
-		// Completed tab carries a secondary sort row (Profit / Recency) above its list (#814)
+		// Completed tab carries a secondary sort row (Profit / Recency) above its list
 		JPanel completedTabPanel = new JPanel(new BorderLayout());
 		completedTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		completedTabPanel.add(buildCompletedSortRow(), BorderLayout.NORTH);

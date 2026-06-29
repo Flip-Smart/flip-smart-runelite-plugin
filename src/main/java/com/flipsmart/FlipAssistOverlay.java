@@ -71,6 +71,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
 	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to backfill recent trades";
+	private static final String MONITORING_MESSAGE = "Monitoring your flips";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -304,8 +305,10 @@ public class FlipAssistOverlay extends Overlay
 				autoStatusMessage,
 				fallbackMessage,
 				flipSmartPlugin.getApiClient().isAuthenticated(),
+				!tradeActivityLog.isEmpty(),
 				HISTORY_PROMPT_MESSAGE,
 				LOGIN_MESSAGE,
+				MONITORING_MESSAGE,
 				HINT_MESSAGE);
 			if (message == null)
 			{
@@ -516,7 +519,8 @@ public class FlipAssistOverlay extends Overlay
 			return false;
 		}
 		return message.startsWith("Waiting for flips")
-			|| message.startsWith("Monitoring active offers");
+			|| message.startsWith("Monitoring active offers")
+			|| message.startsWith(MONITORING_MESSAGE);
 	}
 
 	private int computeActivityLogHeight(java.util.List<TradeActivityLog.Entry> entries, FontMetrics fm)
@@ -1000,8 +1004,10 @@ public class FlipAssistOverlay extends Overlay
 		String autoStatusMessage,
 		String autoRecommendFallback,
 		boolean authenticated,
+		boolean hasTradeActivity,
 		String historyMessage,
 		String loginMessage,
+		String monitoringMessage,
 		String hintMessage)
 	{
 		if (offerInterfaceOpen)
@@ -1019,6 +1025,11 @@ public class FlipAssistOverlay extends Overlay
 		if (autoRecommendFallback != null)
 		{
 			return autoRecommendFallback;
+		}
+		// GE activity opens the monitoring log regardless of Auto mode (AC12/AC13).
+		if (authenticated && hasTradeActivity)
+		{
+			return monitoringMessage;
 		}
 		if (!authenticated)
 		{
