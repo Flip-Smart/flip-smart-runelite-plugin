@@ -171,6 +171,11 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton skipButton;
 	private JLabel autoRecommendStatusLabel;
 
+	// Recommendation refresh countdown (#814) — fixed-interval, top-right, low-emphasis
+	private JLabel refreshCountdownLabel;
+	private transient javax.swing.Timer refreshCountdownTimer;
+	private volatile long nextRefreshAtMillis;
+
 	// Cashstack override indicator (AC3) — shows the active override or an error
 	private JLabel cashstackOverrideLabel;
 
@@ -305,6 +310,16 @@ public class FlipFinderPanel extends PluginPanel
 		headerPanel.add(titleBox, BorderLayout.WEST);
 		headerPanel.add(headerButtons, BorderLayout.EAST);
 
+		// Low-emphasis refresh countdown, right-aligned beneath the header buttons (#814)
+		JPanel countdownRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		countdownRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		refreshCountdownLabel = new JLabel();
+		refreshCountdownLabel.setIcon(new ImageIcon(PanelFormat.drawClockIcon(COLOR_TEXT_DIM_GRAY)));
+		refreshCountdownLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+		refreshCountdownLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+		countdownRow.add(refreshCountdownLabel);
+		headerPanel.add(countdownRow, BorderLayout.SOUTH);
+
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
 		controlsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -422,6 +437,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				service.skip();
 			}
+			resetRefreshCountdown(); // AC19: Skip restarts the countdown
 		});
 		skipButton.setVisible(false);
 
@@ -695,6 +711,11 @@ public class FlipFinderPanel extends PluginPanel
 	public void shutdown()
 	{
 		loginPanel.shutdown();
+		if (refreshCountdownTimer != null)
+		{
+			refreshCountdownTimer.stop();
+			refreshCountdownTimer = null;
+		}
 	}
 
 	/**
@@ -706,6 +727,8 @@ public class FlipFinderPanel extends PluginPanel
 		add(mainPanel, BorderLayout.CENTER);
 		revalidate();
 		repaint();
+
+		startRefreshCountdownTimer();
 
 		// Load data
 		refresh();
@@ -809,6 +832,48 @@ public class FlipFinderPanel extends PluginPanel
 		refreshCompletedFlips();
 	}
 
+	/** Fixed refresh interval in millis (AC18 — independent of the selected Timeframe). */
+	private long refreshIntervalMillis()
+	{
+		int minutes = Math.max(1, Math.min(60, config.flipFinderRefreshMinutes()));
+		return minutes * 60_000L;
+	}
+
+	/** Reset the countdown to a full interval — on a real refresh and on Skip (AC19). */
+	void resetRefreshCountdown()
+	{
+		nextRefreshAtMillis = System.currentTimeMillis() + refreshIntervalMillis();
+		updateRefreshCountdownLabel();
+	}
+
+	/** Start the 1-second ticker that drives the live countdown label (AC15). */
+	private void startRefreshCountdownTimer()
+	{
+		if (nextRefreshAtMillis == 0)
+		{
+			nextRefreshAtMillis = System.currentTimeMillis() + refreshIntervalMillis();
+		}
+		if (refreshCountdownTimer == null)
+		{
+			refreshCountdownTimer = new javax.swing.Timer(1000, e -> updateRefreshCountdownLabel());
+			refreshCountdownTimer.start();
+		}
+		updateRefreshCountdownLabel();
+	}
+
+	private void updateRefreshCountdownLabel()
+	{
+		if (refreshCountdownLabel == null)
+		{
+			return;
+		}
+		long remainingMs = nextRefreshAtMillis - System.currentTimeMillis();
+		long seconds = Math.max(0, (remainingMs + 999) / 1000);
+		refreshCountdownLabel.setText(seconds > 0
+			? String.format("Item refresh in %ds…", seconds)
+			: "Refreshing…");
+	}
+
 	/**
 	 * Refresh recommended flips
 	 *
@@ -816,6 +881,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshRecommendations(boolean shuffleSuggestions)
 	{
+		resetRefreshCountdown();
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
 
