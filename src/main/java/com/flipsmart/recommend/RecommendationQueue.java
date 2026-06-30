@@ -103,8 +103,11 @@ public final class RecommendationQueue
 	 */
 	public void replace(List<FlipRecommendation> newRecommendations)
 	{
+		// Copy first: the argument may alias the live backing list (e.g. view()), and
+		// clear() would empty it before it could be re-added.
+		List<FlipRecommendation> copy = new ArrayList<>(newRecommendations);
 		recommendations.clear();
-		recommendations.addAll(newRecommendations);
+		recommendations.addAll(copy);
 		currentIndex = 0;
 	}
 

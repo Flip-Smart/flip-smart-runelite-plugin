@@ -110,6 +110,7 @@ public final class StaleOfferQueue
 	{
 		offers.removeIf(o -> o.getItemId() == itemId);
 		staleResellPrices.remove(itemId);
+		staleResellNet.remove(itemId);
 	}
 
 	/** Remove the head offer and clear its resell price; returns the removed offer. */
@@ -117,6 +118,7 @@ public final class StaleOfferQueue
 	{
 		OfferRecord skipped = offers.remove(0);
 		staleResellPrices.remove(skipped.getItemId());
+		staleResellNet.remove(skipped.getItemId());
 		return skipped;
 	}
 
@@ -164,6 +166,7 @@ public final class StaleOfferQueue
 			if (shouldRemove.test(o))
 			{
 				staleResellPrices.remove(o.getItemId());
+				staleResellNet.remove(o.getItemId());
 				return true;
 			}
 			return false;

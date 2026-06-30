@@ -130,6 +130,20 @@ public class RecommendationQueueTest
 		assertEquals("addAll must not reset the cursor", 1, q.getCurrentIndex());
 	}
 
+	@Test
+	public void replaceIsSafeWhenAliasedWithItsOwnView()
+	{
+		// view() is an unmodifiable window over the backing list; replace() must copy its
+		// argument before clearing, or replace(view()) would self-empty before re-adding.
+		RecommendationQueue q = new RecommendationQueue();
+		q.replace(Arrays.asList(rec(11, 100), rec(12, 100)));
+
+		q.replace(q.view());
+
+		assertEquals("replace(view()) must not self-clear", 2, q.size());
+		assertEquals(11, q.get(0).getItemId());
+	}
+
 	// ---- cursor ----
 
 	@Test
