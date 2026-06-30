@@ -17,7 +17,7 @@ public class EntitlementsResponse
 	private static final String STATUS_BLOCKED = "blocked";
 
 	@SerializedName("is_premium")
-	private JsonElement isPremium;
+	private JsonElement premiumElement;
 
 	@SerializedName("rsn_entitlement")
 	private RsnEntitlement rsnEntitlement;
@@ -30,7 +30,7 @@ public class EntitlementsResponse
 
 	public boolean isPremium()
 	{
-		return isPremium != null && isPremium.isJsonPrimitive() && isPremium.getAsBoolean();
+		return premiumElement != null && premiumElement.isJsonPrimitive() && premiumElement.getAsBoolean();
 	}
 
 	public boolean isRsnBlocked()
