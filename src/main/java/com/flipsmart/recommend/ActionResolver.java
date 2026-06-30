@@ -30,7 +30,12 @@ public final class ActionResolver {
             if (!slotFree) {
                 break;
             }
-            candidates.add(new ActionDecision(ActionKind.SELL_WAITING, ActionStep.LIST,
+            // Quantity collected preemptively from an open trade (partial cancel) is sold
+            // before placing a new buy; a normally-completed buy does not jump that queue.
+            ActionKind kind = c.getOrigin() == CollectOrigin.PARTIAL_CANCEL
+                ? ActionKind.SELL_WAITING
+                : ActionKind.S3;
+            candidates.add(new ActionDecision(kind, ActionStep.LIST,
                 c.getItemId(), -1, c.getDetectedAtMillis()));
         }
 

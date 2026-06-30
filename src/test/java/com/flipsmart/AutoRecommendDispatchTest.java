@@ -137,7 +137,8 @@ public class AutoRecommendDispatchTest {
     public void onSellOrderPlacedRemovesItemFromCollectedSoAutoModeDoesNotReList() {
         when(plugin.getFilledGESlotCount()).thenReturn(7); // free slot so the held sell can list
         when(plugin.getInventoryCountForItem(55)).thenReturn(5);
-        session.addCollectedItem(55, 5, CollectOrigin.COMPLETED_BUY, 1L);
+        // Preemptive collect so the sell outranks the start-of-test surfaceable buy and surfaces as LIST.
+        session.addCollectedItem(55, 5, CollectOrigin.PARTIAL_CANCEL, 1L);
         session.setRecommendedPrice(55, 300);
 
         ActionDecision first = service.resolveAndApply(-1);

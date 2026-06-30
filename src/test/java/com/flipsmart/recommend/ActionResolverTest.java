@@ -79,11 +79,11 @@ public class ActionResolverTest {
         assertEquals(ActionKind.S3, resolver.resolve(in).getKind());
         assertEquals(ActionStep.COLLECT, resolver.resolve(in).getStep());
     }
-    @Test public void sellWaiting_fromCollectedCompletedBuyAwaitingList() {
+    @Test public void s3_fromCollectedCompletedBuyAwaitingList() {
         ResolverInput in = base().filledSlotCount(7).collectedAwaitingList(Arrays.asList(
             new CollectedItem(32, CollectOrigin.COMPLETED_BUY, true, 5L))).build();
         ActionDecision d = resolver.resolve(in);
-        assertEquals(ActionKind.SELL_WAITING, d.getKind());
+        assertEquals(ActionKind.S3, d.getKind());
         assertEquals(ActionStep.LIST, d.getStep());
     }
     @Test public void s4_fromStaleSell() {
@@ -183,27 +183,38 @@ public class ActionResolverTest {
         assertEquals(ActionDecision.IDLE, resolver.resolve(in));
     }
 
-    // ---- AC1-4: sell-priority around GE slot availability ----
+    // ---- AC1-4: sell-priority around GE slot availability (scoped to preemptive collects) ----
     @Test public void ac1_noSellPromptWhenAllSlotsFull() {
         // 8/8 slots filled → a held item awaiting list must NOT surface (no slot to act on).
         ResolverInput in = base().filledSlotCount(8).collectedAwaitingList(Arrays.asList(
-            new CollectedItem(70, CollectOrigin.COMPLETED_BUY, true, 5L))).build();
+            new CollectedItem(70, CollectOrigin.PARTIAL_CANCEL, true, 5L))).build();
         assertEquals(ActionDecision.IDLE, resolver.resolve(in));
     }
-    @Test public void ac2_waitingSellBeatsNewBuyWhenSlotFree() {
-        // A freed slot with both a surfaceable buy and a held item → the waiting sell wins.
+    @Test public void ac2_preemptiveSellBeatsNewBuyWhenSlotFree() {
+        // A freed slot, a surfaceable buy, and an item collected preemptively from an open
+        // trade (partial cancel) → the waiting sell wins over a new buy.
         ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 99)
             .collectedAwaitingList(Arrays.asList(
-                new CollectedItem(71, CollectOrigin.COMPLETED_BUY, true, 5L))).build();
+                new CollectedItem(71, CollectOrigin.PARTIAL_CANCEL, true, 5L))).build();
         ActionDecision d = resolver.resolve(in);
         assertEquals(ActionKind.SELL_WAITING, d.getKind());
         assertEquals(ActionStep.LIST, d.getStep());
         assertEquals(71, d.getItemId());
     }
-    @Test public void ac4_oldestWaitingSellTakesPriority() {
-        // Two held items awaiting list → the one waiting longest (oldest) surfaces first.
+    @Test public void completedBuyHeldItemDoesNotBeatNewBuy() {
+        // A normally-completed buy held for sale does NOT jump ahead of placing a new buy.
+        ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 99)
+            .collectedAwaitingList(Arrays.asList(
+                new CollectedItem(71, CollectOrigin.COMPLETED_BUY, true, 5L))).build();
+        ActionDecision d = resolver.resolve(in);
+        assertEquals(ActionKind.S2, d.getKind());
+        assertEquals(ActionStep.PLACE_BUY, d.getStep());
+        assertEquals(99, d.getItemId());
+    }
+    @Test public void ac4_oldestPreemptiveSellTakesPriority() {
+        // Two preemptively-collected items awaiting list → the one waiting longest surfaces first.
         ResolverInput in = base().filledSlotCount(7).collectedAwaitingList(Arrays.asList(
-            new CollectedItem(72, CollectOrigin.COMPLETED_BUY, true, 9000L),   // newer
+            new CollectedItem(72, CollectOrigin.PARTIAL_CANCEL, true, 9000L),   // newer
             new CollectedItem(73, CollectOrigin.PARTIAL_CANCEL, true, 1000L)))  // older → wins
             .build();
         assertEquals(73, resolver.resolve(in).getItemId());
