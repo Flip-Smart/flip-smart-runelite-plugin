@@ -20,7 +20,7 @@ import java.util.function.Predicate;
  */
 public final class StaleOfferQueue
 {
-	private final List<OfferRecord> queue = new CopyOnWriteArrayList<>();
+	private final List<OfferRecord> offers = new CopyOnWriteArrayList<>();
 	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
 	// Advisor-only: net profit/loss estimate to show alongside a re-sell prompt. Kept in
 	// sync with staleResellPrices at both put-sites, so it's never read with a stale price.
@@ -31,31 +31,31 @@ public final class StaleOfferQueue
 
 	public boolean isEmpty()
 	{
-		return queue.isEmpty();
+		return offers.isEmpty();
 	}
 
 	public int size()
 	{
-		return queue.size();
+		return offers.size();
 	}
 
 	public OfferRecord head()
 	{
-		return queue.isEmpty() ? null : queue.get(0);
+		return offers.isEmpty() ? null : offers.get(0);
 	}
 
 	public List<OfferRecord> snapshot() {
-		return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(queue));
+		return java.util.Collections.unmodifiableList(new java.util.ArrayList<>(offers));
 	}
 
 	public boolean headIsItem(int itemId)
 	{
-		return !queue.isEmpty() && queue.get(0).getItemId() == itemId;
+		return !offers.isEmpty() && offers.get(0).getItemId() == itemId;
 	}
 
 	public OfferRecord findByItemId(int itemId)
 	{
-		for (OfferRecord o : queue)
+		for (OfferRecord o : offers)
 		{
 			if (o.getItemId() == itemId)
 			{
@@ -108,15 +108,17 @@ public final class StaleOfferQueue
 	 */
 	public void removeOffer(int itemId)
 	{
-		queue.removeIf(o -> o.getItemId() == itemId);
+		offers.removeIf(o -> o.getItemId() == itemId);
 		staleResellPrices.remove(itemId);
+		staleResellNet.remove(itemId);
 	}
 
 	/** Remove the head offer and clear its resell price; returns the removed offer. */
 	public OfferRecord removeHead()
 	{
-		OfferRecord skipped = queue.remove(0);
+		OfferRecord skipped = offers.remove(0);
 		staleResellPrices.remove(skipped.getItemId());
+		staleResellNet.remove(skipped.getItemId());
 		return skipped;
 	}
 
@@ -125,7 +127,7 @@ public final class StaleOfferQueue
 	{
 		/** An entry for this item already existed — nothing changed. */
 		ALREADY_PRESENT,
-		/** The offer was appended to a previously non-empty queue. */
+		/** The offer was appended to a previously non-empty offers. */
 		ADDED,
 		/** The offer was added and the queue was empty before — surface it now. */
 		ADDED_WAS_EMPTY
@@ -138,15 +140,15 @@ public final class StaleOfferQueue
 	 */
 	public AddResult addIfAbsent(OfferRecord offer)
 	{
-		for (OfferRecord existing : queue)
+		for (OfferRecord existing : offers)
 		{
 			if (existing.getItemId() == offer.getItemId())
 			{
 				return AddResult.ALREADY_PRESENT;
 			}
 		}
-		boolean wasEmpty = queue.isEmpty();
-		queue.add(offer);
+		boolean wasEmpty = offers.isEmpty();
+		offers.add(offer);
 		promptedStaleItems.add(offer.getItemId());
 		return wasEmpty ? AddResult.ADDED_WAS_EMPTY : AddResult.ADDED;
 	}
@@ -159,11 +161,12 @@ public final class StaleOfferQueue
 	 */
 	public void pruneIrrelevant(Predicate<OfferRecord> shouldRemove)
 	{
-		queue.removeIf(o ->
+		offers.removeIf(o ->
 		{
 			if (shouldRemove.test(o))
 			{
 				staleResellPrices.remove(o.getItemId());
+				staleResellNet.remove(o.getItemId());
 				return true;
 			}
 			return false;
@@ -174,7 +177,7 @@ public final class StaleOfferQueue
 	public void clear()
 	{
 		promptedStaleItems.clear();
-		queue.clear();
+		offers.clear();
 		staleResellPrices.clear();
 		staleResellNet.clear();
 	}

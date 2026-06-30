@@ -2118,7 +2118,7 @@ public class AutoRecommendService
 		}
 
 		queue.clear();
-		queue.view().addAll(state.queue);
+		queue.addAll(state.queue);
 		for (FlipRecommendation rec : state.queue)
 		{
 			queue.putItemName(rec.getItemId(), rec.getItemName());

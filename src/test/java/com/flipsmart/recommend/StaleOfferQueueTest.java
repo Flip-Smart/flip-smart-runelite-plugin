@@ -135,6 +135,45 @@ public class StaleOfferQueueTest
 		assertNull(q.getResellNet(11));
 	}
 
+	@Test
+	public void removeOfferAlsoClearsResellNet()
+	{
+		// staleResellNet is a companion map to staleResellPrices; removal must clear both
+		// or the net estimate leaks for an item no longer queued.
+		StaleOfferQueue q = new StaleOfferQueue();
+		q.addIfAbsent(sell(11));
+		q.putResellPrice(11, 150);
+		q.putResellNet(11, -50);
+
+		q.removeOffer(11);
+
+		assertNull("removeOffer must clear the companion resell-net entry", q.getResellNet(11));
+	}
+
+	@Test
+	public void removeHeadAlsoClearsResellNet()
+	{
+		StaleOfferQueue q = new StaleOfferQueue();
+		q.addIfAbsent(sell(11));
+		q.putResellNet(11, -50);
+
+		q.removeHead();
+
+		assertNull("removeHead must clear the companion resell-net entry", q.getResellNet(11));
+	}
+
+	@Test
+	public void pruneIrrelevantAlsoClearsResellNet()
+	{
+		StaleOfferQueue q = new StaleOfferQueue();
+		q.addIfAbsent(sell(11));
+		q.putResellNet(11, -50);
+
+		q.pruneIrrelevant(o -> o.getItemId() == 11);
+
+		assertNull("pruneIrrelevant must clear the companion resell-net entry", q.getResellNet(11));
+	}
+
 	// ---- lookups ----
 
 	@Test
