@@ -3,6 +3,7 @@ package com.flipsmart.api;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.api.dto.AuthResult;
 import com.flipsmart.api.dto.DeviceAuthResponse;
+import com.flipsmart.api.dto.EntitlementsResponse;
 import com.flipsmart.api.dto.DeviceStatusResponse;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -39,7 +40,6 @@ public class ApiHttpTransport
 	private static final String ACCESS_TOKEN_KEY = "access_token";
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
 	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
-	private static final String JSON_KEY_RSN_ENTITLEMENT = "rsn_entitlement";
 	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	private static final String HEADER_AUTHORIZATION = "Authorization";
@@ -84,6 +84,17 @@ public class ApiHttpTransport
 	public Gson getGson()
 	{
 		return gson;
+	}
+
+	/**
+	 * Deserialize a response body into a DTO using the transport's Gson. Centralizes
+	 * the {@code gson.fromJson(body, T.class)} boilerplate the endpoint groups each
+	 * hand-rolled; behavior is identical to a direct Gson call (returns {@code null}
+	 * for an empty/null body).
+	 */
+	public <T> T parse(String body, Class<T> type)
+	{
+		return gson.fromJson(body, type);
 	}
 
 	public OkHttpClient getHttpClient()
@@ -855,36 +866,9 @@ public class ApiHttpTransport
 		return executeAsync(request, responseBody -> {
 			try
 			{
-				JsonObject json = gson.fromJson(responseBody, JsonObject.class);
-
-				boolean premium;
-				if (json.has(JSON_KEY_IS_PREMIUM) && json.get(JSON_KEY_IS_PREMIUM).isJsonPrimitive())
-				{
-					premium = json.get(JSON_KEY_IS_PREMIUM).getAsBoolean();
-				}
-				else
-				{
-					premium = false;
-				}
-
-				boolean rsnBlocked;
-				if (json.has(JSON_KEY_RSN_ENTITLEMENT) && !json.get(JSON_KEY_RSN_ENTITLEMENT).isJsonNull())
-				{
-					JsonObject rsnEntitlement = json.getAsJsonObject(JSON_KEY_RSN_ENTITLEMENT);
-					if (rsnEntitlement.has(JSON_KEY_STATUS))
-					{
-						String status = rsnEntitlement.get(JSON_KEY_STATUS).getAsString();
-						rsnBlocked = "blocked".equals(status);
-					}
-					else
-					{
-						rsnBlocked = false;
-					}
-				}
-				else
-				{
-					rsnBlocked = false;
-				}
+				EntitlementsResponse entitlements = EntitlementsResponse.fromJson(gson, responseBody);
+				boolean premium = entitlements.isPremium();
+				boolean rsnBlocked = entitlements.isRsnBlocked();
 
 				synchronized (authLock)
 				{
