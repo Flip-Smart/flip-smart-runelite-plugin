@@ -5,7 +5,6 @@ import com.flipsmart.api.dto.BankItem;
 import com.flipsmart.api.dto.BankItemId;
 import com.flipsmart.api.dto.BankSnapshotResponse;
 import com.flipsmart.api.dto.BankSnapshotStatusResponse;
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import okhttp3.Request;
@@ -26,12 +25,10 @@ public class BankSnapshotEndpoints
 	private static final String JSON_KEY_QUANTITY = "quantity";
 
 	private final ApiHttpTransport transport;
-	private final Gson gson;
 
 	public BankSnapshotEndpoints(ApiHttpTransport transport)
 	{
 		this.transport = transport;
-		this.gson = transport.getGson();
 	}
 
 	/**
@@ -47,7 +44,7 @@ public class BankSnapshotEndpoints
 			.get();
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, BankSnapshotStatusResponse.class));
+			transport.parse(jsonData, BankSnapshotStatusResponse.class));
 	}
 
 	/**
@@ -108,6 +105,6 @@ public class BankSnapshotEndpoints
 			.post(body);
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, BankSnapshotResponse.class));
+			transport.parse(jsonData, BankSnapshotResponse.class));
 	}
 }

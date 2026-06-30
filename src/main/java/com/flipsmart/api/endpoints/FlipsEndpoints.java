@@ -6,7 +6,6 @@ import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import okhttp3.Request;
 import okhttp3.RequestBody;
@@ -28,7 +27,6 @@ public class FlipsEndpoints
 	private static final long CACHE_DURATION_MS = 180_000; // 3 minute cache
 
 	private final ApiHttpTransport transport;
-	private final Gson gson;
 
 	// Cache to avoid spamming the API
 	private final Map<Integer, CachedAnalysis> analysisCache = new ConcurrentHashMap<>();
@@ -36,7 +34,6 @@ public class FlipsEndpoints
 	public FlipsEndpoints(ApiHttpTransport transport)
 	{
 		this.transport = transport;
-		this.gson = transport.getGson();
 	}
 
 	/**
@@ -60,7 +57,7 @@ public class FlipsEndpoints
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
-			FlipAnalysis analysis = gson.fromJson(jsonData, FlipAnalysis.class);
+			FlipAnalysis analysis = transport.parse(jsonData, FlipAnalysis.class);
 			removeExpiredCacheEntries();
 			analysisCache.put(itemId, new CachedAnalysis(analysis));
 			return analysis;
@@ -116,7 +113,7 @@ public class FlipsEndpoints
 			.get();
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, FlipFinderResponse.class));
+			transport.parse(jsonData, FlipFinderResponse.class));
 	}
 
 	/**
@@ -148,7 +145,7 @@ public class FlipsEndpoints
 			.get();
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, TimeframeFlipFinderResponse.class));
+			transport.parse(jsonData, TimeframeFlipFinderResponse.class));
 	}
 
 	/**
@@ -189,7 +186,7 @@ public class FlipsEndpoints
 			.post(body);
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, FlipAdjustmentResponse.class));
+			transport.parse(jsonData, FlipAdjustmentResponse.class));
 	}
 
 	/**

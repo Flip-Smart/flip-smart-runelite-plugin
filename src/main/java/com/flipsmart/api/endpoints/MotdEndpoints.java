@@ -2,7 +2,6 @@ package com.flipsmart.api.endpoints;
 
 import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.dto.MotdResponse;
-import com.google.gson.Gson;
 import okhttp3.Request;
 
 import java.util.concurrent.CompletableFuture;
@@ -13,12 +12,10 @@ import java.util.concurrent.CompletableFuture;
 public class MotdEndpoints
 {
 	private final ApiHttpTransport transport;
-	private final Gson gson;
 
 	public MotdEndpoints(ApiHttpTransport transport)
 	{
 		this.transport = transport;
-		this.gson = transport.getGson();
 	}
 
 	/**
@@ -36,7 +33,7 @@ public class MotdEndpoints
 
 		return transport.executeAsync(
 			request,
-			body -> gson.fromJson(body, MotdResponse.class),
+			body -> transport.parse(body, MotdResponse.class),
 			null,
 			false // public endpoint — do not retry on 401
 		);

@@ -7,7 +7,6 @@ import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.api.dto.SellPriceCheckResponse;
-import com.google.gson.Gson;
 import okhttp3.Request;
 import okhttp3.RequestBody;
 
@@ -26,12 +25,10 @@ import static com.flipsmart.api.ApiHttpTransport.JSON;
 public class OfferActionEndpoints
 {
 	private final ApiHttpTransport transport;
-	private final Gson gson;
 
 	public OfferActionEndpoints(ApiHttpTransport transport)
 	{
 		this.transport = transport;
-		this.gson = transport.getGson();
 	}
 
 	public CompletableFuture<OfferAdviceResponse> postOfferActionAsync(OfferAdviceRequest req)
@@ -40,7 +37,7 @@ public class OfferActionEndpoints
 		RequestBody body = RequestBody.create(JSON, FlipSmartApiClient.buildOfferActionBody(req).toString());
 		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, OfferAdviceResponse.class));
+			transport.parse(jsonData, OfferAdviceResponse.class));
 	}
 
 	public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(List<OfferAdviceRequest> reqs)
@@ -49,7 +46,7 @@ public class OfferActionEndpoints
 		RequestBody body = RequestBody.create(JSON, FlipSmartApiClient.buildOfferActionsBody(reqs).toString());
 		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, OfferAdviceBatchResponse.class));
+			transport.parse(jsonData, OfferAdviceBatchResponse.class));
 	}
 
 	public CompletableFuture<SellPriceCheckResponse> postSellPriceCheckAsync(SellPriceCheckRequest req)
@@ -58,6 +55,6 @@ public class OfferActionEndpoints
 		RequestBody body = RequestBody.create(JSON, FlipSmartApiClient.buildSellPriceCheckBody(req).toString());
 		Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, SellPriceCheckResponse.class));
+			transport.parse(jsonData, SellPriceCheckResponse.class));
 	}
 }

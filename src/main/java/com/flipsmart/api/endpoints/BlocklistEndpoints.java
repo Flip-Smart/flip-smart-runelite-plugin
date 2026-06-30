@@ -2,7 +2,6 @@ package com.flipsmart.api.endpoints;
 
 import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.dto.BlocklistsResponse;
-import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.Request;
@@ -21,12 +20,10 @@ public class BlocklistEndpoints
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 
 	private final ApiHttpTransport transport;
-	private final Gson gson;
 
 	public BlocklistEndpoints(ApiHttpTransport transport)
 	{
 		this.transport = transport;
-		this.gson = transport.getGson();
 	}
 
 	/**
@@ -43,7 +40,7 @@ public class BlocklistEndpoints
 			.get();
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, BlocklistsResponse.class));
+			transport.parse(jsonData, BlocklistsResponse.class));
 	}
 
 	/**
