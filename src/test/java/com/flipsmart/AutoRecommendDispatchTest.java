@@ -87,27 +87,27 @@ public class AutoRecommendDispatchTest {
 
     @Test
     public void identicalStateTwiceReturnsSameDecision() {
-        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // a free slot so the held sell can surface
         when(plugin.getInventoryCountForItem(11)).thenReturn(3);
-        // a partial-cancel collected item with a price → stable S1/LIST candidate
+        // a collected item with a price → stable SELL_WAITING/LIST candidate
         session.addCollectedItem(11, 3, CollectOrigin.PARTIAL_CANCEL, 1L);
         session.setRecommendedPrice(11, 150);
 
         ActionDecision first = service.resolveAndApply(-1);
         ActionDecision second = service.resolveAndApply(-1);
         assertEquals(first, second);
-        assertEquals(ActionKind.S1, first.getKind());
+        assertEquals(ActionKind.SELL_WAITING, first.getKind());
     }
 
     @Test
     public void skipListedCollectedItemRemovesItFromSession() {
-        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // a free slot so the held sell can surface
         when(plugin.getInventoryCountForItem(11)).thenReturn(3);
         session.addCollectedItem(11, 3, CollectOrigin.PARTIAL_CANCEL, 1L);
         session.setRecommendedPrice(11, 150);
 
         ActionDecision decision = service.resolveAndApply(-1);
-        assertEquals(ActionKind.S1, decision.getKind());
+        assertEquals(ActionKind.SELL_WAITING, decision.getKind());
         assertEquals(ActionStep.LIST, decision.getStep());
 
         service.skip();
@@ -117,7 +117,7 @@ public class AutoRecommendDispatchTest {
 
     @Test
     public void collectedItemWithActiveSellOfferIsNotSurfacedAsList() {
-        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // free slot: isolate the active-sell filter, not the slot gate
 
         OfferRecord activeSell = OfferRecord
             .newOffer(2, 0, 42, "item-42", false, 5, 300, 0L)
@@ -135,9 +135,10 @@ public class AutoRecommendDispatchTest {
 
     @Test
     public void onSellOrderPlacedRemovesItemFromCollectedSoAutoModeDoesNotReList() {
-        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // free slot so the held sell can list
         when(plugin.getInventoryCountForItem(55)).thenReturn(5);
-        session.addCollectedItem(55, 5, CollectOrigin.COMPLETED_BUY, 1L);
+        // Preemptive collect so the sell outranks the start-of-test surfaceable buy and surfaces as LIST.
+        session.addCollectedItem(55, 5, CollectOrigin.PARTIAL_CANCEL, 1L);
         session.setRecommendedPrice(55, 300);
 
         ActionDecision first = service.resolveAndApply(-1);
@@ -302,11 +303,11 @@ public class AutoRecommendDispatchTest {
         assertEquals("collect must not downgrade a partial-cancel origin",
             CollectOrigin.PARTIAL_CANCEL, session.getCollectOrigin(30));
 
-        // One empty slot + a surfaceable buy (item 21 from start) → S1 list must still win.
+        // One empty slot + a surfaceable buy (item 21 from start) → the held sell must still win.
         when(plugin.getFilledGESlotCount()).thenReturn(7);
         ActionDecision d = service.resolveAndApply(-1);
 
-        assertEquals(ActionKind.S1, d.getKind());
+        assertEquals(ActionKind.SELL_WAITING, d.getKind());
         assertEquals(ActionStep.LIST, d.getStep());
         assertEquals(30, d.getItemId());
     }
@@ -332,8 +333,8 @@ public class AutoRecommendDispatchTest {
 
     @Test
     public void gameTickReresolveDoesNotOverrideShownFocus() throws Exception {
-        // A sell focus is shown (as collect→sell does). With an open slot the resolver would
-        // pick S2 buy (S2 outranks S3), but the tick must NOT override the shown sell.
+        // A sell focus is shown (as collect→sell does). The tick must NOT override the
+        // already-shown sell focus on a re-resolve.
         when(plugin.getFilledGESlotCount()).thenReturn(7);
         when(plugin.getInventoryCountForItem(55)).thenReturn(5);
         session.addCollectedItem(55, 5, CollectOrigin.COMPLETED_BUY, 1L);

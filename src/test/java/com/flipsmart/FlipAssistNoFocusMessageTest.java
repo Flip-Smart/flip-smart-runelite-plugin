@@ -16,13 +16,21 @@ public class FlipAssistNoFocusMessageTest
 	private static final String HIST = "history";
 	private static final String LOGIN = "login";
 	private static final String HINT = "hint";
+	private static final String MONITOR = "Monitoring your flips";
 	private static final String COLLECT = "Collect profit from GE";
 
 	private static String select(boolean showHistory, boolean offerInterfaceOpen,
 		String autoStatus, String fallback, boolean authenticated)
 	{
+		return select(showHistory, offerInterfaceOpen, autoStatus, fallback, authenticated, false);
+	}
+
+	private static String select(boolean showHistory, boolean offerInterfaceOpen,
+		String autoStatus, String fallback, boolean authenticated, boolean hasTradeActivity)
+	{
 		return FlipAssistOverlay.selectNoFocusMessage(
-			showHistory, offerInterfaceOpen, autoStatus, fallback, authenticated, HIST, LOGIN, HINT);
+			showHistory, offerInterfaceOpen, autoStatus, fallback, authenticated, hasTradeActivity,
+			HIST, LOGIN, MONITOR, HINT);
 	}
 
 	// Collect-profit (autoStatus) is suppressed while in any offer interface.
@@ -80,5 +88,34 @@ public class FlipAssistNoFocusMessageTest
 	public void showsHintWhenAuthenticatedAndNothingElse()
 	{
 		assertEquals(HINT, select(false, false, null, null, true));
+	}
+
+	// AC11: with no GE activity, the default state is the generic hint, regardless of Auto.
+	@Test
+	public void defaultsToHintWhenNoTradeActivity()
+	{
+		assertEquals(HINT, select(false, false, null, null, true, false));
+	}
+
+	// AC12/AC13: GE activity opens the monitoring log even when Auto is off (no auto messages).
+	@Test
+	public void showsMonitoringOnTradeActivityWithoutAuto()
+	{
+		assertEquals(MONITOR, select(false, false, null, null, true, true));
+	}
+
+	// Auto-recommend messages still take precedence over the activity-driven monitoring message.
+	@Test
+	public void autoFallbackTakesPrecedenceOverMonitoring()
+	{
+		assertEquals("Monitoring active offers",
+			select(false, false, null, "Monitoring active offers", true, true));
+	}
+
+	// Trade activity must not surface the monitoring log while unauthenticated.
+	@Test
+	public void unauthenticatedTradeActivityStillShowsLogin()
+	{
+		assertEquals(LOGIN, select(false, false, null, null, false, true));
 	}
 }

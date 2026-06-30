@@ -15,6 +15,7 @@ import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
+import com.flipsmart.util.TimeUtils;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
@@ -40,6 +41,21 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
+	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
+
+	/** Sort options for the Completed tab. Recency is the default (AC9). */
+	private enum CompletedSort
+	{
+		RECENCY("Recency"),
+		PROFIT("Profit");
+
+		private final String label;
+
+		CompletedSort(String label)
+		{
+			this.label = label;
+		}
+	}
 
 	// Constants for duplicated literals
 	private static final String FONT_ARIAL = "Arial";
@@ -125,6 +141,10 @@ public class FlipFinderPanel extends PluginPanel
 	private JScrollPane activeFlipsScrollPane;
 	private JScrollPane completedFlipsScrollPane;
 
+	// Completed tab sort controls
+	private CompletedSort completedSort = CompletedSort.RECENCY;
+	private final java.util.Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
+
 	// Login / auth subsystem (UI construction, credential + device-auth flow)
 	private transient LoginPanel loginPanel;
 	private JPanel mainPanel;
@@ -151,6 +171,11 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton skipButton;
 	private JLabel autoRecommendStatusLabel;
 
+	// Recommendation refresh countdown — fixed-interval, top-right, low-emphasis
+	private JLabel refreshCountdownLabel;
+	private transient javax.swing.Timer refreshCountdownTimer;
+	private volatile long nextRefreshAtMillis;
+
 	// Cashstack override indicator (AC3) — shows the active override or an error
 	private JLabel cashstackOverrideLabel;
 
@@ -167,6 +192,9 @@ public class FlipFinderPanel extends PluginPanel
 		this.itemManager = itemManager;
 		this.plugin = plugin;
 		this.configManager = configManager;
+
+		// Restore the persisted Completed-tab sort (defaults to Recency)
+		this.completedSort = loadCompletedSort();
 
 		// Initialize flip style dropdown so it's available for both panels
 		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
@@ -281,6 +309,16 @@ public class FlipFinderPanel extends PluginPanel
 
 		headerPanel.add(titleBox, BorderLayout.WEST);
 		headerPanel.add(headerButtons, BorderLayout.EAST);
+
+		// Low-emphasis refresh countdown, right-aligned beneath the header buttons
+		JPanel countdownRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+		countdownRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		refreshCountdownLabel = new JLabel();
+		refreshCountdownLabel.setIcon(new ImageIcon(PanelFormat.drawClockIcon(COLOR_TEXT_DIM_GRAY)));
+		refreshCountdownLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+		refreshCountdownLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+		countdownRow.add(refreshCountdownLabel);
+		headerPanel.add(countdownRow, BorderLayout.SOUTH);
 
 		// Controls panel (flip style dropdown)
 		JPanel controlsPanel = new JPanel(new BorderLayout());
@@ -399,6 +437,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				service.skip();
 			}
+			resetRefreshCountdown(); // AC19: Skip restarts the countdown
 		});
 		skipButton.setVisible(false);
 
@@ -548,7 +587,13 @@ public class FlipFinderPanel extends PluginPanel
 		
 		tabbedPane.addTab("Recommended", recommendedScrollPane);
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
-		tabbedPane.addTab("Completed", completedFlipsScrollPane);
+
+		// Completed tab carries a secondary sort row (Profit / Recency) above its list
+		JPanel completedTabPanel = new JPanel(new BorderLayout());
+		completedTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		completedTabPanel.add(buildCompletedSortRow(), BorderLayout.NORTH);
+		completedTabPanel.add(completedFlipsScrollPane, BorderLayout.CENTER);
+		tabbedPane.addTab("Completed", completedTabPanel);
 		
 		// Add listener to update status when switching tabs
 		tabbedPane.addChangeListener(e ->
@@ -666,6 +711,11 @@ public class FlipFinderPanel extends PluginPanel
 	public void shutdown()
 	{
 		loginPanel.shutdown();
+		if (refreshCountdownTimer != null)
+		{
+			refreshCountdownTimer.stop();
+			refreshCountdownTimer = null;
+		}
 	}
 
 	/**
@@ -677,6 +727,8 @@ public class FlipFinderPanel extends PluginPanel
 		add(mainPanel, BorderLayout.CENTER);
 		revalidate();
 		repaint();
+
+		startRefreshCountdownTimer();
 
 		// Load data
 		refresh();
@@ -780,6 +832,48 @@ public class FlipFinderPanel extends PluginPanel
 		refreshCompletedFlips();
 	}
 
+	/** Fixed refresh interval in millis (AC18 — independent of the selected Timeframe). */
+	private long refreshIntervalMillis()
+	{
+		int minutes = Math.max(1, Math.min(60, config.flipFinderRefreshMinutes()));
+		return minutes * 60_000L;
+	}
+
+	/** Reset the countdown to a full interval — on a real refresh and on Skip (AC19). */
+	void resetRefreshCountdown()
+	{
+		nextRefreshAtMillis = System.currentTimeMillis() + refreshIntervalMillis();
+		updateRefreshCountdownLabel();
+	}
+
+	/** Start the 1-second ticker that drives the live countdown label (AC15). */
+	private void startRefreshCountdownTimer()
+	{
+		if (nextRefreshAtMillis == 0)
+		{
+			nextRefreshAtMillis = System.currentTimeMillis() + refreshIntervalMillis();
+		}
+		if (refreshCountdownTimer == null)
+		{
+			refreshCountdownTimer = new javax.swing.Timer(1000, e -> updateRefreshCountdownLabel());
+			refreshCountdownTimer.start();
+		}
+		updateRefreshCountdownLabel();
+	}
+
+	private void updateRefreshCountdownLabel()
+	{
+		if (refreshCountdownLabel == null)
+		{
+			return;
+		}
+		long remainingMs = nextRefreshAtMillis - System.currentTimeMillis();
+		long seconds = Math.max(0, (remainingMs + 999) / 1000);
+		refreshCountdownLabel.setText(seconds > 0
+			? String.format("Item refresh in %ds…", seconds)
+			: "Refreshing…");
+	}
+
 	/**
 	 * Refresh recommended flips
 	 *
@@ -787,6 +881,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshRecommendations(boolean shuffleSuggestions)
 	{
+		resetRefreshCountdown();
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
 
@@ -1187,7 +1282,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		completedFlipsListContainer.removeAll();
 
-		for (CompletedFlip flip : flips)
+		for (CompletedFlip flip : sortedCompletedFlips(flips))
 		{
 			completedFlipsListContainer.add(createCompletedFlipPanel(flip));
 			completedFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
@@ -1195,6 +1290,121 @@ public class FlipFinderPanel extends PluginPanel
 
 		completedFlipsListContainer.revalidate();
 		completedFlipsListContainer.repaint();
+	}
+
+	/**
+	 * Return a copy of {@code flips} ordered by the active Completed-tab sort:
+	 * Profit (highest net profit first, AC7) or Recency (most recently sold first, AC8).
+	 */
+	private java.util.List<CompletedFlip> sortedCompletedFlips(java.util.List<CompletedFlip> flips)
+	{
+		java.util.List<CompletedFlip> sorted = new ArrayList<>(flips);
+		java.util.Comparator<CompletedFlip> comparator;
+		if (completedSort == CompletedSort.PROFIT)
+		{
+			comparator = java.util.Comparator.comparingLong(CompletedFlip::getNetProfit).reversed();
+		}
+		else
+		{
+			java.util.Map<CompletedFlip, Long> tsCache = new java.util.IdentityHashMap<>();
+			for (CompletedFlip f : sorted)
+			{
+				tsCache.put(f, TimeUtils.parseIsoToMillis(f.getSellTime()));
+			}
+			comparator = java.util.Comparator
+				.comparingLong((CompletedFlip f) -> tsCache.get(f))
+				.thenComparingInt(CompletedFlip::getId)
+				.reversed();
+		}
+		sorted.sort(comparator);
+		return sorted;
+	}
+
+	/**
+	 * Build the secondary sort row shown above the Completed list (AC5/AC6).
+	 * Two tab-style labels — Recency and Profit — styled like the main tab row.
+	 */
+	private JPanel buildCompletedSortRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(0, 4, 0, 0));
+
+		JLabel sortByLabel = new JLabel("Sort:");
+		sortByLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+		sortByLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+		row.add(sortByLabel);
+
+		Font tabFont = new Font(FONT_ARIAL, Font.BOLD, 11);
+		EmptyBorder tabBorder = new EmptyBorder(2, 7, 2, 7);
+		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+		for (CompletedSort sort : CompletedSort.values())
+		{
+			JLabel tab = new JLabel(sort.label);
+			tab.setFont(tabFont);
+			tab.setBorder(tabBorder);
+			tab.setCursor(handCursor);
+			tab.setOpaque(true);
+			tab.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					selectCompletedSort(sort);
+				}
+			});
+			completedSortTabs.put(sort, tab);
+			row.add(tab);
+		}
+
+		applyCompletedSortTabStyles();
+		return row;
+	}
+
+	/** Persist the chosen sort (AC10), restyle the tabs, and re-render the list. */
+	private void selectCompletedSort(CompletedSort sort)
+	{
+		if (sort == completedSort)
+		{
+			return;
+		}
+		completedSort = sort;
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_COMPLETED_SORT, sort.name());
+		applyCompletedSortTabStyles();
+		if (!currentCompletedFlips.isEmpty())
+		{
+			populateCompletedFlips(currentCompletedFlips);
+		}
+	}
+
+	/** Highlight the active sort tab (orange) and dim the others. */
+	private void applyCompletedSortTabStyles()
+	{
+		for (java.util.Map.Entry<CompletedSort, JLabel> entry : completedSortTabs.entrySet())
+		{
+			boolean selected = entry.getKey() == completedSort;
+			JLabel tab = entry.getValue();
+			tab.setForeground(selected ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+			tab.setBackground(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARK_GRAY_COLOR);
+		}
+	}
+
+	/** Read the persisted Completed-tab sort, defaulting to Recency (AC9). */
+	private CompletedSort loadCompletedSort()
+	{
+		String saved = configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_COMPLETED_SORT);
+		if (saved != null)
+		{
+			try
+			{
+				return CompletedSort.valueOf(saved);
+			}
+			catch (IllegalArgumentException ignored)
+			{
+				// Unknown/legacy value — fall through to the default.
+			}
+		}
+		return CompletedSort.RECENCY;
 	}
 	
 	/**

@@ -207,6 +207,29 @@ public final class PanelFormat
 	}
 
 	/**
+	 * Draw a small clock face onto a 12x12 image with the given color.
+	 */
+	public static BufferedImage drawClockIcon(Color color)
+	{
+		BufferedImage icon = new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(AlphaComposite.Clear);
+		g.fillRect(0, 0, 12, 12);
+		g.setComposite(AlphaComposite.SrcOver);
+
+		g.setColor(color);
+		g.setStroke(new BasicStroke(1.2f));
+		g.drawOval(1, 1, 9, 9);     // Face
+		g.drawLine(6, 6, 6, 3);     // Minute hand
+		g.drawLine(6, 6, 8, 7);     // Hour hand
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
 	 * Draw a ban/circle-slash icon onto a 14x14 image with the given color.
 	 */
 	public static BufferedImage drawBlockIcon(Color color)
