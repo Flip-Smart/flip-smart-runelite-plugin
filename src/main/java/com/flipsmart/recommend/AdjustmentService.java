@@ -3,6 +3,7 @@ package com.flipsmart.recommend;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Owns the buy/sell adjustment-timer state: per-item buy deadlines, sell
@@ -38,13 +39,13 @@ public final class AdjustmentService
 	}
 
 	// Buy adjustment timer deadlines: itemId → System.currentTimeMillis() when timer expires
-	private final Map<Integer, Long> adjustmentDeadlines = new HashMap<>();
+	private final Map<Integer, Long> adjustmentDeadlines = new ConcurrentHashMap<>();
 
 	// Sell adjustment tracking
-	private final Map<Integer, SellAdjustmentState> sellAdjustmentStates = new HashMap<>();
+	private final Map<Integer, SellAdjustmentState> sellAdjustmentStates = new ConcurrentHashMap<>();
 
 	// Buy prices stored when buy orders are placed — used as cost basis for sell adjustments
-	private final Map<Integer, Integer> buyPrices = new HashMap<>();
+	private final Map<Integer, Integer> buyPrices = new ConcurrentHashMap<>();
 
 	// =====================
 	// Buy deadlines

@@ -3,11 +3,12 @@ package com.flipsmart.recommend;
 import com.flipsmart.domain.flip.FlipRecommendation;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToIntFunction;
 
 /**
@@ -21,9 +22,9 @@ import java.util.function.ToIntFunction;
  */
 public final class RecommendationQueue
 {
-	private final List<FlipRecommendation> recommendationQueue = new ArrayList<>();
+	private final List<FlipRecommendation> recommendations = new ArrayList<>();
 	// Cached item names from recommendations - survives queue refreshes
-	private final Map<Integer, String> itemNames = new HashMap<>();
+	private final Map<Integer, String> itemNames = new ConcurrentHashMap<>();
 	private int currentIndex;
 
 	// Offer-screen lock. While set, the coordinator drops focus changes
@@ -45,44 +46,50 @@ public final class RecommendationQueue
 
 	public int size()
 	{
-		return recommendationQueue.size();
+		return recommendations.size();
 	}
 
 	public boolean isEmpty()
 	{
-		return recommendationQueue.isEmpty();
+		return recommendations.isEmpty();
 	}
 
 	public FlipRecommendation get(int index)
 	{
-		return recommendationQueue.get(index);
+		return recommendations.get(index);
 	}
 
 	public List<FlipRecommendation> snapshot()
 	{
-		return new ArrayList<>(recommendationQueue);
+		return new ArrayList<>(recommendations);
 	}
 
-	/** Live, read-only view of the underlying list for scan helpers. */
+	/** Unmodifiable view of the underlying list for scan helpers; reflects live reads. */
 	public List<FlipRecommendation> view()
 	{
-		return recommendationQueue;
+		return Collections.unmodifiableList(recommendations);
 	}
 
 	public void clear()
 	{
-		recommendationQueue.clear();
+		recommendations.clear();
+		currentIndex = 0;
 	}
 
 	public void clearAll()
 	{
-		recommendationQueue.clear();
+		recommendations.clear();
 		itemNames.clear();
+		currentIndex = 0;
 	}
 
 	public void putItemName(int itemId, String itemName)
 	{
-		itemNames.put(itemId, itemName);
+		// itemNames is a ConcurrentHashMap; a null name is simply not cached.
+		if (itemName != null)
+		{
+			itemNames.put(itemId, itemName);
+		}
 	}
 
 	public String getItemName(int itemId, String fallback)
@@ -94,10 +101,10 @@ public final class RecommendationQueue
 	 * Replace the queue contents with the given recommendations and reset the
 	 * cursor to the front.
 	 */
-	public void replace(List<FlipRecommendation> recommendations)
+	public void replace(List<FlipRecommendation> newRecommendations)
 	{
-		recommendationQueue.clear();
-		recommendationQueue.addAll(recommendations);
+		recommendations.clear();
+		recommendations.addAll(newRecommendations);
 		currentIndex = 0;
 	}
 
@@ -105,29 +112,42 @@ public final class RecommendationQueue
 	 * Add every recommendation whose item id is not in {@code activeItemIds},
 	 * caching all item names. Used by start() — does not reset the cursor.
 	 */
-	public void addFilteredByActive(List<FlipRecommendation> recommendations, Set<Integer> activeItemIds)
+	public void addFilteredByActive(List<FlipRecommendation> incoming, Set<Integer> activeItemIds)
 	{
-		for (FlipRecommendation rec : recommendations)
+		for (FlipRecommendation rec : incoming)
 		{
 			if (!activeItemIds.contains(rec.getItemId()))
 			{
-				recommendationQueue.add(rec);
+				recommendations.add(rec);
 			}
-			itemNames.put(rec.getItemId(), rec.getItemName());
+			if (rec.getItemName() != null)
+			{
+				itemNames.put(rec.getItemId(), rec.getItemName());
+			}
 		}
+	}
+
+	/**
+	 * Append recommendations without touching the cursor. Used by the offline-sync
+	 * restore path, which clears, re-populates, then sets a specific cursor — unlike
+	 * {@link #replace(List)}, which resets the cursor to the front.
+	 */
+	public void addAll(List<FlipRecommendation> toAdd)
+	{
+		recommendations.addAll(toAdd);
 	}
 
 	/** Sort the queue by volume per hour ascending (slowest-filling items first). */
 	public void sortByVolumeAscending()
 	{
-		recommendationQueue.sort(Comparator.comparingDouble(FlipRecommendation::getVolumePerHour));
+		recommendations.sort(Comparator.comparingDouble(FlipRecommendation::getVolumePerHour));
 	}
 
 	public FlipRecommendation getCurrentRecommendation()
 	{
-		if (currentIndex >= 0 && currentIndex < recommendationQueue.size())
+		if (currentIndex >= 0 && currentIndex < recommendations.size())
 		{
-			return recommendationQueue.get(currentIndex);
+			return recommendations.get(currentIndex);
 		}
 		return null;
 	}
@@ -135,7 +155,7 @@ public final class RecommendationQueue
 	/** Find a recommendation matching the given item ID from the queue. */
 	public FlipRecommendation findRecommendationForItem(int itemId)
 	{
-		for (FlipRecommendation rec : recommendationQueue)
+		for (FlipRecommendation rec : recommendations)
 		{
 			if (rec.getItemId() == itemId)
 			{
@@ -147,12 +167,12 @@ public final class RecommendationQueue
 
 	public boolean cursorBeyondEnd()
 	{
-		return currentIndex >= recommendationQueue.size();
+		return currentIndex >= recommendations.size();
 	}
 
 	public boolean cursorWithinBounds()
 	{
-		return currentIndex < recommendationQueue.size();
+		return currentIndex < recommendations.size();
 	}
 
 	// =====================
@@ -202,9 +222,9 @@ public final class RecommendationQueue
 		int minProfit)
 	{
 		currentIndex++;
-		while (currentIndex < recommendationQueue.size())
+		while (currentIndex < recommendations.size())
 		{
-			FlipRecommendation next = recommendationQueue.get(currentIndex);
+			FlipRecommendation next = recommendations.get(currentIndex);
 			if (!activeItemIds.contains(next.getItemId())
 				&& profitFn.applyAsInt(next) >= minProfit)
 			{

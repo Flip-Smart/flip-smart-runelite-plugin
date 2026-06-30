@@ -93,17 +93,41 @@ public class RecommendationQueueTest
 	}
 
 	@Test
-	public void viewExposesTheLiveBackingList()
+	public void viewReflectsTheBackingListForReads()
 	{
-		// Pins CURRENT behavior: view() is the live list, so it reflects later mutations.
-		// (The deferred Codacy change makes this unmodifiable — update this test then.)
+		// view() is an unmodifiable window over the live backing list — reads still
+		// reflect later mutations to the queue.
 		RecommendationQueue q = new RecommendationQueue();
 		q.replace(Arrays.asList(rec(11, 100)));
 		List<FlipRecommendation> view = q.view();
 		assertEquals(1, view.size());
 
 		q.clear();
-		assertEquals("view() must reflect the live backing list", 0, view.size());
+		assertEquals("view() must reflect the live backing list for reads", 0, view.size());
+	}
+
+	@Test(expected = UnsupportedOperationException.class)
+	public void viewRejectsMutation()
+	{
+		RecommendationQueue q = new RecommendationQueue();
+		q.replace(Arrays.asList(rec(11, 100)));
+		q.view().add(rec(12, 100));
+	}
+
+	@Test
+	public void addAllAppendsWithoutResettingCursor()
+	{
+		// Used by the offline-sync restore path, which sets a specific cursor afterward
+		// (so unlike replace(), addAll must leave the cursor alone).
+		RecommendationQueue q = new RecommendationQueue();
+		q.replace(Arrays.asList(rec(11, 100)));
+		q.setCurrentIndex(1);
+
+		q.addAll(Arrays.asList(rec(12, 100), rec(13, 100)));
+
+		assertEquals(3, q.size());
+		assertEquals(12, q.get(1).getItemId());
+		assertEquals("addAll must not reset the cursor", 1, q.getCurrentIndex());
 	}
 
 	// ---- cursor ----
@@ -180,9 +204,8 @@ public class RecommendationQueueTest
 	// ---- lifecycle: clear / clearAll ----
 
 	@Test
-	public void clearEmptiesQueueButDoesNotResetCursor()
+	public void clearEmptiesQueueAndResetsCursorToFront()
 	{
-		// Pinned surprising behavior: clear() leaves currentIndex untouched.
 		RecommendationQueue q = new RecommendationQueue();
 		q.replace(Arrays.asList(rec(11, 100), rec(12, 100)));
 		q.setCurrentIndex(2);
@@ -190,11 +213,11 @@ public class RecommendationQueueTest
 		q.clear();
 
 		assertTrue(q.isEmpty());
-		assertEquals("clear() must not reset the cursor", 2, q.getCurrentIndex());
+		assertEquals("clear() resets the cursor to the front", 0, q.getCurrentIndex());
 	}
 
 	@Test
-	public void clearAllAlsoDropsCachedNamesButNotCursor()
+	public void clearAllAlsoDropsCachedNamesAndResetsCursorToFront()
 	{
 		RecommendationQueue q = new RecommendationQueue();
 		q.addFilteredByActive(Arrays.asList(rec(11, 100)), Collections.emptySet());
@@ -204,7 +227,31 @@ public class RecommendationQueueTest
 
 		assertTrue(q.isEmpty());
 		assertEquals("clearAll() must drop the name cache", "fallback", q.getItemName(11, "fallback"));
-		assertEquals("clearAll() must not reset the cursor", 1, q.getCurrentIndex());
+		assertEquals("clearAll() resets the cursor to the front", 0, q.getCurrentIndex());
+	}
+
+	@Test
+	public void putItemNameIgnoresNull()
+	{
+		// itemNames is a ConcurrentHashMap, which rejects null values — a null name must
+		// simply not be cached (the getter then returns the caller's fallback).
+		RecommendationQueue q = new RecommendationQueue();
+		q.putItemName(11, null);
+		assertEquals("fallback", q.getItemName(11, "fallback"));
+	}
+
+	@Test
+	public void addFilteredByActiveSkipsCachingNullNames()
+	{
+		RecommendationQueue q = new RecommendationQueue();
+		FlipRecommendation noName = new FlipRecommendation();
+		noName.setItemId(11);
+		noName.setItemName(null);
+
+		q.addFilteredByActive(Arrays.asList(noName), Collections.emptySet());
+
+		assertEquals("the recommendation is still queued", 1, q.size());
+		assertEquals("a null name must not be cached", "fallback", q.getItemName(11, "fallback"));
 	}
 
 	// ---- lookups / sorting ----
