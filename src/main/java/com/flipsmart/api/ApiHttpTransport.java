@@ -88,9 +88,9 @@ public class ApiHttpTransport
 
 	/**
 	 * Deserialize a response body into a DTO using the transport's Gson. Centralizes
-	 * the {@code gson.fromJson(body, T.class)} boilerplate the endpoint groups each
-	 * hand-rolled; behavior is identical to a direct Gson call (returns {@code null}
-	 * for an empty/null body).
+	 * the {@code gson.fromJson(body, T.class)} boilerplate that each endpoint group
+	 * previously hand-rolled; behavior is identical to a direct Gson call (returns
+	 * {@code null} for an empty/null body).
 	 */
 	public <T> T parse(String body, Class<T> type)
 	{
