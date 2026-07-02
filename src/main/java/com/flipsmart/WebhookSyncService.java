@@ -113,7 +113,7 @@ public class WebhookSyncService
 
 		String webhookUrl = config.discordWebhookUrl();
 		boolean notifySale = config.notifySaleCompleted();
-		boolean notifySuggestion = false;
+		boolean notifySuggestion = config.notifyFlipSuggestion();
 
 		boolean hasChanged = !Objects.equals(webhookUrl, lastSyncedWebhookUrl)
 			|| notifySale != lastSyncedNotifySale
