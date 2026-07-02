@@ -159,17 +159,9 @@ public class WebhookSyncServiceTest
 		verify(apiClient, times(2)).fetchWebhookConfigAsync(any(), any(), any());
 	}
 
-	@Test
-	public void hasNoPeriodicSyncEntryPoint()
+	@Test(expected = NoSuchMethodException.class)
+	public void hasNoPeriodicSyncEntryPoint() throws NoSuchMethodException
 	{
-		try
-		{
-			WebhookSyncService.class.getMethod("pullAndSync");
-			throw new AssertionError("pullAndSync should not exist; webhook config is pulled on login only");
-		}
-		catch (NoSuchMethodException expected)
-		{
-			// The periodic-refresh entry point was removed intentionally.
-		}
+		WebhookSyncService.class.getMethod("pullAndSync");
 	}
 }
