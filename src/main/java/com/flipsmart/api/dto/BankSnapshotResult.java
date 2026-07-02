@@ -22,7 +22,7 @@ public final class BankSnapshotResult
 		return new BankSnapshotResult(response, false);
 	}
 
-	public static BankSnapshotResult rateLimited()
+	public static BankSnapshotResult rateLimitedResult()
 	{
 		return new BankSnapshotResult(null, true);
 	}

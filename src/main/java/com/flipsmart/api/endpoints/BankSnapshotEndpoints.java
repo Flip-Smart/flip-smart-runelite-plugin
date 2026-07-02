@@ -104,7 +104,7 @@ public class BankSnapshotEndpoints
 				{
 					return BankSnapshotResult.success(response);
 				}
-				return rateLimited.get() ? BankSnapshotResult.rateLimited() : BankSnapshotResult.failure();
+				return rateLimited.get() ? BankSnapshotResult.rateLimitedResult() : BankSnapshotResult.failure();
 			});
 	}
 }

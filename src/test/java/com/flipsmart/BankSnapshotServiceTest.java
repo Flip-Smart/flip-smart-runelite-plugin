@@ -144,7 +144,7 @@ public class BankSnapshotServiceTest
 	@Test
 	public void rateLimitedIsSilentAndBacksOffLongerThanStandardCooldown()
 	{
-		stubCreate(CompletableFuture.completedFuture(BankSnapshotResult.rateLimited()));
+		stubCreate(CompletableFuture.completedFuture(BankSnapshotResult.rateLimitedResult()));
 
 		service.onBankContainerChanged(RSN);
 		verify(chatMessageManager, never()).queue(any());
