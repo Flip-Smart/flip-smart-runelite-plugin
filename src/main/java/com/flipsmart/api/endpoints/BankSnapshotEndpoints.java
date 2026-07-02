@@ -67,25 +67,8 @@ public class BankSnapshotEndpoints
 		}
 		requestBody.add("items", itemsArray);
 
-		JsonArray invArray = new JsonArray();
-		for (BankItemId inv : inventoryItems)
-		{
-			JsonObject obj = new JsonObject();
-			obj.addProperty(JSON_KEY_ITEM_ID, inv.itemId);
-			obj.addProperty(JSON_KEY_QUANTITY, inv.quantity);
-			invArray.add(obj);
-		}
-		requestBody.add("inventory_items", invArray);
-
-		JsonArray gearArray = new JsonArray();
-		for (BankItemId gear : gearItems)
-		{
-			JsonObject obj = new JsonObject();
-			obj.addProperty(JSON_KEY_ITEM_ID, gear.itemId);
-			obj.addProperty(JSON_KEY_QUANTITY, gear.quantity);
-			gearArray.add(obj);
-		}
-		requestBody.add("gear_items", gearArray);
+		requestBody.add("inventory_items", toItemIdArray(inventoryItems));
+		requestBody.add("gear_items", toItemIdArray(gearItems));
 
 		RequestBody body = RequestBody.create(JSON, requestBody.toString());
 		Request.Builder requestBuilder = new Request.Builder()
@@ -106,5 +89,18 @@ public class BankSnapshotEndpoints
 				}
 				return rateLimited.get() ? BankSnapshotResult.rateLimitedResult() : BankSnapshotResult.failure();
 			});
+	}
+
+	private static JsonArray toItemIdArray(List<BankItemId> ids)
+	{
+		JsonArray array = new JsonArray();
+		for (BankItemId id : ids)
+		{
+			JsonObject obj = new JsonObject();
+			obj.addProperty(JSON_KEY_ITEM_ID, id.itemId);
+			obj.addProperty(JSON_KEY_QUANTITY, id.quantity);
+			array.add(obj);
+		}
+		return array;
 	}
 }
