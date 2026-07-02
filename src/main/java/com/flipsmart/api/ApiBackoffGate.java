@@ -19,6 +19,7 @@ class ApiBackoffGate
 
 	private final Random random;
 	private final LongSupplier clock;
+	private final Object lock = new Object();
 
 	private int consecutiveFailures;
 	private long cooldownUntilMillis;
@@ -34,23 +35,32 @@ class ApiBackoffGate
 		this.clock = clock;
 	}
 
-	synchronized boolean allowRequest()
+	boolean allowRequest()
 	{
-		return clock.getAsLong() >= cooldownUntilMillis;
+		synchronized (lock)
+		{
+			return clock.getAsLong() >= cooldownUntilMillis;
+		}
 	}
 
-	synchronized void recordFailure()
+	void recordFailure()
 	{
-		consecutiveFailures++;
-		int doublings = Math.min(consecutiveFailures - 1, MAX_DOUBLINGS);
-		long cooldown = Math.min(BASE_COOLDOWN_MS << doublings, MAX_COOLDOWN_MS);
-		double jitterMultiplier = 1.0 + JITTER_FRACTION * (2 * random.nextDouble() - 1);
-		cooldownUntilMillis = clock.getAsLong() + (long) (cooldown * jitterMultiplier);
+		synchronized (lock)
+		{
+			consecutiveFailures++;
+			int doublings = Math.min(consecutiveFailures - 1, MAX_DOUBLINGS);
+			long cooldown = Math.min(BASE_COOLDOWN_MS << doublings, MAX_COOLDOWN_MS);
+			double jitterMultiplier = 1.0 + JITTER_FRACTION * (2 * random.nextDouble() - 1);
+			cooldownUntilMillis = clock.getAsLong() + (long) (cooldown * jitterMultiplier);
+		}
 	}
 
-	synchronized void recordSuccess()
+	void recordSuccess()
 	{
-		consecutiveFailures = 0;
-		cooldownUntilMillis = 0;
+		synchronized (lock)
+		{
+			consecutiveFailures = 0;
+			cooldownUntilMillis = 0;
+		}
 	}
 }
