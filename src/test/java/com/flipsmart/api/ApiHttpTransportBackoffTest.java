@@ -106,6 +106,19 @@ public class ApiHttpTransportBackoffTest
 	}
 
 	@Test
+	public void tooManyRequestsOpensTheGate() throws Exception
+	{
+		Request req = request();
+		CompletableFuture<String> future =
+			transport.executeAsync(req, body -> body, null, false);
+		enqueuedCallback().onResponse(call, response(req, 429));
+		assertNull(future.get());
+
+		transport.executeAsync(request(), body -> body, null, false);
+		verify(httpClient, times(1)).newCall(any(Request.class));
+	}
+
+	@Test
 	public void clientErrorDoesNotOpenTheGate() throws Exception
 	{
 		Request req = request();

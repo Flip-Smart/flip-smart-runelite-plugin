@@ -46,6 +46,7 @@ public class ApiHttpTransport
 	private static final String HEADER_AUTHORIZATION = "Authorization";
 	private static final String BEARER_PREFIX = "Bearer ";
 	private static final int HTTP_SERVER_ERROR_THRESHOLD = 500;
+	private static final int HTTP_TOO_MANY_REQUESTS = 429;
 
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -254,7 +255,7 @@ public class ApiHttpTransport
 
 					if (!response.isSuccessful())
 					{
-						if (response.code() >= HTTP_SERVER_ERROR_THRESHOLD)
+						if (response.code() >= HTTP_SERVER_ERROR_THRESHOLD || response.code() == HTTP_TOO_MANY_REQUESTS)
 						{
 							backoffGate.recordFailure();
 						}
