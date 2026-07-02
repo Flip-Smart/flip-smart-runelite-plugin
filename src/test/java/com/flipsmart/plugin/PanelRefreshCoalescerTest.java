@@ -2,6 +2,7 @@ package com.flipsmart.plugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
 
 import org.junit.Before;
@@ -17,20 +18,18 @@ public class PanelRefreshCoalescerTest
 	private static final class FakeScheduler implements BiConsumer<Integer, Runnable>
 	{
 		final List<Integer> delays = new ArrayList<>();
-		Runnable pending;
+		final AtomicReference<Runnable> pending = new AtomicReference<>();
 
 		@Override
 		public void accept(Integer delayMs, Runnable action)
 		{
 			delays.add(delayMs);
-			pending = action;
+			pending.set(action);
 		}
 
 		void fire()
 		{
-			Runnable r = pending;
-			pending = null;
-			r.run();
+			pending.getAndSet(null).run();
 		}
 	}
 
@@ -73,7 +72,7 @@ public class PanelRefreshCoalescerTest
 
 		assertEquals(1, fullRefreshes);
 		assertEquals(0, activeFlipsRefreshes);
-		assertNull(scheduler.pending);
+		assertNull(scheduler.pending.get());
 	}
 
 	@Test
@@ -90,7 +89,7 @@ public class PanelRefreshCoalescerTest
 		now = 5_000;
 		scheduler.fire();
 		assertEquals(0, fullRefreshes);
-		assertNotNull(scheduler.pending);
+		assertNotNull(scheduler.pending.get());
 		assertEquals(2_000, (int) scheduler.delays.get(1));
 
 		now = 7_000;
