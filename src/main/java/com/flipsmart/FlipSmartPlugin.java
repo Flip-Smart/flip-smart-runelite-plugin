@@ -1694,57 +1694,32 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("active-offer advisor poll: {} offers (batched)", requests.size());
 		}
+		// On batch failure, skip this cycle — the next scheduled or event-driven poll retries.
 		apiClient.postOfferActionsBatchAsync(requests)
 			.thenAccept(batch ->
 			{
-				if (batch != null && batch.getResults() != null)
+				if (batch == null || batch.getResults() == null)
 				{
-					for (OfferAdviceResult result : batch.getResults())
-					{
-						if (log.isDebugEnabled())
-						{
-							log.debug("offer-action {} -> {} newPrice={}",
-								result.getItemId(), result.getAction(), result.getNewPrice());
-						}
-						activeOfferAdvisorService.applyResponse(result.getItemId(), result);
-					}
+					return;
 				}
-				else
+				for (OfferAdviceResult result : batch.getResults())
 				{
-					// Backend without the batch endpoint (or a transient failure) — fall back per-offer.
-					pollAdvisorPerOffer(requests);
+					if (log.isDebugEnabled())
+					{
+						log.debug("offer-action {} -> {} newPrice={}",
+							result.getItemId(), result.getAction(), result.getNewPrice());
+					}
+					activeOfferAdvisorService.applyResponse(result.getItemId(), result);
 				}
 			})
 			.exceptionally(ex ->
 			{
-				pollAdvisorPerOffer(requests);
+				if (log.isDebugEnabled())
+				{
+					log.debug("offer-actions batch poll failed: {}", ex.getMessage());
+				}
 				return null;
 			});
-	}
-
-	private void pollAdvisorPerOffer(java.util.List<OfferAdviceRequest> requests)
-	{
-		for (OfferAdviceRequest req : requests)
-		{
-			apiClient.postOfferActionAsync(req)
-				.thenAccept(resp ->
-				{
-					if (resp != null && log.isDebugEnabled())
-					{
-						log.debug("offer-action {} side={} stage={} -> {} newPrice={}",
-							req.getItemId(), req.getSide(), req.getStage(), resp.getAction(), resp.getNewPrice());
-					}
-					activeOfferAdvisorService.applyResponse(req.getItemId(), resp);
-				})
-				.exceptionally(ex ->
-				{
-					if (log.isDebugEnabled())
-					{
-						log.debug("offer-action poll failed for {}: {}", req.getItemId(), ex.getMessage());
-					}
-					return null;
-				});
-		}
 	}
 
 	public void applyActiveOfferSurface(OfferAdviceResponse resp)

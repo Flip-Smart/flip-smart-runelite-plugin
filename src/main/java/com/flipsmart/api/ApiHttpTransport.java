@@ -27,10 +27,11 @@ import okhttp3.OkHttpClient;
 /**
  * Transport + auth/session core for the FlipSmart API.
  *
- * Owns the OkHttp client, Gson, config and ALL mutable authentication/session
- * state (JWT, refresh token, premium/blocked flags, callbacks, auth coalescing
- * and the 401 re-auth retry). Endpoint groups in {@code com.flipsmart.api.endpoints}
- * are stateless and route every HTTP call through this class.
+ * Owns the OkHttp client, Gson, config, the shared {@link ApiBackoffGate} and ALL
+ * mutable authentication/session state (JWT, refresh token, premium/blocked flags,
+ * callbacks, auth coalescing and the 401 re-auth retry). Endpoint groups in
+ * {@code com.flipsmart.api.endpoints} are stateless and route every HTTP call
+ * through this class.
  */
 @Slf4j
 public class ApiHttpTransport
@@ -48,6 +49,7 @@ public class ApiHttpTransport
 	private final OkHttpClient httpClient;
 	private final Gson gson;
 	private final FlipSmartConfig config;
+	private final ApiBackoffGate backoffGate;
 
 	// JWT token management — all access guarded by authLock
 	private String jwtToken = null;
@@ -76,9 +78,15 @@ public class ApiHttpTransport
 
 	public ApiHttpTransport(OkHttpClient httpClient, Gson gson, FlipSmartConfig config)
 	{
+		this(httpClient, gson, config, new ApiBackoffGate());
+	}
+
+	ApiHttpTransport(OkHttpClient httpClient, Gson gson, FlipSmartConfig config, ApiBackoffGate backoffGate)
+	{
 		this.httpClient = httpClient;
 		this.gson = gson;
 		this.config = config;
+		this.backoffGate = backoffGate;
 	}
 
 	public Gson getGson()
@@ -182,6 +190,15 @@ public class ApiHttpTransport
 	public <T> CompletableFuture<T> executeAsync(Request request, Function<String, T> responseHandler,
 												 Consumer<String> errorHandler, boolean retryOnAuth)
 	{
+		if (!backoffGate.allowRequest())
+		{
+			if (errorHandler != null)
+			{
+				errorHandler.accept("API backing off after repeated failures");
+			}
+			return CompletableFuture.completedFuture(null);
+		}
+
 		CompletableFuture<T> future = new CompletableFuture<>();
 
 		httpClient.newCall(request).enqueue(new Callback()
@@ -189,6 +206,7 @@ public class ApiHttpTransport
 			@Override
 			public void onFailure(Call call, IOException e)
 			{
+				backoffGate.recordFailure();
 				log.debug("Request failed: {}", e.getMessage());
 				if (errorHandler != null)
 				{
@@ -235,6 +253,10 @@ public class ApiHttpTransport
 
 					if (!response.isSuccessful())
 					{
+						if (response.code() >= 500)
+						{
+							backoffGate.recordFailure();
+						}
 						log.debug("Request returned error: {}", response.code());
 						if (errorHandler != null)
 						{
@@ -244,6 +266,7 @@ public class ApiHttpTransport
 						return;
 					}
 
+					backoffGate.recordSuccess();
 					okhttp3.ResponseBody responseBody = response.body();
 					String jsonData = responseBody != null ? responseBody.string() : "";
 					T result = responseHandler.apply(jsonData);
