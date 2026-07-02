@@ -45,6 +45,7 @@ public class ApiHttpTransport
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	private static final String HEADER_AUTHORIZATION = "Authorization";
 	private static final String BEARER_PREFIX = "Bearer ";
+	private static final int HTTP_SERVER_ERROR_THRESHOLD = 500;
 
 	private final OkHttpClient httpClient;
 	private final Gson gson;
@@ -253,7 +254,7 @@ public class ApiHttpTransport
 
 					if (!response.isSuccessful())
 					{
-						if (response.code() >= 500)
+						if (response.code() >= HTTP_SERVER_ERROR_THRESHOLD)
 						{
 							backoffGate.recordFailure();
 						}
