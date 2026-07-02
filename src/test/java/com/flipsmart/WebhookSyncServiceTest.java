@@ -22,6 +22,9 @@ import static org.mockito.Mockito.when;
 
 public class WebhookSyncServiceTest
 {
+	private static final String WEBHOOK_URL_1 = "https://discord.com/api/webhooks/1/a";
+	private static final String WEBHOOK_URL_2 = "https://discord.com/api/webhooks/2/b";
+
 	private FlipSmartConfig config;
 	private FlipSmartApiClient apiClient;
 	private ConfigManager configManager;
@@ -57,7 +60,7 @@ public class WebhookSyncServiceTest
 	@Test
 	public void pullFromBackendFetchesOnceWhenAuthenticated()
 	{
-		stubFetchReturning("https://discord.com/api/webhooks/1/a", true, false);
+		stubFetchReturning(WEBHOOK_URL_1, true, false);
 		service.pullFromBackend();
 		verify(apiClient, times(1)).fetchWebhookConfigAsync(any(), any(), any());
 	}
@@ -65,7 +68,7 @@ public class WebhookSyncServiceTest
 	@Test
 	public void pullFromBackendAppliesBackendPrefsToConfig()
 	{
-		stubFetchReturning("https://discord.com/api/webhooks/1/a", true, false);
+		stubFetchReturning(WEBHOOK_URL_1, true, false);
 		service.pullFromBackend();
 		verify(configManager).setConfiguration("flipsmart", "notifySaleCompleted", "true");
 		verify(configManager).setConfiguration("flipsmart", "notifyFlipSuggestion", "false");
@@ -82,20 +85,20 @@ public class WebhookSyncServiceTest
 	@Test
 	public void syncIfChangedPushesNewUrlWhenAuthenticated()
 	{
-		when(config.discordWebhookUrl()).thenReturn("https://discord.com/api/webhooks/2/b");
+		when(config.discordWebhookUrl()).thenReturn(WEBHOOK_URL_2);
 		when(config.notifySaleCompleted()).thenReturn(true);
 
 		service.syncIfChanged();
 
 		verify(apiClient, times(1)).updateWebhookAsync(
-			eq("https://discord.com/api/webhooks/2/b"), eq(true), eq(false), any(), any());
+			eq(WEBHOOK_URL_2), eq(true), eq(false), any(), any());
 	}
 
 	@Test
 	public void syncIfChangedNoApiCallWhenNotAuthenticated()
 	{
 		when(apiClient.isAuthenticated()).thenReturn(false);
-		when(config.discordWebhookUrl()).thenReturn("https://discord.com/api/webhooks/2/b");
+		when(config.discordWebhookUrl()).thenReturn(WEBHOOK_URL_2);
 
 		service.syncIfChanged();
 
@@ -114,7 +117,7 @@ public class WebhookSyncServiceTest
 	@Test
 	public void syncIfChangedSkipsPushWhenUrlMatchesPulledBackendValue()
 	{
-		String url = "https://discord.com/api/webhooks/1/a";
+		String url = WEBHOOK_URL_1;
 		stubFetchReturning(url, false, false);
 		service.pullFromBackend();
 
@@ -127,7 +130,7 @@ public class WebhookSyncServiceTest
 	@Test
 	public void syncIfChangedDeletesWhenUrlClearedAfterSuccessfulSync()
 	{
-		when(config.discordWebhookUrl()).thenReturn("https://discord.com/api/webhooks/2/b");
+		when(config.discordWebhookUrl()).thenReturn(WEBHOOK_URL_2);
 		doAnswer(inv -> {
 			Runnable onSuccess = inv.getArgument(3);
 			onSuccess.run();
@@ -150,7 +153,7 @@ public class WebhookSyncServiceTest
 	@Test
 	public void repeatedPullsEachRequireExplicitInvocation()
 	{
-		stubFetchReturning("https://discord.com/api/webhooks/1/a", false, false);
+		stubFetchReturning(WEBHOOK_URL_1, false, false);
 		service.pullFromBackend();
 		service.pullFromBackend();
 		verify(apiClient, times(2)).fetchWebhookConfigAsync(any(), any(), any());
