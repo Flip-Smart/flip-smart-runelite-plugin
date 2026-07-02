@@ -266,6 +266,17 @@ public class ApiHttpTransport
 	public <T> CompletableFuture<T> executeAuthenticatedAsync(Request.Builder requestBuilder,
 															  Function<String, T> responseHandler)
 	{
+		return executeAuthenticatedAsync(requestBuilder, responseHandler, null);
+	}
+
+	/**
+	 * Execute an authenticated request asynchronously, forwarding non-2xx and
+	 * connection errors to the given handler before the future completes with null.
+	 */
+	public <T> CompletableFuture<T> executeAuthenticatedAsync(Request.Builder requestBuilder,
+															  Function<String, T> responseHandler,
+															  Consumer<String> errorHandler)
+	{
 		return ensureAuthenticatedAsync().thenCompose(authenticated ->
 		{
 			if (!authenticated)
@@ -277,7 +288,7 @@ public class ApiHttpTransport
 			Request request = withAuthHeader(requestBuilder)
 				.build();
 
-			return executeAsync(request, responseHandler, null, true);
+			return executeAsync(request, responseHandler, errorHandler, true);
 		});
 	}
 

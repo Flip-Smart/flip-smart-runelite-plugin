@@ -15,14 +15,13 @@ import com.flipsmart.api.dto.CompletedFlipsResponse;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.api.dto.OfferAdviceBatchResponse;
-import com.flipsmart.api.dto.BankSnapshotResponse;
+import com.flipsmart.api.dto.BankSnapshotResult;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.BlocklistsResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.api.dto.DumpEvent;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
-import com.flipsmart.api.dto.BankSnapshotStatusResponse;
 import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.api.dto.SellPriceCheckResponse;
@@ -311,12 +310,7 @@ public class FlipSmartApiClient
 	// Bank snapshots
 	// ============================================================================
 
-	public CompletableFuture<BankSnapshotStatusResponse> checkBankSnapshotStatusAsync(String rsn)
-	{
-		return bankSnapshots.checkBankSnapshotStatusAsync(rsn);
-	}
-
-	public CompletableFuture<BankSnapshotResponse> createBankSnapshotAsync(
+	public CompletableFuture<BankSnapshotResult> createBankSnapshotAsync(
 		String rsn,
 		java.util.List<BankItem> items,
 		java.util.List<BankItemId> inventoryItems,

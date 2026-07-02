@@ -94,14 +94,20 @@ public class SeamDtoDeserializationTest
 	}
 
 	@Test
-	public void bankSnapshotStatusResponseMapsSnakeCaseKeys()
+	public void bankSnapshotResponseMapsSnakeCaseKeys()
 	{
-		String json = "{\"can_snapshot\":false,\"next_snapshot_available\":\"2026-07-01T00:00:00Z\","
-			+ "\"hours_until_available\":4.5,\"message\":\"rate limited\"}";
-		BankSnapshotStatusResponse r = gson.fromJson(json, BankSnapshotStatusResponse.class);
-		assertFalse(r.isCanSnapshot());
-		assertEquals("2026-07-01T00:00:00Z", r.getNextSnapshotAvailable());
-		assertEquals(Double.valueOf(4.5), r.getHoursUntilAvailable());
-		assertEquals("rate limited", r.getMessage());
+		String json = "{\"id\":9,\"rsn\":\"Zezima\",\"total_value\":1000,\"inventory_value\":200,"
+			+ "\"ge_offers_value\":300,\"total_wealth\":1500,\"item_count\":12,"
+			+ "\"snapshot_time\":\"2026-07-01T00:00:00Z\",\"message\":\"ok\"}";
+		BankSnapshotResponse r = gson.fromJson(json, BankSnapshotResponse.class);
+		assertEquals(9, r.getId());
+		assertEquals("Zezima", r.getRsn());
+		assertEquals(1000L, r.getTotalValue());
+		assertEquals(200L, r.getInventoryValue());
+		assertEquals(300L, r.getGeOffersValue());
+		assertEquals(1500L, r.getTotalWealth());
+		assertEquals(12, r.getItemCount());
+		assertEquals("2026-07-01T00:00:00Z", r.getSnapshotTime());
+		assertEquals("ok", r.getMessage());
 	}
 }

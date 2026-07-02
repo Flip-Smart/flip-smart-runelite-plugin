@@ -134,9 +134,10 @@ public class PluginScheduler
 	/**
 	 * Start the active-offer advisor poll timer (30-second interval).
 	 *
-	 * @param pollBody the poll body to run on each interval
+	 * @param loggedInCheck supplies whether the player is logged into RuneScape
+	 * @param pollBody      the poll body to run on each interval when logged in
 	 */
-	public void startActiveOfferAdvisorTimer(Runnable pollBody)
+	public void startActiveOfferAdvisorTimer(BooleanSupplier loggedInCheck, Runnable pollBody)
 	{
 		activeOfferAdvisorTimer = new Timer("ActiveOfferAdvisorTimer", true);
 		activeOfferAdvisorTimer.scheduleAtFixedRate(new TimerTask()
@@ -144,7 +145,10 @@ public class PluginScheduler
 			@Override
 			public void run()
 			{
-				pollBody.run();
+				if (loggedInCheck.getAsBoolean())
+				{
+					pollBody.run();
+				}
 			}
 		}, ACTIVE_OFFER_ADVISOR_INTERVAL_MS, ACTIVE_OFFER_ADVISOR_INTERVAL_MS);
 	}

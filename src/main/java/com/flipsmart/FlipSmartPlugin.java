@@ -638,7 +638,7 @@ public class FlipSmartPlugin extends Plugin
 		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker);
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
-		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
+		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
