@@ -232,7 +232,7 @@ public class ApiHttpTransport
 
 						authenticateAsync().thenAccept(authSuccess ->
 						{
-							if (authSuccess)
+							if (Boolean.TRUE.equals(authSuccess))
 							{
 								// Rebuild request with new token
 								Request retryRequest = withAuthHeader(request.newBuilder())
