@@ -1553,9 +1553,6 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void runFlipFinderRefreshBody()
 	{
-		// Webhook sync — pull latest config from backend
-		webhookSyncService.pullAndSync();
-
 		if (flipFinderPanel != null && config.showFlipFinder())
 		{
 			javax.swing.SwingUtilities.invokeLater(() ->
