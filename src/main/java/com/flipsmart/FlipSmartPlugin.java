@@ -12,6 +12,7 @@ import com.flipsmart.util.ItemUtils;
 import com.flipsmart.util.TimeUtils;
 import com.flipsmart.util.GpUtils;
 import com.flipsmart.plugin.EventRouter;
+import com.flipsmart.plugin.PanelRefreshCoalescer;
 import com.flipsmart.plugin.PluginScheduler;
 import com.flipsmart.plugin.ServiceWiring;
 
@@ -635,7 +636,12 @@ public class FlipSmartPlugin extends Plugin
 		startFlipFinderRefreshTimer();
 
 		// Wire service callbacks and initialize auto-recommend
-		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker);
+		PanelRefreshCoalescer refreshCoalescer = new PanelRefreshCoalescer(
+			this::scheduleOneShot,
+			System::currentTimeMillis,
+			() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); },
+			() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
+		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker, refreshCoalescer);
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(this::pollActiveOfferAdvisor);
@@ -643,7 +649,8 @@ public class FlipSmartPlugin extends Plugin
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
 		serviceWiring.wireTransactionLogger(this, session, offerStore);
-		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService);
+		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService,
+			offerStore, refreshCoalescer);
 
 		// Build the event router now that all collaborators exist
 		eventRouter = new EventRouter(this, client, config, session, webhookSyncService,

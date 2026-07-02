@@ -6,7 +6,9 @@ import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.flip.ActiveFlipLocalUpdater;
 import com.flipsmart.api.dto.BlocklistSummary;
+import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.ui.panel.CardWidgets;
@@ -1181,11 +1183,49 @@ public class FlipFinderPanel extends PluginPanel
 	@SuppressWarnings("unused")
 	public void updatePendingOrders(java.util.List<PendingOrder> pendingOrders)
 	{
-		// Only update if we're on the Active Flips tab
-		if (tabbedPane.getSelectedIndex() == 1)
+		redisplayActiveFlipsLocally();
+	}
+
+	/**
+	 * Reflect a GE offer state change in the Active Flips tab immediately, using
+	 * only data the plugin already holds. Pending-order rows re-derive from the
+	 * offer store; collected offers add/remove cached active-flip entries via
+	 * {@link ActiveFlipLocalUpdater}. The coalesced API refresh reconciles the
+	 * numbers afterwards. Must be called on the EDT.
+	 */
+	public void applyLocalOfferEvent(com.flipsmart.trading.OfferEvent event)
+	{
+		if (event.kind == OfferTransition.Kind.NONE || event.kind == OfferTransition.Kind.REJECTED)
 		{
-			refreshActiveFlips();
+			return;
 		}
+		if (event.kind == OfferTransition.Kind.COLLECTED && event.record != null)
+		{
+			synchronized (currentActiveFlips)
+			{
+				ActiveFlipLocalUpdater.applyCollect(currentActiveFlips, event.record, java.time.Instant.now().toString());
+			}
+		}
+		redisplayActiveFlipsLocally();
+	}
+
+	/** Rebuild the Active Flips tab from cached flips and local pending orders — no list/aggregate API calls. */
+	private void redisplayActiveFlipsLocally()
+	{
+		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
+		java.util.List<ActiveFlip> flips;
+		synchronized (currentActiveFlips)
+		{
+			flips = new ArrayList<>(currentActiveFlips);
+		}
+		java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
+		if (flips.isEmpty() && pendingOrders.isEmpty())
+		{
+			showNoActiveFlips();
+			return;
+		}
+		displayActiveFlipsAndPending(flips, pendingOrders);
+		restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 	}
 
 	/**
