@@ -35,11 +35,11 @@ public class ServiceWiring
 	 * (formerly FlipSmartPlugin.wireServiceCallbacks)
 	 */
 	public void wireServiceCallbacks(FlipSmartPlugin plugin, OfflineSyncService offlineSyncService,
-		ActiveFlipTracker activeFlipTracker)
+		ActiveFlipTracker activeFlipTracker, PanelRefreshCoalescer refreshCoalescer)
 	{
 		offlineSyncService.setOnSyncComplete(plugin::schedulePostSyncTasks);
-		activeFlipTracker.setOnPanelRefreshNeeded(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().refresh(); });
-		activeFlipTracker.setOnActiveFlipsRefreshNeeded(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().refreshActiveFlips(); });
+		activeFlipTracker.setOnPanelRefreshNeeded(() -> refreshCoalescer.request(true));
+		activeFlipTracker.setOnActiveFlipsRefreshNeeded(() -> refreshCoalescer.request(false));
 	}
 
 	/**
@@ -147,14 +147,26 @@ public class ServiceWiring
 	/**
 	 * Wire all GrandExchangeTracker callbacks.
 	 * (formerly FlipSmartPlugin.wireGrandExchangeTrackerCallbacks)
+	 *
+	 * API-backed refreshes triggered by GE offer events route through the
+	 * {@link PanelRefreshCoalescer} so a burst produces one refresh per window.
+	 * Immediate responsiveness comes from the OfferStore listener registered
+	 * here, which redisplays the Active Flips tab from local state on the EDT.
 	 */
 	public void wireGrandExchangeTrackerCallbacks(FlipSmartPlugin plugin, GrandExchangeTracker grandExchangeTracker,
-		AutoRecommendService autoRecommendService, GEHistoryService geHistoryService)
+		AutoRecommendService autoRecommendService, GEHistoryService geHistoryService,
+		OfferStore offerStore, PanelRefreshCoalescer refreshCoalescer)
 	{
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setRsnSupplier(plugin::getCurrentRsnSafe);
-		grandExchangeTracker.setOnPanelRefresh(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().refresh(); });
-		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (plugin.getFlipFinderPanel() != null) { plugin.getFlipFinderPanel().refreshActiveFlips(); plugin.getFlipFinderPanel().reevaluateSlotLimitDisplay(); } plugin.maybeEventPollAdvisor(); });
+		grandExchangeTracker.setOnPanelRefresh(() -> refreshCoalescer.request(true));
+		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().reevaluateSlotLimitDisplay(); plugin.maybeEventPollAdvisor(); refreshCoalescer.request(false); });
+		offerStore.addListener(event -> SwingUtilities.invokeLater(() -> {
+			if (plugin.getFlipFinderPanel() != null)
+			{
+				plugin.getFlipFinderPanel().applyLocalOfferEvent(event);
+			}
+		}));
 		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().updatePendingOrders(plugin.getPendingBuyOrders()); });
 		grandExchangeTracker.setOnFocusChanged(plugin::handleGETrackerFocusChanged);
 		grandExchangeTracker.setOnFocusClear(plugin::handleGETrackerFocusClear);
