@@ -1086,13 +1086,15 @@ public class ApiHttpTransport
 	}
 
 	/**
-	 * Update the user's RuneScape Name on the server (async)
+	 * Update the user's RuneScape Name on the server (async).
+	 *
+	 * @return future completing true only when the server confirmed the update
 	 */
-	public void updateRSN(String rsn)
+	public CompletableFuture<Boolean> updateRSN(String rsn)
 	{
 		if (rsn == null || rsn.isEmpty())
 		{
-			return;
+			return CompletableFuture.completedFuture(false);
 		}
 
 		String apiUrl = getApiUrl();
@@ -1102,7 +1104,7 @@ public class ApiHttpTransport
 			.url(url)
 			.put(RequestBody.create(JSON, ""));
 
-		executeAuthenticatedAsync(requestBuilder, jsonData ->
+		return executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			log.debug("Successfully updated RSN to: {}", rsn);
 			return true;
