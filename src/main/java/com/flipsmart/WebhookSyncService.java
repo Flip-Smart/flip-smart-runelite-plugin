@@ -11,7 +11,8 @@ import java.util.Objects;
 /**
  * Service for syncing webhook configuration between plugin and backend.
  * When webhook URL or preferences change in the plugin config, they are
- * synced to the backend. On startup, backend config is pulled to the plugin.
+ * synced to the backend. On login, backend config is pulled to the plugin.
+ * All API calls are skipped when there is no authenticated session.
  */
 @Slf4j
 @Singleton
@@ -78,10 +79,16 @@ public class WebhookSyncService
 
 	/**
 	 * Pull webhook config from backend and update plugin config if needed.
-	 * Called on startup to ensure parity between web dashboard and plugin.
+	 * Called once on login to ensure parity between web dashboard and plugin.
 	 */
 	public void pullFromBackend()
 	{
+		if (!apiClient.isAuthenticated())
+		{
+			log.debug("Skipping webhook pull: no authenticated session");
+			return;
+		}
+
 		apiClient.fetchWebhookConfigAsync(
 			webhookConfig -> applyBackendConfig(
 				extractUrl(webhookConfig),
@@ -94,21 +101,19 @@ public class WebhookSyncService
 	}
 
 	/**
-	 * Pull config from backend. Called periodically to keep plugin in sync.
-	 */
-	public void pullAndSync()
-	{
-		pullFromBackend();
-	}
-
-	/**
 	 * Check if webhook config has changed and sync if needed.
 	 */
 	public void syncIfChanged()
 	{
+		if (!apiClient.isAuthenticated())
+		{
+			log.debug("Skipping webhook sync: no authenticated session");
+			return;
+		}
+
 		String webhookUrl = config.discordWebhookUrl();
 		boolean notifySale = config.notifySaleCompleted();
-		boolean notifySuggestion = false;
+		boolean notifySuggestion = config.notifyFlipSuggestion();
 
 		boolean hasChanged = !Objects.equals(webhookUrl, lastSyncedWebhookUrl)
 			|| notifySale != lastSyncedNotifySale
