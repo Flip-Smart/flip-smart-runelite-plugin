@@ -9,7 +9,7 @@ package com.flipsmart.plugin;
  */
 public class RsnSyncGate
 {
-	private volatile String lastPushedRsn;
+	private volatile String lastPushedRsn = "";
 
 	public boolean shouldPush(String rsn)
 	{
@@ -24,6 +24,6 @@ public class RsnSyncGate
 	/** Forget the pushed state so the next sync pushes again (e.g. after re-auth). */
 	public void reset()
 	{
-		lastPushedRsn = null;
+		lastPushedRsn = "";
 	}
 }
