@@ -13,7 +13,6 @@ import com.flipsmart.api.endpoints.WebhookEndpoints;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
-import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.api.dto.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.BankSnapshotResult;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
@@ -45,6 +44,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -77,8 +77,12 @@ public class FlipSmartApiClient
 	{
 		// Use the injected Gson's builder to create a customized instance
 		Gson customGson = gson.newBuilder().create();
-		// Use the injected OkHttpClient directly as required by RuneLite
-		this.transport = new ApiHttpTransport(okHttpClient, customGson, config);
+		// Derive from the injected OkHttpClient as required by RuneLite — newBuilder()
+		// shares its connection pool and dispatcher — adding a hard per-call timeout
+		OkHttpClient timeoutClient = okHttpClient.newBuilder()
+			.callTimeout(15, TimeUnit.SECONDS)
+			.build();
+		this.transport = new ApiHttpTransport(timeoutClient, customGson, config);
 
 		this.flips = new FlipsEndpoints(transport);
 		this.transactions = new TransactionEndpoints(transport);
@@ -388,11 +392,6 @@ public class FlipSmartApiClient
 	// ============================================================================
 	// Offer actions
 	// ============================================================================
-
-	public CompletableFuture<OfferAdviceResponse> postOfferActionAsync(OfferAdviceRequest req)
-	{
-		return offerActions.postOfferActionAsync(req);
-	}
 
 	public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(java.util.List<OfferAdviceRequest> reqs)
 	{
