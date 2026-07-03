@@ -1,6 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.BankItemId;
 import com.flipsmart.api.dto.BankItem;
+import com.flipsmart.api.dto.BankSnapshotResponse;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.ItemUtils;
 
@@ -35,6 +36,14 @@ public class BankSnapshotService
 {
 	private static final int COINS_ITEM_ID = 995;
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000;
+	private static final long BANK_SNAPSHOT_BACKOFF_MS = 30 * 60_000;
+
+	/**
+	 * Cooldown applied to the next attempt. Extended to the long backoff when
+	 * the server accepted a snapshot or answered rate-limited — its window is
+	 * 24h, so re-posting the full bank every minute would be wasted traffic.
+	 */
+	private volatile long currentCooldownMs = BANK_SNAPSHOT_COOLDOWN_MS;
 
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
@@ -72,7 +81,7 @@ public class BankSnapshotService
 		}
 
 		long now = System.currentTimeMillis();
-		if (now - session.getLastBankSnapshotAttempt() < BANK_SNAPSHOT_COOLDOWN_MS)
+		if (now - session.getLastBankSnapshotAttempt() < currentCooldownMs)
 		{
 			return;
 		}
@@ -89,34 +98,9 @@ public class BankSnapshotService
 
 		session.setLastBankSnapshotAttempt(now);
 		session.setBankSnapshotInProgress(true);
+		currentCooldownMs = BANK_SNAPSHOT_COOLDOWN_MS;
 
-		apiClient.checkBankSnapshotStatusAsync(rsn).thenAccept(status ->
-		{
-			if (status == null)
-			{
-				log.debug("Failed to check bank snapshot status");
-				postBankSnapshotMessage("Failed to check snapshot status - will retry", true);
-				session.setBankSnapshotInProgress(false);
-				session.setLastBankSnapshotAttempt(0);
-				return;
-			}
-
-			if (!status.isCanSnapshot())
-			{
-				log.debug("Bank snapshot not available: {}", status.getMessage());
-				session.setBankSnapshotInProgress(false);
-				return;
-			}
-
-			clientThread.invokeLater(() -> captureBankSnapshot(rsn));
-		}).exceptionally(e ->
-		{
-			log.debug("Error checking bank snapshot status: {}", e.getMessage());
-			postBankSnapshotMessage("Connection error - will retry", true);
-			session.setBankSnapshotInProgress(false);
-			session.setLastBankSnapshotAttempt(0);
-			return null;
-		});
+		clientThread.invokeLater(() -> captureBankSnapshot(rsn));
 	}
 
 	/**
@@ -142,16 +126,23 @@ public class BankSnapshotService
 			log.debug("Capturing bank snapshot: {} bank items, {} inv items, {} gear items, ge={} for RSN {}",
 				items.size(), inventoryItems.size(), gearItems.size(), geOffersValue, rsn);
 
-			apiClient.createBankSnapshotAsync(rsn, items, inventoryItems, gearItems, geOffersValue).thenAccept(response ->
+			apiClient.createBankSnapshotAsync(rsn, items, inventoryItems, gearItems, geOffersValue).thenAccept(result ->
 			{
-				if (response != null)
+				if (result != null && result.isSuccess())
 				{
+					BankSnapshotResponse response = result.getResponse();
 					String wealthStr = String.format("%,d", response.getTotalWealth());
 					log.debug("Bank snapshot captured: {} items, {} GP total wealth",
 						response.getItemCount(), wealthStr);
 					postBankSnapshotMessage(
 						String.format("Bank snapshot saved: %s GP total wealth", wealthStr),
 						false);
+					currentCooldownMs = BANK_SNAPSHOT_BACKOFF_MS;
+				}
+				else if (result != null && result.isRateLimited())
+				{
+					log.debug("Bank snapshot rate limited by server - backing off");
+					currentCooldownMs = BANK_SNAPSHOT_BACKOFF_MS;
 				}
 				else
 				{
@@ -164,7 +155,6 @@ public class BankSnapshotService
 				log.debug("Error creating bank snapshot: {}", e.getMessage());
 				postBankSnapshotMessage("Connection error - will retry", true);
 				session.setBankSnapshotInProgress(false);
-				session.setLastBankSnapshotAttempt(0);
 				return null;
 			});
 		}

@@ -4,7 +4,7 @@ import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.dto.BankItem;
 import com.flipsmart.api.dto.BankItemId;
 import com.flipsmart.api.dto.BankSnapshotResponse;
-import com.flipsmart.api.dto.BankSnapshotStatusResponse;
+import com.flipsmart.api.dto.BankSnapshotResult;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import okhttp3.Request;
@@ -12,17 +12,18 @@ import okhttp3.RequestBody;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.flipsmart.api.ApiHttpTransport.JSON;
-import static com.flipsmart.api.ApiHttpTransport.urlEncode;
 
 /**
- * Bank snapshot status and creation endpoints.
+ * Bank snapshot creation endpoint.
  */
 public class BankSnapshotEndpoints
 {
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 	private static final String JSON_KEY_QUANTITY = "quantity";
+	private static final String RATE_LIMIT_ERROR = "Error 429";
 
 	private final ApiHttpTransport transport;
 
@@ -32,29 +33,16 @@ public class BankSnapshotEndpoints
 	}
 
 	/**
-	 * Check if a bank snapshot can be taken (rate limit check)
-	 */
-	public CompletableFuture<BankSnapshotStatusResponse> checkBankSnapshotStatusAsync(String rsn)
-	{
-		String apiUrl = transport.getApiUrl();
-		String url = String.format("%s/bank/snapshot/status?rsn=%s", apiUrl, urlEncode(rsn));
-
-		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
-			.get();
-
-		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			transport.parse(jsonData, BankSnapshotStatusResponse.class));
-	}
-
-	/**
 	 * Create a bank snapshot with bank items, equipped gear, inventory, and GE offers.
+	 * The server enforces its own rate limit, answering 429 when a snapshot was
+	 * already taken inside the window; that outcome is reported via
+	 * {@link BankSnapshotResult#isRateLimited()}.
 	 *
 	 * Bank items carry plugin-supplied prices; backend re-prices them when zero
 	 * or when they're a known charged variant. Inventory and gear items are
 	 * priced server-side, so only item_id + quantity are sent.
 	 */
-	public CompletableFuture<BankSnapshotResponse> createBankSnapshotAsync(
+	public CompletableFuture<BankSnapshotResult> createBankSnapshotAsync(
 		String rsn,
 		List<BankItem> items,
 		List<BankItemId> inventoryItems,
@@ -79,32 +67,40 @@ public class BankSnapshotEndpoints
 		}
 		requestBody.add("items", itemsArray);
 
-		JsonArray invArray = new JsonArray();
-		for (BankItemId inv : inventoryItems)
-		{
-			JsonObject obj = new JsonObject();
-			obj.addProperty(JSON_KEY_ITEM_ID, inv.itemId);
-			obj.addProperty(JSON_KEY_QUANTITY, inv.quantity);
-			invArray.add(obj);
-		}
-		requestBody.add("inventory_items", invArray);
-
-		JsonArray gearArray = new JsonArray();
-		for (BankItemId gear : gearItems)
-		{
-			JsonObject obj = new JsonObject();
-			obj.addProperty(JSON_KEY_ITEM_ID, gear.itemId);
-			obj.addProperty(JSON_KEY_QUANTITY, gear.quantity);
-			gearArray.add(obj);
-		}
-		requestBody.add("gear_items", gearArray);
+		requestBody.add("inventory_items", toItemIdArray(inventoryItems));
+		requestBody.add("gear_items", toItemIdArray(gearItems));
 
 		RequestBody body = RequestBody.create(JSON, requestBody.toString());
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
 			.post(body);
 
-		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			transport.parse(jsonData, BankSnapshotResponse.class));
+		// The error handler runs before the future completes with null, so the
+		// flag is visible to the thenApply below.
+		AtomicBoolean rateLimited = new AtomicBoolean(false);
+		return transport.executeAuthenticatedAsync(requestBuilder,
+			jsonData -> transport.parse(jsonData, BankSnapshotResponse.class),
+			error -> rateLimited.set(RATE_LIMIT_ERROR.equals(error)))
+			.thenApply(response ->
+			{
+				if (response != null)
+				{
+					return BankSnapshotResult.success(response);
+				}
+				return rateLimited.get() ? BankSnapshotResult.rateLimitedResult() : BankSnapshotResult.failure();
+			});
+	}
+
+	private static JsonArray toItemIdArray(List<BankItemId> ids)
+	{
+		JsonArray array = new JsonArray();
+		for (BankItemId id : ids)
+		{
+			JsonObject obj = new JsonObject();
+			obj.addProperty(JSON_KEY_ITEM_ID, id.itemId);
+			obj.addProperty(JSON_KEY_QUANTITY, id.quantity);
+			array.add(obj);
+		}
+		return array;
 	}
 }
