@@ -14,6 +14,7 @@ import com.flipsmart.util.GpUtils;
 import com.flipsmart.plugin.EventRouter;
 import com.flipsmart.plugin.PanelRefreshCoalescer;
 import com.flipsmart.plugin.PluginScheduler;
+import com.flipsmart.plugin.RsnSyncGate;
 import com.flipsmart.plugin.ServiceWiring;
 
 import com.google.gson.Gson;
@@ -197,6 +198,7 @@ public class FlipSmartPlugin extends Plugin
 	// populated, so syncRSN couldn't capture the current account's name. The
 	// onGameTick handler retries until it succeeds. Issue #556.
 	private volatile boolean rsnSyncPending;
+	private final RsnSyncGate rsnSyncGate = new RsnSyncGate();
 
 	// Cached world-type flag — updated on the client thread (WorldChanged, login) and read
 	// from any thread (Swing EDT, scheduler). Defaults to true so unlinked callers see more items.
@@ -1199,7 +1201,27 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("RSN synced: {}", rsn);
 		}
-		apiClient.updateRSN(rsn);
+		pushRsnIfNeeded(rsn);
+	}
+
+	/**
+	 * Push the RSN to the backend only when it has not been confirmed pushed
+	 * this client session — LOGGED_IN fires on every world hop, not just logins.
+	 */
+	private void pushRsnIfNeeded(String rsn)
+	{
+		if (!rsnSyncGate.shouldPush(rsn))
+		{
+			log.debug("RSN already pushed this session, skipping: {}", rsn);
+			return;
+		}
+		apiClient.updateRSN(rsn).thenAccept(confirmed ->
+		{
+			if (Boolean.TRUE.equals(confirmed))
+			{
+				rsnSyncGate.markPushed(rsn);
+			}
+		});
 	}
 
 	/**
@@ -1448,7 +1470,9 @@ public class FlipSmartPlugin extends Plugin
 			if (session.getRsn() != null && !session.getRsn().isEmpty())
 			{
 				log.debug("Auth success callback - syncing RSN: {}", session.getRsn());
-				apiClient.updateRSN(session.getRsn());
+				// A fresh auth is a new backend session; the old pushed state no longer proves the binding exists
+				rsnSyncGate.reset();
+				pushRsnIfNeeded(session.getRsn());
 			}
 			else
 			{

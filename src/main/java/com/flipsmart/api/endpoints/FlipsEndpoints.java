@@ -13,41 +13,59 @@ import okhttp3.RequestBody;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.LongSupplier;
 
 import static com.flipsmart.api.ApiHttpTransport.JSON;
 import static com.flipsmart.api.ApiHttpTransport.urlEncode;
 
 /**
  * Item analysis, flip recommendations and flip-adjustment endpoints.
- * Owns the per-item analysis cache.
+ * Owns the per-item analysis cache. Analysis feeds slow-moving card display
+ * fields (buy limit, liquidity, risk), so a long TTL is acceptable; live
+ * prices on cards come from the active-flips payload, not from here.
  */
 public class FlipsEndpoints
 {
 	private static final String JSON_KEY_ITEM_ID = "item_id";
-	private static final long CACHE_DURATION_MS = 180_000; // 3 minute cache
+	static final long CACHE_DURATION_MS = 900_000;
 
 	private final ApiHttpTransport transport;
+	private final LongSupplier clock;
 
 	// Cache to avoid spamming the API
 	private final Map<Integer, CachedAnalysis> analysisCache = new ConcurrentHashMap<>();
+	private final Map<Integer, CompletableFuture<FlipAnalysis>> inFlightAnalysis = new ConcurrentHashMap<>();
 
 	public FlipsEndpoints(ApiHttpTransport transport)
 	{
+		this(transport, System::currentTimeMillis);
+	}
+
+	FlipsEndpoints(ApiHttpTransport transport, LongSupplier clock)
+	{
 		this.transport = transport;
+		this.clock = clock;
 	}
 
 	/**
-	 * Fetch item analysis from the API asynchronously
+	 * Fetch item analysis from the API asynchronously. Served from the per-item
+	 * cache while fresh; concurrent requests for the same item share one call.
 	 */
 	public CompletableFuture<FlipAnalysis> getItemAnalysisAsync(int itemId)
 	{
-		// Check cache first
 		CachedAnalysis cached = analysisCache.get(itemId);
-		if (cached != null && !cached.isExpired())
+		if (cached != null && !cached.isExpired(clock.getAsLong()))
 		{
 			return CompletableFuture.completedFuture(cached.getAnalysis());
 		}
 
+		CompletableFuture<FlipAnalysis> future = inFlightAnalysis.computeIfAbsent(itemId, this::fetchItemAnalysis);
+		future.whenComplete((analysis, error) -> inFlightAnalysis.remove(itemId, future));
+		return future;
+	}
+
+	private CompletableFuture<FlipAnalysis> fetchItemAnalysis(int itemId)
+	{
 		String apiUrl = transport.getApiUrl();
 		String url = String.format("%s/analysis/%d?timeframe=1h", apiUrl, itemId);
 
@@ -58,8 +76,11 @@ public class FlipsEndpoints
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			FlipAnalysis analysis = transport.parse(jsonData, FlipAnalysis.class);
-			removeExpiredCacheEntries();
-			analysisCache.put(itemId, new CachedAnalysis(analysis));
+			if (analysis != null)
+			{
+				removeExpiredCacheEntries();
+				analysisCache.put(itemId, new CachedAnalysis(analysis, clock.getAsLong()));
+			}
 			return analysis;
 		});
 	}
@@ -210,7 +231,8 @@ public class FlipsEndpoints
 	 */
 	private void removeExpiredCacheEntries()
 	{
-		analysisCache.entrySet().removeIf(entry -> entry.getValue().isExpired());
+		long now = clock.getAsLong();
+		analysisCache.entrySet().removeIf(entry -> entry.getValue().isExpired(now));
 	}
 
 	/**
@@ -221,10 +243,10 @@ public class FlipsEndpoints
 		private final FlipAnalysis analysis;
 		private final long timestamp;
 
-		CachedAnalysis(FlipAnalysis analysis)
+		CachedAnalysis(FlipAnalysis analysis, long now)
 		{
 			this.analysis = analysis;
-			this.timestamp = System.currentTimeMillis();
+			this.timestamp = now;
 		}
 
 		FlipAnalysis getAnalysis()
@@ -232,9 +254,9 @@ public class FlipsEndpoints
 			return analysis;
 		}
 
-		boolean isExpired()
+		boolean isExpired(long now)
 		{
-			return System.currentTimeMillis() - timestamp > CACHE_DURATION_MS;
+			return now - timestamp > CACHE_DURATION_MS;
 		}
 	}
 }
