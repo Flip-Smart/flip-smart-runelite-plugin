@@ -230,7 +230,7 @@ public final class PanelFormat
 	}
 
 	/**
-	 * Draw a gear/cogwheel icon onto a 14x14 image with the given color.
+	 * Draw a gear/cogwheel icon onto a {@code size}x{@code size} image with the given color.
 	 */
 	public static BufferedImage drawGearIcon(Color color, int size)
 	{
