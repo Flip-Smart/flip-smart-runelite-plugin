@@ -1634,10 +1634,17 @@ public class FlipFinderPanel extends PluginPanel
 		}
 	}
 
-	/** Returns true if a recommendation passes the current profit filter. */
+	/** Returns true if a recommendation passes the current profit and volume filters. */
 	private boolean shouldDisplay(FlipRecommendation rec)
 	{
-		return FocusedFlip.calculateAdjustedProfit(rec, config.priceOffset()) >= config.minimumProfit();
+		return FocusedFlip.calculateAdjustedProfit(rec, config.priceOffset()) >= config.minimumProfit()
+			&& passesVolumeFilter(rec.getDailyVolume(), config.minimumVolume());
+	}
+
+	/** Returns true if a recommendation's daily volume meets the minimum-volume threshold. */
+	static boolean passesVolumeFilter(int dailyVolume, int minVolume)
+	{
+		return dailyVolume >= minVolume;
 	}
 
 	/** Returns the number of recommendations that pass the current profit filter. */
