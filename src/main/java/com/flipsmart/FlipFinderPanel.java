@@ -303,18 +303,28 @@ public class FlipFinderPanel extends PluginPanel
 		// Logout button with compact styling
 		JButton logoutButton = new JButton("Logout");
 		logoutButton.setFocusable(false);
+		logoutButton.setFont(FONT_PLAIN_11);
 		logoutButton.setMargin(new Insets(2, 4, 2, 4));
 		logoutButton.addActionListener(e -> handleLogout());
 
 		// Refresh button with compact styling
 		refreshButton.setFocusable(false);
+		refreshButton.setFont(FONT_PLAIN_11);
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> refresh(true));
+
+		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.drawGearIcon(Color.LIGHT_GRAY, 12)));
+		settingsButton.setFocusable(false);
+		settingsButton.setFont(FONT_PLAIN_11);
+		settingsButton.setMargin(new Insets(1, 2, 1, 2));
+		settingsButton.setToolTipText("Quick settings");
+		settingsButton.addActionListener(e -> showSettingsPopout(settingsButton));
 
 		JPanel headerButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
 		headerButtons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		headerButtons.add(logoutButton);
 		headerButtons.add(refreshButton);
+		headerButtons.add(settingsButton);
 
 		headerPanel.add(titleBox, BorderLayout.WEST);
 		headerPanel.add(headerButtons, BorderLayout.EAST);
@@ -450,15 +460,8 @@ public class FlipFinderPanel extends PluginPanel
 		});
 		skipButton.setVisible(false);
 
-		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.drawGearIcon(Color.LIGHT_GRAY)));
-		settingsButton.setFocusable(false);
-		settingsButton.setMargin(new Insets(2, 4, 2, 4));
-		settingsButton.setToolTipText("Quick settings");
-		settingsButton.addActionListener(e -> showSettingsPopout(settingsButton));
-
 		JPanel styleRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
 		styleRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		styleRight.add(settingsButton);
 		styleRight.add(autoRecommendButton);
 
 		styleRow.add(styleLeft, BorderLayout.WEST);

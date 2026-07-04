@@ -15,9 +15,9 @@ public class GearIconTest
 	@Test
 	public void drawsNonNullFixedSizeIcon()
 	{
-		BufferedImage icon = PanelFormat.drawGearIcon(Color.WHITE);
+		BufferedImage icon = PanelFormat.drawGearIcon(Color.WHITE, 12);
 		assertNotNull(icon);
-		assertEquals(14, icon.getWidth());
-		assertEquals(14, icon.getHeight());
+		assertEquals(12, icon.getWidth());
+		assertEquals(12, icon.getHeight());
 	}
 }

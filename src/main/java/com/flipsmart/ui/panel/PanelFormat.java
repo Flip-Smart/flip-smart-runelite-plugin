@@ -232,9 +232,8 @@ public final class PanelFormat
 	/**
 	 * Draw a gear/cogwheel icon onto a 14x14 image with the given color.
 	 */
-	public static BufferedImage drawGearIcon(Color color)
+	public static BufferedImage drawGearIcon(Color color, int size)
 	{
-		int size = 14;
 		BufferedImage icon = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
 		Graphics2D g = icon.createGraphics();
 		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
