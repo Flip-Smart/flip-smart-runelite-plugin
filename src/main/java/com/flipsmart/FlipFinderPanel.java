@@ -78,7 +78,8 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String RISK_NA = "Risk: N/A";
 	private static final String MSG_LOGIN_TO_RUNESCAPE = "Log in to RuneScape";
 	private static final String MSG_LOGIN_INSTRUCTION = "<html><center>Log in to the game to get<br>flip suggestions and track your flips</center></html>";
-	
+	private static final long SETTINGS_POPOUT_REOPEN_DEBOUNCE_MS = 200;
+
 	// Colors for focused/selected items
 	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
 	private static final Color COLOR_FOCUSED_BG = new Color(0, 60, 70);
@@ -724,14 +725,14 @@ public class FlipFinderPanel extends PluginPanel
 		mainPanel.add(footerPanel, BorderLayout.SOUTH);
 	}
 
-	private long settingsPopupClosedAt = 0L;
+	private long settingsPopupClosedAt;
 
 	private void showSettingsPopout(JComponent anchor)
 	{
 		// A click on the gear while the pop-out is open first dismisses it
 		// (light-weight popups close on any outside press), so without this
 		// guard the same click would immediately reopen it.
-		if (System.currentTimeMillis() - settingsPopupClosedAt < 200)
+		if (System.currentTimeMillis() - settingsPopupClosedAt < SETTINGS_POPOUT_REOPEN_DEBOUNCE_MS)
 		{
 			return;
 		}
