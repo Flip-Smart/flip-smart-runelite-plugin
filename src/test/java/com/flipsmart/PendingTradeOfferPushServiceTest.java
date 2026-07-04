@@ -23,6 +23,7 @@ public class PendingTradeOfferPushServiceTest
 	private static final int ABYSSAL_WHIP = 4151;
 	private static final String RSN = "TestPlayer";
 	private static final int SLOT = 2;
+	private static final String STATE_PENDING = "pending";
 
 	private FlipSmartApiClient apiClient;
 	private PlayerSession session;
@@ -46,7 +47,7 @@ public class PendingTradeOfferPushServiceTest
 		GrandExchangeOffer offer = offer(ABYSSAL_WHIP, GrandExchangeOfferState.BUYING, 3_000_000, 1, 0);
 		service.reportOfferChanged(SLOT, offer);
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq(STATE_PENDING));
 	}
 
 	@Test
@@ -82,7 +83,7 @@ public class PendingTradeOfferPushServiceTest
 		GrandExchangeOffer offer = offer(ABYSSAL_WHIP, GrandExchangeOfferState.SELLING, 3_000_000, 1, 0);
 		service.reportOfferChanged(SLOT, offer);
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(false), eq(3_000_000), eq(1), eq(0), eq("pending"));
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(false), eq(3_000_000), eq(1), eq(0), eq(STATE_PENDING));
 	}
 
 	@Test
@@ -110,7 +111,7 @@ public class PendingTradeOfferPushServiceTest
 		service.reportOfferChanged(SLOT, offer);
 		service.reportOfferChanged(SLOT, offer);
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq(STATE_PENDING));
 	}
 
 	@Test
@@ -121,9 +122,9 @@ public class PendingTradeOfferPushServiceTest
 		service.reportOfferChanged(SLOT, firstFill);
 		service.reportOfferChanged(SLOT, secondFill);
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(2), eq(0), eq("pending"));
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(2), eq(0), eq(STATE_PENDING));
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(2), eq(1), eq("pending"));
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(2), eq(1), eq(STATE_PENDING));
 	}
 
 	@Test
@@ -133,9 +134,9 @@ public class PendingTradeOfferPushServiceTest
 		service.reportOfferChanged(0, offer);
 		service.reportOfferChanged(1, offer);
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(0), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+			eq(RSN), eq(0), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq(STATE_PENDING));
 		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
-			eq(RSN), eq(1), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+			eq(RSN), eq(1), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq(STATE_PENDING));
 	}
 
 	private static GrandExchangeOffer offer(int itemId, GrandExchangeOfferState state, int price, int totalQuantity, int quantitySold)
