@@ -35,7 +35,9 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -79,6 +81,9 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String MSG_LOGIN_TO_RUNESCAPE = "Log in to RuneScape";
 	private static final String MSG_LOGIN_INSTRUCTION = "<html><center>Log in to the game to get<br>flip suggestions and track your flips</center></html>";
 	private static final long SETTINGS_POPOUT_REOPEN_DEBOUNCE_MS = 200;
+	private static final int FILTER_SETTING_DEBOUNCE_MS = 300;
+
+	private final Map<String, Timer> filterSettingDebounceTimers = new HashMap<>();
 
 	// Colors for focused/selected items
 	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
@@ -786,7 +791,7 @@ public class FlipFinderPanel extends PluginPanel
 		JSpinner spinner = new JSpinner(
 			new SpinnerNumberModel(config.minimumProfit(), 0, Integer.MAX_VALUE, 1000));
 		spinner.setToolTipText(FILTER_TOOLTIP);
-		spinner.addChangeListener(e -> applyFilterSetting(
+		spinner.addChangeListener(e -> applyFilterSettingDebounced(
 			CONFIG_KEY_MIN_PROFIT, (Integer) spinner.getValue()));
 
 		row.add(label);
@@ -807,7 +812,7 @@ public class FlipFinderPanel extends PluginPanel
 		JSpinner spinner = new JSpinner(
 			new SpinnerNumberModel(config.minimumVolume(), 0, Integer.MAX_VALUE, 100));
 		spinner.setToolTipText(FILTER_TOOLTIP);
-		spinner.addChangeListener(e -> applyFilterSetting(
+		spinner.addChangeListener(e -> applyFilterSettingDebounced(
 			CONFIG_KEY_MIN_VOLUME, (Integer) spinner.getValue()));
 
 		row.add(label);
@@ -837,6 +842,22 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		configManager.setConfiguration(CONFIG_GROUP, key, value);
 		populateRecommendations(new ArrayList<>(currentRecommendations));
+	}
+
+	// Coalesces rapid spinner adjustments (e.g. holding the up/down arrows)
+	// into a single config save + re-populate after the user pauses.
+	private void applyFilterSettingDebounced(String key, int value)
+	{
+		Timer existing = filterSettingDebounceTimers.get(key);
+		if (existing != null && existing.isRunning())
+		{
+			existing.stop();
+		}
+
+		Timer timer = new Timer(FILTER_SETTING_DEBOUNCE_MS, e -> applyFilterSetting(key, value));
+		timer.setRepeats(false);
+		timer.start();
+		filterSettingDebounceTimers.put(key, timer);
 	}
 
 	/**
