@@ -103,6 +103,41 @@ public class PendingTradeOfferPushServiceTest
 			any(), anyInt(), anyInt(), anyBoolean(), anyInt(), anyInt(), anyInt(), any());
 	}
 
+	@Test
+	public void identicalRepeatEventForSameSlotIsDeduped()
+	{
+		GrandExchangeOffer offer = offer(ABYSSAL_WHIP, GrandExchangeOfferState.BUYING, 3_000_000, 1, 0);
+		service.reportOfferChanged(SLOT, offer);
+		service.reportOfferChanged(SLOT, offer);
+		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+	}
+
+	@Test
+	public void partialFillProgressIsNotDeduped()
+	{
+		GrandExchangeOffer firstFill = offer(ABYSSAL_WHIP, GrandExchangeOfferState.BUYING, 3_000_000, 2, 0);
+		GrandExchangeOffer secondFill = offer(ABYSSAL_WHIP, GrandExchangeOfferState.BUYING, 3_000_000, 2, 1);
+		service.reportOfferChanged(SLOT, firstFill);
+		service.reportOfferChanged(SLOT, secondFill);
+		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(2), eq(0), eq("pending"));
+		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
+			eq(RSN), eq(SLOT), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(2), eq(1), eq("pending"));
+	}
+
+	@Test
+	public void sameOfferOnDifferentSlotsIsNotDeduped()
+	{
+		GrandExchangeOffer offer = offer(ABYSSAL_WHIP, GrandExchangeOfferState.BUYING, 3_000_000, 1, 0);
+		service.reportOfferChanged(0, offer);
+		service.reportOfferChanged(1, offer);
+		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
+			eq(RSN), eq(0), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+		verify(apiClient, times(1)).reportPendingTradeOfferAsync(
+			eq(RSN), eq(1), eq(ABYSSAL_WHIP), eq(true), eq(3_000_000), eq(1), eq(0), eq("pending"));
+	}
+
 	private static GrandExchangeOffer offer(int itemId, GrandExchangeOfferState state, int price, int totalQuantity, int quantitySold)
 	{
 		GrandExchangeOffer o = mock(GrandExchangeOffer.class);

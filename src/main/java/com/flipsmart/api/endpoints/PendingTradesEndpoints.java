@@ -51,7 +51,10 @@ public class PendingTradesEndpoints
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 			.exceptionally(e ->
 			{
-				log.debug("reportPendingTradeOfferAsync failed: {}", e.getMessage());
+				if (log.isDebugEnabled())
+				{
+					log.debug("reportPendingTradeOfferAsync failed: {}", e.getMessage());
+				}
 				return false;
 			});
 	}

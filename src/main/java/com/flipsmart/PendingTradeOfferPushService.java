@@ -3,6 +3,9 @@ package com.flipsmart;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
+import java.util.Map;
+import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
@@ -25,6 +28,11 @@ public class PendingTradeOfferPushService
 {
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
+
+	// Per-slot dedup: RuneLite can fire GrandExchangeOfferChanged more than once
+	// for the same effective state (e.g. duplicate/no-op events). Skip the API
+	// call when nothing the backend cares about has actually changed.
+	private final Map<Integer, ReportedState> lastReported = new ConcurrentHashMap<>();
 
 	@Inject
 	public PendingTradeOfferPushService(FlipSmartApiClient apiClient, PlayerSession session)
@@ -62,19 +70,24 @@ public class PendingTradeOfferPushService
 
 		int itemId = offer.getState() == GrandExchangeOfferState.EMPTY ? 0 : offer.getItemId();
 		boolean isBuy = OfferSignal.isBuyState(offer.getState());
+		int price = offer.getPrice();
+		int quantity = offer.getTotalQuantity();
+		int quantityFilled = offer.getQuantitySold();
+
+		ReportedState current = new ReportedState(itemId, isBuy, price, quantity, quantityFilled, state);
+		if (current.equals(lastReported.get(slot)))
+		{
+			return;
+		}
 
 		try
 		{
-			apiClient.reportPendingTradeOfferAsync(
-					rsn, slot, itemId, isBuy, offer.getPrice(), offer.getTotalQuantity(), offer.getQuantitySold(), state)
-				.exceptionally(e ->
-				{
-					if (log.isDebugEnabled())
-					{
-						log.debug("Pending-trade offer report failed: {}", e.getMessage());
-					}
-					return false;
-				});
+			// The API client already swallows and logs its own async failures
+			// (best-effort push — see FlipSmartApiClient/PendingTradesEndpoints),
+			// so no .exceptionally() is needed here. This try/catch only guards
+			// against a synchronous throw while building the request itself.
+			apiClient.reportPendingTradeOfferAsync(rsn, slot, itemId, isBuy, price, quantity, quantityFilled, state);
+			lastReported.put(slot, current);
 		}
 		catch (RuntimeException e)
 		{
@@ -107,6 +120,53 @@ public class PendingTradeOfferPushService
 				return "empty";
 			default:
 				return null;
+		}
+	}
+
+	/** Immutable snapshot of the fields that matter to the backend, for dedup. */
+	private static final class ReportedState
+	{
+		private final int itemId;
+		private final boolean isBuy;
+		private final int price;
+		private final int quantity;
+		private final int quantityFilled;
+		private final String state;
+
+		ReportedState(int itemId, boolean isBuy, int price, int quantity, int quantityFilled, String state)
+		{
+			this.itemId = itemId;
+			this.isBuy = isBuy;
+			this.price = price;
+			this.quantity = quantity;
+			this.quantityFilled = quantityFilled;
+			this.state = state;
+		}
+
+		@Override
+		public boolean equals(Object o)
+		{
+			if (this == o)
+			{
+				return true;
+			}
+			if (!(o instanceof ReportedState))
+			{
+				return false;
+			}
+			ReportedState other = (ReportedState) o;
+			return itemId == other.itemId
+				&& isBuy == other.isBuy
+				&& price == other.price
+				&& quantity == other.quantity
+				&& quantityFilled == other.quantityFilled
+				&& Objects.equals(state, other.state);
+		}
+
+		@Override
+		public int hashCode()
+		{
+			return Objects.hash(itemId, isBuy, price, quantity, quantityFilled, state);
 		}
 	}
 }
