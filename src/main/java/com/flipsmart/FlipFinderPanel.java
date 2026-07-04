@@ -29,6 +29,8 @@ import net.runelite.client.util.LinkBrowser;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -44,6 +46,11 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
+	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
+	private static final String CONFIG_KEY_MIN_VOLUME = "minVolume";
+	private static final String CONFIG_KEY_ENABLE_FLIP_ASSISTANT = "enableFlipAssistant";
+	private static final String FILTER_TOOLTIP =
+		"Adding a minimum filter may limit the number of results you see.";
 
 	/** Sort options for the Completed tab. Recency is the default (AC9). */
 	private enum CompletedSort
@@ -443,8 +450,15 @@ public class FlipFinderPanel extends PluginPanel
 		});
 		skipButton.setVisible(false);
 
+		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.drawGearIcon(Color.LIGHT_GRAY)));
+		settingsButton.setFocusable(false);
+		settingsButton.setMargin(new Insets(2, 4, 2, 4));
+		settingsButton.setToolTipText("Quick settings");
+		settingsButton.addActionListener(e -> showSettingsPopout(settingsButton));
+
 		JPanel styleRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
 		styleRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		styleRight.add(settingsButton);
 		styleRight.add(autoRecommendButton);
 
 		styleRow.add(styleLeft, BorderLayout.WEST);
@@ -705,6 +719,120 @@ public class FlipFinderPanel extends PluginPanel
 		mainPanel.add(topPanel, BorderLayout.NORTH);
 		mainPanel.add(tabbedPane, BorderLayout.CENTER);
 		mainPanel.add(footerPanel, BorderLayout.SOUTH);
+	}
+
+	private long settingsPopupClosedAt = 0L;
+
+	private void showSettingsPopout(JComponent anchor)
+	{
+		// A click on the gear while the pop-out is open first dismisses it
+		// (light-weight popups close on any outside press), so without this
+		// guard the same click would immediately reopen it.
+		if (System.currentTimeMillis() - settingsPopupClosedAt < 200)
+		{
+			return;
+		}
+
+		JPopupMenu popup = new JPopupMenu();
+		popup.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		popup.addPopupMenuListener(new PopupMenuListener()
+		{
+			@Override
+			public void popupMenuWillBecomeVisible(PopupMenuEvent e)
+			{
+			}
+
+			@Override
+			public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
+			{
+				settingsPopupClosedAt = System.currentTimeMillis();
+			}
+
+			@Override
+			public void popupMenuCanceled(PopupMenuEvent e)
+			{
+			}
+		});
+
+		JPanel body = new JPanel();
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		body.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		body.setBorder(new EmptyBorder(8, 10, 8, 10));
+
+		body.add(buildMinProfitRow());
+		body.add(Box.createVerticalStrut(6));
+		body.add(buildMinVolumeRow());
+		body.add(Box.createVerticalStrut(6));
+		body.add(buildHideButtonsRow());
+
+		popup.add(body);
+		popup.show(anchor, 0, anchor.getHeight());
+	}
+
+	private JPanel buildMinProfitRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel label = new JLabel("Min Profit: ");
+		label.setForeground(Color.LIGHT_GRAY);
+		label.setFont(FONT_PLAIN_12);
+		label.setToolTipText(FILTER_TOOLTIP);
+
+		JSpinner spinner = new JSpinner(
+			new SpinnerNumberModel(config.minimumProfit(), 0, Integer.MAX_VALUE, 1000));
+		spinner.setToolTipText(FILTER_TOOLTIP);
+		spinner.addChangeListener(e -> applyFilterSetting(
+			CONFIG_KEY_MIN_PROFIT, (Integer) spinner.getValue()));
+
+		row.add(label);
+		row.add(spinner);
+		return row;
+	}
+
+	private JPanel buildMinVolumeRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel label = new JLabel("Min Volume: ");
+		label.setForeground(Color.LIGHT_GRAY);
+		label.setFont(FONT_PLAIN_12);
+		label.setToolTipText(FILTER_TOOLTIP);
+
+		JSpinner spinner = new JSpinner(
+			new SpinnerNumberModel(config.minimumVolume(), 0, Integer.MAX_VALUE, 100));
+		spinner.setToolTipText(FILTER_TOOLTIP);
+		spinner.addChangeListener(e -> applyFilterSetting(
+			CONFIG_KEY_MIN_VOLUME, (Integer) spinner.getValue()));
+
+		row.add(label);
+		row.add(spinner);
+		return row;
+	}
+
+	private JPanel buildHideButtonsRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JCheckBox hide = new JCheckBox("Hide FlipSmart Buttons");
+		hide.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		hide.setForeground(Color.LIGHT_GRAY);
+		hide.setFont(FONT_PLAIN_12);
+		hide.setFocusable(false);
+		hide.setSelected(!config.enableFlipAssistant());
+		hide.addActionListener(e -> configManager.setConfiguration(
+			CONFIG_GROUP, CONFIG_KEY_ENABLE_FLIP_ASSISTANT, !hide.isSelected()));
+
+		row.add(hide);
+		return row;
+	}
+
+	private void applyFilterSetting(String key, int value)
+	{
+		configManager.setConfiguration(CONFIG_GROUP, key, value);
+		populateRecommendations(new ArrayList<>(currentRecommendations));
 	}
 
 	/**
