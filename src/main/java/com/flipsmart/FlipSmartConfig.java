@@ -172,7 +172,7 @@ public interface FlipSmartConfig extends Config
 		name = "Minimum Volume",
 		description = "Hide recommendations with daily trade volume below this value",
 		section = flipFinderSection,
-		position = 5
+		position = 9
 	)
 	default int minimumVolume()
 	{
