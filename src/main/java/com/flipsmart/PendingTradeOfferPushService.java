@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.domain.offer.OfferSignal;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import lombok.extern.slf4j.Slf4j;
@@ -60,7 +61,7 @@ public class PendingTradeOfferPushService
 		}
 
 		int itemId = offer.getState() == GrandExchangeOfferState.EMPTY ? 0 : offer.getItemId();
-		boolean isBuy = TrackedOffer.isBuyState(offer.getState());
+		boolean isBuy = OfferSignal.isBuyState(offer.getState());
 
 		try
 		{

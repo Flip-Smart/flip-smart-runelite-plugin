@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.MotdChannelData;
+import com.flipsmart.api.dto.MotdResponse;
 
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -54,21 +56,21 @@ public class MotdServiceTest
 		service = new MotdService(client, config, apiClient, chatMessageManager, clientThread, configManager);
 	}
 
-	private FlipSmartApiClient.MotdResponse buildResponse(String pluginMessage, boolean enabled, String version)
+	private MotdResponse buildResponse(String pluginMessage, boolean enabled, String version)
 	{
 		return buildResponse(pluginMessage, enabled, version, "normal");
 	}
 
-	private FlipSmartApiClient.MotdResponse buildResponse(String pluginMessage, boolean enabled, String version, String severity)
+	private MotdResponse buildResponse(String pluginMessage, boolean enabled, String version, String severity)
 	{
-		FlipSmartApiClient.MotdChannelData plugin = mock(FlipSmartApiClient.MotdChannelData.class);
+		MotdChannelData plugin = mock(MotdChannelData.class);
 		when(plugin.getMessage()).thenReturn(pluginMessage);
 		when(plugin.isEnabled()).thenReturn(enabled);
 		when(plugin.getVersion()).thenReturn(version);
 		when(plugin.getSeverity()).thenReturn(severity);
 
-		FlipSmartApiClient.MotdChannelData web = mock(FlipSmartApiClient.MotdChannelData.class);
-		FlipSmartApiClient.MotdResponse resp = mock(FlipSmartApiClient.MotdResponse.class);
+		MotdChannelData web = mock(MotdChannelData.class);
+		MotdResponse resp = mock(MotdResponse.class);
 		when(resp.getWeb()).thenReturn(web);
 		when(resp.getPlugin()).thenReturn(plugin);
 		return resp;
@@ -136,7 +138,7 @@ public class MotdServiceTest
 	@Test
 	public void onLoginShowsOnceAndDedupsOnSameVersion()
 	{
-		FlipSmartApiClient.MotdResponse resp = buildResponse("Welcome back", true, "v1");
+		MotdResponse resp = buildResponse("Welcome back", true, "v1");
 
 		when(client.getGameState()).thenReturn(GameState.LOGIN_SCREEN);
 		service.handleResponse(resp);
@@ -159,13 +161,13 @@ public class MotdServiceTest
 	@Test
 	public void onLoginPostsAgainOnNewVersion()
 	{
-		FlipSmartApiClient.MotdResponse v1 = buildResponse("Hi", true, "v1");
+		MotdResponse v1 = buildResponse("Hi", true, "v1");
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(v1));
 		service.onLogin();
 		verify(chatMessageManager, times(1)).queue(any());
 
 		when(configManager.getConfiguration("flipsmart", "motd.lastShownVersion")).thenReturn("v1");
-		FlipSmartApiClient.MotdResponse v2 = buildResponse("Hi updated", true, "v2");
+		MotdResponse v2 = buildResponse("Hi updated", true, "v2");
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(v2));
 		service.onLogin();
 		verify(chatMessageManager, times(2)).queue(any());
@@ -174,7 +176,7 @@ public class MotdServiceTest
 	@Test
 	public void onLoginNoOpWhenChannelDisabled()
 	{
-		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", false, "v1");
+		MotdResponse resp = buildResponse("Hi", false, "v1");
 		service.handleResponse(resp);
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
@@ -185,7 +187,7 @@ public class MotdServiceTest
 	public void onLoginNoOpWhenConfigToggleOff()
 	{
 		when(config.motdEnabled()).thenReturn(false);
-		FlipSmartApiClient.MotdResponse resp = buildResponse("Hi", true, "v1");
+		MotdResponse resp = buildResponse("Hi", true, "v1");
 		service.handleResponse(resp);
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(resp));
 		service.onLogin();
@@ -195,11 +197,11 @@ public class MotdServiceTest
 	@Test
 	public void onLoginUsesFreshFetchEvenWhenCachedSaysEnabled()
 	{
-		FlipSmartApiClient.MotdResponse cachedEnabled = buildResponse("Old hi", true, "v1");
+		MotdResponse cachedEnabled = buildResponse("Old hi", true, "v1");
 		service.handleResponse(cachedEnabled);
 		org.mockito.Mockito.clearInvocations(chatMessageManager);
 
-		FlipSmartApiClient.MotdResponse freshDisabled = buildResponse("Old hi", false, "v1");
+		MotdResponse freshDisabled = buildResponse("Old hi", false, "v1");
 		when(apiClient.getMotdAsync()).thenReturn(CompletableFuture.completedFuture(freshDisabled));
 
 		service.onLogin();

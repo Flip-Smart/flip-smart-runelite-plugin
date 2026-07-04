@@ -2,7 +2,8 @@ package com.flipsmart;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.api.ScriptID;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.Keybind;
@@ -199,6 +200,18 @@ public class FlipAssistInputListener implements KeyListener
 			return;
 		}
 
+		// Defense-in-depth against the auto-advance race window before the offer-screen lock acquires.
+		int openOfferItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+		if (openOfferItemId > 0 && focusedFlip.getItemId() != openOfferItemId)
+		{
+			if (log.isDebugEnabled())
+			{
+				log.debug("FlipAssist hotkey: skipped (focused item {} != open offer item {})",
+					focusedFlip.getItemId(), openOfferItemId);
+			}
+			return;
+		}
+
 		// Only numeric (price/quantity) input is hotkey-driven. Item selection is
 		// handled by the injected "FlipSmart item" shortcut row the player clicks.
 		if (client.getVarcIntValue(VARCLIENT_INPUT_TYPE) == INPUT_TYPE_NUMERIC)
@@ -255,10 +268,16 @@ public class FlipAssistInputListener implements KeyListener
 	{
 		String valueStr = String.valueOf(value);
 		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, valueStr);
-		
-		// Run the script to rebuild/refresh the chatbox input display
-		// This makes the value visible in the input field
-		client.runScript(ScriptID.CHAT_TEXT_INPUT_REBUILD, valueStr);
+
+		// Redraw the chatbox input line directly instead of invoking the rebuild
+		// script: write the value plus the cursor glyph into the full-input widget
+		// (MES_TEXT2 == CHATBOX_FULL_INPUT) so it is visible. The GE confirms off the
+		// VarClientStr above, not this text.
+		Widget input = client.getWidget(InterfaceID.Chatbox.MES_TEXT2);
+		if (input != null)
+		{
+			input.setText(valueStr + "*");
+		}
 	}
 	
 	/**

@@ -1,4 +1,7 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.HistoryBackfillEntry;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.trading.OfferStore;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -41,9 +44,10 @@ public class GEHistoryService
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
 	private final ChatMessageManager chatMessageManager;
+	private final OfferStore offerStore;
 
 	private final Set<Integer> pendingOfflineFillItemIds = ConcurrentHashMap.newKeySet();
-	private final Map<Integer, TrackedOffer> recentlyPersistedOffers = new ConcurrentHashMap<>();
+	private final Map<Integer, OfferRecord> recentlyPersistedOffers = new ConcurrentHashMap<>();
 	private final AtomicInteger pendingHistoryReadTicks = new AtomicInteger(0);
 	private volatile boolean historyReadThisSession = false;
 	private volatile boolean chatPromptSent = false;
@@ -54,12 +58,14 @@ public class GEHistoryService
 		Client client,
 		FlipSmartApiClient apiClient,
 		PlayerSession session,
-		ChatMessageManager chatMessageManager)
+		ChatMessageManager chatMessageManager,
+		OfferStore offerStore)
 	{
 		this.client = client;
 		this.apiClient = apiClient;
 		this.session = session;
 		this.chatMessageManager = chatMessageManager;
+		this.offerStore = offerStore;
 	}
 
 	public void onHistoryWidgetLoaded()
@@ -127,7 +133,7 @@ public class GEHistoryService
 		chatPromptSent = true;
 		String msg = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ")
+			.append("[FlipSmart] ")
 			.append(ChatColorType.NORMAL)
 			.append("Offline trades detected. Open the Grand Exchange and click the ")
 			.append(ChatColorType.HIGHLIGHT)
@@ -152,35 +158,32 @@ public class GEHistoryService
 	}
 
 	/**
-	 * Snapshot of offers persisted at the previous session's logout — used
-	 * for item-name resolution in the backfill payload, and as the trigger
-	 * for the chat prompt (any persisted state means there might be offline
-	 * activity worth backfilling).
+	 * Snapshot of offers persisted at the previous session's logout — used for
+	 * item-name resolution and offerId matching in the backfill payload. This
+	 * does NOT prompt: merely having tracked offers last session is not missing
+	 * data. The prompt is driven solely by genuinely-unverified offline fills
+	 * registered via {@link #registerOfflineFill} (offers the reconciler found
+	 * gone from their slot on login).
 	 */
-	public void setRecentlyPersistedOffers(Map<Integer, TrackedOffer> offers)
+	public void setRecentlyPersistedOffers(List<OfferRecord> offers)
 	{
 		recentlyPersistedOffers.clear();
 		if (offers != null)
 		{
-			recentlyPersistedOffers.putAll(offers);
-		}
-		// Any prior-session activity is reason enough to prompt the user to
-		// open History. Backend dedup makes the backfill safe regardless:
-		// covered rows dedupe, missing ones get inserted.
-		if (!recentlyPersistedOffers.isEmpty())
-		{
-			maybeSendChatPrompt();
+			for (OfferRecord o : offers)
+			{
+				recentlyPersistedOffers.put(o.getItemId(), o);
+			}
 		}
 	}
 
 	public boolean hasUnverifiedOfflineFills()
 	{
-		// Prompt the overlay banner whenever we haven't yet read the History
-		// this session and there's *any* signal that offline activity might
-		// have happened — either the narrow per-item detection registered
-		// something, or the user simply had persisted offer state from the
-		// prior session.
-		return !historyReadThisSession && (!pendingOfflineFillItemIds.isEmpty() || !recentlyPersistedOffers.isEmpty());
+		// Only prompt/flag when we haven't read History yet this session AND the
+		// reconciler registered a genuinely-unverified offline fill. Persisted
+		// offer state alone is not missing data — the live OfferStore pipeline
+		// already records in-slot offline completions.
+		return !historyReadThisSession && !pendingOfflineFillItemIds.isEmpty();
 	}
 
 	public void reset()
@@ -394,6 +397,30 @@ public class GEHistoryService
 		return (text == null) ? "" : text.replaceAll("<[^>]*>", "");
 	}
 
+	/**
+	 * Conservatively resolve a History row to a tracked OfferStore offerId so the
+	 * backend can reconcile it per-offer. Matches on (itemId, isBuy, price) and
+	 * returns the offerId ONLY when exactly one distinct offer matches — a wrong
+	 * offerId is worse than none, so any ambiguity (or no match) returns null and
+	 * the backend falls back to the item-level path.
+	 */
+	static Long matchOfferId(List<OfferRecord> candidates, int itemId, boolean isBuy, int pricePerItem)
+	{
+		Long found = null;
+		for (OfferRecord o : candidates)
+		{
+			if (o.getItemId() == itemId && o.isBuy() == isBuy && o.getPrice() == pricePerItem)
+			{
+				if (found != null && found.longValue() != o.getOfferId())
+				{
+					return null;
+				}
+				found = o.getOfferId();
+			}
+		}
+		return found;
+	}
+
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
 	{
 		if (!session.isOfflineSyncCompleted() || entries.isEmpty())
@@ -411,15 +438,20 @@ public class GEHistoryService
 		// The backend tolerates null but resolves from prior transactions on
 		// its side too; this just gives nicer logs.
 		Map<Integer, String> nameByItem = new HashMap<>();
-		for (TrackedOffer o : session.getTrackedOffers().values()) nameByItem.put(o.getItemId(), o.getItemName());
-		for (TrackedOffer o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
+		for (OfferRecord o : offerStore.allRecords()) nameByItem.put(o.getItemId(), o.getItemName());
+		for (OfferRecord o : recentlyPersistedOffers.values()) nameByItem.putIfAbsent(o.getItemId(), o.getItemName());
 
-		List<FlipSmartApiClient.HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
+		// Candidate offers for offer_id linkage: live + recently-persisted.
+		List<OfferRecord> candidates = new ArrayList<>(offerStore.allRecords());
+		candidates.addAll(recentlyPersistedOffers.values());
+
+		List<HistoryBackfillEntry> batch = new ArrayList<>(entries.size());
 		for (GEHistoryEntry e : entries)
 		{
-			batch.add(new FlipSmartApiClient.HistoryBackfillEntry(
+			Long offerId = matchOfferId(candidates, e.getItemId(), e.isBuy(), e.getPricePerItem());
+			batch.add(new HistoryBackfillEntry(
 				e.getItemId(), nameByItem.get(e.getItemId()),
-				e.isBuy(), e.getQuantity(), e.getPricePerItem()
+				e.isBuy(), e.getQuantity(), e.getPricePerItem(), offerId
 			));
 		}
 

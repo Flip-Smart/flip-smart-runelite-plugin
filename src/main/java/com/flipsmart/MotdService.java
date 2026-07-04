@@ -1,6 +1,7 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.MotdChannelData;
+import com.flipsmart.api.dto.MotdResponse;
 
-import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -14,24 +15,18 @@ import net.runelite.client.config.ConfigManager;
 import javax.inject.Inject;
 import java.awt.Color;
 import javax.inject.Singleton;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 /**
- * Polls /motd at 60s and posts the plugin channel's message to the chatbox
- * once per version per client. Subscribes to game-state LOGGED_IN to surface
- * any unseen MOTD on login between polls.
+ * Fetches /motd once per login (game-state LOGGED_IN) and posts the plugin
+ * channel's message to the chatbox at most once per version per client. No
+ * background polling: a message set while a player is already logged in
+ * surfaces on their next login.
  */
-@Slf4j
 @Singleton
 public class MotdService
 {
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String LAST_SHOWN_KEY = "motd.lastShownVersion";
-	private static final long POLL_INTERVAL_SECONDS = 60L;
-	private static final long INITIAL_DELAY_SECONDS = 5L;
 
 	private final Client client;
 	private final FlipSmartConfig config;
@@ -40,10 +35,7 @@ public class MotdService
 	private final ClientThread clientThread;
 	private final ConfigManager configManager;
 
-	private ScheduledExecutorService executor;
-	private ScheduledFuture<?> pollingTask;
-
-	private FlipSmartApiClient.MotdResponse latest;
+	private MotdResponse latest;
 
 	@Inject
 	public MotdService(
@@ -62,43 +54,8 @@ public class MotdService
 		this.configManager = configManager;
 	}
 
-	public void start()
-	{
-		stop();
-		executor = Executors.newSingleThreadScheduledExecutor();
-		pollingTask = executor.scheduleAtFixedRate(this::poll,
-			INITIAL_DELAY_SECONDS, POLL_INTERVAL_SECONDS, TimeUnit.SECONDS);
-		log.debug("MotdService started ({}s interval)", POLL_INTERVAL_SECONDS);
-	}
-
-	public void stop()
-	{
-		if (pollingTask != null)
-		{
-			pollingTask.cancel(false);
-			pollingTask = null;
-		}
-		if (executor != null)
-		{
-			executor.shutdownNow();
-			executor = null;
-		}
-	}
-
-	private void poll()
-	{
-		try
-		{
-			apiClient.getMotdAsync().thenAccept(this::handleResponse);
-		}
-		catch (Exception e)
-		{
-			log.debug("MOTD poll error: {}", e.getMessage());
-		}
-	}
-
 	/** Visible for testing. */
-	void handleResponse(FlipSmartApiClient.MotdResponse response)
+	void handleResponse(MotdResponse response)
 	{
 		if (response == null) return;
 		latest = response;
@@ -122,7 +79,7 @@ public class MotdService
 	{
 		if (!config.motdEnabled()) return;
 		if (latest == null) return;
-		FlipSmartApiClient.MotdChannelData plugin = latest.getPlugin();
+		MotdChannelData plugin = latest.getPlugin();
 		if (plugin == null) return;
 		if (!plugin.isEnabled()) return;
 		String message = plugin.getMessage();
@@ -146,7 +103,7 @@ public class MotdService
 	{
 		ChatMessageBuilder builder = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ");
+			.append("[FlipSmart] ");
 
 		if ("alert".equalsIgnoreCase(severity))
 		{

@@ -1,4 +1,12 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.FlipAdjustmentRequest;
+import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
+import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.trading.OfferStore;
+import com.flipsmart.util.GpUtils;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -48,6 +56,7 @@ public class ManualAdjustmentTracker
 
 	private final FlipSmartApiClient apiClient;
 	private final FlipSmartConfig config;
+	private final OfferStore offerStore;
 
 	private static final String MARGIN_GONE_MSG = "Margin gone on %s — consider cancelling";
 
@@ -80,10 +89,11 @@ public class ManualAdjustmentTracker
 	private volatile java.util.function.Supplier<Integer> filledSlotsSupplier;
 	private volatile java.util.function.Supplier<Boolean> membersWorldSupplier;
 
-	public ManualAdjustmentTracker(FlipSmartApiClient apiClient, FlipSmartConfig config)
+	public ManualAdjustmentTracker(FlipSmartApiClient apiClient, FlipSmartConfig config, OfferStore offerStore)
 	{
 		this.apiClient = apiClient;
 		this.config = config;
+		this.offerStore = offerStore;
 	}
 
 	public void setOnAdjustmentPrompt(ObjIntConsumer<String> callback)
@@ -239,13 +249,12 @@ public class ManualAdjustmentTracker
 
 	/**
 	 * Check all adjustment timers and fire API calls for expired ones.
-	 * Called periodically from the plugin's refresh timer.
-	 *
-	 * @param sessionOffers Current tracked offers from the session (to verify offer still exists)
+	 * Called periodically from the plugin's refresh timer. Offer state is read
+	 * from the authoritative {@link OfferStore} keyed by GE slot.
 	 */
-	public void checkTimers(Map<Integer, TrackedOffer> sessionOffers)
+	public void checkTimers()
 	{
-		if (trackedOffers.isEmpty() || sessionOffers == null)
+		if (trackedOffers.isEmpty())
 		{
 			return;
 		}
@@ -256,7 +265,7 @@ public class ManualAdjustmentTracker
 		while (iter.hasNext())
 		{
 			Map.Entry<Integer, OfferAdjustmentState> entry = iter.next();
-			TrackedOffer offer = sessionOffers.get(entry.getKey());
+			OfferRecord offer = offerStore.bySlot(entry.getKey());
 			OfferAdjustmentState state = entry.getValue();
 
 			if (shouldRemoveTimer(offer))
@@ -270,31 +279,32 @@ public class ManualAdjustmentTracker
 		}
 	}
 
-	private boolean shouldRemoveTimer(TrackedOffer offer)
+	private boolean shouldRemoveTimer(OfferRecord offer)
 	{
-		// Only remove if offer is gone or fully completed.
+		// Only remove if offer is gone (slot freed / collected) or fully filled.
 		// Partial fills don't remove the timer — the API decides whether to hold or adjust.
-		return offer == null || offer.isCompleted();
+		return offer == null || offer.getState() == OfferState.FILLED;
 	}
 
-	private void processExpiredTimer(OfferAdjustmentState state, TrackedOffer offer)
+	private void processExpiredTimer(OfferAdjustmentState state, OfferRecord offer)
 	{
 		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
-
+		String style = config.flipStyle().getApiValue();
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
 
-		apiClient.getFlipAdjustmentAsync(FlipSmartApiClient.FlipAdjustmentRequest.builder()
+		apiClient.getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
 			.isBuyOffer(state.isBuy)
 			.offerPrice(offer.getPrice())
 			.averageBuyPrice(state.averageBuyPrice)
 			.minutesSinceOffer((int) minutesSinceOffer)
 			.adjustmentCount(state.adjustmentCount)
-			.quantityFilled(offer.getPreviousQuantitySold())
+			.quantityFilled(offer.getFilledQuantity())
 			.totalQuantity(offer.getTotalQuantity())
 			.timeframe(timeframe)
 			.rsn(rsn)
+			.style(style)
 			.build()
 		).thenAccept(response ->
 		{
@@ -326,7 +336,7 @@ public class ManualAdjustmentTracker
 	}
 
 	private void handleAdjustmentRecommendation(OfferAdjustmentState state,
-		TrackedOffer offer, FlipAdjustmentResponse response)
+		OfferRecord offer, FlipAdjustmentResponse response)
 	{
 		if (response.isReadjustBuy() && response.getRecommendedPrice() != null)
 		{
@@ -338,12 +348,35 @@ public class ManualAdjustmentTracker
 		}
 		else if (response.isCancelAndSell())
 		{
+			handleCancelAndSell(state, response);
+		}
+	}
+
+	private void handleCancelAndSell(OfferAdjustmentState state, FlipAdjustmentResponse response)
+	{
+		if (response.getMessage() != null && !response.getMessage().isEmpty())
+		{
+			notifyPrompt(response.getMessage(), state.itemId);
+		}
+		if (response.getRecommendedPrice() != null)
+		{
+			// Overnight exit that already bought items: surface the sell price to list at.
+			notifyHighlight(state.geSlot, response.getRecommendedPrice());
+			notifyInventoryHighlight(state.itemId);
+			BiConsumer<Integer, Integer> cb = onSellPriceAdjusted;
+			if (cb != null)
+			{
+				cb.accept(state.itemId, response.getRecommendedPrice());
+			}
+		}
+		else
+		{
 			log.debug("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
 			fetchReplacementRecommendation(state);
 		}
 	}
 
-	private void handleBuyAdjustment(OfferAdjustmentState state, TrackedOffer offer,
+	private void handleBuyAdjustment(OfferAdjustmentState state, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
 		String msg = String.format("Adjust %s buy price %s → %s gp",
@@ -373,7 +406,7 @@ public class ManualAdjustmentTracker
 		notifyHighlight(state.geSlot, response.getRecommendedPrice());
 	}
 
-	private void handleSellAdjustment(OfferAdjustmentState state, TrackedOffer offer,
+	private void handleSellAdjustment(OfferAdjustmentState state, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
 		String msg = String.format("Adjust %s sell price %s → %s gp",

@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.util.GeTax;
+import com.flipsmart.util.GpUtils;
 
 import java.util.Locale;
 
@@ -7,9 +9,8 @@ import java.util.Locale;
  * (issue #665). Kept separate from {@link GeOfferDescriptionService} so the
  * string building can be unit-tested without RuneLite client state.
  *
- * <p>GE tax is computed inline (2%, capped at 5,000,000gp, exempt below 50gp)
- * to keep this class free of plugin/runelite dependencies — the same constants
- * are enforced backend-side.</p>
+ * <p>GE tax and breakeven math is delegated to {@link GeTax} (itself free of
+ * plugin/runelite dependencies) so the rate/cap/threshold live in one place.</p>
  */
 public final class GeOfferDescriptionFormatter
 {
@@ -19,10 +20,6 @@ public final class GeOfferDescriptionFormatter
 	static final String COLOR_RED = "ff4040";
 	static final String COLOR_WHITE = "ffffff";
 	static final String COLOR_LABEL = "ffb83f";  // GE description "highlight" amber
-
-	private static final int GE_TAX_EXEMPT_THRESHOLD = 50;
-	private static final double GE_TAX_RATE = 0.02;
-	private static final int GE_TAX_CAP = 5_000_000;
 
 	private GeOfferDescriptionFormatter()
 	{
@@ -170,36 +167,12 @@ public final class GeOfferDescriptionFormatter
 
 	static int calculateBreakevenPrice(int recordedBuyPrice)
 	{
-		if (recordedBuyPrice <= GE_TAX_EXEMPT_THRESHOLD)
-		{
-			return recordedBuyPrice;
-		}
-		// Smallest sell price S such that S - floor(S * 0.02) >= recordedBuyPrice.
-		// 1) Start from the closed-form estimate (overshoots by 1 due to ceiling).
-		// 2) Walk up if the cap region or floor-truncation leaves us short.
-		// 3) Walk down to guarantee minimality (the closed form typically yields
-		//    S=103 for buy=100 when S=102 already satisfies — without this step
-		//    we'd over-quote the breakeven by one gp).
-		int candidate = (int) Math.ceil(recordedBuyPrice / (1.0 - GE_TAX_RATE));
-		while (candidate - calculateTaxPerItem(candidate) < recordedBuyPrice)
-		{
-			candidate++;
-		}
-		while (candidate > recordedBuyPrice
-			&& (candidate - 1) - calculateTaxPerItem(candidate - 1) >= recordedBuyPrice)
-		{
-			candidate--;
-		}
-		return candidate;
+		return GeTax.breakevenSellPrice(recordedBuyPrice);
 	}
 
 	static int calculateTaxPerItem(int sellPrice)
 	{
-		if (sellPrice <= GE_TAX_EXEMPT_THRESHOLD)
-		{
-			return 0;
-		}
-		return Math.min((int) (sellPrice * GE_TAX_RATE), GE_TAX_CAP);
+		return GeTax.taxFor(sellPrice);
 	}
 
 	private static String colorForProfit(long totalProfit)

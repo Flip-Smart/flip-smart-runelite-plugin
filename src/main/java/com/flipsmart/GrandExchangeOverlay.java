@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.util.ItemUtils;
 
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
@@ -297,7 +299,7 @@ public class GrandExchangeOverlay extends Overlay
 			int totalQuantity = offer.getTotalQuantity();
 			int price = offer.getPrice();
 			
-			boolean isBuy = TrackedOffer.isBuyState(state);
+			boolean isBuy = OfferSignal.isBuyState(state);
 			
 			double percentage = totalQuantity > 0 ? (quantitySold * 100.0) / totalQuantity : 0;
 			String itemName = ItemUtils.getItemName(itemManager, itemId);
@@ -461,7 +463,7 @@ public class GrandExchangeOverlay extends Overlay
 			int quantitySold = offer.getQuantitySold();
 			int totalQuantity = offer.getTotalQuantity();
 			
-			boolean isBuy = TrackedOffer.isBuyState(state);
+			boolean isBuy = OfferSignal.isBuyState(state);
 			
 			double percentage = totalQuantity > 0 ? (quantitySold * 100.0) / totalQuantity : 0;
 			String itemName = ItemUtils.getItemName(itemManager, itemId);

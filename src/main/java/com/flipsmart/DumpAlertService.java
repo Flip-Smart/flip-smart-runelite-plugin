@@ -1,4 +1,5 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.DumpEvent;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
@@ -228,7 +229,7 @@ public class DumpAlertService
 	{
 		String message = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
-			.append("[Flip Smart] ")
+			.append("[FlipSmart] ")
 			.append(ChatColorType.NORMAL)
 			.append(dump.toChatMessage())
 			.build();

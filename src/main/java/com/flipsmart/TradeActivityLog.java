@@ -53,6 +53,11 @@ public class TradeActivityLog
 		return Collections.unmodifiableList(new ArrayList<>(entries));
 	}
 
+	public boolean isEmpty()
+	{
+		return entries.isEmpty();
+	}
+
 	public void clear()
 	{
 		entries.clear();

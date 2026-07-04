@@ -1,4 +1,11 @@
 package com.flipsmart;
+import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.util.BuyPriceLookup;
+import com.flipsmart.util.GeTax;
+import com.flipsmart.util.TimeUtils;
+import com.flipsmart.util.GpUtils;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -198,7 +205,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static class TooltipData
 	{
 		GrandExchangeOffer offer;
-		FlipSmartApiClient.WikiPrice wikiPrice;
+		WikiPrice wikiPrice;
 		int offerPrice;
 		int x;
 		int y;
@@ -246,7 +253,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 			return null;
 		}
 
-		TrackedOffer trackedOffer = plugin.getTrackedOffer(slot);
+		OfferRecord trackedOffer = plugin.getOfferStore().bySlot(slot);
 		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
 
 		// Render the indicator bar with colored background and timer
@@ -260,7 +267,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Render the slot overlay with colored border around the entire slot
 	 * and timer in the top-right corner (like Flipping Utilities).
 	 */
-	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, TrackedOffer trackedOffer,
+	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, OfferRecord trackedOffer,
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
 		// Draw colored border around the entire slot
@@ -284,12 +291,13 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		// Draw timer in top-right corner — uses locally persisted timestamps
 		// that survive plugin restarts via OfflineSyncService
-		if (config.showOfferTimers() && trackedOffer != null && trackedOffer.getEffectiveLastActivityAtMillis() > 0)
+		long effectiveLastActivity = trackedOffer == null ? 0L : trackedOffer.getEffectiveLastActivityAtMillis();
+		if (config.showOfferTimers() && trackedOffer != null && effectiveLastActivity > 0)
 		{
 			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
 								 offer.getState() == GrandExchangeOfferState.SOLD;
 
-			long realStartTime = trackedOffer.getEffectiveLastActivityAtMillis();
+			long realStartTime = effectiveLastActivity;
 
 			String timerText;
 			if (isComplete && trackedOffer.getCompletedAtMillis() > 0)
@@ -451,7 +459,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Draw a custom tooltip with background showing real-time insta prices
 	 */
 	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer,
-								  FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice, Integer buyPrice)
+								  WikiPrice wikiPrice, int offerPrice, Integer buyPrice)
 	{
 		boolean isBuy = isOfferBuyType(offer);
 
@@ -473,13 +481,13 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private boolean isOfferBuyType(GrandExchangeOffer offer)
 	{
-		return TrackedOffer.isBuyState(offer.getState());
+		return OfferSignal.isBuyState(offer.getState());
 	}
 
 	/**
 	 * Build tooltip text lines based on wiki price data
 	 */
-	private java.util.List<String> buildTooltipLines(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice,
+	private java.util.List<String> buildTooltipLines(WikiPrice wikiPrice, int offerPrice,
 													  Integer buyPrice, boolean isBuy, int totalQuantity, int itemId)
 	{
 		java.util.List<String> lines = new java.util.ArrayList<>();
@@ -495,7 +503,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		return lines;
 	}
 
-	private void addPriceLines(java.util.List<String> lines, FlipSmartApiClient.WikiPrice wikiPrice)
+	private void addPriceLines(java.util.List<String> lines, WikiPrice wikiPrice)
 	{
 		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
 		{
@@ -542,7 +550,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Determine color for user's price based on competitiveness
 	 */
-	private Color determineYourPriceColor(FlipSmartApiClient.WikiPrice wikiPrice, int offerPrice, boolean isBuy)
+	private Color determineYourPriceColor(WikiPrice wikiPrice, int offerPrice, boolean isBuy)
 	{
 		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
 		{

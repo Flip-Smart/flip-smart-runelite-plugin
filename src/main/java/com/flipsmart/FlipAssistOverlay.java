@@ -1,4 +1,6 @@
 package com.flipsmart;
+import com.flipsmart.util.GeTax;
+import com.flipsmart.util.TimeUtils;
 
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -34,7 +36,8 @@ import java.util.function.Consumer;
 @Slf4j
 public class FlipAssistOverlay extends Overlay
 {
-	private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("#,###");
+	private static final ThreadLocal<DecimalFormat> PRICE_FORMAT =
+		ThreadLocal.withInitial(() -> new DecimalFormat("#,###"));
 	
 	// Color theme
 	private static final Color COLOR_BG_DARK = new Color(25, 22, 18, 200);
@@ -46,6 +49,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final Color COLOR_BUY = new Color(100, 220, 130);
 	private static final Color COLOR_SELL = new Color(255, 140, 80);
 	private static final Color COLOR_PROFIT = new Color(80, 255, 120);
+	private static final Color COLOR_LOSS = new Color(255, 100, 100);
 	private static final Color COLOR_STEP_COMPLETE = new Color(80, 200, 100);
 	private static final Color COLOR_STEP_CURRENT = COLOR_ACCENT;
 	private static final Color COLOR_STEP_PENDING = new Color(80, 75, 70);
@@ -67,6 +71,7 @@ public class FlipAssistOverlay extends Overlay
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
 	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to backfill recent trades";
+	private static final String MONITORING_MESSAGE = "Monitoring your flips";
 	
 	// GE Interface IDs
 	private static final int GE_INTERFACE_GROUP = 465;
@@ -169,13 +174,14 @@ public class FlipAssistOverlay extends Overlay
 	public void updateStep()
 	{
 		FlipAssistStep newStep;
-		if (focusedFlip == null)
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
 		{
 			newStep = FlipAssistStep.SELECT_ITEM;
 		}
 		else if (!isGrandExchangeOpen())
 		{
-			newStep = focusedFlip.isBuying() ? FlipAssistStep.WAITING_BUY : FlipAssistStep.WAITING_SELL;
+			newStep = flip.isBuying() ? FlipAssistStep.WAITING_BUY : FlipAssistStep.WAITING_SELL;
 		}
 		else
 		{
@@ -195,9 +201,10 @@ public class FlipAssistOverlay extends Overlay
 	
 	private FlipAssistStep determineNumericInputStep()
 	{
-		if (isLikelyPriceInput())
+		final FocusedFlip flip = focusedFlip;
+		if (flip != null && isLikelyPriceInput())
 		{
-			return focusedFlip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
+			return flip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
 		}
 		return FlipAssistStep.SET_QUANTITY;
 	}
@@ -217,23 +224,45 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return determineOfferSetupStep();
 		}
-		return focusedFlip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return FlipAssistStep.SELECT_ITEM;
+		}
+		return flip.isBuying() ? FlipAssistStep.SELECT_ITEM : FlipAssistStep.SELL_ITEMS;
 	}
 
 	private FlipAssistStep determineOfferSetupStep()
 	{
-		boolean qtyCorrect = isValueWithinTolerance(getCurrentQuantityFromGE(), focusedFlip.getCurrentStepQuantity());
-		boolean priceCorrect = isValueWithinTolerance(getCurrentPriceFromGE(), focusedFlip.getCurrentStepPrice());
-		
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return FlipAssistStep.SELECT_ITEM;
+		}
+		return offerSetupStep(getCurrentQuantityFromGE(), flip.getCurrentStepQuantity(),
+			getCurrentPriceFromGE(), flip.getCurrentStepPrice(), flip.isBuying());
+	}
+
+	/**
+	 * Pure step decision for the offer-setup screen. Quantity must match EXACTLY — it is an
+	 * integer count with no rounding, so the ±1 price tolerance would wrongly accept the
+	 * default qty 1 when the target is 2. Price keeps the ±1 tolerance. Package-private for tests.
+	 */
+	static FlipAssistStep offerSetupStep(int currentQty, int targetQty, int currentPrice, int targetPrice,
+		boolean buying)
+	{
+		boolean qtyCorrect = targetQty > 0 && currentQty == targetQty;
+		boolean priceCorrect = isValueWithinTolerance(currentPrice, targetPrice);
+
 		if (qtyCorrect && priceCorrect)
 		{
-			return focusedFlip.isBuying() ? FlipAssistStep.CONFIRM_OFFER : FlipAssistStep.CONFIRM_SELL;
+			return buying ? FlipAssistStep.CONFIRM_OFFER : FlipAssistStep.CONFIRM_SELL;
 		}
 		if (!qtyCorrect)
 		{
 			return FlipAssistStep.SET_QUANTITY;
 		}
-		return focusedFlip.isBuying() ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
+		return buying ? FlipAssistStep.SET_PRICE : FlipAssistStep.SET_SELL_PRICE;
 	}
 	
 	/**
@@ -241,7 +270,7 @@ public class FlipAssistOverlay extends Overlay
 	 * Tolerance is needed because GE can have slight rounding differences
 	 * when displaying prices/quantities (e.g., 1gp variance in price).
 	 */
-	private boolean isValueWithinTolerance(int current, int target)
+	private static boolean isValueWithinTolerance(int current, int target)
 	{
 		return current > 0 && target > 0 && Math.abs(current - target) <= 1;
 	}
@@ -261,34 +290,31 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return null;
 			}
-			// History-backfill prompt takes priority over auto-recommend status
-			// messages ("Monitoring active offers", "Collect profit from GE", etc.).
-			// Offline trade recovery is one-shot per session — once the user
-			// closes the History tab the data is gone — so the prompt has to
-			// surface even when the auto-recommend overlay is otherwise active.
-			if (isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills())
+			// While the player is in any buy/sell offer interface (item search,
+			// numeric qty/price input, or the offer-setup screen) the offer takes
+			// priority — every status/hint prompt, including the History-backfill
+			// prompt, is suppressed so nothing overlays the buy/sell screens. The
+			// prompts re-surface at the main GE view. Off the offer interface, the
+			// History prompt still takes priority over the auto-recommend status.
+			String fallbackMessage = flipSmartPlugin.isAutoRecommendActive()
+				? flipSmartPlugin.getAutoRecommendOverlayMessage()
+				: null;
+			String message = selectNoFocusMessage(
+				isGrandExchangeOpen() && geHistoryService.hasUnverifiedOfflineFills(),
+				isInOfferInterface(),
+				autoStatusMessage,
+				fallbackMessage,
+				flipSmartPlugin.getApiClient().isAuthenticated(),
+				!tradeActivityLog.isEmpty(),
+				HISTORY_PROMPT_MESSAGE,
+				LOGIN_MESSAGE,
+				MONITORING_MESSAGE,
+				HINT_MESSAGE);
+			if (message == null)
 			{
-				return renderHintBox(graphics, HISTORY_PROMPT_MESSAGE);
+				return null;
 			}
-			if (autoStatusMessage != null)
-			{
-				return renderHintBox(graphics, autoStatusMessage);
-			}
-			// Fallback: read the last overlay message directly from auto-recommend
-			// in case the async callback result was lost due to race conditions
-			if (flipSmartPlugin.isAutoRecommendActive())
-			{
-				String fallbackMessage = flipSmartPlugin.getAutoRecommendOverlayMessage();
-				if (fallbackMessage != null)
-				{
-					return renderHintBox(graphics, fallbackMessage);
-				}
-			}
-			if (!flipSmartPlugin.getApiClient().isAuthenticated())
-			{
-				return renderHintBox(graphics, LOGIN_MESSAGE);
-			}
-			return renderHintBox(graphics, HINT_MESSAGE);
+			return renderHintBox(graphics, message);
 		}
 		
 		// Only show when GE is open or when we have an active flip
@@ -459,8 +485,7 @@ public class FlipAssistOverlay extends Overlay
 			int y = 32 + lineHeight;
 			for (String line : iconLines)
 			{
-				graphics.setColor(getHintLineColor(line));
-				graphics.drawString(line, textStartX, y);
+				drawHintLine(graphics, line, textStartX, y, smallMetrics);
 				y += lineHeight;
 			}
 		}
@@ -472,9 +497,8 @@ public class FlipAssistOverlay extends Overlay
 			int y = 28 + lineHeight;
 			for (String line : wrappedLines)
 			{
-				graphics.setColor(getHintLineColor(line));
 				int lineWidth = smallMetrics.stringWidth(line);
-				graphics.drawString(line, (HINT_PANEL_WIDTH - lineWidth) / 2, y);
+				drawHintLine(graphics, line, (HINT_PANEL_WIDTH - lineWidth) / 2, y, smallMetrics);
 				y += lineHeight;
 			}
 		}
@@ -495,7 +519,8 @@ public class FlipAssistOverlay extends Overlay
 			return false;
 		}
 		return message.startsWith("Waiting for flips")
-			|| message.startsWith("Monitoring active offers");
+			|| message.startsWith("Monitoring active offers")
+			|| message.startsWith(MONITORING_MESSAGE);
 	}
 
 	private int computeActivityLogHeight(java.util.List<TradeActivityLog.Entry> entries, FontMetrics fm)
@@ -541,9 +566,36 @@ public class FlipAssistOverlay extends Overlay
 		}
 	}
 
+	private void drawHintLine(Graphics2D graphics, String line, int x, int y, FontMetrics fm)
+	{
+		int parenIdx = line.lastIndexOf(" (");
+		boolean isNetParen = parenIdx > 0 && line.endsWith(")")
+			&& (line.startsWith("(-", parenIdx + 1) || line.startsWith("(+", parenIdx + 1));
+		if (!isNetParen)
+		{
+			graphics.setColor(getHintLineColor(line));
+			graphics.drawString(line, x, y);
+			return;
+		}
+		String base = line.substring(0, parenIdx);
+		String paren = line.substring(parenIdx);
+		graphics.setColor(getHintLineColor(base));
+		graphics.drawString(base, x, y);
+		graphics.setColor(paren.trim().startsWith("(-") ? COLOR_LOSS : COLOR_PROFIT);
+		graphics.drawString(paren, x + fm.stringWidth(base), y);
+	}
+
 	private Color getHintLineColor(String line)
 	{
 		String trimmed = line.trim();
+		if (trimmed.startsWith("Loss"))
+		{
+			return COLOR_LOSS;
+		}
+		if (trimmed.startsWith("Profit") || trimmed.startsWith("Breakeven"))
+		{
+			return COLOR_PROFIT;
+		}
 		if (trimmed.startsWith("Open GE History"))
 		{
 			return COLOR_BUY;
@@ -608,35 +660,40 @@ public class FlipAssistOverlay extends Overlay
 	
 	private int renderHeader(Graphics2D graphics, int y)
 	{
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return y;
+		}
 		y += 4;
-		
-		AsyncBufferedImage itemImage = itemManager.getImage(focusedFlip.getItemId());
+
+		AsyncBufferedImage itemImage = itemManager.getImage(flip.getItemId());
 		if (itemImage != null)
 		{
 			graphics.drawImage(itemImage, SECTION_PADDING, y, ICON_SIZE, ICON_SIZE, null);
 		}
-		
+
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		graphics.setColor(COLOR_TEXT);
-		String itemName = truncateString(focusedFlip.getItemName(), PANEL_WIDTH - ICON_SIZE - SECTION_PADDING * 3, graphics.getFontMetrics());
+		String itemName = truncateString(flip.getItemName(), PANEL_WIDTH - ICON_SIZE - SECTION_PADDING * 3, graphics.getFontMetrics());
 		graphics.drawString(itemName, SECTION_PADDING + ICON_SIZE + 6, y + 10);
-		
+
 		graphics.setFont(FontManager.getRunescapeSmallFont());
-		graphics.setColor(focusedFlip.isBuying() ? COLOR_BUY : COLOR_SELL);
+		graphics.setColor(flip.isBuying() ? COLOR_BUY : COLOR_SELL);
 		String stepLabel;
-		if (focusedFlip.isBuying())
+		if (flip.isBuying())
 		{
 			stepLabel = "BUYING";
 		}
 		else
 		{
 			// Show "MODIFY" if there's already an active sell order for this item
-			PlayerSession sess = flipSmartPlugin.getSession();
-			boolean hasActiveSell = sess != null && sess.hasActiveSellSlotForItem(focusedFlip.getItemId());
+			com.flipsmart.trading.OfferStore store = flipSmartPlugin.getOfferStore();
+			boolean hasActiveSell = store != null && store.hasActiveSellOfferForItem(flip.getItemId());
 			stepLabel = hasActiveSell ? "MODIFY" : "SELLING";
 		}
 		graphics.drawString(stepLabel, SECTION_PADDING + ICON_SIZE + 6, y + 24);
-		
+
 		return y + ICON_SIZE + 4;
 	}
 	
@@ -663,7 +720,12 @@ public class FlipAssistOverlay extends Overlay
 	
 	private FlipAssistStep[] getStepsForCurrentPhase()
 	{
-		if (focusedFlip.isBuying())
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return new FlipAssistStep[0];
+		}
+		if (flip.isBuying())
 		{
 			return new FlipAssistStep[]{
 				FlipAssistStep.SELECT_ITEM, FlipAssistStep.SET_QUANTITY,
@@ -759,20 +821,25 @@ public class FlipAssistOverlay extends Overlay
 	
 	private void renderFlipSummary(Graphics2D graphics, int y)
 	{
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return;
+		}
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		int lineHeight = 12;
-		
-		String priceLabel = focusedFlip.isBuying() ? "Buy at:" : "Sell at:";
-		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.format(focusedFlip.getCurrentStepPrice()) + " gp",
-			y + lineHeight, focusedFlip.isBuying() ? COLOR_BUY : COLOR_SELL);
-		
-		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.format(focusedFlip.getCurrentStepQuantity()),
+
+		String priceLabel = flip.isBuying() ? "Buy at:" : "Sell at:";
+		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.get().format(flip.getCurrentStepPrice()) + " gp",
+			y + lineHeight, flip.isBuying() ? COLOR_BUY : COLOR_SELL);
+
+		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.get().format(flip.getCurrentStepQuantity()),
 			y + lineHeight * 2, COLOR_TEXT);
-		
-		if (focusedFlip.isBuying() && focusedFlip.getSellPrice() > 0)
+
+		if (flip.isBuying() && flip.getSellPrice() > 0)
 		{
 			int totalProfit = calculateTotalProfit();
-			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.format(totalProfit) + " gp",
+			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.get().format(totalProfit) + " gp",
 				y + lineHeight * 3, totalProfit > 0 ? COLOR_PROFIT : new Color(255, 100, 100));
 		}
 	}
@@ -787,28 +854,38 @@ public class FlipAssistOverlay extends Overlay
 	
 	private int calculateTotalProfit()
 	{
-		int margin = focusedFlip.getSellPrice() - focusedFlip.getBuyPrice();
-		int geTax = Math.min((int)(focusedFlip.getSellPrice() * 0.02), 5_000_000);
-		return (margin - geTax) * focusedFlip.getBuyQuantity();
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return 0;
+		}
+		int margin = flip.getSellPrice() - flip.getBuyPrice();
+		int geTax = GeTax.taxFor(flip.getItemId(), flip.getSellPrice());
+		return (margin - geTax) * flip.getBuyQuantity();
 	}
 	
 	private String formatStepDescription()
 	{
 		String hotkeyName = config.flipAssistHotkey().toString();
-		
+		final FocusedFlip flip = focusedFlip;
+		if (flip == null)
+		{
+			return currentStep.getDescription();
+		}
+
 		switch (currentStep)
 		{
 			case SET_QUANTITY:
-				int targetQty = focusedFlip.getCurrentStepQuantity();
+				int targetQty = flip.getCurrentStepQuantity();
 				// Just show the target quantity with hotkey
-				return String.format(currentStep.getDescription(), hotkeyName, 
-					PRICE_FORMAT.format(targetQty));
+				return String.format(currentStep.getDescription(), hotkeyName,
+					PRICE_FORMAT.get().format(targetQty));
 			case SET_PRICE:
 			case SET_SELL_PRICE:
-				int targetPrice = focusedFlip.getCurrentStepPrice();
+				int targetPrice = flip.getCurrentStepPrice();
 				// Just show the target price with hotkey
 				return String.format(currentStep.getDescription(), hotkeyName,
-					PRICE_FORMAT.format(targetPrice));
+					PRICE_FORMAT.get().format(targetPrice));
 			default:
 				return currentStep.getDescription();
 		}
@@ -894,6 +971,71 @@ public class FlipAssistOverlay extends Overlay
 			}
 		}
 		return hasQuantityLabel && hasPriceCoins;
+	}
+
+	/**
+	 * True while the player is in any GE buy/sell offer interface: the item-search
+	 * screen, the numeric quantity/price input, or the offer-setup screen. While one
+	 * is open the offer takes priority and transient status prompts are hidden.
+	 */
+	private boolean isInOfferInterface()
+	{
+		if (!isGrandExchangeOpen())
+		{
+			return false;
+		}
+		int inputType = getInputType();
+		return inputType == INPUT_TYPE_GE_SEARCH
+			|| inputType == INPUT_TYPE_NUMERIC
+			|| isOfferSetupOpen();
+	}
+
+	/**
+	 * Pick the hint/status message to draw when no flip is focused, or null to draw
+	 * nothing. While any buy/sell offer interface is open the offer takes priority and
+	 * ALL prompts — including the one-shot history-backfill prompt — are suppressed so
+	 * nothing overlays the buy/sell screens; the prompts re-surface at the main GE view
+	 * (none of them are cleared). Off the offer interface the history prompt takes
+	 * priority over the auto-recommend status, then login, then the generic hint.
+	 */
+	static String selectNoFocusMessage(
+		boolean showHistoryPrompt,
+		boolean offerInterfaceOpen,
+		String autoStatusMessage,
+		String autoRecommendFallback,
+		boolean authenticated,
+		boolean hasTradeActivity,
+		String historyMessage,
+		String loginMessage,
+		String monitoringMessage,
+		String hintMessage)
+	{
+		if (offerInterfaceOpen)
+		{
+			return null;
+		}
+		if (showHistoryPrompt)
+		{
+			return historyMessage;
+		}
+		if (autoStatusMessage != null)
+		{
+			return autoStatusMessage;
+		}
+		if (autoRecommendFallback != null)
+		{
+			return autoRecommendFallback;
+		}
+		// GE activity opens the monitoring log regardless of Auto mode (AC12/AC13).
+		if (authenticated && hasTradeActivity)
+		{
+			return monitoringMessage;
+		}
+		if (!authenticated)
+		{
+			return loginMessage;
+		}
+		return hintMessage;
 	}
 	
 	private Widget[] getOfferPanelChildren()

@@ -1,13 +1,11 @@
 package com.flipsmart;
-
+import com.flipsmart.recommend.CollectOrigin;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -43,12 +41,13 @@ public class PlayerSession
 
 	private final Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
 	private final Map<Integer, Integer> collectedQuantities = new ConcurrentHashMap<>();
+	private final Map<Integer, CollectOrigin> collectOrigins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> collectedAtMillis = new ConcurrentHashMap<>();
 
 	// =====================
 	// GE State
 	// =====================
 
-	private final Map<Integer, TrackedOffer> trackedOffers = new ConcurrentHashMap<>();
 	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
@@ -134,15 +133,38 @@ public class PlayerSession
 		}
 	}
 
+	public void addCollectedItem(int itemId, int quantity, CollectOrigin origin, long nowMillis)
+	{
+		addCollectedItem(itemId, quantity);
+		if (origin != null)
+		{
+			collectOrigins.put(itemId, origin);
+		}
+		collectedAtMillis.put(itemId, nowMillis);
+	}
+
 	public int getCollectedQuantity(int itemId)
 	{
 		Integer qty = collectedQuantities.get(itemId);
 		return qty != null ? qty : 0;
 	}
 
+	public CollectOrigin getCollectOrigin(int itemId)
+	{
+		return collectOrigins.get(itemId);
+	}
+
+	public long getCollectedAtMillis(int itemId)
+	{
+		Long ts = collectedAtMillis.get(itemId);
+		return ts == null ? 0L : ts;
+	}
+
 	public boolean removeCollectedItem(int itemId)
 	{
 		collectedQuantities.remove(itemId);
+		collectOrigins.remove(itemId);
+		collectedAtMillis.remove(itemId);
 		return collectedItemIds.remove(itemId);
 	}
 
@@ -150,12 +172,16 @@ public class PlayerSession
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 	}
 
 	public void restoreCollectedItems(Set<Integer> items)
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
@@ -166,6 +192,8 @@ public class PlayerSession
 	{
 		collectedItemIds.clear();
 		collectedQuantities.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		if (items != null)
 		{
 			collectedItemIds.addAll(items);
@@ -174,53 +202,6 @@ public class PlayerSession
 		{
 			collectedQuantities.putAll(quantities);
 		}
-	}
-
-	// =====================
-	// GE State Methods
-	// =====================
-
-	public Map<Integer, TrackedOffer> getTrackedOffers()
-	{
-		return Collections.unmodifiableMap(trackedOffers);
-	}
-
-	public TrackedOffer getTrackedOffer(int slot)
-	{
-		return trackedOffers.get(slot);
-	}
-
-	public void putTrackedOffer(int slot, TrackedOffer offer)
-	{
-		trackedOffers.put(slot, offer);
-	}
-
-	public TrackedOffer removeTrackedOffer(int slot)
-	{
-		return trackedOffers.remove(slot);
-	}
-
-	public void clearTrackedOffers()
-	{
-		trackedOffers.clear();
-	}
-
-	public void restoreTrackedOffers(Map<Integer, TrackedOffer> offers)
-	{
-		trackedOffers.clear();
-		if (offers != null)
-		{
-			trackedOffers.putAll(offers);
-		}
-	}
-
-	/**
-	 * Get a snapshot of tracked offers for persistence.
-	 * Returns a new HashMap to avoid concurrent modification during serialization.
-	 */
-	public Map<Integer, TrackedOffer> getOffersForPersistence()
-	{
-		return new HashMap<>(trackedOffers);
 	}
 
 	// =====================
@@ -328,7 +309,8 @@ public class PlayerSession
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
 		collectedQuantities.clear();
-		trackedOffers.clear();
+		collectOrigins.clear();
+		collectedAtMillis.clear();
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 	}
@@ -336,127 +318,6 @@ public class PlayerSession
 	// =====================
 	// Query Methods
 	// =====================
-
-	/**
-	 * Get the set of item IDs currently in GE buy slots.
-	 */
-	public Set<Integer> getCurrentGEBuyItemIds()
-	{
-		Set<Integer> itemIds = new HashSet<>();
-
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.isBuy())
-			{
-				itemIds.add(offer.getItemId());
-			}
-		}
-
-		return itemIds;
-	}
-
-	/**
-	 * Get all active flip item IDs - items that should show as active flips.
-	 * This includes:
-	 * 1. Items currently in GE buy slots (pending or filled)
-	 * 2. Items currently in GE sell slots (pending sale)
-	 * 3. Items collected from GE in this session (waiting to be sold)
-	 */
-	public Set<Integer> getActiveFlipItemIds()
-	{
-		Set<Integer> itemIds = new HashSet<>();
-
-		// Add items currently in ANY GE slots (buy OR sell)
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			itemIds.add(offer.getItemId());
-		}
-
-		// Add items collected from GE (waiting to be sold)
-		itemIds.addAll(collectedItemIds);
-
-		return itemIds;
-	}
-
-	/**
-	 * Check if an item has an active sell slot in the GE.
-	 */
-	public boolean hasActiveSellSlotForItem(int itemId)
-	{
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.getItemId() == itemId && !offer.isBuy())
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Check if an item has an active buy slot in the GE.
-	 */
-	public boolean hasActiveBuySlotForItem(int itemId)
-	{
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.getItemId() == itemId && offer.isBuy())
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/** Buy offer placed but not yet completed (items not collectable yet). */
-	public boolean hasInFlightBuyOfferForItem(int itemId)
-	{
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.getItemId() == itemId && offer.isBuy() && !offer.isCompleted())
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/** Buy offer completed but items still in the GE slot awaiting collection. */
-	public boolean hasUncollectedBuyOfferForItem(int itemId)
-	{
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.getItemId() == itemId && offer.isBuy() && offer.isCompleted())
-			{
-				return true;
-			}
-		}
-		return false;
-	}
-
-	/**
-	 * Check if there are available GE slots for new offers.
-	 */
-	public boolean hasAvailableGESlots(int slotLimit)
-	{
-		return trackedOffers.size() < slotLimit;
-	}
-
-	/**
-	 * Get tracked offers that have completed (BOUGHT or SOLD state, ready to collect).
-	 */
-	public List<TrackedOffer> getCompletedOffers()
-	{
-		List<TrackedOffer> completed = new ArrayList<>();
-		for (TrackedOffer offer : trackedOffers.values())
-		{
-			if (offer.isCompleted())
-			{
-				completed.add(offer);
-			}
-		}
-		return completed;
-	}
 
 	/**
 	 * Get a snapshot of collected item IDs for persistence.
