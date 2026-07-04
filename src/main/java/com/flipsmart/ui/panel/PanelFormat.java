@@ -230,6 +230,46 @@ public final class PanelFormat
 	}
 
 	/**
+	 * Draw a gear/cogwheel icon onto a {@code size}x{@code size} image with the given color.
+	 */
+	public static BufferedImage drawGearIcon(Color color, int size)
+	{
+		BufferedImage icon = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setColor(color);
+		g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+		double cx = size / 2.0;
+		double cy = size / 2.0;
+		double toothTip = size / 2.0 - 1.0;
+		double body = toothTip - 2.5;
+		int teeth = 8;
+
+		for (int i = 0; i < teeth; i++)
+		{
+			double a = Math.PI * 2 * i / teeth;
+			int x1 = (int) Math.round(cx + Math.cos(a) * body);
+			int y1 = (int) Math.round(cy + Math.sin(a) * body);
+			int x2 = (int) Math.round(cx + Math.cos(a) * toothTip);
+			int y2 = (int) Math.round(cy + Math.sin(a) * toothTip);
+			g.drawLine(x1, y1, x2, y2);
+		}
+
+		int bodyDia = (int) Math.round(body * 2);
+		g.fillOval((int) Math.round(cx - body), (int) Math.round(cy - body), bodyDia, bodyDia);
+
+		double hole = body * 0.45;
+		int holeDia = (int) Math.round(hole * 2);
+		g.setComposite(AlphaComposite.Clear);
+		g.fillOval((int) Math.round(cx - hole), (int) Math.round(cy - hole), holeDia, holeDia);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
 	 * Draw a ban/circle-slash icon onto a 14x14 image with the given color.
 	 */
 	public static BufferedImage drawBlockIcon(Color color)

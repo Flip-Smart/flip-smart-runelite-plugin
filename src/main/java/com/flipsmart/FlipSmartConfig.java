@@ -168,6 +168,18 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "minVolume",
+		name = "Minimum Volume",
+		description = "Hide recommendations with daily trade volume below this value",
+		section = flipFinderSection,
+		position = 9
+	)
+	default int minimumVolume()
+	{
+		return 0;
+	}
+
+	@ConfigItem(
 		keyName = "cashstackOverrideEnabled",
 		name = "Cashstack Override",
 		description = "Override your in-game cashstack with a fixed amount. The plugin will suggest flips based on this value instead of your actual inventory cash. Supports shorthand input: e.g. 500k, 2.5m, 10M.",

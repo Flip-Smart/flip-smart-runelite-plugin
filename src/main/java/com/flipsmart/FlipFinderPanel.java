@@ -29,11 +29,15 @@ import net.runelite.client.util.LinkBrowser;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -44,6 +48,11 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
+	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
+	private static final String CONFIG_KEY_MIN_VOLUME = "minVolume";
+	private static final String CONFIG_KEY_ENABLE_FLIP_ASSISTANT = "enableFlipAssistant";
+	private static final String FILTER_TOOLTIP =
+		"Adding a minimum filter may limit the number of results you see.";
 
 	/** Sort options for the Completed tab. Recency is the default (AC9). */
 	private enum CompletedSort
@@ -71,7 +80,11 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String RISK_NA = "Risk: N/A";
 	private static final String MSG_LOGIN_TO_RUNESCAPE = "Log in to RuneScape";
 	private static final String MSG_LOGIN_INSTRUCTION = "<html><center>Log in to the game to get<br>flip suggestions and track your flips</center></html>";
-	
+	private static final long SETTINGS_POPOUT_REOPEN_DEBOUNCE_MS = 200;
+	private static final int FILTER_SETTING_DEBOUNCE_MS = 300;
+
+	private final Map<String, Timer> filterSettingDebounceTimers = new ConcurrentHashMap<>();
+
 	// Colors for focused/selected items
 	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
 	private static final Color COLOR_FOCUSED_BG = new Color(0, 60, 70);
@@ -296,18 +309,28 @@ public class FlipFinderPanel extends PluginPanel
 		// Logout button with compact styling
 		JButton logoutButton = new JButton("Logout");
 		logoutButton.setFocusable(false);
+		logoutButton.setFont(FONT_PLAIN_11);
 		logoutButton.setMargin(new Insets(2, 4, 2, 4));
 		logoutButton.addActionListener(e -> handleLogout());
 
 		// Refresh button with compact styling
 		refreshButton.setFocusable(false);
+		refreshButton.setFont(FONT_PLAIN_11);
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> refresh(true));
+
+		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.drawGearIcon(Color.LIGHT_GRAY, 12)));
+		settingsButton.setFocusable(false);
+		settingsButton.setFont(FONT_PLAIN_11);
+		settingsButton.setMargin(new Insets(1, 2, 1, 2));
+		settingsButton.setToolTipText("Quick settings");
+		settingsButton.addActionListener(e -> showSettingsPopout(settingsButton));
 
 		JPanel headerButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
 		headerButtons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		headerButtons.add(logoutButton);
 		headerButtons.add(refreshButton);
+		headerButtons.add(settingsButton);
 
 		headerPanel.add(titleBox, BorderLayout.WEST);
 		headerPanel.add(headerButtons, BorderLayout.EAST);
@@ -705,6 +728,136 @@ public class FlipFinderPanel extends PluginPanel
 		mainPanel.add(topPanel, BorderLayout.NORTH);
 		mainPanel.add(tabbedPane, BorderLayout.CENTER);
 		mainPanel.add(footerPanel, BorderLayout.SOUTH);
+	}
+
+	private long settingsPopupClosedAt;
+
+	private void showSettingsPopout(JComponent anchor)
+	{
+		// A click on the gear while the pop-out is open first dismisses it
+		// (light-weight popups close on any outside press), so without this
+		// guard the same click would immediately reopen it.
+		if (System.currentTimeMillis() - settingsPopupClosedAt < SETTINGS_POPOUT_REOPEN_DEBOUNCE_MS)
+		{
+			return;
+		}
+
+		JPopupMenu popup = new JPopupMenu();
+		popup.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		popup.addPopupMenuListener(new PopupMenuListener()
+		{
+			@Override
+			public void popupMenuWillBecomeVisible(PopupMenuEvent e)
+			{
+			}
+
+			@Override
+			public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
+			{
+				settingsPopupClosedAt = System.currentTimeMillis();
+			}
+
+			@Override
+			public void popupMenuCanceled(PopupMenuEvent e)
+			{
+			}
+		});
+
+		JPanel body = new JPanel();
+		body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+		body.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		body.setBorder(new EmptyBorder(8, 10, 8, 10));
+
+		body.add(buildMinProfitRow());
+		body.add(Box.createVerticalStrut(6));
+		body.add(buildMinVolumeRow());
+		body.add(Box.createVerticalStrut(6));
+		body.add(buildHideButtonsRow());
+
+		popup.add(body);
+		popup.show(anchor, 0, anchor.getHeight());
+	}
+
+	private JPanel buildMinProfitRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel label = new JLabel("Min Profit: ");
+		label.setForeground(Color.LIGHT_GRAY);
+		label.setFont(FONT_PLAIN_12);
+		label.setToolTipText(FILTER_TOOLTIP);
+
+		JSpinner spinner = new JSpinner(
+			new SpinnerNumberModel(config.minimumProfit(), 0, Integer.MAX_VALUE, 1000));
+		spinner.setToolTipText(FILTER_TOOLTIP);
+		spinner.addChangeListener(e -> applyFilterSettingDebounced(
+			CONFIG_KEY_MIN_PROFIT, (Integer) spinner.getValue()));
+
+		row.add(label);
+		row.add(spinner);
+		return row;
+	}
+
+	private JPanel buildMinVolumeRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel label = new JLabel("Min Volume: ");
+		label.setForeground(Color.LIGHT_GRAY);
+		label.setFont(FONT_PLAIN_12);
+		label.setToolTipText(FILTER_TOOLTIP);
+
+		JSpinner spinner = new JSpinner(
+			new SpinnerNumberModel(config.minimumVolume(), 0, Integer.MAX_VALUE, 100));
+		spinner.setToolTipText(FILTER_TOOLTIP);
+		spinner.addChangeListener(e -> applyFilterSettingDebounced(
+			CONFIG_KEY_MIN_VOLUME, (Integer) spinner.getValue()));
+
+		row.add(label);
+		row.add(spinner);
+		return row;
+	}
+
+	private JPanel buildHideButtonsRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JCheckBox hide = new JCheckBox("Hide FlipSmart Buttons");
+		hide.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		hide.setForeground(Color.LIGHT_GRAY);
+		hide.setFont(FONT_PLAIN_12);
+		hide.setFocusable(false);
+		hide.setSelected(!config.enableFlipAssistant());
+		hide.addActionListener(e -> configManager.setConfiguration(
+			CONFIG_GROUP, CONFIG_KEY_ENABLE_FLIP_ASSISTANT, !hide.isSelected()));
+
+		row.add(hide);
+		return row;
+	}
+
+	private void applyFilterSetting(String key, int value)
+	{
+		configManager.setConfiguration(CONFIG_GROUP, key, value);
+		populateRecommendations(new ArrayList<>(currentRecommendations));
+	}
+
+	// Coalesces rapid spinner adjustments (e.g. holding the up/down arrows)
+	// into a single config save + re-populate after the user pauses.
+	private void applyFilterSettingDebounced(String key, int value)
+	{
+		Timer existing = filterSettingDebounceTimers.get(key);
+		if (existing != null && existing.isRunning())
+		{
+			existing.stop();
+		}
+
+		Timer timer = new Timer(FILTER_SETTING_DEBOUNCE_MS, e -> applyFilterSetting(key, value));
+		timer.setRepeats(false);
+		timer.start();
+		filterSettingDebounceTimers.put(key, timer);
 	}
 
 	/**
@@ -1634,10 +1787,17 @@ public class FlipFinderPanel extends PluginPanel
 		}
 	}
 
-	/** Returns true if a recommendation passes the current profit filter. */
+	/** Returns true if a recommendation passes the current profit and volume filters. */
 	private boolean shouldDisplay(FlipRecommendation rec)
 	{
-		return FocusedFlip.calculateAdjustedProfit(rec, config.priceOffset()) >= config.minimumProfit();
+		return FocusedFlip.calculateAdjustedProfit(rec, config.priceOffset()) >= config.minimumProfit()
+			&& passesVolumeFilter(rec.getDailyVolume(), config.minimumVolume());
+	}
+
+	/** Returns true if a recommendation's daily volume meets the minimum-volume threshold. */
+	static boolean passesVolumeFilter(int dailyVolume, int minVolume)
+	{
+		return dailyVolume >= minVolume;
 	}
 
 	/** Returns the number of recommendations that pass the current profit filter. */

@@ -66,10 +66,10 @@ public class FlipAssistOverlay extends Overlay
 	private static final int STEP_INDICATOR_SIZE = 10;
 	
 	// Hint message
-	private static final String HINT_TITLE = "Flip Assist";
+	private static final String HINT_TITLE = "FlipSmart";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
 	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
-	private static final String LOGIN_MESSAGE = "Log in to use Flip Assist";
+	private static final String LOGIN_MESSAGE = "Log in to use FlipSmart";
 	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to backfill recent trades";
 	private static final String MONITORING_MESSAGE = "Monitoring your flips";
 	
@@ -376,7 +376,7 @@ public class FlipAssistOverlay extends Overlay
 	/**
 	 * Render a small hint box with a title and message.
 	 * When an item icon is present, shows a two-line layout:
-	 *   "Flip Assist" title
+	 *   "FlipSmart" title
 	 *   "Collect items from GE" subtitle
 	 *   [icon] item name
 	 */
