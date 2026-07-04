@@ -133,6 +133,9 @@ public class FlipSmartPlugin extends Plugin
 	private TradeStationSlotPushService tradeStationSlotPushService;
 
 	@Inject
+	private PendingTradeOfferPushService pendingTradeOfferPushService;
+
+	@Inject
 	private Gson gson;
 
 	// Flip Finder panel
@@ -1318,6 +1321,11 @@ public class FlipSmartPlugin extends Plugin
 		// AC7). Captured here on the client thread; pushed off-thread.
 		tradeStationSlotPushService.scheduleSnapshotPush(
 			tradeStationSlotPushService.readCurrentSlotIds());
+
+		// Report this slot's live state for the admin-only Pending Trades
+		// per Item panel (issue #92). Undebounced, unlike the snapshot push
+		// above — the panel wants near-real-time per-offer visibility.
+		pendingTradeOfferPushService.reportOfferChanged(slot, offer);
 
 		int itemId = offer.getItemId();
 		int quantitySold = offer.getQuantitySold();

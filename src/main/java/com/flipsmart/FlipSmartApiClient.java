@@ -2573,6 +2573,39 @@ public class FlipSmartApiClient
 			});
 	}
 
+	/**
+	 * Report a single GE slot's current offer state to the backend, powering
+	 * the admin-only Pending Trades per Item panel on the Item Graphs page
+	 * (issue #92). Best-effort — failures are swallowed by the caller.
+	 *
+	 * @param state one of "pending", "executed", "cancelled", "empty"
+	 */
+	public CompletableFuture<Boolean> reportPendingTradeOfferAsync(
+		String rsn, int slot, int itemId, boolean isBuy, int price, int quantity, int quantityFilled, String state)
+	{
+		String url = String.format("%s/pending-trades/report", getApiUrl());
+
+		JsonObject body = new JsonObject();
+		body.addProperty("rsn", rsn);
+		body.addProperty("slot", slot);
+		body.addProperty("item_id", itemId);
+		body.addProperty("is_buy", isBuy);
+		body.addProperty("price", price);
+		body.addProperty("quantity", quantity);
+		body.addProperty("quantity_filled", quantityFilled);
+		body.addProperty("state", state);
+
+		RequestBody rb = RequestBody.create(JSON, body.toString());
+		Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+
+		return executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
+			.exceptionally(e ->
+			{
+				log.debug("reportPendingTradeOfferAsync failed: {}", e.getMessage());
+				return false;
+			});
+	}
+
 	private static class CachedDailyVolume
 	{
 		private final Integer volume;
