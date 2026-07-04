@@ -35,9 +35,9 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
@@ -83,7 +83,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final long SETTINGS_POPOUT_REOPEN_DEBOUNCE_MS = 200;
 	private static final int FILTER_SETTING_DEBOUNCE_MS = 300;
 
-	private final Map<String, Timer> filterSettingDebounceTimers = new HashMap<>();
+	private final Map<String, Timer> filterSettingDebounceTimers = new ConcurrentHashMap<>();
 
 	// Colors for focused/selected items
 	private static final Color COLOR_FOCUSED_BORDER = new Color(0, 200, 220);
