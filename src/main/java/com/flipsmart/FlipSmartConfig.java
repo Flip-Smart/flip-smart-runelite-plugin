@@ -112,7 +112,8 @@ public interface FlipSmartConfig extends Config
 		name = "Flip Style",
 		description = "Your preferred flipping style: Conservative (safer, faster fills), Balanced (mix of both), Aggressive (higher profit, slower fills)",
 		section = flipFinderSection,
-		position = 2
+		position = 2,
+		hidden = true
 	)
 	default FlipStyle flipStyle()
 	{
@@ -124,7 +125,8 @@ public interface FlipSmartConfig extends Config
 		name = "Timeframe",
 		description = "Target flip timeframe: Active (standard recommendations), or time-optimized profiles (30m, 2h, 4h, 12h)",
 		section = flipFinderSection,
-		position = 3
+		position = 3,
+		hidden = true
 	)
 	default FlipTimeframe flipTimeframe()
 	{
@@ -160,7 +162,8 @@ public interface FlipSmartConfig extends Config
 		name = "Minimum Profit",
 		description = "Hide recommendations with total profit below this value (in GP)",
 		section = flipFinderSection,
-		position = 4
+		position = 4,
+		hidden = true
 	)
 	default int minimumProfit()
 	{
@@ -172,7 +175,8 @@ public interface FlipSmartConfig extends Config
 		name = "Minimum Volume",
 		description = "Hide recommendations with daily trade volume below this value",
 		section = flipFinderSection,
-		position = 9
+		position = 9,
+		hidden = true
 	)
 	default int minimumVolume()
 	{
