@@ -5,7 +5,6 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
 
 /**
  * Pins the fan-out the panel relies on: a {@code GET /plugin/sync} body must
@@ -31,8 +30,7 @@ public class PluginSyncResponseTest
 			+ "\"flip_finder\":{\"flip_style\":\"balanced\",\"recommendations\":[]},"
 			+ "\"active_flips\":{\"active_flips\":[],\"total_items\":0,\"total_invested\":0},"
 			+ "\"completed_flips\":{\"flips\":[],\"count\":3},"
-			+ "\"statistics\":{\"total_flips\":7,\"total_profit\":1234},"
-			+ "\"entitlements\":{\"is_premium\":true}"
+			+ "\"statistics\":{\"total_flips\":7,\"total_profit\":1234}"
 			+ "}";
 
 		PluginSyncResponse sync = parse(json);
@@ -46,8 +44,6 @@ public class PluginSyncResponseTest
 		assertEquals(3, sync.getCompletedFlips().getCount());
 		assertNotNull(sync.getStatistics());
 		assertEquals(7, sync.getStatistics().getTotalFlips());
-		assertNotNull(sync.getEntitlements());
-		assertTrue(sync.getEntitlements().isPremium());
 	}
 
 	@Test
@@ -61,7 +57,6 @@ public class PluginSyncResponseTest
 		assertNull(sync.getFlipFinder());
 		assertNull(sync.getActiveFlips());
 		assertNull(sync.getStatistics());
-		assertNull(sync.getEntitlements());
 		assertNotNull(sync.getCompletedFlips());
 	}
 }

@@ -5,7 +5,6 @@ import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
-import com.flipsmart.api.dto.EntitlementsResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.PluginSyncResponse;
@@ -1050,23 +1049,16 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				applyCompletedFlipsResponse(sync.getCompletedFlips(), completedScrollPos);
 			}
-			applyEntitlementsPremium(sync.getEntitlements());
+			// Premium status is set from the flip-finder payload inside
+			// handleRecommendationsResponse, matching the pre-bundle behavior. It is
+			// deliberately NOT sourced from the entitlements payload here: that snapshot
+			// carries premium under rsn_entitlement, not a top-level is_premium, so a
+			// naive read reports free and would wrongly drop the player to the 2-slot tier.
 		}).exceptionally(throwable ->
 		{
 			showBundleError(applyRecs, recScrollPos, activeScrollPos, completedScrollPos, throwable);
 			return null;
 		});
-	}
-
-	/** Refresh the cached premium flag from the bundled entitlements and re-sync the banner. */
-	private void applyEntitlementsPremium(EntitlementsResponse entitlements)
-	{
-		if (entitlements == null)
-		{
-			return;
-		}
-		apiClient.setPremium(entitlements.isPremium());
-		SwingUtilities.invokeLater(this::updatePremiumStatus);
 	}
 
 	/** Surface a bundle-level failure (null response or transport error) across all three tabs. */

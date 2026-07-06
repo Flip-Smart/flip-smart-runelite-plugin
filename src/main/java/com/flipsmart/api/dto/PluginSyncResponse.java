@@ -30,6 +30,7 @@ public class PluginSyncResponse
 	@SerializedName("statistics")
 	private FlipStatisticsResponse statistics;
 
-	@SerializedName("entitlements")
-	private EntitlementsResponse entitlements;
+	// The endpoint also returns `entitlements`, but the poll does not consume it:
+	// premium is sourced from the flip_finder payload (see FlipFinderPanel), and the
+	// EntitlementSnapshot shape has no top-level is_premium for this DTO to read.
 }
