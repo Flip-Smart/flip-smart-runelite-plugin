@@ -4,6 +4,7 @@ import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.google.gson.JsonObject;
@@ -135,6 +136,59 @@ public class FlipsEndpoints
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			transport.parse(jsonData, FlipFinderResponse.class));
+	}
+
+	/**
+	 * Fetch the bundled 2-minute poll ({@code GET /plugin/sync}) in one round-trip:
+	 * recommendations, active flips, completed flips, statistics and entitlements.
+	 * Query parameters mirror {@link #getFlipRecommendationsAsync} so the same
+	 * panel inputs drive both.
+	 */
+	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
+		Integer filledSlots, boolean isMembersWorld)
+	{
+		String apiUrl = transport.getApiUrl();
+
+		StringBuilder urlBuilder = new StringBuilder(128);
+		urlBuilder.append(String.format("%s/plugin/sync?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+
+		if (cashStack != null)
+		{
+			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
+		}
+
+		if (randomSeed != null)
+		{
+			urlBuilder.append(String.format("&random_seed=%d", randomSeed));
+		}
+
+		if (timeframe != null)
+		{
+			urlBuilder.append(String.format("&timeframe=%s", timeframe));
+		}
+
+		if (rsn != null && !rsn.isEmpty())
+		{
+			urlBuilder.append(String.format("&rsn=%s", urlEncode(rsn)));
+		}
+
+		if (filledSlots != null)
+		{
+			urlBuilder.append(String.format("&filled_slots=%d", filledSlots));
+		}
+
+		if (!isMembersWorld)
+		{
+			urlBuilder.append("&is_members_world=false");
+		}
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(urlBuilder.toString())
+			.get();
+
+		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
+			transport.parse(jsonData, PluginSyncResponse.class));
 	}
 
 	/**

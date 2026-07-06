@@ -3,7 +3,12 @@ import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
+import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.EntitlementsResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.FlipStatisticsResponse;
+import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.ActiveFlipLocalUpdater;
@@ -967,24 +972,124 @@ public class FlipFinderPanel extends PluginPanel
 			showLoggedOutOfGameState();
 			return;
 		}
-		
-		// Skip recommendations refresh during auto-refresh if user is focused on a flip
-		// This prevents the focused item from disappearing while user is mid-transaction
-		// Manual refresh (shuffleSuggestions=true) always refreshes
+
+		// One /plugin/sync call replaces the four separate reads this cycle used to
+		// fire (recommendations, active flips, statistics, completed flips). The
+		// bundle always returns recommendations; the same focus/GE/RSN-block gating
+		// as before decides whether we apply them.
 		boolean skipRecommendationsRefresh = !shuffleSuggestions && currentFocus != null;
-		
+
+		final int recScrollPos = getScrollPosition(recommendedScrollPane);
+		boolean applyRecommendations;
 		if (skipRecommendationsRefresh)
 		{
-			log.debug("Skipping recommendations refresh - user is focused on {} ({})", 
+			log.debug("Skipping recommendations refresh - user is focused on {} ({})",
 				currentFocus.getItemName(), currentFocus.isBuying() ? "BUY" : "SELL");
+			applyRecommendations = false;
 		}
 		else
 		{
-			refreshRecommendations(shuffleSuggestions);
+			resetRefreshCountdown();
+			if (!plugin.isAtGrandExchange())
+			{
+				showNotAtGeMessage();
+				applyRecommendations = false;
+			}
+			else if (apiClient.isRsnBlocked())
+			{
+				showRsnBlockedMessage();
+				applyRecommendations = false;
+			}
+			else
+			{
+				statusLabel.setText("Loading recommendations...");
+				refreshButton.setEnabled(false);
+				applyRecommendations = true;
+			}
 		}
-		
-		refreshActiveFlips();
-		refreshCompletedFlips();
+
+		final int activeScrollPos = getScrollPosition(activeFlipsScrollPane);
+		final int completedScrollPos = getScrollPosition(completedFlipsScrollPane);
+
+		// Recommendation parameters mirror the standalone /flip-finder call.
+		Integer cashStack = getCashStack();
+		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
+		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+		String flipStyle = selectedStyle != null
+			? selectedStyle.getApiValue() : FlipSmartConfig.FlipStyle.BALANCED.getApiValue();
+		FlipSmartConfig.FlipTimeframe selectedTimeframe =
+			(FlipSmartConfig.FlipTimeframe) flipTimeframeDropdown.getSelectedItem();
+		String timeframe = (selectedTimeframe != null && selectedTimeframe.isTimeframeBased())
+			? selectedTimeframe.getApiValue() : null;
+		// Seed only on manual refresh for variety; auto-refresh keeps items stable.
+		Integer randomSeed = shuffleSuggestions ? ThreadLocalRandom.current().nextInt() : null;
+		String rsn = plugin.getCurrentRsnSafe().orElse(null);
+		Integer filledSlots = getFilledSlots();
+
+		final boolean applyRecs = applyRecommendations;
+		apiClient.getPluginSyncAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots,
+			plugin.isMembersWorld()).thenAccept(sync ->
+		{
+			if (sync == null)
+			{
+				showBundleError(applyRecs, recScrollPos, activeScrollPos, completedScrollPos, null);
+				return;
+			}
+			// Each apply method hops to the EDT internally and null-skips a missing
+			// sub-payload, leaving that section's prior state untouched.
+			if (applyRecs)
+			{
+				handleRecommendationsResponse(sync.getFlipFinder(), recScrollPos);
+			}
+			if (sync.getActiveFlips() != null)
+			{
+				applyActiveFlipsResponse(sync.getActiveFlips(), activeScrollPos);
+			}
+			applyStatisticsResponse(sync.getStatistics());
+			if (sync.getCompletedFlips() != null)
+			{
+				applyCompletedFlipsResponse(sync.getCompletedFlips(), completedScrollPos);
+			}
+			applyEntitlementsPremium(sync.getEntitlements());
+		}).exceptionally(throwable ->
+		{
+			showBundleError(applyRecs, recScrollPos, activeScrollPos, completedScrollPos, throwable);
+			return null;
+		});
+	}
+
+	/** Refresh the cached premium flag from the bundled entitlements and re-sync the banner. */
+	private void applyEntitlementsPremium(EntitlementsResponse entitlements)
+	{
+		if (entitlements == null)
+		{
+			return;
+		}
+		apiClient.setPremium(entitlements.isPremium());
+		SwingUtilities.invokeLater(this::updatePremiumStatus);
+	}
+
+	/** Surface a bundle-level failure (null response or transport error) across all three tabs. */
+	private void showBundleError(boolean applyRecs, int recScrollPos, int activeScrollPos, int completedScrollPos,
+		Throwable throwable)
+	{
+		String detail = throwable != null
+			? ERROR_PREFIX + throwable.getMessage()
+			: "Failed to fetch data. Check your API settings.";
+		SwingUtilities.invokeLater(() ->
+		{
+			refreshButton.setEnabled(true);
+			if (applyRecs)
+			{
+				showErrorInRecommended(detail);
+				updatePremiumStatus();
+				restoreScrollPosition(recommendedScrollPane, recScrollPos);
+			}
+			showErrorInActiveFlips(detail);
+			restoreScrollPosition(activeFlipsScrollPane, activeScrollPos);
+			showErrorInCompletedFlips(detail);
+			restoreScrollPosition(completedFlipsScrollPane, completedScrollPos);
+		});
 	}
 
 	/** Fixed refresh interval in millis (AC18 — independent of the selected Timeframe). */
@@ -1184,140 +1289,21 @@ public class FlipFinderPanel extends PluginPanel
 		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
 		// Don't clear container yet - keep showing old flips until new data arrives
 		// This prevents the UI flash when flips disappear and reappear
-		
-		// Clear cached sell prices - they'll be recalculated when panels are created
-		displayedSellPrices.clear();
 
 		// Pass current RSN to filter data for the logged-in account
 		String rsn = plugin.getCurrentRsnSafe().orElse(null);
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
 		{
-			SwingUtilities.invokeLater(() ->
+			if (response == null)
 			{
-				if (response == null)
+				SwingUtilities.invokeLater(() ->
 				{
 					showErrorInActiveFlips("Failed to fetch active flips. Check your API settings.");
 					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
-					return;
-				}
-
-				// Build the filtered list locally first, then swap atomically into
-				// currentActiveFlips so cross-thread readers (the GE slot-hover
-				// overlay) never observe an empty/half-populated intermediate
-				// state. Previously the clear+add loop ran inline, allowing the
-				// overlay's render thread to snapshot a transient empty list and
-				// silently hide the profit line. See issue #685 Bug 2.
-				List<ActiveFlip> filtered = new ArrayList<>();
-				int filteredCount = 0;
-				if (response.getActiveFlips() != null)
-				{
-					// Show flips that are either:
-					// 1. Currently in GE slots or collected items (thread-safe check)
-					// 2. Had activity in the last 7 days (covers client restart scenarios)
-					// We use a generous 7-day threshold because:
-					// - On client restart, GE tracking takes time to populate
-					// - collectedItemIds is session-only and resets on restart
-					// - The backend handles proper stale flip cleanup via /flips/cleanup
-					// Note: Using getActiveFlipItemIds() instead of WithInventory() to avoid thread issues
-					java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-					java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
-
-					for (ActiveFlip flip : response.getActiveFlips())
-					{
-						boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
-						boolean isRecent = false;
-
-						// Check if flip had activity in the last 7 days
-						// Use lastBuyTime if available (more accurate), fall back to firstBuyTime
-						String timeStr = flip.getLastBuyTime();
-						if (timeStr == null || timeStr.isEmpty())
-						{
-							timeStr = flip.getFirstBuyTime();
-						}
-
-						if (timeStr != null && !timeStr.isEmpty())
-						{
-							try
-							{
-								java.time.Instant buyTime = java.time.Instant.parse(timeStr);
-								isRecent = buyTime.isAfter(sevenDaysAgo);
-							}
-							catch (Exception e)
-							{
-								// Can't parse, assume recent to be safe
-								isRecent = true;
-							}
-						}
-						else
-						{
-							// No timestamp, assume recent
-							isRecent = true;
-						}
-
-						if (inGeOrCollected || isRecent)
-						{
-							filtered.add(flip);
-							log.debug("Including flip: {} (inGE={}, recent={})",
-								flip.getItemName(), inGeOrCollected, isRecent);
-						}
-						else
-						{
-							log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
-						}
-					}
-					filteredCount = response.getActiveFlips().size() - filtered.size();
-				}
-				synchronized (currentActiveFlips)
-				{
-					currentActiveFlips.clear();
-					currentActiveFlips.addAll(filtered);
-				}
-				if (response.getActiveFlips() != null)
-				{
-					log.debug("Loaded {} active flips ({} from backend, {} filtered)",
-						currentActiveFlips.size(), response.getActiveFlips().size(), filteredCount);
-				}
-
-				// Get pending orders from plugin
-				java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
-
-				if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
-				{
-					showNoActiveFlips();
-					restoreScrollPosition(activeFlipsScrollPane, scrollPos);
-					return;
-				}
-
-				// Update status label with active flips info
-				if (!currentActiveFlips.isEmpty())
-				{
-					// Update with filtered count
-					int itemCount = currentActiveFlips.size();
-					int invested = currentActiveFlips.stream()
-						.mapToInt(ActiveFlip::getTotalInvested)
-						.sum();
-					if (tabbedPane.getSelectedIndex() == 1)
-					{
-						statusLabel.setText(String.format("%d active %s | %s invested",
-							itemCount,
-							itemCount == 1 ? "flip" : "flips",
-							PanelFormat.formatGP(invested)));
-					}
-				}
-				else if (!pendingOrders.isEmpty())
-				{
-					statusLabel.setText(String.format("%d pending %s",
-						pendingOrders.size(),
-						pendingOrders.size() == 1 ? "order" : "orders"));
-				}
-
-				// Display both active flips and pending orders
-				displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
-				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
-				
-				// Validate focus after refresh in case focused item is no longer active
-				validateFocus();
-			});
+				});
+				return;
+			}
+			applyActiveFlipsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
 		{
 			SwingUtilities.invokeLater(() ->
@@ -1326,6 +1312,137 @@ public class FlipFinderPanel extends PluginPanel
 				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 			});
 			return null;
+		});
+	}
+
+	/**
+	 * Render a non-null active-flips payload into the Active Flips tab. Hops to
+	 * the EDT internally, so it is safe to call from a background completion
+	 * stage or from the bundled /plugin/sync fan-out.
+	 */
+	private void applyActiveFlipsResponse(ActiveFlipsResponse response, int scrollPos)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			// Clear cached sell prices - they'll be recalculated when panels are created
+			displayedSellPrices.clear();
+
+			// Build the filtered list locally first, then swap atomically into
+			// currentActiveFlips so cross-thread readers (the GE slot-hover
+			// overlay) never observe an empty/half-populated intermediate
+			// state. Previously the clear+add loop ran inline, allowing the
+			// overlay's render thread to snapshot a transient empty list and
+			// silently hide the profit line.
+			List<ActiveFlip> filtered = new ArrayList<>();
+			int filteredCount = 0;
+			if (response.getActiveFlips() != null)
+			{
+				// Show flips that are either:
+				// 1. Currently in GE slots or collected items (thread-safe check)
+				// 2. Had activity in the last 7 days (covers client restart scenarios)
+				// We use a generous 7-day threshold because:
+				// - On client restart, GE tracking takes time to populate
+				// - collectedItemIds is session-only and resets on restart
+				// - The backend handles proper stale flip cleanup via /flips/cleanup
+				// Note: Using getActiveFlipItemIds() instead of WithInventory() to avoid thread issues
+				java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+				java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
+
+				for (ActiveFlip flip : response.getActiveFlips())
+				{
+					boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
+					boolean isRecent = false;
+
+					// Check if flip had activity in the last 7 days
+					// Use lastBuyTime if available (more accurate), fall back to firstBuyTime
+					String timeStr = flip.getLastBuyTime();
+					if (timeStr == null || timeStr.isEmpty())
+					{
+						timeStr = flip.getFirstBuyTime();
+					}
+
+					if (timeStr != null && !timeStr.isEmpty())
+					{
+						try
+						{
+							java.time.Instant buyTime = java.time.Instant.parse(timeStr);
+							isRecent = buyTime.isAfter(sevenDaysAgo);
+						}
+						catch (Exception e)
+						{
+							// Can't parse, assume recent to be safe
+							isRecent = true;
+						}
+					}
+					else
+					{
+						// No timestamp, assume recent
+						isRecent = true;
+					}
+
+					if (inGeOrCollected || isRecent)
+					{
+						filtered.add(flip);
+						log.debug("Including flip: {} (inGE={}, recent={})",
+							flip.getItemName(), inGeOrCollected, isRecent);
+					}
+					else
+					{
+						log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
+					}
+				}
+				filteredCount = response.getActiveFlips().size() - filtered.size();
+			}
+			synchronized (currentActiveFlips)
+			{
+				currentActiveFlips.clear();
+				currentActiveFlips.addAll(filtered);
+			}
+			if (response.getActiveFlips() != null)
+			{
+				log.debug("Loaded {} active flips ({} from backend, {} filtered)",
+					currentActiveFlips.size(), response.getActiveFlips().size(), filteredCount);
+			}
+
+			// Get pending orders from plugin
+			java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
+
+			if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
+			{
+				showNoActiveFlips();
+				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+				return;
+			}
+
+			// Update status label with active flips info
+			if (!currentActiveFlips.isEmpty())
+			{
+				// Update with filtered count
+				int itemCount = currentActiveFlips.size();
+				int invested = currentActiveFlips.stream()
+					.mapToInt(ActiveFlip::getTotalInvested)
+					.sum();
+				if (tabbedPane.getSelectedIndex() == 1)
+				{
+					statusLabel.setText(String.format("%d active %s | %s invested",
+						itemCount,
+						itemCount == 1 ? "flip" : "flips",
+						PanelFormat.formatGP(invested)));
+				}
+			}
+			else if (!pendingOrders.isEmpty())
+			{
+				statusLabel.setText(String.format("%d pending %s",
+					pendingOrders.size(),
+					pendingOrders.size() == 1 ? "order" : "orders"));
+			}
+
+			// Display both active flips and pending orders
+			displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
+			restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+			
+			// Validate focus after refresh in case focused item is no longer active
+			validateFocus();
 		});
 	}
 	
@@ -1381,66 +1498,44 @@ public class FlipFinderPanel extends PluginPanel
 		restoreScrollPosition(activeFlipsScrollPane, scrollPos);
 	}
 
-	/**
-	 * Refresh completed flips
-	 */
-	private void refreshCompletedFlips()
+	/** Update the 30-day profit summary label from a stats payload. Null-safe; hops to the EDT. */
+	private void applyStatisticsResponse(FlipStatisticsResponse stats)
 	{
-		// Save scroll position before refresh
-		final int scrollPos = getScrollPosition(completedFlipsScrollPane);
-
-		String rsn = plugin.getCurrentRsnSafe().orElse(null);
-
-		// Fetch 30-day aggregate stats (source of truth for profit summary)
-		apiClient.getFlipStatisticsAsync(30, rsn).thenAccept(stats ->
+		SwingUtilities.invokeLater(() ->
 		{
-			SwingUtilities.invokeLater(() ->
+			if (stats != null && tabbedPane.getSelectedIndex() == 2)
 			{
-				if (stats != null && tabbedPane.getSelectedIndex() == 2)
-				{
-					statusLabel.setText(String.format("%d flips (30d) | %s profit",
-						stats.getTotalFlips(),
-						PanelFormat.formatGP(stats.getTotalProfit())));
-				}
-			});
+				statusLabel.setText(String.format("%d flips (30d) | %s profit",
+					stats.getTotalFlips(),
+					PanelFormat.formatGP(stats.getTotalProfit())));
+			}
 		});
+	}
 
-		// Fetch recent completed flips for the list display
-		apiClient.getCompletedFlipsAsync(50, rsn).thenAccept(response ->
+	/**
+	 * Render a non-null completed-flips payload into the Completed tab. Hops to
+	 * the EDT internally; safe to call from a background stage or the bundled
+	 * /plugin/sync fan-out.
+	 */
+	private void applyCompletedFlipsResponse(CompletedFlipsResponse response, int scrollPos)
+	{
+		SwingUtilities.invokeLater(() ->
 		{
-			SwingUtilities.invokeLater(() ->
+			currentCompletedFlips.clear();
+			if (response.getFlips() != null)
 			{
-				if (response == null)
-				{
-					showErrorInCompletedFlips("Failed to fetch completed flips. Check your API settings.");
-					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
-					return;
-				}
+				currentCompletedFlips.addAll(response.getFlips());
+			}
 
-				currentCompletedFlips.clear();
-				if (response.getFlips() != null)
-				{
-					currentCompletedFlips.addAll(response.getFlips());
-				}
-
-				if (currentCompletedFlips.isEmpty())
-				{
-					showNoCompletedFlips();
-					restoreScrollPosition(completedFlipsScrollPane, scrollPos);
-					return;
-				}
-
-				populateCompletedFlips(currentCompletedFlips);
-				restoreScrollPosition(completedFlipsScrollPane, scrollPos);
-			});
-		}).exceptionally(throwable ->
-		{
-			SwingUtilities.invokeLater(() ->
+			if (currentCompletedFlips.isEmpty())
 			{
-				showErrorInCompletedFlips(ERROR_PREFIX + throwable.getMessage());
+				showNoCompletedFlips();
 				restoreScrollPosition(completedFlipsScrollPane, scrollPos);
-			});
-			return null;
+				return;
+			}
+
+			populateCompletedFlips(currentCompletedFlips);
+			restoreScrollPosition(completedFlipsScrollPane, scrollPos);
 		});
 	}
 
