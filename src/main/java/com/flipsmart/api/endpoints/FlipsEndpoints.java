@@ -4,6 +4,7 @@ import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.google.gson.JsonObject;
@@ -97,7 +98,25 @@ public class FlipsEndpoints
 		// Build URL with query parameters
 		StringBuilder urlBuilder = new StringBuilder(128);
 		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 
+		String url = urlBuilder.toString();
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
+			transport.parse(jsonData, FlipFinderResponse.class));
+	}
+
+	/**
+	 * Query parameters shared by {@link #getFlipRecommendationsAsync} and
+	 * {@link #getPluginSyncAsync} — the two callers differ only in path and
+	 * response type, so keep the param-building in one place to avoid drift.
+	 */
+	private void appendSharedQueryParams(StringBuilder urlBuilder, Integer cashStack, Integer randomSeed,
+		String timeframe, String rsn, Integer filledSlots, boolean isMembersWorld)
+	{
 		if (cashStack != null)
 		{
 			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
@@ -127,14 +146,30 @@ public class FlipsEndpoints
 		{
 			urlBuilder.append("&is_members_world=false");
 		}
+	}
 
-		String url = urlBuilder.toString();
+	/**
+	 * Fetch the bundled 2-minute poll ({@code GET /plugin/sync}) in one round-trip:
+	 * recommendations, active flips, completed flips, statistics and entitlements.
+	 * Query parameters mirror {@link #getFlipRecommendationsAsync} so the same
+	 * panel inputs drive both.
+	 */
+	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
+		Integer filledSlots, boolean isMembersWorld)
+	{
+		String apiUrl = transport.getApiUrl();
+
+		StringBuilder urlBuilder = new StringBuilder(128);
+		urlBuilder.append(String.format("%s/plugin/sync?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
+
 		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
+			.url(urlBuilder.toString())
 			.get();
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			transport.parse(jsonData, FlipFinderResponse.class));
+			transport.parse(jsonData, PluginSyncResponse.class));
 	}
 
 	/**

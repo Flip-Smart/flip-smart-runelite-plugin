@@ -17,6 +17,7 @@ import com.flipsmart.api.dto.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.BankSnapshotResult;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.api.dto.BlocklistsResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.api.dto.DumpEvent;
@@ -209,6 +210,14 @@ public class FlipSmartApiClient
 		Integer filledSlots, boolean isMembersWorld)
 	{
 		return flips.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
+			filledSlots, isMembersWorld);
+	}
+
+	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
+		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
+		Integer filledSlots, boolean isMembersWorld)
+	{
+		return flips.getPluginSyncAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
 			filledSlots, isMembersWorld);
 	}
 

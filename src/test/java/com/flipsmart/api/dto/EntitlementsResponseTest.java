@@ -58,6 +58,19 @@ public class EntitlementsResponseTest
 		assertFalse(parse("{\"is_premium\":null}").isPremium());
 	}
 
+	@Test
+	public void premiumFalseForRealSnapshotShapeWithoutTopLevelIsPremium()
+	{
+		// The real GET /auth/entitlements (and the /plugin/sync entitlements sub-payload)
+		// carries premium under rsn_entitlement, NOT a top-level is_premium. This DTO reads
+		// only the top-level field, so isPremium() is false here even though the RSN is
+		// premium. Guards against re-sourcing premium from this payload (it downgrades a
+		// premium player to the free slot tier — see the /plugin/sync regression).
+		String snapshot = "{\"user_id\":1,\"has_any_premium\":true,"
+			+ "\"rsn_entitlement\":{\"is_premium\":true,\"status\":\"active\"}}";
+		assertFalse(parse(snapshot).isPremium());
+	}
+
 	// ---- rsn-entitlement branches ----
 
 	@Test
