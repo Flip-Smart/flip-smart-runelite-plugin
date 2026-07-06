@@ -98,7 +98,25 @@ public class FlipsEndpoints
 		// Build URL with query parameters
 		StringBuilder urlBuilder = new StringBuilder(128);
 		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 
+		String url = urlBuilder.toString();
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
+
+		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
+			transport.parse(jsonData, FlipFinderResponse.class));
+	}
+
+	/**
+	 * Query parameters shared by {@link #getFlipRecommendationsAsync} and
+	 * {@link #getPluginSyncAsync} — the two callers differ only in path and
+	 * response type, so keep the param-building in one place to avoid drift.
+	 */
+	private void appendSharedQueryParams(StringBuilder urlBuilder, Integer cashStack, Integer randomSeed,
+		String timeframe, String rsn, Integer filledSlots, boolean isMembersWorld)
+	{
 		if (cashStack != null)
 		{
 			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
@@ -128,14 +146,6 @@ public class FlipsEndpoints
 		{
 			urlBuilder.append("&is_members_world=false");
 		}
-
-		String url = urlBuilder.toString();
-		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
-			.get();
-
-		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			transport.parse(jsonData, FlipFinderResponse.class));
 	}
 
 	/**
@@ -152,36 +162,7 @@ public class FlipsEndpoints
 
 		StringBuilder urlBuilder = new StringBuilder(128);
 		urlBuilder.append(String.format("%s/plugin/sync?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
-
-		if (cashStack != null)
-		{
-			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
-		}
-
-		if (randomSeed != null)
-		{
-			urlBuilder.append(String.format("&random_seed=%d", randomSeed));
-		}
-
-		if (timeframe != null)
-		{
-			urlBuilder.append(String.format("&timeframe=%s", timeframe));
-		}
-
-		if (rsn != null && !rsn.isEmpty())
-		{
-			urlBuilder.append(String.format("&rsn=%s", urlEncode(rsn)));
-		}
-
-		if (filledSlots != null)
-		{
-			urlBuilder.append(String.format("&filled_slots=%d", filledSlots));
-		}
-
-		if (!isMembersWorld)
-		{
-			urlBuilder.append("&is_members_world=false");
-		}
+		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(urlBuilder.toString())
