@@ -1333,75 +1333,18 @@ public class FlipFinderPanel extends PluginPanel
 			// state. Previously the clear+add loop ran inline, allowing the
 			// overlay's render thread to snapshot a transient empty list and
 			// silently hide the profit line.
-			List<ActiveFlip> filtered = new ArrayList<>();
-			int filteredCount = 0;
-			if (response.getActiveFlips() != null)
-			{
-				// Show flips that are either:
-				// 1. Currently in GE slots or collected items (thread-safe check)
-				// 2. Had activity in the last 7 days (covers client restart scenarios)
-				// We use a generous 7-day threshold because:
-				// - On client restart, GE tracking takes time to populate
-				// - collectedItemIds is session-only and resets on restart
-				// - The backend handles proper stale flip cleanup via /flips/cleanup
-				// Note: Using getActiveFlipItemIds() instead of WithInventory() to avoid thread issues
-				java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-				java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
+			List<ActiveFlip> flipsFromBackend = response.getActiveFlips();
+			List<ActiveFlip> filtered = filterActiveFlips(flipsFromBackend);
 
-				for (ActiveFlip flip : response.getActiveFlips())
-				{
-					boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
-					boolean isRecent = false;
-
-					// Check if flip had activity in the last 7 days
-					// Use lastBuyTime if available (more accurate), fall back to firstBuyTime
-					String timeStr = flip.getLastBuyTime();
-					if (timeStr == null || timeStr.isEmpty())
-					{
-						timeStr = flip.getFirstBuyTime();
-					}
-
-					if (timeStr != null && !timeStr.isEmpty())
-					{
-						try
-						{
-							java.time.Instant buyTime = java.time.Instant.parse(timeStr);
-							isRecent = buyTime.isAfter(sevenDaysAgo);
-						}
-						catch (Exception e)
-						{
-							// Can't parse, assume recent to be safe
-							isRecent = true;
-						}
-					}
-					else
-					{
-						// No timestamp, assume recent
-						isRecent = true;
-					}
-
-					if (inGeOrCollected || isRecent)
-					{
-						filtered.add(flip);
-						log.debug("Including flip: {} (inGE={}, recent={})",
-							flip.getItemName(), inGeOrCollected, isRecent);
-					}
-					else
-					{
-						log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
-					}
-				}
-				filteredCount = response.getActiveFlips().size() - filtered.size();
-			}
 			synchronized (currentActiveFlips)
 			{
 				currentActiveFlips.clear();
 				currentActiveFlips.addAll(filtered);
 			}
-			if (response.getActiveFlips() != null)
+			if (flipsFromBackend != null)
 			{
 				log.debug("Loaded {} active flips ({} from backend, {} filtered)",
-					currentActiveFlips.size(), response.getActiveFlips().size(), filteredCount);
+					currentActiveFlips.size(), flipsFromBackend.size(), flipsFromBackend.size() - filtered.size());
 			}
 
 			// Get pending orders from plugin
@@ -1414,36 +1357,104 @@ public class FlipFinderPanel extends PluginPanel
 				return;
 			}
 
-			// Update status label with active flips info
-			if (!currentActiveFlips.isEmpty())
-			{
-				// Update with filtered count
-				int itemCount = currentActiveFlips.size();
-				int invested = currentActiveFlips.stream()
-					.mapToInt(ActiveFlip::getTotalInvested)
-					.sum();
-				if (tabbedPane.getSelectedIndex() == 1)
-				{
-					statusLabel.setText(String.format("%d active %s | %s invested",
-						itemCount,
-						itemCount == 1 ? "flip" : "flips",
-						PanelFormat.formatGP(invested)));
-				}
-			}
-			else if (!pendingOrders.isEmpty())
-			{
-				statusLabel.setText(String.format("%d pending %s",
-					pendingOrders.size(),
-					pendingOrders.size() == 1 ? "order" : "orders"));
-			}
+			updateActiveFlipsStatusLabel(pendingOrders);
 
 			// Display both active flips and pending orders
 			displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
 			restoreScrollPosition(activeFlipsScrollPane, scrollPos);
-			
+
 			// Validate focus after refresh in case focused item is no longer active
 			validateFocus();
 		});
+	}
+
+	/**
+	 * Show flips that are either currently in a GE slot / collected this
+	 * session, or had buy activity in the last 7 days (covers client-restart
+	 * scenarios, since collectedItemIds is session-only and GE tracking takes
+	 * time to repopulate). Stale-flip cleanup beyond that window is the
+	 * backend's job via /flips/cleanup. Null-safe: returns an empty list.
+	 */
+	private List<ActiveFlip> filterActiveFlips(List<ActiveFlip> activeFlips)
+	{
+		List<ActiveFlip> filtered = new ArrayList<>();
+		if (activeFlips == null)
+		{
+			return filtered;
+		}
+
+		java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
+		java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
+
+		for (ActiveFlip flip : activeFlips)
+		{
+			boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
+			boolean isRecent = isFlipRecent(flip, sevenDaysAgo);
+
+			if (inGeOrCollected || isRecent)
+			{
+				filtered.add(flip);
+				log.debug("Including flip: {} (inGE={}, recent={})",
+					flip.getItemName(), inGeOrCollected, isRecent);
+			}
+			else
+			{
+				log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
+			}
+		}
+		return filtered;
+	}
+
+	/**
+	 * Prefers lastBuyTime over firstBuyTime. A missing or unparseable
+	 * timestamp is treated as recent so a flip is never hidden due to a data
+	 * gap rather than genuine staleness.
+	 */
+	private boolean isFlipRecent(ActiveFlip flip, java.time.Instant cutoff)
+	{
+		String timeStr = flip.getLastBuyTime();
+		if (timeStr == null || timeStr.isEmpty())
+		{
+			timeStr = flip.getFirstBuyTime();
+		}
+		if (timeStr == null || timeStr.isEmpty())
+		{
+			return true;
+		}
+
+		try
+		{
+			return java.time.Instant.parse(timeStr).isAfter(cutoff);
+		}
+		catch (Exception e)
+		{
+			return true;
+		}
+	}
+
+	/** Reflect the current active-flip/pending-order counts in the tab's status label. */
+	private void updateActiveFlipsStatusLabel(java.util.List<PendingOrder> pendingOrders)
+	{
+		if (!currentActiveFlips.isEmpty())
+		{
+			int itemCount = currentActiveFlips.size();
+			int invested = currentActiveFlips.stream()
+				.mapToInt(ActiveFlip::getTotalInvested)
+				.sum();
+			if (tabbedPane.getSelectedIndex() == 1)
+			{
+				statusLabel.setText(String.format("%d active %s | %s invested",
+					itemCount,
+					itemCount == 1 ? "flip" : "flips",
+					PanelFormat.formatGP(invested)));
+			}
+		}
+		else if (!pendingOrders.isEmpty())
+		{
+			statusLabel.setText(String.format("%d pending %s",
+				pendingOrders.size(),
+				pendingOrders.size() == 1 ? "order" : "orders"));
+		}
 	}
 	
 	/**
