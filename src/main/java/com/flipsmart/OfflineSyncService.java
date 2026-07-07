@@ -5,6 +5,7 @@ import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferReconciler;
 import com.flipsmart.trading.OfferStore;
+import com.flipsmart.trading.RoundTripLedger;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
@@ -42,6 +43,7 @@ public class OfflineSyncService
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
+	private static final String ROUND_TRIP_LEDGER_KEY_PREFIX = "roundTripLedger_";
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
 	// Wall-clock of the last completed offline sync, per RSN. A persisted offer is only a genuine
 	// offline fill if it was active since this marker; older leftovers are already-known history.
@@ -58,6 +60,7 @@ public class OfflineSyncService
 	private final GEHistoryService geHistoryService;
 	private final OfferStore offerStore;
 	private final ItemManager itemManager;
+	private final RoundTripLedger roundTripLedger;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
 	private Runnable onSyncComplete;
@@ -72,7 +75,8 @@ public class OfflineSyncService
 		ActiveFlipTracker activeFlipTracker,
 		GEHistoryService geHistoryService,
 		OfferStore offerStore,
-		ItemManager itemManager)
+		ItemManager itemManager,
+		RoundTripLedger roundTripLedger)
 	{
 		this.session = session;
 		this.configManager = configManager;
@@ -83,6 +87,7 @@ public class OfflineSyncService
 		this.geHistoryService = geHistoryService;
 		this.offerStore = offerStore;
 		this.itemManager = itemManager;
+		this.roundTripLedger = roundTripLedger;
 	}
 
 	public void setOnSyncComplete(Runnable onSyncComplete)
@@ -237,6 +242,73 @@ public class OfflineSyncService
 			}
 		}
 
+		persistLedgerState(rsn);
+	}
+
+	/**
+	 * Persist the round-trip ledger's held-quantity/cycle state for {@code rsn} alongside
+	 * the offer state, so a restart resumes mid-cycle instead of losing the id and
+	 * splitting an in-progress position into a spurious new round trip.
+	 */
+	private void persistLedgerState(String rsn)
+	{
+		Map<Integer, RoundTripLedger.Entry> entries = roundTripLedger.export(rsn);
+		if (entries.isEmpty())
+		{
+			return;
+		}
+		try
+		{
+			configManager.setConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn, gson.toJson(entries));
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to persist round-trip ledger for {}: {}", rsn, e.getMessage());
+		}
+	}
+
+	/**
+	 * Restore the round-trip ledger's per-item state for {@code rsn}. When nothing was ever
+	 * persisted (first run of this feature on an account with an existing GE position), seed
+	 * conservatively from the store's currently-live unmatched buy fills instead of starting
+	 * blind at zero, so a restart doesn't collide a fresh cycle onto a stale in-flight buy.
+	 */
+	private void preloadLedgerState(String rsn)
+	{
+		if (rsn == null || !roundTripLedger.isEmpty(rsn))
+		{
+			return;
+		}
+		String json = configManager.getConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn);
+		if (json != null && !json.isEmpty())
+		{
+			try
+			{
+				Type type = new TypeToken<Map<Integer, RoundTripLedger.Entry>>(){}.getType();
+				Map<Integer, RoundTripLedger.Entry> entries = gson.fromJson(json, type);
+				roundTripLedger.importState(rsn, entries);
+				return;
+			}
+			catch (Exception e)
+			{
+				log.debug("Ignoring unreadable persisted round-trip ledger for {} ({})", rsn, e.getMessage());
+			}
+		}
+		roundTripLedger.seedColdStart(rsn, liveUnmatchedBuys());
+	}
+
+	/** Currently-live buy offers with at least one filled unit — a stale unmatched position. */
+	private List<OfferRecord> liveUnmatchedBuys()
+	{
+		List<OfferRecord> out = new ArrayList<>();
+		for (OfferRecord r : offerStore.liveOffers())
+		{
+			if (r.isBuy() && r.getFilledQuantity() > 0)
+			{
+				out.add(r);
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -255,10 +327,14 @@ public class OfflineSyncService
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
 		if (persistedRecords.isEmpty())
 		{
+			preloadLedgerState(resolvePersistenceRsn());
 			return;
 		}
 
 		reconcilePersistedIntoStore(persistedRecords);
+		// Runs after reconciliation so cold-start seeding (when there is no persisted
+		// ledger at all) sees the just-reattached live buys, not a pre-reconcile snapshot.
+		preloadLedgerState(resolvePersistenceRsn());
 
 		log.debug("Preloaded {} persisted offer records into store for timestamp preservation",
 			persistedRecords.size());

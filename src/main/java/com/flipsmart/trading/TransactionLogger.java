@@ -29,6 +29,7 @@ public final class TransactionLogger
     private final FlipSmartApiClient apiClient;
     private final PlayerSession session;
     private final Supplier<Optional<String>> rsnSupplier;
+    private final RoundTripLedger roundTripLedger;
 
     private final Set<String> seenKeys = Collections.synchronizedSet(
         Collections.newSetFromMap(
@@ -42,17 +43,18 @@ public final class TransactionLogger
             }));
 
     @Inject
-    public TransactionLogger(FlipSmartApiClient apiClient, PlayerSession session)
+    public TransactionLogger(FlipSmartApiClient apiClient, PlayerSession session, RoundTripLedger roundTripLedger)
     {
-        this(apiClient, session, session::getRsnSafe);
+        this(apiClient, session, session::getRsnSafe, roundTripLedger);
     }
 
     public TransactionLogger(FlipSmartApiClient apiClient, PlayerSession session,
-                             Supplier<Optional<String>> rsnSupplier)
+                             Supplier<Optional<String>> rsnSupplier, RoundTripLedger roundTripLedger)
     {
         this.apiClient = apiClient;
         this.session = session;
         this.rsnSupplier = rsnSupplier;
+        this.roundTripLedger = roundTripLedger;
     }
 
     public void onOfferEvent(OfferEvent e)
@@ -95,7 +97,10 @@ public final class TransactionLogger
         {
             return;
         }
-        apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).build());
+        // Zero-fill placement: peek the current cycle rather than recordFill, since no
+        // quantity actually moved and peeking must never trip a zero-crossing.
+        Integer roundTripId = roundTripLedger.peekRoundTripId(rsn, r.getItemId());
+        apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).roundTripId(roundTripId).build());
     }
 
     private void recordFill(com.flipsmart.domain.offer.OfferRecord r, int newlyFilled, long newlySpent)
@@ -107,7 +112,8 @@ public final class TransactionLogger
             return;
         }
         int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
-        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).build());
+        Integer roundTripId = roundTripLedger.recordFill(rsn, r.getItemId(), r.isBuy(), newlyFilled);
+        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(roundTripId).build());
     }
 
     private TransactionRequest.Builder baseBuilder(com.flipsmart.domain.offer.OfferRecord r,

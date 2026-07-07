@@ -73,6 +73,10 @@ public class TransactionEndpoints
 		{
 			jsonBody.addProperty("offer_id", request.offerId);
 		}
+		if (request.roundTripId != null)
+		{
+			jsonBody.addProperty("round_trip_id", request.roundTripId);
+		}
 
 		RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 
