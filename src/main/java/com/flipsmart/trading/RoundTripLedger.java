@@ -40,6 +40,7 @@ public final class RoundTripLedger
         }
     }
 
+    private final Object lock = new Object();
     private final Map<String, Map<Integer, Entry>> byRsn = new HashMap<>();
 
     /**
@@ -47,34 +48,40 @@ public final class RoundTripLedger
      * id it belongs to. Returns {@code null} when {@code rsn} can't be resolved — the
      * caller sends no id in that case rather than guess.
      */
-    public synchronized Integer recordFill(String rsn, int itemId, boolean isBuy, int deltaQuantity)
+    public Integer recordFill(String rsn, int itemId, boolean isBuy, int deltaQuantity)
     {
-        if (rsn == null || rsn.isEmpty())
+        synchronized (lock)
         {
-            return null;
+            if (rsn == null || rsn.isEmpty())
+            {
+                return null;
+            }
+            Entry e = entryFor(rsn, itemId);
+            e.heldQuantity += isBuy ? deltaQuantity : -deltaQuantity;
+            int roundTripId = e.cycleId;
+            if (e.heldQuantity <= 0)
+            {
+                e.cycleId++;
+                e.heldQuantity = 0;
+            }
+            return roundTripId;
         }
-        Entry e = entryFor(rsn, itemId);
-        e.heldQuantity += isBuy ? deltaQuantity : -deltaQuantity;
-        int roundTripId = e.cycleId;
-        if (e.heldQuantity <= 0)
-        {
-            e.cycleId++;
-            e.heldQuantity = 0;
-        }
-        return roundTripId;
     }
 
     /**
      * The current round-trip id for (rsn, itemId) without mutating held quantity. Used to
      * stamp zero-fill placement rows so they carry the same id their eventual fills will.
      */
-    public synchronized Integer peekRoundTripId(String rsn, int itemId)
+    public Integer peekRoundTripId(String rsn, int itemId)
     {
-        if (rsn == null || rsn.isEmpty())
+        synchronized (lock)
         {
-            return null;
+            if (rsn == null || rsn.isEmpty())
+            {
+                return null;
+            }
+            return entryFor(rsn, itemId).cycleId;
         }
-        return entryFor(rsn, itemId).cycleId;
     }
 
     private Entry entryFor(String rsn, int itemId)
@@ -84,26 +91,35 @@ public final class RoundTripLedger
     }
 
     /** Snapshot of every itemId -> Entry tracked for {@code rsn}, for persistence. */
-    public synchronized Map<Integer, Entry> export(String rsn)
+    public Map<Integer, Entry> export(String rsn)
     {
-        Map<Integer, Entry> existing = byRsn.get(rsn);
-        return existing == null ? Collections.emptyMap() : new HashMap<>(existing);
+        synchronized (lock)
+        {
+            Map<Integer, Entry> existing = byRsn.get(rsn);
+            return existing == null ? Collections.emptyMap() : new HashMap<>(existing);
+        }
     }
 
     /** True when no state has ever been recorded for {@code rsn} (cold start / first run). */
-    public synchronized boolean isEmpty(String rsn)
+    public boolean isEmpty(String rsn)
     {
-        return rsn == null || !byRsn.containsKey(rsn);
+        synchronized (lock)
+        {
+            return rsn == null || !byRsn.containsKey(rsn);
+        }
     }
 
     /** Replace all state for {@code rsn} with {@code entries} (e.g. restored from persistence). */
-    public synchronized void importState(String rsn, Map<Integer, Entry> entries)
+    public void importState(String rsn, Map<Integer, Entry> entries)
     {
-        if (rsn == null || rsn.isEmpty() || entries == null || entries.isEmpty())
+        synchronized (lock)
         {
-            return;
+            if (rsn == null || rsn.isEmpty() || entries == null || entries.isEmpty())
+            {
+                return;
+            }
+            byRsn.put(rsn, new HashMap<>(entries));
         }
-        byRsn.put(rsn, new HashMap<>(entries));
     }
 
     /**
@@ -113,24 +129,27 @@ public final class RoundTripLedger
      * fills so the next sell of that pre-existing position doesn't collide with a fresh
      * cycle that has never seen it.
      */
-    public synchronized void seedColdStart(String rsn, List<OfferRecord> liveUnmatchedBuys)
+    public void seedColdStart(String rsn, List<OfferRecord> liveUnmatchedBuys)
     {
-        if (rsn == null || rsn.isEmpty() || !isEmpty(rsn) || liveUnmatchedBuys == null || liveUnmatchedBuys.isEmpty())
+        synchronized (lock)
         {
-            return;
-        }
-        Map<Integer, Entry> seeded = new HashMap<>();
-        for (OfferRecord r : liveUnmatchedBuys)
-        {
-            if (!r.isBuy() || r.getFilledQuantity() <= 0)
+            if (rsn == null || rsn.isEmpty() || !isEmpty(rsn) || liveUnmatchedBuys == null || liveUnmatchedBuys.isEmpty())
             {
-                continue;
+                return;
             }
-            seeded.computeIfAbsent(r.getItemId(), k -> new Entry(0, INITIAL_CYCLE_ID)).heldQuantity += r.getFilledQuantity();
-        }
-        if (!seeded.isEmpty())
-        {
-            byRsn.put(rsn, seeded);
+            Map<Integer, Entry> seeded = new HashMap<>();
+            for (OfferRecord r : liveUnmatchedBuys)
+            {
+                if (!r.isBuy() || r.getFilledQuantity() <= 0)
+                {
+                    continue;
+                }
+                seeded.computeIfAbsent(r.getItemId(), k -> new Entry(0, INITIAL_CYCLE_ID)).heldQuantity += r.getFilledQuantity();
+            }
+            if (!seeded.isEmpty())
+            {
+                byRsn.put(rsn, seeded);
+            }
         }
     }
 }
