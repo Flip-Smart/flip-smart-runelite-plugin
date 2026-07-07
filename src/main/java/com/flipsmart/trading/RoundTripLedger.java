@@ -151,19 +151,25 @@ public final class RoundTripLedger
             {
                 return;
             }
-            Map<Integer, Entry> seeded = new HashMap<>();
-            for (OfferRecord r : liveUnmatchedBuys)
-            {
-                if (!r.isBuy() || r.getFilledQuantity() <= 0)
-                {
-                    continue;
-                }
-                seeded.computeIfAbsent(r.getItemId(), k -> new Entry(0, INITIAL_CYCLE_ID)).heldQuantity += r.getFilledQuantity();
-            }
+            Map<Integer, Entry> seeded = seedMapFrom(liveUnmatchedBuys);
             if (!seeded.isEmpty())
             {
                 byRsn.put(rsn, seeded);
             }
         }
+    }
+
+    private static Map<Integer, Entry> seedMapFrom(List<OfferRecord> liveUnmatchedBuys)
+    {
+        Map<Integer, Entry> seeded = new HashMap<>();
+        for (OfferRecord r : liveUnmatchedBuys)
+        {
+            if (!r.isBuy() || r.getFilledQuantity() <= 0)
+            {
+                continue;
+            }
+            seeded.computeIfAbsent(r.getItemId(), k -> new Entry(0, INITIAL_CYCLE_ID)).heldQuantity += r.getFilledQuantity();
+        }
+        return seeded;
     }
 }
