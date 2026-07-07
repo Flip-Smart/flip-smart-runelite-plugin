@@ -90,13 +90,27 @@ public final class RoundTripLedger
             .computeIfAbsent(itemId, k -> new Entry(0, INITIAL_CYCLE_ID));
     }
 
-    /** Snapshot of every itemId -> Entry tracked for {@code rsn}, for persistence. */
+    /**
+     * Snapshot of every itemId -> Entry tracked for {@code rsn}, for persistence. Entries are
+     * deep-copied so a later mutation via {@link #recordFill} can't race with serialization of
+     * this snapshot on another thread.
+     */
     public Map<Integer, Entry> export(String rsn)
     {
         synchronized (lock)
         {
             Map<Integer, Entry> existing = byRsn.get(rsn);
-            return existing == null ? Collections.emptyMap() : new HashMap<>(existing);
+            if (existing == null)
+            {
+                return Collections.emptyMap();
+            }
+            Map<Integer, Entry> copy = new HashMap<>();
+            for (Map.Entry<Integer, Entry> entry : existing.entrySet())
+            {
+                Entry source = entry.getValue();
+                copy.put(entry.getKey(), new Entry(source.heldQuantity, source.cycleId));
+            }
+            return copy;
         }
     }
 
