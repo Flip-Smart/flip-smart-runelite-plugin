@@ -92,6 +92,11 @@ public final class GeTax
 		{
 			return true;
 		}
+		return isExemptItem(itemId);
+	}
+
+	private static boolean isExemptItem(int itemId)
+	{
 		return EXEMPT_ITEM_IDS.contains(itemId);
 	}
 
@@ -123,6 +128,21 @@ public final class GeTax
 			return 0;
 		}
 		return Math.min((int) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
+	}
+
+	/**
+	 * Item-aware breakeven: for items on the tax-free list the flip breaks even
+	 * the moment the sell price covers the buy price (no tax to overcome), so
+	 * the breakeven is simply the recorded buy price. Otherwise defers to the
+	 * price-only calculation.
+	 */
+	public static int breakevenSellPrice(int itemId, int recordedBuyPrice)
+	{
+		if (isExemptItem(itemId))
+		{
+			return recordedBuyPrice;
+		}
+		return breakevenSellPrice(recordedBuyPrice);
 	}
 
 	/**

@@ -406,14 +406,14 @@ public class GeOfferDescriptionService
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
 		int sellPrice = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
 		int quantity = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
-		return GeOfferDescriptionFormatter.formatSellDescription(recordedBuyPrice, sellPrice, quantity);
+		return GeOfferDescriptionFormatter.formatSellDescription(itemId, recordedBuyPrice, sellPrice, quantity);
 	}
 
 	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
 	{
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPrice(plugin.getCurrentActiveFlips(), itemId);
 		return GeOfferDescriptionFormatter.formatSellDescription(
-			recordedBuyPrice, Math.max(listedPrice, 0), Math.max(totalQuantity, 0));
+			itemId, recordedBuyPrice, Math.max(listedPrice, 0), Math.max(totalQuantity, 0));
 	}
 
 	private Integer lookupBuyLimit(int itemId)

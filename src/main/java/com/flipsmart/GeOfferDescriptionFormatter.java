@@ -87,6 +87,9 @@ public final class GeOfferDescriptionFormatter
 	 * the RuneLite-injected script that fires geSellExamineText is responsible
 	 * for invoking this on each rebuild.
 	 *
+	 * @param itemId           The item being sold, needed to honour the GE
+	 *                         tax-exempt list (bonds, darts, etc.) so exempt
+	 *                         items show pre-tax breakeven and profit.
 	 * @param recordedBuyPrice Player's recorded average buy price for the item,
 	 *                         or {@code null} if no buy history exists.
 	 * @param listedSellPrice  Currently entered sell price per item.
@@ -95,35 +98,33 @@ public final class GeOfferDescriptionFormatter
 	 *         color-coded profit lines separated by {@code <br>}.
 	 */
 	public static String formatSellDescription(
+		int itemId,
 		Integer recordedBuyPrice,
 		int listedSellPrice,
 		int quantity)
 	{
-		StringBuilder sb = new StringBuilder();
+		int taxPerItem = calculateTaxPerItem(itemId, listedSellPrice);
 
-		// AC3 — Breakeven (fixed, depends only on recorded buy price + tax)
-		sb.append(formatBreakevenLine(recordedBuyPrice));
-		sb.append("<br>");
-
-		// AC4 — Tax applied (dynamic with entered price+qty)
-		int taxPerItem = calculateTaxPerItem(listedSellPrice);
-		sb.append(formatTaxLine(taxPerItem, quantity));
-		sb.append("<br>");
-
-		// AC5 + AC6 — Your profit (dynamic with entered price+qty, color-coded)
-		sb.append(formatProfitLine(recordedBuyPrice, listedSellPrice, taxPerItem, quantity));
+		StringBuilder sb = new StringBuilder()
+			// AC3 — Breakeven (fixed, depends only on recorded buy price + tax)
+			.append(formatBreakevenLine(itemId, recordedBuyPrice)).append("<br>")
+			// AC4 — Tax applied (dynamic with entered price+qty). Item-aware so
+			// tax-exempt-list items show 0 tax regardless of price.
+			.append(formatTaxLine(taxPerItem, quantity)).append("<br>")
+			// AC5 + AC6 — Your profit (dynamic with entered price+qty, color-coded)
+			.append(formatProfitLine(recordedBuyPrice, listedSellPrice, taxPerItem, quantity));
 
 		return sb.toString();
 	}
 
-	static String formatBreakevenLine(Integer recordedBuyPrice)
+	static String formatBreakevenLine(int itemId, Integer recordedBuyPrice)
 	{
 		String label = colorTag(COLOR_LABEL) + "Breakeven: </col>";
 		if (recordedBuyPrice == null)
 		{
 			return label + "?";
 		}
-		int breakeven = calculateBreakevenPrice(recordedBuyPrice);
+		int breakeven = calculateBreakevenPrice(itemId, recordedBuyPrice);
 		return label + colorTag(COLOR_WHITE) + formatExact(breakeven) + " gp</col>";
 	}
 
@@ -165,14 +166,14 @@ public final class GeOfferDescriptionFormatter
 		return sb.toString();
 	}
 
-	static int calculateBreakevenPrice(int recordedBuyPrice)
+	static int calculateBreakevenPrice(int itemId, int recordedBuyPrice)
 	{
-		return GeTax.breakevenSellPrice(recordedBuyPrice);
+		return GeTax.breakevenSellPrice(itemId, recordedBuyPrice);
 	}
 
-	static int calculateTaxPerItem(int sellPrice)
+	static int calculateTaxPerItem(int itemId, int sellPrice)
 	{
-		return GeTax.taxFor(sellPrice);
+		return GeTax.taxFor(itemId, sellPrice);
 	}
 
 	private static String colorForProfit(long totalProfit)
