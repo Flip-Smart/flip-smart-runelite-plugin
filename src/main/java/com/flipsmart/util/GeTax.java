@@ -126,6 +126,21 @@ public final class GeTax
 	}
 
 	/**
+	 * Item-aware breakeven: for items on the tax-free list the flip breaks even
+	 * the moment the sell price covers the buy price (no tax to overcome), so
+	 * the breakeven is simply the recorded buy price. Otherwise defers to the
+	 * price-only calculation.
+	 */
+	public static int breakevenSellPrice(int itemId, int recordedBuyPrice)
+	{
+		if (EXEMPT_ITEM_IDS.contains(itemId))
+		{
+			return recordedBuyPrice;
+		}
+		return breakevenSellPrice(recordedBuyPrice);
+	}
+
+	/**
 	 * Smallest sell price S such that {@code S - taxFor(S) >= recordedBuyPrice},
 	 * i.e. the price at which a flip first breaks even after GE tax. Returns the
 	 * buy price unchanged for tax-exempt (&le; 50gp) inputs.
