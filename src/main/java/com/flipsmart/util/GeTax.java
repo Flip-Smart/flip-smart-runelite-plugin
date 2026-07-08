@@ -92,6 +92,11 @@ public final class GeTax
 		{
 			return true;
 		}
+		return isExemptItem(itemId);
+	}
+
+	private static boolean isExemptItem(int itemId)
+	{
 		return EXEMPT_ITEM_IDS.contains(itemId);
 	}
 
@@ -133,7 +138,7 @@ public final class GeTax
 	 */
 	public static int breakevenSellPrice(int itemId, int recordedBuyPrice)
 	{
-		if (EXEMPT_ITEM_IDS.contains(itemId))
+		if (isExemptItem(itemId))
 		{
 			return recordedBuyPrice;
 		}
