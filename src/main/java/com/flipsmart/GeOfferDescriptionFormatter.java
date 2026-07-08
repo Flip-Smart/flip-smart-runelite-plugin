@@ -103,18 +103,16 @@ public final class GeOfferDescriptionFormatter
 		int listedSellPrice,
 		int quantity)
 	{
-		StringBuilder sb = new StringBuilder();
-
-		// AC3 — Breakeven (fixed, depends only on recorded buy price + tax)
-		sb.append(formatBreakevenLine(itemId, recordedBuyPrice)).append("<br>");
-
-		// AC4 — Tax applied (dynamic with entered price+qty). Item-aware so
-		// tax-exempt-list items show 0 tax regardless of price.
 		int taxPerItem = calculateTaxPerItem(itemId, listedSellPrice);
-		sb.append(formatTaxLine(taxPerItem, quantity)).append("<br>");
 
-		// AC5 + AC6 — Your profit (dynamic with entered price+qty, color-coded)
-		sb.append(formatProfitLine(recordedBuyPrice, listedSellPrice, taxPerItem, quantity));
+		StringBuilder sb = new StringBuilder()
+			// AC3 — Breakeven (fixed, depends only on recorded buy price + tax)
+			.append(formatBreakevenLine(itemId, recordedBuyPrice)).append("<br>")
+			// AC4 — Tax applied (dynamic with entered price+qty). Item-aware so
+			// tax-exempt-list items show 0 tax regardless of price.
+			.append(formatTaxLine(taxPerItem, quantity)).append("<br>")
+			// AC5 + AC6 — Your profit (dynamic with entered price+qty, color-coded)
+			.append(formatProfitLine(recordedBuyPrice, listedSellPrice, taxPerItem, quantity));
 
 		return sb.toString();
 	}
