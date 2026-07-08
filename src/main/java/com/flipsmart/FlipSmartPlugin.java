@@ -148,6 +148,9 @@ public class FlipSmartPlugin extends Plugin
 	private com.flipsmart.trading.OfferStore offerStore;
 
 	@Inject
+	private com.flipsmart.trading.RoundTripLedger roundTripLedger;
+
+	@Inject
 	private WebhookSyncService webhookSyncService;
 
 	@Inject
@@ -650,7 +653,7 @@ public class FlipSmartPlugin extends Plugin
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
-		serviceWiring.wireTransactionLogger(this, session, offerStore);
+		serviceWiring.wireTransactionLogger(this, session, offerStore, roundTripLedger);
 		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService,
 			offerStore, refreshCoalescer);
 

@@ -30,12 +30,11 @@ public final class ActionResolver {
             if (!slotFree) {
                 break;
             }
-            // Quantity collected preemptively from an open trade (partial cancel) is sold
-            // before placing a new buy; a normally-completed buy does not jump that queue.
-            ActionKind kind = c.getOrigin() == CollectOrigin.PARTIAL_CANCEL
-                ? ActionKind.SELL_WAITING
-                : ActionKind.S3;
-            candidates.add(new ActionDecision(kind, ActionStep.LIST,
+            // A collected item that is meant to be sold takes priority over placing a
+            // new buy: the free slot should list what we already own rather than be
+            // consumed by a new buy that leaves the held item with nowhere to sell.
+            // Applies to both preemptive (partial-cancel) and normally-completed collects.
+            candidates.add(new ActionDecision(ActionKind.SELL_WAITING, ActionStep.LIST,
                 c.getItemId(), -1, c.getDetectedAtMillis()));
         }
 

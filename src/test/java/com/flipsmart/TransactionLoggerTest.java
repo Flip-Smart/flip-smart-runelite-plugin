@@ -7,6 +7,7 @@ import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.trading.OfferEvent;
 import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferStore;
+import com.flipsmart.trading.RoundTripLedger;
 import com.flipsmart.trading.TransactionLogger;
 import com.flipsmart.trading.TransactionLogger.Type;
 import net.runelite.api.GrandExchangeOfferState;
@@ -28,12 +29,14 @@ public class TransactionLoggerTest
 
     private FlipSmartApiClient apiClient;
     private PlayerSession session;
+    private RoundTripLedger roundTripLedger;
 
     @Before
     public void setUp()
     {
         apiClient = mock(FlipSmartApiClient.class);
         session = mock(PlayerSession.class);
+        roundTripLedger = new RoundTripLedger();
         when(apiClient.recordTransactionAsync(any(TransactionRequest.class)))
             .thenReturn(CompletableFuture.completedFuture(null));
         when(session.getRecommendedPrice(anyInt())).thenReturn(null);
@@ -42,7 +45,7 @@ public class TransactionLoggerTest
     private TransactionLogger newLogger(String rsn)
     {
         Supplier<Optional<String>> supplier = () -> Optional.of(rsn);
-        return new TransactionLogger(apiClient, session, supplier);
+        return new TransactionLogger(apiClient, session, supplier, roundTripLedger);
     }
 
     private TransactionRequest capture()
@@ -201,5 +204,90 @@ public class TransactionLoggerTest
         assertEquals(3, req.quantity);
         assertEquals(1500, req.pricePerItem);
         assertTrue(req.idempotencyKey.endsWith("FILL:3"));
+    }
+
+    // #893: every sent transaction is stamped with the round-trip id from the shared ledger.
+
+    @Test
+    public void twoCycleSequence_producesTwoDistinctRoundTripIds()
+    {
+        TransactionLogger logger = newLogger(RSN);
+        int itemId = 4151;
+
+        OfferRecord buyLow = OfferRecord.newOffer(1, 0, itemId, "Abyssal whip", true, 5, 1_000, 1L)
+            .withFill(5, 5_000L, OfferState.FILLED, 2L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buyLow, 5, 5_000L));
+
+        OfferRecord sellLow = OfferRecord.newOffer(2, 1, itemId, "Abyssal whip", false, 5, 1_200, 3L)
+            .withFill(5, 6_000L, OfferState.FILLED, 4L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sellLow, 5, 6_000L));
+
+        OfferRecord buyHigh = OfferRecord.newOffer(3, 0, itemId, "Abyssal whip", true, 5, 1_500, 5L)
+            .withFill(5, 7_500L, OfferState.FILLED, 6L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buyHigh, 5, 7_500L));
+
+        OfferRecord sellHigh = OfferRecord.newOffer(4, 1, itemId, "Abyssal whip", false, 5, 1_700, 7L)
+            .withFill(5, 8_500L, OfferState.FILLED, 8L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sellHigh, 5, 8_500L));
+
+        List<TransactionRequest> reqs = captureAll();
+        assertEquals(4, reqs.size());
+        Integer firstCycle = reqs.get(0).roundTripId;
+        Integer secondCycle = reqs.get(2).roundTripId;
+        assertEquals("buy and sell of the first lot share a round-trip id", firstCycle, reqs.get(1).roundTripId);
+        assertEquals("buy and sell of the second lot share a round-trip id", secondCycle, reqs.get(3).roundTripId);
+        assertNotEquals("the two round trips are distinct", firstCycle, secondCycle);
+    }
+
+    @Test
+    public void partialFillsWithinACycle_shareTheSameRoundTripId()
+    {
+        TransactionLogger logger = newLogger(RSN);
+        int itemId = 4151;
+
+        OfferRecord firstFill = OfferRecord.newOffer(1, 0, itemId, "Abyssal whip", true, 5, 1_000, 1L)
+            .withFill(2, 2_000L, OfferState.PARTIAL_FILL, 2L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, firstFill, 2, 2_000L));
+
+        OfferRecord secondFill = firstFill.withFill(5, 5_000L, OfferState.FILLED, 3L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, secondFill, 3, 3_000L));
+
+        List<TransactionRequest> reqs = captureAll();
+        assertEquals(2, reqs.size());
+        assertEquals("both partial fills of the same buy share a round-trip id",
+            reqs.get(0).roundTripId, reqs.get(1).roundTripId);
+    }
+
+    @Test
+    public void relogMidCycle_preservesRoundTripIdFromPersistedLedgerState()
+    {
+        int itemId = 4151;
+
+        // First "session": a buy fill opens a cycle on the shared ledger.
+        TransactionLogger firstSession = newLogger(RSN);
+        OfferRecord buy = OfferRecord.newOffer(1, 0, itemId, "Abyssal whip", true, 5, 1_000, 1L)
+            .withFill(5, 5_000L, OfferState.FILLED, 2L);
+        firstSession.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buy, 5, 5_000L));
+        Integer openCycleId = captureAll().get(0).roundTripId;
+
+        // Simulate a plugin restart: persist + restore the ledger, exactly as
+        // OfflineSyncService's persistLedgerState/preloadLedgerState round-trip it.
+        java.util.Map<Integer, RoundTripLedger.Entry> persisted = roundTripLedger.export(RSN);
+        RoundTripLedger restoredLedger = new RoundTripLedger();
+        restoredLedger.importState(RSN, persisted);
+
+        reset(apiClient);
+        when(apiClient.recordTransactionAsync(any(TransactionRequest.class)))
+            .thenReturn(CompletableFuture.completedFuture(null));
+        TransactionLogger secondSession = new TransactionLogger(apiClient, session,
+            () -> Optional.of(RSN), restoredLedger);
+
+        OfferRecord sell = OfferRecord.newOffer(2, 1, itemId, "Abyssal whip", false, 5, 1_200, 10L)
+            .withFill(5, 6_000L, OfferState.FILLED, 11L);
+        secondSession.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sell, 5, 6_000L));
+
+        TransactionRequest sellReq = capture();
+        assertEquals("the id opened before the relog is preserved after restoring the ledger",
+            openCycleId, sellReq.roundTripId);
     }
 }

@@ -79,11 +79,13 @@ public class ActionResolverTest {
         assertEquals(ActionKind.S3, resolver.resolve(in).getKind());
         assertEquals(ActionStep.COLLECT, resolver.resolve(in).getStep());
     }
-    @Test public void s3_fromCollectedCompletedBuyAwaitingList() {
+    @Test public void sellWaiting_fromCollectedCompletedBuyAwaitingList() {
+        // A collected completed buy awaiting sale lists at SELL_WAITING priority so it
+        // is offloaded before a new buy consumes the slot.
         ResolverInput in = base().filledSlotCount(7).collectedAwaitingList(Arrays.asList(
             new CollectedItem(32, CollectOrigin.COMPLETED_BUY, true, 5L))).build();
         ActionDecision d = resolver.resolve(in);
-        assertEquals(ActionKind.S3, d.getKind());
+        assertEquals(ActionKind.SELL_WAITING, d.getKind());
         assertEquals(ActionStep.LIST, d.getStep());
     }
     @Test public void s4_fromStaleSell() {
@@ -201,15 +203,17 @@ public class ActionResolverTest {
         assertEquals(ActionStep.LIST, d.getStep());
         assertEquals(71, d.getItemId());
     }
-    @Test public void completedBuyHeldItemDoesNotBeatNewBuy() {
-        // A normally-completed buy held for sale does NOT jump ahead of placing a new buy.
+    @Test public void completedBuyHeldItemBeatsNewBuy() {
+        // A normally-completed buy that has been collected for sale is listed before
+        // placing a new buy: the free slot lists the item we already own rather than
+        // being consumed by a new buy that leaves it nowhere to sell.
         ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 99)
             .collectedAwaitingList(Arrays.asList(
                 new CollectedItem(71, CollectOrigin.COMPLETED_BUY, true, 5L))).build();
         ActionDecision d = resolver.resolve(in);
-        assertEquals(ActionKind.S2, d.getKind());
-        assertEquals(ActionStep.PLACE_BUY, d.getStep());
-        assertEquals(99, d.getItemId());
+        assertEquals(ActionKind.SELL_WAITING, d.getKind());
+        assertEquals(ActionStep.LIST, d.getStep());
+        assertEquals(71, d.getItemId());
     }
     @Test public void ac4_oldestPreemptiveSellTakesPriority() {
         // Two preemptively-collected items awaiting list → the one waiting longest surfaces first.

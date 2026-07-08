@@ -94,7 +94,8 @@ public class OfflineSyncPersistenceTest
 			activeFlipTracker,
 			geHistoryService,
 			store,
-			itemManager);
+			itemManager,
+			new com.flipsmart.trading.RoundTripLedger());
 	}
 
 	@Test

@@ -71,7 +71,8 @@ public class GrandExchangeTrackerCharacterizationTest
 		// Recording now flows through the TransactionLogger listener on the store, exactly as
 		// production wires it. The apiClient mock + captor below capture the listener's calls.
 		com.flipsmart.trading.TransactionLogger logger =
-			new com.flipsmart.trading.TransactionLogger(apiClient, session, () -> java.util.Optional.of(RSN));
+			new com.flipsmart.trading.TransactionLogger(apiClient, session, () -> java.util.Optional.of(RSN),
+				new com.flipsmart.trading.RoundTripLedger());
 		store.addListener(logger::onOfferEvent);
 		activeFlipTracker = mock(ActiveFlipTracker.class);
 		itemManager = mock(ItemManager.class);
