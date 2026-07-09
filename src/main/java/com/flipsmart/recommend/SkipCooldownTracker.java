@@ -1,7 +1,7 @@
 package com.flipsmart.recommend;
 
-import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
 /**
@@ -27,7 +27,7 @@ public class SkipCooldownTracker
 	private static final int MAX_ENTRIES = 500;
 
 	/** itemId -> wall-clock instant at which the cooldown expires. */
-	private final Map<Integer, Long> cooldownUntilMillis = new HashMap<>();
+	private final Map<Integer, Long> cooldownUntilMillis = new ConcurrentHashMap<>();
 
 	private final LongSupplier clock;
 
