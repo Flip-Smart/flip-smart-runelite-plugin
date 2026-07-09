@@ -210,6 +210,11 @@ public class FlipSmartPlugin extends Plugin
 	// Cached GE location flag — updated each game tick on the client thread.
 	private volatile boolean atGrandExchange = false;
 
+	// Canonical item ids currently held in the inventory. Maintained on the client
+	// thread (inventory ItemContainerChanged) and read from the Swing EDT by the
+	// Active Flips display filter, so it must stay thread-safe.
+	private final java.util.Set<Integer> inventoryFlipItemIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -588,7 +593,19 @@ public class FlipSmartPlugin extends Plugin
 		itemIds.addAll(session.getCollectedItemIds());
 		return itemIds;
 	}
-	
+
+	/**
+	 * Canonical item ids currently held in the inventory, as a thread-safe snapshot
+	 * maintained on the client thread. Read from the Swing EDT by the Active Flips
+	 * display filter to keep collected-but-unsold flips visible across a client
+	 * restart (when session-only collected state is lost) without reading the game
+	 * client off-thread.
+	 */
+	public java.util.Set<Integer> getInventoryFlipItemIds()
+	{
+		return inventoryFlipItemIds;
+	}
+
 	/**
 	 * Get all active flip item IDs including items in inventory.
 	 * This is used for filtering active flips display to show items the player
@@ -1537,19 +1554,27 @@ public class FlipSmartPlugin extends Plugin
 		if (inventory == null)
 		{
 			session.setCashStack(0);
+			inventoryFlipItemIds.clear();
 			return;
 		}
 
 		int totalCash = 0;
 		Item[] items = inventory.getItems();
 
+		java.util.Set<Integer> currentInventoryIds = new java.util.HashSet<>();
 		for (Item item : items)
 		{
 			if (item.getId() == COINS_ITEM_ID)
 			{
 				totalCash += item.getQuantity();
 			}
+			if (item.getId() > 0)
+			{
+				currentInventoryIds.add(itemManager.canonicalize(item.getId()));
+			}
 		}
+		inventoryFlipItemIds.retainAll(currentInventoryIds);
+		inventoryFlipItemIds.addAll(currentInventoryIds);
 
 		if (totalCash != session.getCurrentCashStack())
 		{
