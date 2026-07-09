@@ -199,6 +199,25 @@ public class RecommendationQueueTest
 	}
 
 	@Test
+	public void skipToNextSurfaceableSkipsCoolingDownItems()
+	{
+		RecommendationQueue q = new RecommendationQueue();
+		FlipRecommendation surfaceable = rec(14, 500);
+		q.replace(Arrays.asList(rec(11, 500), rec(12, 500), rec(13, 500), surfaceable));
+		q.setCurrentIndex(0); // currently on item 11
+
+		// items 12 and 13 were recently skipped (cooling) → cursor lands on 14 (AC2).
+		q.skipToNextSurfaceable(
+			Collections.emptySet(),
+			FlipRecommendation::getRecommendedSellPrice,
+			100,
+			id -> id == 12 || id == 13);
+
+		assertEquals(3, q.getCurrentIndex());
+		assertSame(surfaceable, q.getCurrentRecommendation());
+	}
+
+	@Test
 	public void skipToNextSurfaceableRunsOffEndWhenNoneQualify()
 	{
 		RecommendationQueue q = new RecommendationQueue();

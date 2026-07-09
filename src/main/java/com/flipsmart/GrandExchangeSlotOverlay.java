@@ -69,6 +69,12 @@ public class GrandExchangeSlotOverlay extends Overlay
 	// Slots with pending adjustment recommendations (slot -> recommended price)
 	private final java.util.Map<Integer, Integer> adjustmentHighlights = new java.util.concurrent.ConcurrentHashMap<>();
 
+	// Slots whose orange box must persist across focus changes because the player skipped
+	// their maintenance action and it is still within its cooldown. Transient clears
+	// (clearAllAdjustmentHighlights) deliberately leave these alone; they are dropped only
+	// when the cooldown expires or the offer is acted on / leaves the GE.
+	private final java.util.Set<Integer> stickyAdjustmentSlots = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
@@ -105,11 +111,39 @@ public class GrandExchangeSlotOverlay extends Overlay
 	}
 
 	/**
-	 * Clear all adjustment highlights (e.g., on logout).
+	 * Clear all transient adjustment highlights (e.g., on a focus change). Sticky
+	 * highlights kept for a skipped-but-cooling action are intentionally preserved.
 	 */
 	public void clearAllAdjustmentHighlights()
 	{
 		adjustmentHighlights.clear();
+	}
+
+	/**
+	 * Keep a slot's orange box lit across focus changes while its skipped action cools
+	 * down.
+	 */
+	public void setStickyAdjustmentHighlight(int slot)
+	{
+		stickyAdjustmentSlots.add(slot);
+	}
+
+	/**
+	 * Drop the sticky highlight for a slot (cooldown expired, or the offer was acted on).
+	 */
+	public void clearStickyAdjustmentHighlight(int slot)
+	{
+		stickyAdjustmentSlots.remove(slot);
+	}
+
+	/**
+	 * Full reset of every highlight, transient and sticky (e.g., on logout or when
+	 * auto-mode stops).
+	 */
+	public void resetAllHighlights()
+	{
+		adjustmentHighlights.clear();
+		stickyAdjustmentSlots.clear();
 	}
 
 	/**
@@ -271,7 +305,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
 		// Draw colored border around the entire slot
-		boolean hasAdjustment = adjustmentHighlights.containsKey(slot);
+		boolean hasAdjustment = adjustmentHighlights.containsKey(slot) || stickyAdjustmentSlots.contains(slot);
 		if (hasAdjustment)
 		{
 			drawOrangeGlow(graphics, bounds);

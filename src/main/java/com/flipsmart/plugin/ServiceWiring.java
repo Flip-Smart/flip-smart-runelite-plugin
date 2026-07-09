@@ -58,6 +58,9 @@ public class ServiceWiring
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
 		autoRecommendService.setOnStaleOfferPrompted(plugin::highlightSlotForItem);
 		autoRecommendService.setOnClearAllHighlights(geSlotOverlay::clearAllAdjustmentHighlights);
+		autoRecommendService.setOnStickyHighlight(geSlotOverlay::setStickyAdjustmentHighlight);
+		autoRecommendService.setOnClearStickyHighlight(geSlotOverlay::clearStickyAdjustmentHighlight);
+		autoRecommendService.setOnResetAllHighlights(geSlotOverlay::resetAllHighlights);
 		flipAssistOverlay.setOnStepChanged(autoRecommendService::onOverlayStepChanged);
 		return autoRecommendService;
 	}

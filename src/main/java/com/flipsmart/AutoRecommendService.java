@@ -14,6 +14,7 @@ import com.flipsmart.recommend.CollectedItem;
 import com.flipsmart.recommend.RecommendationQueue;
 import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.recommend.ResolverInput;
+import com.flipsmart.recommend.SkipCooldownTracker;
 import com.flipsmart.recommend.StaleOfferQueue;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
@@ -91,6 +92,7 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
+	private static final String MSG_QUEUE_DEPLETED = "Item queue depleted - refresh for more recommendations";
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
@@ -109,6 +111,10 @@ public class AutoRecommendService
 	private final AdjustmentService adjustments = new AdjustmentService();
 
 	private final ActionResolver actionResolver = new ActionResolver();
+
+	// 5-minute per-item skip window: a skipped buy/action is held out of auto-surfacing
+	// so it does not immediately re-appear. Cleared on auto-mode toggle, survives refreshes.
+	private final SkipCooldownTracker skipCooldown = new SkipCooldownTracker();
 
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
@@ -135,6 +141,20 @@ public class AutoRecommendService
 	// Clears all GE slot adjustment highlights when the stale-offer queue drains,
 	// so a slot highlight never lingers without a matching prompt.
 	private volatile Runnable onClearAllHighlights;
+
+	// Sticky highlight callbacks (keyed by GE slot): keep a skipped-but-cooling action's
+	// orange box lit across focus changes, and drop it when the cooldown ends or the offer
+	// is acted on.
+	private volatile java.util.function.IntConsumer onStickyHighlight;
+	private volatile java.util.function.IntConsumer onClearStickyHighlight;
+
+	// Full highlight reset (transient + sticky) used when auto-mode stops.
+	private volatile Runnable onResetAllHighlights;
+
+	// Items whose orange box is kept sticky because their action was skipped and is still
+	// cooling. Maps itemId -> the GE slot recorded at skip time, so the sticky box can be
+	// cleared by slot even after the offer has left the GE (the item lookup would then fail).
+	private final Map<Integer, Integer> stickyHighlightSlots = new java.util.concurrent.ConcurrentHashMap<>();
 
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
@@ -212,6 +232,21 @@ public class AutoRecommendService
 	public void setOnClearAllHighlights(Runnable callback)
 	{
 		this.onClearAllHighlights = callback;
+	}
+
+	public void setOnStickyHighlight(java.util.function.IntConsumer callback)
+	{
+		this.onStickyHighlight = callback;
+	}
+
+	public void setOnClearStickyHighlight(java.util.function.IntConsumer callback)
+	{
+		this.onClearStickyHighlight = callback;
+	}
+
+	public void setOnResetAllHighlights(Runnable callback)
+	{
+		this.onResetAllHighlights = callback;
 	}
 
 	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
@@ -306,6 +341,14 @@ public class AutoRecommendService
 		adjustments.clear();
 		staleOffers.clear();
 		deferredActions.clear();
+		// AC5/AC6: toggling auto-mode off clears every skip cooldown and its sticky box.
+		skipCooldown.clearAll();
+		stickyHighlightSlots.clear();
+		Runnable resetHighlights = onResetAllHighlights;
+		if (resetHighlights != null)
+		{
+			resetHighlights.run();
+		}
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -367,6 +410,7 @@ public class AutoRecommendService
 	{
 		staleOffers.removePrompted(itemId);
 		staleOffers.removeOffer(itemId);
+		resolveActedItem(itemId);
 		if (!active)
 		{
 			return;
@@ -571,6 +615,9 @@ public class AutoRecommendService
 			return;
 		}
 
+		// Re-listing a skipped/uncompetitive sell resolves its maintenance action (AC8 path).
+		resolveActedItem(itemId);
+
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
@@ -620,6 +667,7 @@ public class AutoRecommendService
 		}
 		staleOffers.removePrompted(itemId);
 		staleOffers.removeOffer(itemId);
+		resolveActedItem(itemId);
 		if (!active)
 		{
 			return;
@@ -717,6 +765,7 @@ public class AutoRecommendService
 	public synchronized void onOfferCollected(int itemId, boolean wasBuy, String itemName, int quantity)
 	{
 		staleOffers.removeOffer(itemId);
+		resolveActedItem(itemId);
 		if (!active)
 		{
 			return;
@@ -824,6 +873,9 @@ public class AutoRecommendService
 
 	ActionDecision resolveAndApply(int excludeItemId)
 	{
+		// Retire any sticky boxes whose cooldown lapsed or whose offer is gone before we
+		// decide what to surface (cheap no-op when nothing is sticky).
+		reconcileStickyHighlights();
 		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
 		log.debug("Auto-recommend: resolver decision {}/{} item={} slot={}",
 			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
@@ -943,17 +995,53 @@ public class AutoRecommendService
 		int priceOffset,
 		int minProfit)
 	{
+		return firstAvailableBuyIndex(queue, activeItemIds, excludeItemId, priceOffset, minProfit, id -> false);
+	}
+
+	/**
+	 * As above, but also skips items inside their post-skip cooldown window so a skipped
+	 * buy does not immediately re-appear (AC1/AC2) — including when the queue was just
+	 * refreshed from the backend (AC4).
+	 */
+	static int firstAvailableBuyIndex(
+		List<FlipRecommendation> queue,
+		Set<Integer> activeItemIds,
+		int excludeItemId,
+		int priceOffset,
+		int minProfit,
+		java.util.function.IntPredicate isCoolingDown)
+	{
 		for (int i = 0; i < queue.size(); i++)
 		{
 			FlipRecommendation rec = queue.get(i);
 			if (rec.getItemId() != excludeItemId
 				&& !activeItemIds.contains(rec.getItemId())
+				&& !isCoolingDown.test(rec.getItemId())
 				&& FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
 			{
 				return i;
 			}
 		}
 		return -1;
+	}
+
+	/**
+	 * True when the buy queue still holds items that would be surfaceable were it not for
+	 * their skip cooldown — i.e. the queue is "depleted" only because everything is snoozed
+	 * (AC3), not genuinely empty. Distinguishes the refresh-me state from the ordinary
+	 * all-listed / waiting-for-sells state.
+	 */
+	private boolean allSurfaceableBuysCoolingDown()
+	{
+		List<FlipRecommendation> view = queue.view();
+		Set<Integer> active = plugin.getActiveFlipItemIds();
+		int offset = config.priceOffset();
+		int minProfit = config.minimumProfit();
+		boolean surfaceableIgnoringCooldown =
+			firstAvailableBuyIndex(view, active, -1, offset, minProfit) >= 0;
+		boolean surfaceableWithCooldown =
+			firstAvailableBuyIndex(view, active, -1, offset, minProfit, skipCooldown::isCoolingDown) >= 0;
+		return surfaceableIgnoringCooldown && !surfaceableWithCooldown;
 	}
 
 	private boolean isUserBusy()
@@ -1685,11 +1773,95 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * The player placed/cancelled/collected an offer for this item, so any skip cooldown and
+	 * sticky box for it are now moot — drop them immediately rather than waiting for expiry.
+	 */
+	private void resolveActedItem(int itemId)
+	{
+		skipCooldown.clear(itemId);
+		dropStickyHighlight(itemId);
+	}
+
+	/** GE slot currently holding a live offer for the item, or null if none. */
+	private Integer slotForLiveItem(int itemId)
+	{
+		for (OfferRecord o : offerStore.liveOffers())
+		{
+			if (o.getItemId() == itemId && o.getSlot() != null)
+			{
+				return o.getSlot();
+			}
+		}
+		return null;
+	}
+
+	/** Track a skipped action's item and light its sticky orange box (AC7). */
+	private void keepStickyHighlight(int itemId)
+	{
+		Integer slot = slotForLiveItem(itemId);
+		if (slot == null)
+		{
+			return;
+		}
+		stickyHighlightSlots.put(itemId, slot);
+		java.util.function.IntConsumer cb = onStickyHighlight;
+		if (cb != null)
+		{
+			cb.accept(slot);
+		}
+	}
+
+	/** Stop tracking a sticky item and drop its orange box by the slot recorded at skip time. */
+	private void dropStickyHighlight(int itemId)
+	{
+		Integer slot = stickyHighlightSlots.remove(itemId);
+		if (slot != null)
+		{
+			java.util.function.IntConsumer cb = onClearStickyHighlight;
+			if (cb != null)
+			{
+				cb.accept(slot);
+			}
+		}
+	}
+
+	/**
+	 * Drop sticky boxes whose reason has passed: the cooldown expired, or the offer is no
+	 * longer a live, unfilled GE offer (acted on / collected / cancelled). An expired
+	 * still-uncompetitive offer is re-surfaced by the normal adjustment-timer path once its
+	 * cooldown lifts, which restores a live (transient) highlight.
+	 */
+	private void reconcileStickyHighlights()
+	{
+		if (stickyHighlightSlots.isEmpty())
+		{
+			return;
+		}
+		List<OfferRecord> live = offerStore.liveOffers();
+		for (Integer itemId : new java.util.ArrayList<>(stickyHighlightSlots.keySet()))
+		{
+			boolean cooling = skipCooldown.isCoolingDown(itemId);
+			boolean stillLiveOffer = live.stream()
+				.anyMatch(o -> o.getItemId() == itemId && o.getState() != OfferState.FILLED);
+			if (!cooling || !stillLiveOffer)
+			{
+				dropStickyHighlight(itemId);
+			}
+		}
+	}
+
+	/**
 	 * Add a tracked offer to the stale queue if not already present.
 	 * If the queue was empty, immediately shows the first prompt.
 	 */
 	void addToStaleQueue(OfferRecord offer)
 	{
+		if (skipCooldown.isCoolingDown(offer.getItemId()))
+		{
+			// Snoozed by a recent skip — don't re-prompt until the cooldown lifts.
+			return;
+		}
+
 		StaleOfferQueue.AddResult result = staleOffers.addIfAbsent(offer);
 		if (result == StaleOfferQueue.AddResult.ALREADY_PRESENT)
 		{
@@ -2165,6 +2337,11 @@ public class AutoRecommendService
 		if (!staleOffers.isEmpty())
 		{
 			OfferRecord skipped = staleOffers.removeHead();
+			// Hold the action out of auto-surfacing for the cooldown, but keep its orange
+			// box lit (AC7) — the trade still needs maintenance — and its session sell
+			// price intact so a manual GE pull-up still shows the re-adjusted price (AC8).
+			skipCooldown.skip(skipped.getItemId());
+			keepStickyHighlight(skipped.getItemId());
 			log.debug("Auto-recommend: User skipped stale offer prompt for {}", skipped.getItemName());
 			focusNextAvailableAction();
 			return;
@@ -2176,6 +2353,7 @@ public class AutoRecommendService
 		{
 			PlayerSession session = plugin.getSession();
 			log.debug("Auto-recommend: User skipped collected item sell prompt for item {}", collectedId);
+			skipCooldown.skip(collectedId);
 			session.removeCollectedItem(collectedId);
 			focusedCollectedItemId = -1;
 			focusNextAvailableAction();
@@ -2183,6 +2361,11 @@ public class AutoRecommendService
 		}
 
 		log.debug("Auto-recommend: User skipped current recommendation");
+		FlipRecommendation skippedBuy = queue.getCurrentRecommendation();
+		if (skippedBuy != null)
+		{
+			skipCooldown.skip(skippedBuy.getItemId());
+		}
 		advanceToNext();
 	}
 
@@ -2194,13 +2377,22 @@ public class AutoRecommendService
 		queue.skipToNextSurfaceable(
 			plugin.getActiveFlipItemIds(),
 			next -> FocusedFlip.calculateAdjustedProfit(next, priceOffset),
-			minProfit);
+			minProfit,
+			skipCooldown::isCoolingDown);
 
 		if (queue.cursorBeyondEnd())
 		{
 			if (hasCollectedItemsToSell())
 			{
 				focusNextCollectedItemSell();
+			}
+			else if (allSurfaceableBuysCoolingDown())
+			{
+				// AC3: items remain but every one is inside its skip cooldown. Tell the user
+				// to refresh rather than auto-refreshing into the same still-cooling list.
+				invokeFocusCallback(null);
+				updateStatus("Auto: Item queue depleted");
+				invokeOverlayMessageCallback(MSG_QUEUE_DEPLETED);
 			}
 			else
 			{
@@ -2591,6 +2783,13 @@ public class AutoRecommendService
 				invokeOverlayMessageCallback("Collect profit from GE");
 			}
 		}
+		else if (hasAvailableGESlots() && allSurfaceableBuysCoolingDown())
+		{
+			// AC3: a slot is free but every remaining recommendation is snoozed by a skip
+			// cooldown — prompt a manual refresh instead of silently showing "Waiting".
+			updateStatus("Auto: Item queue depleted");
+			invokeOverlayMessageCallback(MSG_QUEUE_DEPLETED);
+		}
 		else if (adjustments.hasBuyDeadlines() || adjustments.hasSellStates())
 		{
 			// Offers are being monitored for staleness — don't say "Waiting for flips"
@@ -2792,7 +2991,7 @@ public class AutoRecommendService
 		int surfaceableItemId = -1;
 		List<FlipRecommendation> view = queue.view();
 		int idx = firstAvailableBuyIndex(view, plugin.getActiveFlipItemIds(),
-			excludeItemId, config.priceOffset(), config.minimumProfit());
+			excludeItemId, config.priceOffset(), config.minimumProfit(), skipCooldown::isCoolingDown);
 		if (idx >= 0 && idx < view.size())
 		{
 			hasSurfaceable = true;
@@ -2802,7 +3001,11 @@ public class AutoRecommendService
 		int filledSlots = plugin.getFilledGESlotCount();
 		int slotLimit = plugin.getFlipSlotLimit();
 		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
-		List<OfferRecord> staleSnapshot = staleOffers.snapshot();
+		// Drop any cooling-down stale offers so a skipped reprice/cancel action is not
+		// re-surfaced by the resolver until its cooldown lifts (AC6).
+		List<OfferRecord> staleSnapshot = staleOffers.snapshot().stream()
+			.filter(o -> !skipCooldown.isCoolingDown(o.getItemId()))
+			.collect(java.util.stream.Collectors.toList());
 		if (logInput)
 		{
 			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
