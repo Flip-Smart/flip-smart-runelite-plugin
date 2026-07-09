@@ -210,10 +210,11 @@ public class FlipSmartPlugin extends Plugin
 	// Cached GE location flag — updated each game tick on the client thread.
 	private volatile boolean atGrandExchange = false;
 
-	// Canonical item ids currently held in the inventory. Maintained on the client
-	// thread (inventory ItemContainerChanged) and read from the Swing EDT by the
-	// Active Flips display filter, so it must stay thread-safe.
-	private final java.util.Set<Integer> inventoryFlipItemIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	// Canonical item ids currently held in the inventory. Rebuilt on the client
+	// thread (inventory ItemContainerChanged) and published as one volatile swap to
+	// an immutable set, so the Swing EDT reader in the Active Flips filter always
+	// sees a complete snapshot, never a partially-rebuilt set.
+	private volatile java.util.Set<Integer> inventoryFlipItemIds = java.util.Collections.emptySet();
 
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
@@ -1554,7 +1555,7 @@ public class FlipSmartPlugin extends Plugin
 		if (inventory == null)
 		{
 			session.setCashStack(0);
-			inventoryFlipItemIds.clear();
+			inventoryFlipItemIds = java.util.Collections.emptySet();
 			return;
 		}
 
@@ -1573,8 +1574,7 @@ public class FlipSmartPlugin extends Plugin
 				currentInventoryIds.add(itemManager.canonicalize(item.getId()));
 			}
 		}
-		inventoryFlipItemIds.retainAll(currentInventoryIds);
-		inventoryFlipItemIds.addAll(currentInventoryIds);
+		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
 
 		if (totalCash != session.getCurrentCashStack())
 		{
