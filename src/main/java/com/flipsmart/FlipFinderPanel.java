@@ -1387,11 +1387,11 @@ public class FlipFinderPanel extends PluginPanel
 		List<ActiveFlip> filtered = ActiveFlipDisplayFilter.retain(
 			activeFlips, plugin.getActiveFlipItemIds(), plugin.getInventoryFlipItemIds());
 
-		if (activeFlips != null && log.isDebugEnabled())
+		if (activeFlips != null)
 		{
 			for (ActiveFlip flip : activeFlips)
 			{
-				if (!filtered.contains(flip))
+				if (!filtered.contains(flip) && log.isDebugEnabled())
 				{
 					log.debug("Filtering stale flip: {} (not in GE, not collected, not in inventory)",
 						flip.getItemName());
