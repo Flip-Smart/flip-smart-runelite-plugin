@@ -111,10 +111,16 @@ public class ActionResolverTest {
             .staleOffers(Arrays.asList(staleBuyPartial(0, 11, 5L))).build();
         assertEquals(ActionKind.S1, resolver.resolve(in).getKind());
     }
-    @Test public void s2_preempts_s3() {  // product-confirmed: fill empty slot before collecting buy
+    @Test public void s3_preempts_s2() {
+        // Product decision (#914): a completed buy awaiting collection is collected (so it
+        // can then be sold) before a new buy consumes the freed slot. A free slot plus a
+        // surfaceable buy must not pull us off collecting the item we already own.
         ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 99)
             .completedAwaitingCollection(Arrays.asList(filledBuy(0, 31, 5L))).build();
-        assertEquals(ActionKind.S2, resolver.resolve(in).getKind());
+        ActionDecision d = resolver.resolve(in);
+        assertEquals(ActionKind.S3, d.getKind());
+        assertEquals(ActionStep.COLLECT, d.getStep());
+        assertEquals(31, d.getItemId());
     }
     @Test public void s3_preempts_s4() {
         ResolverInput in = base()

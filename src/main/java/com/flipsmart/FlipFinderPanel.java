@@ -10,6 +10,7 @@ import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.flip.ActiveFlipDisplayFilter;
 import com.flipsmart.domain.flip.ActiveFlipLocalUpdater;
 import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.domain.offer.OfferTransition;
@@ -1376,67 +1377,28 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Show flips that are either currently in a GE slot / collected this
-	 * session, or had buy activity in the last 7 days (covers client-restart
-	 * scenarios, since collectedItemIds is session-only and GE tracking takes
-	 * time to repopulate). Stale-flip cleanup beyond that window is the
-	 * backend's job via /flips/cleanup. Null-safe: returns an empty list.
+	 * Keep only flips backed by live player state — an open GE offer, an item
+	 * collected this session, or an item held in the inventory — so completed,
+	 * cancelled, and collected trades drop off the tab immediately.
+	 * Null-safe: returns an empty list.
 	 */
 	private List<ActiveFlip> filterActiveFlips(List<ActiveFlip> activeFlips)
 	{
-		List<ActiveFlip> filtered = new ArrayList<>();
-		if (activeFlips == null)
+		List<ActiveFlip> filtered = ActiveFlipDisplayFilter.retain(
+			activeFlips, plugin.getActiveFlipItemIds(), plugin.getInventoryFlipItemIds());
+
+		if (activeFlips != null)
 		{
-			return filtered;
-		}
-
-		java.util.Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-		java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(java.time.Duration.ofDays(7));
-
-		for (ActiveFlip flip : activeFlips)
-		{
-			boolean inGeOrCollected = activeItemIds.contains(flip.getItemId());
-			boolean isRecent = isFlipRecent(flip, sevenDaysAgo);
-
-			if (inGeOrCollected || isRecent)
+			for (ActiveFlip flip : activeFlips)
 			{
-				filtered.add(flip);
-				log.debug("Including flip: {} (inGE={}, recent={})",
-					flip.getItemName(), inGeOrCollected, isRecent);
-			}
-			else
-			{
-				log.debug("Filtering stale flip: {} (not in GE and older than 7 days)", flip.getItemName());
+				if (!filtered.contains(flip) && log.isDebugEnabled())
+				{
+					log.debug("Filtering stale flip: {} (not in GE, not collected, not in inventory)",
+						flip.getItemName());
+				}
 			}
 		}
 		return filtered;
-	}
-
-	/**
-	 * Prefers lastBuyTime over firstBuyTime. A missing or unparseable
-	 * timestamp is treated as recent so a flip is never hidden due to a data
-	 * gap rather than genuine staleness.
-	 */
-	private boolean isFlipRecent(ActiveFlip flip, java.time.Instant cutoff)
-	{
-		String timeStr = flip.getLastBuyTime();
-		if (timeStr == null || timeStr.isEmpty())
-		{
-			timeStr = flip.getFirstBuyTime();
-		}
-		if (timeStr == null || timeStr.isEmpty())
-		{
-			return true;
-		}
-
-		try
-		{
-			return java.time.Instant.parse(timeStr).isAfter(cutoff);
-		}
-		catch (Exception e)
-		{
-			return true;
-		}
 	}
 
 	/** Reflect the current active-flip/pending-order counts in the tab's status label. */
