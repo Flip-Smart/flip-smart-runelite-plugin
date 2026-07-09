@@ -224,11 +224,25 @@ public final class RecommendationQueue
 		ToIntFunction<FlipRecommendation> profitFn,
 		int minProfit)
 	{
+		skipToNextSurfaceable(activeItemIds, profitFn, minProfit, id -> false);
+	}
+
+	/**
+	 * As above, but also skips items inside their post-skip cooldown so the cursor never
+	 * lands on a recently-skipped item (AC2).
+	 */
+	public void skipToNextSurfaceable(
+		Set<Integer> activeItemIds,
+		ToIntFunction<FlipRecommendation> profitFn,
+		int minProfit,
+		java.util.function.IntPredicate isCoolingDown)
+	{
 		currentIndex++;
 		while (currentIndex < recommendations.size())
 		{
 			FlipRecommendation next = recommendations.get(currentIndex);
 			if (!activeItemIds.contains(next.getItemId())
+				&& !isCoolingDown.test(next.getItemId())
 				&& profitFn.applyAsInt(next) >= minProfit)
 			{
 				break;

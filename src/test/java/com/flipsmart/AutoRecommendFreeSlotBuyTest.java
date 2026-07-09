@@ -118,4 +118,34 @@ public class AutoRecommendFreeSlotBuyTest
 
 		assertEquals(-1, idx);
 	}
+
+	// AC1/AC2/AC4: an item inside its skip cooldown is passed over even though it is
+	// otherwise surfaceable, so a skipped buy does not immediately re-appear (including
+	// after a backend refresh that still lists it).
+	@Test
+	public void skipsCoolingDownItem()
+	{
+		List<FlipRecommendation> queue = Arrays.asList(
+			profitable(1001), profitable(2002), profitable(3003));
+		Set<Integer> cooling = new HashSet<>(Collections.singletonList(1001));
+
+		int idx = AutoRecommendService.firstAvailableBuyIndex(
+			queue, NONE_ACTIVE, NO_EXCLUDE, 0, 1, cooling::contains);
+
+		assertEquals("skips the cooling item, picks the next", 1, idx);
+	}
+
+	// When every remaining item is cooling down the scan reports nothing surfaceable,
+	// which is what makes the exhausted queue pull a fresh recommendation list (AC3).
+	@Test
+	public void returnsMinusOneWhenAllCoolingDown()
+	{
+		List<FlipRecommendation> queue = Arrays.asList(profitable(1001), profitable(2002));
+		Set<Integer> cooling = new HashSet<>(Arrays.asList(1001, 2002));
+
+		int idx = AutoRecommendService.firstAvailableBuyIndex(
+			queue, NONE_ACTIVE, NO_EXCLUDE, 0, 1, cooling::contains);
+
+		assertEquals(-1, idx);
+	}
 }

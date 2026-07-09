@@ -539,4 +539,39 @@ public class AutoRecommendDispatchTest {
         assertTrue("overlay must mention item-200, not profit; got: " + overlay,
             overlay != null && overlay.contains("item-200"));
     }
+
+    // AC1/AC2 (#919): a skipped buy is snoozed for its cooldown, so the next resolve
+    // surfaces a different item instead of re-recommending the one just skipped.
+    @Test
+    public void skippedBuyIsSnoozedAndNextItemSurfaces() {
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // one free slot
+        service.start(Arrays.asList(rec(21), rec(22)));
+
+        ActionDecision first = service.resolveAndApply(-1);
+        assertEquals(ActionStep.PLACE_BUY, first.getStep());
+        assertEquals(21, first.getItemId());
+
+        service.skip(); // skip 21 -> 5-minute cooldown
+
+        ActionDecision afterSkip = service.resolveAndApply(-1);
+        assertEquals(ActionStep.PLACE_BUY, afterSkip.getStep());
+        assertEquals("skipped 21 is snoozed; 22 surfaces instead", 22, afterSkip.getItemId());
+    }
+
+    // AC5 (#919): toggling auto-mode off and back on clears the skip cooldown, so a
+    // previously-skipped item becomes eligible again.
+    @Test
+    public void togglingAutoModeClearsSkipCooldown() {
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        service.start(Arrays.asList(rec(21), rec(22)));
+        service.resolveAndApply(-1);
+        service.skip(); // 21 cooling
+
+        service.stop();                                    // toggle OFF
+        service.start(Arrays.asList(rec(21), rec(22)));    // toggle ON
+
+        ActionDecision d = service.resolveAndApply(-1);
+        assertEquals(ActionStep.PLACE_BUY, d.getStep());
+        assertEquals("cooldown cleared on toggle; 21 surfaces again", 21, d.getItemId());
+    }
 }
