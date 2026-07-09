@@ -5,6 +5,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -41,7 +42,29 @@ public class PluginScheduler
 	private Timer autoRecommendRefreshTimer;
 	private Timer activeOfferAdvisorTimer;
 
+	/**
+	 * Wall-clock instant at which the flip-finder auto-refresh timer will next fire.
+	 * This is the single source of truth for the "Item refresh in Ns" countdown the
+	 * panel renders — the visual label reads this value rather than tracking its own
+	 * independent deadline, so a manual refresh (which restarts the timer) always
+	 * moves the countdown and the actual refresh together. 0 when the timer is stopped.
+	 */
+	private volatile long nextFlipFinderRefreshAtMillis;
+
+	private final LongSupplier clock;
+
 	private final List<javax.swing.Timer> activeOneShotTimers = new CopyOnWriteArrayList<>();
+
+	public PluginScheduler()
+	{
+		this(System::currentTimeMillis);
+	}
+
+	/** Test seam: inject a deterministic clock for the refresh-cadence bookkeeping. */
+	PluginScheduler(LongSupplier clock)
+	{
+		this.clock = clock;
+	}
 
 	/**
 	 * Start the auto-refresh timer for flip finder.
@@ -63,11 +86,19 @@ public class PluginScheduler
 		int refreshMinutes = Math.max(1, Math.min(60, refreshMinutesRaw));
 		long refreshIntervalMs = refreshMinutes * 60 * 1000L;
 
+		// Start (or restart, e.g. on a manual refresh) resets the countdown deadline
+		// to a full interval from now, keeping the visual countdown and the actual
+		// refresh trigger synchronized.
+		nextFlipFinderRefreshAtMillis = clock.getAsLong() + refreshIntervalMs;
+
 		flipFinderRefreshTimer.scheduleAtFixedRate(new TimerTask()
 		{
 			@Override
 			public void run()
 			{
+				// The fixed-rate timer fires regardless of login state; advance the
+				// countdown deadline on every tick so the label tracks the real next fire.
+				nextFlipFinderRefreshAtMillis = clock.getAsLong() + refreshIntervalMs;
 				if (!loggedInCheck.getAsBoolean())
 				{
 					log.debug("Skipping auto-refresh - player not logged into RuneScape");
@@ -86,8 +117,19 @@ public class PluginScheduler
 		{
 			flipFinderRefreshTimer.cancel();
 			flipFinderRefreshTimer = null;
+			nextFlipFinderRefreshAtMillis = 0;
 			log.debug("Flip Finder auto-refresh stopped");
 		}
+	}
+
+	/**
+	 * Wall-clock instant of the next flip-finder auto-refresh, or 0 when the timer
+	 * is not running. The panel's countdown label reads this so the display and the
+	 * actual refresh trigger can never drift apart.
+	 */
+	public long getNextFlipFinderRefreshAtMillis()
+	{
+		return nextFlipFinderRefreshAtMillis;
 	}
 
 	/**
