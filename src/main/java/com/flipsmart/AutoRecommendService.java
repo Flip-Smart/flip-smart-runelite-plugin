@@ -92,7 +92,6 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
-	private static final String MSG_QUEUE_DEPLETED = "Item queue depleted - refresh for more recommendations";
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
@@ -1023,25 +1022,6 @@ public class AutoRecommendService
 			}
 		}
 		return -1;
-	}
-
-	/**
-	 * True when the buy queue still holds items that would be surfaceable were it not for
-	 * their skip cooldown — i.e. the queue is "depleted" only because everything is snoozed
-	 * (AC3), not genuinely empty. Distinguishes the refresh-me state from the ordinary
-	 * all-listed / waiting-for-sells state.
-	 */
-	private boolean allSurfaceableBuysCoolingDown()
-	{
-		List<FlipRecommendation> view = queue.view();
-		Set<Integer> active = plugin.getActiveFlipItemIds();
-		int offset = config.priceOffset();
-		int minProfit = config.minimumProfit();
-		boolean surfaceableIgnoringCooldown =
-			firstAvailableBuyIndex(view, active, -1, offset, minProfit) >= 0;
-		boolean surfaceableWithCooldown =
-			firstAvailableBuyIndex(view, active, -1, offset, minProfit, skipCooldown::isCoolingDown) >= 0;
-		return surfaceableIgnoringCooldown && !surfaceableWithCooldown;
 	}
 
 	private boolean isUserBusy()
@@ -2386,20 +2366,15 @@ public class AutoRecommendService
 			{
 				focusNextCollectedItemSell();
 			}
-			else if (allSurfaceableBuysCoolingDown())
-			{
-				// AC3: items remain but every one is inside its skip cooldown. Tell the user
-				// to refresh rather than auto-refreshing into the same still-cooling list.
-				invokeFocusCallback(null);
-				updateStatus("Auto: Item queue depleted");
-				invokeOverlayMessageCallback(MSG_QUEUE_DEPLETED);
-			}
 			else
 			{
-				// Clear focus so stale buy/sell overlay doesn't persist
+				// Queue exhausted (all listed, or all remaining items are inside their skip
+				// cooldown) — pull a fresh, shuffled recommendation list and continue on that.
+				// The skip cooldown survives the refresh, so just-skipped items stay suppressed
+				// in the new list while new items surface.
 				invokeFocusCallback(null);
-				updateStatus("Auto: All recommendations listed");
-				invokeOverlayMessageCallback("All flips listed - waiting for sells");
+				updateStatus("Auto: Finding more recommendations");
+				invokeOverlayMessageCallback("Finding more recommendations...");
 
 				Runnable exhaustedCallback = onQueueExhausted;
 				if (exhaustedCallback != null)
@@ -2782,13 +2757,6 @@ public class AutoRecommendService
 				updateStatus("Auto: Collect profit from GE");
 				invokeOverlayMessageCallback("Collect profit from GE");
 			}
-		}
-		else if (hasAvailableGESlots() && allSurfaceableBuysCoolingDown())
-		{
-			// AC3: a slot is free but every remaining recommendation is snoozed by a skip
-			// cooldown — prompt a manual refresh instead of silently showing "Waiting".
-			updateStatus("Auto: Item queue depleted");
-			invokeOverlayMessageCallback(MSG_QUEUE_DEPLETED);
 		}
 		else if (adjustments.hasBuyDeadlines() || adjustments.hasSellStates())
 		{

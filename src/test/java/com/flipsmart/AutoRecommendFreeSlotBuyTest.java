@@ -136,7 +136,7 @@ public class AutoRecommendFreeSlotBuyTest
 	}
 
 	// When every remaining item is cooling down the scan reports nothing surfaceable,
-	// which is what drives the AC3 "queue depleted" message.
+	// which is what makes the exhausted queue pull a fresh recommendation list (AC3).
 	@Test
 	public void returnsMinusOneWhenAllCoolingDown()
 	{
