@@ -64,8 +64,10 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
-    public void emptySlotWithBuyChoosesS2OverCompletedBuyCollection() {
-        // product-confirmed inversion: fill empty slot before collecting a completed buy
+    public void emptySlotCollectsCompletedBuyBeforeNewBuy() {
+        // Product decision (#914): collect a completed buy (so it can then be sold) before
+        // a new buy consumes the freed slot. Free slot + surfaceable buy (21) + a completed
+        // buy (31) awaiting collection → collect 31, not buy 21.
         when(plugin.getFilledGESlotCount()).thenReturn(7);
         OfferRecord filledBuy = OfferRecord
             .newOffer(1, 0, 31, "boughtItem", true, 10, 100, 0L)
@@ -74,8 +76,9 @@ public class AutoRecommendDispatchTest {
 
         ActionDecision d = service.resolveAndApply(-1);
 
-        assertEquals(ActionKind.S2, d.getKind());
-        assertEquals(21, d.getItemId());
+        assertEquals(ActionKind.S3, d.getKind());
+        assertEquals(ActionStep.COLLECT, d.getStep());
+        assertEquals(31, d.getItemId());
     }
 
     @Test
