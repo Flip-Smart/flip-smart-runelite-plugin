@@ -1582,6 +1582,22 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Restart the flip-finder auto-refresh timer, realigning its next fire to a full
+	 * interval from now. Called when the player triggers a manual refresh so the
+	 * actual scheduled refresh and the visual countdown reset as one operation.
+	 */
+	void resetFlipFinderRefreshTimer()
+	{
+		startFlipFinderRefreshTimer();
+	}
+
+	/** Wall-clock instant of the next flip-finder auto-refresh (0 when not running). */
+	long getNextFlipFinderRefreshAtMillis()
+	{
+		return scheduler.getNextFlipFinderRefreshAtMillis();
+	}
+
+	/**
 	 * Per-tick body for the flip-finder auto-refresh timer. Runs only when the
 	 * player is logged in (the scheduler applies that guard before calling).
 	 */

@@ -190,10 +190,11 @@ public class FlipFinderPanel extends PluginPanel
 	private JButton skipButton;
 	private JLabel autoRecommendStatusLabel;
 
-	// Recommendation refresh countdown — fixed-interval, top-right, low-emphasis
+	// Recommendation refresh countdown — fixed-interval, top-right, low-emphasis.
+	// The next-refresh deadline itself lives on the PluginScheduler (the single source
+	// of truth shared with the actual refresh trigger); this ticker only renders it.
 	private JLabel refreshCountdownLabel;
 	private transient javax.swing.Timer refreshCountdownTimer;
-	private volatile long nextRefreshAtMillis;
 
 	// Cashstack override indicator (AC3) — shows the active override or an error
 	private JLabel cashstackOverrideLabel;
@@ -321,7 +322,7 @@ public class FlipFinderPanel extends PluginPanel
 		refreshButton.setFocusable(false);
 		refreshButton.setFont(FONT_PLAIN_11);
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
-		refreshButton.addActionListener(e -> refresh(true));
+		refreshButton.addActionListener(e -> manualRefresh());
 
 		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.drawGearIcon(Color.LIGHT_GRAY, 12)));
 		settingsButton.setFocusable(false);
@@ -466,7 +467,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				service.skip();
 			}
-			resetRefreshCountdown(); // AC19: Skip restarts the countdown
+			resetRefreshCadence(); // AC19: Skip restarts the refresh cadence
 		});
 		skipButton.setVisible(false);
 
@@ -988,7 +989,6 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		else
 		{
-			resetRefreshCountdown();
 			if (!plugin.isAtGrandExchange())
 			{
 				showNotAtGeMessage();
@@ -1091,20 +1091,28 @@ public class FlipFinderPanel extends PluginPanel
 		return minutes * 60_000L;
 	}
 
-	/** Reset the countdown to a full interval — on a real refresh and on Skip (AC19). */
-	void resetRefreshCountdown()
+	/**
+	 * Restart the actual refresh scheduler and immediately re-render the countdown as a
+	 * single synchronized reset. Because both the label and the scheduled trigger derive
+	 * from the scheduler's next-fire deadline, a manual refresh (or Skip, AC19) can never
+	 * leave the two out of step — the next auto-refresh is a full interval from now.
+	 */
+	private void resetRefreshCadence()
 	{
-		nextRefreshAtMillis = System.currentTimeMillis() + refreshIntervalMillis();
+		plugin.resetFlipFinderRefreshTimer();
 		updateRefreshCountdownLabel();
+	}
+
+	/** Manual refresh: realign the scheduler with the countdown, then fetch fresh data. */
+	private void manualRefresh()
+	{
+		resetRefreshCadence();
+		refresh(true);
 	}
 
 	/** Start the 1-second ticker that drives the live countdown label (AC15). */
 	private void startRefreshCountdownTimer()
 	{
-		if (nextRefreshAtMillis == 0)
-		{
-			nextRefreshAtMillis = System.currentTimeMillis() + refreshIntervalMillis();
-		}
 		if (refreshCountdownTimer == null)
 		{
 			refreshCountdownTimer = new javax.swing.Timer(1000, e -> updateRefreshCountdownLabel());
@@ -1119,7 +1127,14 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			return;
 		}
-		long remainingMs = nextRefreshAtMillis - System.currentTimeMillis();
+		// Read the scheduler's next-fire deadline — the single source of truth shared with
+		// the actual refresh trigger. Fall back to a full interval before the timer reports.
+		long nextRefreshAt = plugin.getNextFlipFinderRefreshAtMillis();
+		if (nextRefreshAt <= 0)
+		{
+			nextRefreshAt = System.currentTimeMillis() + refreshIntervalMillis();
+		}
+		long remainingMs = nextRefreshAt - System.currentTimeMillis();
 		long seconds = Math.max(0, (remainingMs + 999) / 1000);
 		refreshCountdownLabel.setText(seconds > 0
 			? String.format("Item refresh in %ds…", seconds)
@@ -1133,7 +1148,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void refreshRecommendations(boolean shuffleSuggestions)
 	{
-		resetRefreshCountdown();
+		resetRefreshCadence();
 		// Save scroll position before refresh
 		final int scrollPos = getScrollPosition(recommendedScrollPane);
 
