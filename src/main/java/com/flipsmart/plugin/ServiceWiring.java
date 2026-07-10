@@ -77,7 +77,7 @@ public class ServiceWiring
 		ActiveOfferAdvisorService activeOfferAdvisorService = new ActiveOfferAdvisorService();
 		activeOfferAdvisorService.setCallbacks(
 			resp -> SwingUtilities.invokeLater(() -> plugin.applyActiveOfferSurface(resp)),
-			resp -> plugin.handleActiveOfferHandoff(resp),
+			resp -> SwingUtilities.invokeLater(() -> plugin.handleActiveOfferHandoff(resp)),
 			itemId -> SwingUtilities.invokeLater(() -> plugin.clearActiveOfferSurface(itemId)));
 		return activeOfferAdvisorService;
 	}
