@@ -2007,15 +2007,21 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		int itemId = resp.getItemIdHint();
-		// Cancel handoff only enqueues the offer for the existing cancel/sell flow.
-		// The advisor's resell price is deliberately NOT adopted here as the session
-		// price: the downstream sell focus re-applies the configured price offset, so
-		// seeding an already-jittered advisor price would double-adjust it.
 		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId)
 			{
-				autoRecommendService.addToStaleQueue(offer);
+				if (resp.getNewPrice() != null)
+				{
+					// AC2 margin-decay exit: cancel the buy and re-sell the held units at the
+					// advisor's jittered price. Routed through the stale-price map (not the
+					// session price) so the sell lists via the no-offset path — no double-adjust.
+					autoRecommendService.surfaceAdvisorExitResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
+				}
+				else
+				{
+					autoRecommendService.addToStaleQueue(offer);
+				}
 				break;
 			}
 		}

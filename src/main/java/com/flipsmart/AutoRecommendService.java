@@ -155,6 +155,10 @@ public class AutoRecommendService
 	// cleared by slot even after the offer has left the GE (the item lookup would then fail).
 	private final Map<Integer, Integer> stickyHighlightSlots = new java.util.concurrent.ConcurrentHashMap<>();
 
+	// Items whose surfaced resell price is a margin-decay EXIT (#918 AC2) rather than a
+	// buy reprice, so the prompt reads "Cancel & re-sell" instead of "Adjust buy".
+	private final java.util.Set<Integer> advisorExitResellItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
 
@@ -1691,9 +1695,21 @@ public class AutoRecommendService
 			Integer net = staleOffers.getResellNet(offer.getItemId());
 			String netSuffix = net == null ? ""
 				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
-			// A priced buy prompt is the competitive buy reprice (advisor move_price_up);
-			// a priced sell prompt is a re-sell/exit at the advised price.
-			String verb = offer.isBuy() ? "Adjust buy" : "Re-sell";
+			// AC2 exit → cancel & re-sell; a priced buy prompt is the competitive buy
+			// reprice (move_price_up); a priced sell prompt is a re-sell/exit at the advised price.
+			String verb;
+			if (advisorExitResellItems.contains(offer.getItemId()))
+			{
+				verb = "Cancel & re-sell";
+			}
+			else if (offer.isBuy())
+			{
+				verb = "Adjust buy";
+			}
+			else
+			{
+				verb = "Re-sell";
+			}
 			overlayMsg = String.format("%s %s at:\n%s gp%s", verb, offer.getItemName(),
 				String.format("%,d", resellPrice), netSuffix);
 		}
@@ -1765,6 +1781,7 @@ public class AutoRecommendService
 	{
 		skipCooldown.clear(itemId);
 		dropStickyHighlight(itemId);
+		advisorExitResellItems.remove(itemId);
 	}
 
 	/** GE slot currently holding a live offer for the item, or null if none. */
@@ -1889,6 +1906,33 @@ public class AutoRecommendService
 		{
 			sess.setRecommendedPrice(offer.getItemId(), newPrice);
 		}
+		advisorExitResellItems.remove(offer.getItemId());
+		addToStaleQueue(offer);
+	}
+
+	/**
+	 * Surface a margin-decay exit (#918 AC2): cancel the remaining buy and re-sell the held
+	 * units at the advisor's already-jittered price. Stores the price in the stale-price map
+	 * (so the eventual sell lists via the no-offset path, honouring AC6) and marks the item as
+	 * an exit so the prompt reads "Cancel & re-sell" rather than "Adjust buy". Deliberately does
+	 * NOT set the session recommended price — that would flow through the offset-applying focus.
+	 */
+	public synchronized void surfaceAdvisorExitResell(OfferRecord offer, int resellPrice, Integer netProfitEstimate)
+	{
+		if (offer == null)
+		{
+			return;
+		}
+		staleOffers.putResellPrice(offer.getItemId(), resellPrice);
+		if (netProfitEstimate != null)
+		{
+			staleOffers.putResellNet(offer.getItemId(), netProfitEstimate);
+		}
+		else
+		{
+			staleOffers.removeResellNet(offer.getItemId());
+		}
+		advisorExitResellItems.add(offer.getItemId());
 		addToStaleQueue(offer);
 	}
 
@@ -1898,6 +1942,7 @@ public class AutoRecommendService
 	 */
 	public synchronized void removeAdvisorResell(int itemId)
 	{
+		advisorExitResellItems.remove(itemId);
 		boolean wasHead = staleOffers.headIsItem(itemId);
 		staleOffers.removeOffer(itemId);
 		if (wasHead)

@@ -427,6 +427,48 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void ac2ExitResellShowsCancelAndResellPrompt() throws Exception {
+        // AC2 (#918): the margin-decay exit surfaces a "cancel & re-sell" prompt at the
+        // advisor's price, distinct from the AC3 "adjust buy" reprice on a buy offer.
+        when(config.flipTimeframe()).thenReturn(FlipSmartConfig.FlipTimeframe.ACTIVE);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        OfferRecord partialBuy = OfferRecord
+            .newOffer(3, 0, 77, "item-77", true, 10, 100, 0L)
+            .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(partialBuy));
+
+        service.surfaceAdvisorExitResell(partialBuy, 250, -1000);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        String overlay = service.getLastOverlayMessage();
+        assertTrue("AC2 exit must prompt cancel & re-sell at the advised price; got: " + overlay,
+            overlay != null && overlay.contains("Cancel & re-sell") && overlay.contains("250"));
+    }
+
+    @Test
+    public void ac2ExitResellListsAtAdvisorPriceWithoutOffset() throws Exception {
+        // The advisor price is already jittered (AC6) — the plugin must not re-apply its offset.
+        // Once the held units are being sold, the resell lists via the no-offset path.
+        when(config.priceOffset()).thenReturn(5);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        OfferRecord heldSell = OfferRecord
+            .newOffer(4, 0, 88, "item-88", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(heldSell));
+
+        service.surfaceAdvisorExitResell(heldSell, 250, -1000);
+
+        AtomicReference<FocusedFlip> painted = new AtomicReference<>();
+        service.setOnFocusChanged(painted::set);
+        AutoRecommendService.SellFocusResult result = service.overrideFocusForSell(88, "item-88");
+        SwingUtilities.invokeAndWait(() -> {});
+
+        assertEquals(AutoRecommendService.SellFocusResult.FOCUSED, result);
+        assertEquals("must list at the advisor price, no offset applied",
+            250, painted.get().getCurrentStepPrice());
+    }
+
+    @Test
     public void modifyingSellRelistsReturnedItemNotNewBuy() throws Exception {
         // Bug: Modify on an active sell returns items to inventory and frees the slot; the
         // sell-collected path advanced to the resolver, which picked S2 (empty-slot buy) over
