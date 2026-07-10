@@ -429,6 +429,7 @@ public class AutoRecommendService
 				plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
 				adjustments.putBuyPrice(itemId, rec.getRecommendedBuyPrice());
 				scheduleAdjustmentTimer(itemId, rec.getRecommendedBuyPrice());
+				captureOriginalMargin(itemId, rec);
 				log.debug("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
 					itemId, rec.getRecommendedSellPrice());
 			}
@@ -438,6 +439,7 @@ public class AutoRecommendService
 			plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
 			adjustments.putBuyPrice(itemId, current.getRecommendedBuyPrice());
 			scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
+			captureOriginalMargin(itemId, current);
 			log.debug("Auto-recommend: Buy order placed for {} - re-resolving", current.getItemName());
 		}
 
@@ -2714,14 +2716,35 @@ public class AutoRecommendService
 		return queue.findRecommendationForItem(itemId);
 	}
 
+	/** Persist the flip's original per-unit margin at buy placement (#918), so it survives the
+	 * recommendation queue cycling. Captured once per placement from the seeding recommendation. */
+	private void captureOriginalMargin(int itemId, FlipRecommendation rec)
+	{
+		if (rec == null || rec.getMargin() <= 0)
+		{
+			return;
+		}
+		PlayerSession sess = plugin.getSession();
+		if (sess != null)
+		{
+			sess.setOriginalMargin(itemId, rec.getMargin());
+		}
+	}
+
 	/**
-	 * The per-unit margin from the recommendation that seeded this item, if it is
-	 * still in the queue. Relayed to the advisor as the original margin baseline for
-	 * the decay exit and the joint reduction budget; null when unknown (advisor then
-	 * falls back to its existing behavior).
+	 * The flip's original per-unit margin — the fixed baseline the advisor measures decay and the
+	 * joint reduction budget against. Sourced from the active offer's captured value (persisted at
+	 * placement, survives queue cycling), falling back to the live queue for a freshly-recommended
+	 * item not yet placed. Null when unknown (advisor then falls back to its existing behavior).
 	 */
 	public synchronized Integer getOriginalMargin(int itemId)
 	{
+		PlayerSession sess = plugin.getSession();
+		Integer persisted = sess == null ? null : sess.getOriginalMargin(itemId);
+		if (persisted != null)
+		{
+			return persisted;
+		}
 		FlipRecommendation rec = findRecommendationForItem(itemId);
 		return rec == null ? null : rec.getMargin();
 	}

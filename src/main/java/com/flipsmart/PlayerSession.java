@@ -49,6 +49,7 @@ public class PlayerSession
 	// =====================
 
 	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Integer> originalMargins = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
 	// =====================
@@ -224,9 +225,31 @@ public class PlayerSession
 		recommendedPrices.remove(itemId);
 	}
 
+	/**
+	 * Per-item original margin (#918): the flip's per-unit margin captured when the buy was
+	 * placed. This is the fixed baseline the Active Offer Advisor measures decay and the joint
+	 * reduction budget against — a property of the active offer, not of the transient
+	 * recommendation queue, so it persists until the item is flipped again.
+	 */
+	public Integer getOriginalMargin(int itemId)
+	{
+		return originalMargins.get(itemId);
+	}
+
+	public void setOriginalMargin(int itemId, int margin)
+	{
+		originalMargins.put(itemId, margin);
+	}
+
+	public void removeOriginalMargin(int itemId)
+	{
+		originalMargins.remove(itemId);
+	}
+
 	public void clearRecommendedPrices()
 	{
 		recommendedPrices.clear();
+		originalMargins.clear();
 	}
 
 	// =====================

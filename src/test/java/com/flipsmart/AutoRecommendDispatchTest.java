@@ -469,6 +469,24 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void originalMarginPersistsAfterRecommendationQueueCycles() {
+        // #918: the advisor's original-margin baseline is a property of the ACTIVE OFFER,
+        // captured at placement — it must survive the recommendation queue refreshing to
+        // entirely different items (which happens constantly as the user cycles/skips).
+        FlipRecommendation r = rec(77);
+        r.setMargin(5000);
+        service.start(Arrays.asList(r));
+
+        service.onBuyOrderPlaced(77); // captures the original margin at placement
+
+        // Queue cycles to different items — 77 is no longer recommended.
+        service.refreshQueue(Arrays.asList(rec(88), rec(99)));
+
+        assertEquals("original margin must persist from the active offer, not the live queue",
+            Integer.valueOf(5000), service.getOriginalMargin(77));
+    }
+
+    @Test
     public void modifyingSellRelistsReturnedItemNotNewBuy() throws Exception {
         // Bug: Modify on an active sell returns items to inventory and frees the slot; the
         // sell-collected path advanced to the resolver, which picked S2 (empty-slot buy) over
