@@ -2204,6 +2204,7 @@ public class FlipFinderPanel extends PluginPanel
 		FlipRecommendation autoRecCurrent = (service != null && service.isActive())
 			? service.getCurrentRecommendation() : null;
 
+		int displayed = 0;
 		for (FlipRecommendation rec : recommendations)
 		{
 			if (!shouldDisplay(rec))
@@ -2221,6 +2222,16 @@ public class FlipFinderPanel extends PluginPanel
 
 			recommendedListContainer.add(panel);
 			recommendedListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
+			displayed++;
+		}
+
+		if (displayed == 0)
+		{
+			// Recommendations exist but the user's profit/volume filters removed them all —
+			// show a clear empty state rather than a blank panel.
+			recommendedListContainer.add(createEmptyStatePanel("Flip Finder",
+				"<html><table width='160'><tr><td align='center'>"
+					+ "There are currently no suggestions matching your criteria.</td></tr></table></html>", 80));
 		}
 
 		recommendedListContainer.revalidate();
