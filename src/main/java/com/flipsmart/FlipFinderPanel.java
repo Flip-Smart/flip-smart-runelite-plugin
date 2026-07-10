@@ -765,6 +765,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 
 			@Override
+			@SuppressWarnings("PMD.NullAssignment")
 			public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
 			{
 				settingsPopupClosedAt = System.currentTimeMillis();
