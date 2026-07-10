@@ -67,6 +67,29 @@ public class ActiveOfferDispositionCacheTest
 	}
 
 	@Test
+	public void courierStateIsStoredFromResponseAndClearedOnReconcile()
+	{
+		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
+		OfferAdviceResponse resp = new OfferAdviceResponse();
+		resp.setAction("wait");
+		resp.setPositionMargin(3100);
+		resp.setConsecutiveMarginDecreases(2);
+		resp.setCumulativeMarginReductionPct(0.15);
+
+		svc.applyResponse(42, resp);
+
+		ActiveOfferAdvisorService.CourierState c = svc.getCourierState(42);
+		assertEquals(Integer.valueOf(3100), c.getPreviousPositionMargin());
+		assertEquals(2, c.getConsecutiveMarginDecreases());
+		assertEquals(0.15, c.getCumulativeMarginReductionPct(), 1e-9);
+
+		// item no longer active → courier state resets to EMPTY
+		svc.reconcile(java.util.Collections.emptySet());
+		assertNull(svc.getCourierState(42).getPreviousPositionMargin());
+		assertEquals(0, svc.getCourierState(42).getConsecutiveMarginDecreases());
+	}
+
+	@Test
 	public void surfacePriceDoesNotFireClearCallback()
 	{
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();

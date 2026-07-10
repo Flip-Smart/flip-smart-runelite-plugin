@@ -1754,9 +1754,13 @@ public class FlipSmartPlugin extends Plugin
 			}
 			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
 			WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
-			Integer avgBuy = offer.isBuy() ? null
-				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
-			requests.add(ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume));
+			Integer avgBuy = avgBuyPriceFor(offer);
+			Integer originalMargin = autoRecommendService == null ? null
+				: autoRecommendService.getOriginalMargin(offer.getItemId());
+			ActiveOfferAdvisorService.CourierState courier =
+				activeOfferAdvisorService.getCourierState(offer.getItemId());
+			requests.add(ActiveOfferAdvisorService.buildSnapshot(
+				offer, market, avgBuy, dailyVolume, originalMargin, courier));
 		}
 		if (requests.isEmpty())
 		{
@@ -1792,6 +1796,25 @@ public class FlipSmartPlugin extends Plugin
 				}
 				return null;
 			});
+	}
+
+	/**
+	 * Average price the user paid for the units they hold. For a sell that is the
+	 * matched buy cost from active flips; for a partially-filled buy it is this
+	 * offer's own average fill (falling back to the listed price), which the
+	 * margin-decay exit (#918 AC2) needs.
+	 */
+	private Integer avgBuyPriceFor(com.flipsmart.domain.offer.OfferRecord offer)
+	{
+		if (!offer.isBuy())
+		{
+			return BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
+		}
+		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
+		{
+			return (int) Math.round(offer.getSpent() / (double) offer.getFilledQuantity());
+		}
+		return offer.getPrice();
 	}
 
 	public void applyActiveOfferSurface(OfferAdviceResponse resp)

@@ -53,11 +53,41 @@ public class ActiveOfferSnapshotTest
 	}
 
 	@Test
-	public void buyOfferOmitsUserAvgBuyPriceEvenIfProvided()
+	public void buyOfferCarriesUserAvgBuyPriceForDecayExit()
 	{
+		// AC2 (#918): a partially-filled buy needs its avg buy price so the backend
+		// can compute the decaying position margin.
 		OfferRecord offer = buyOffer(1, 1, 5, System.currentTimeMillis());
 		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, null, 990, 100000);
 		assertEquals("mid_vol", req.getPool());
-		assertNull(req.getUserAvgBuyPrice());
+		assertEquals(Integer.valueOf(990), req.getUserAvgBuyPrice());
+	}
+
+	@Test
+	public void buildsSnapshotWithCourierState()
+	{
+		OfferRecord offer = buyOffer(4151, 10, 100000, System.currentTimeMillis());
+		ActiveOfferAdvisorService.CourierState courier =
+			new ActiveOfferAdvisorService.CourierState(9000, 1, 0.1);
+
+		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(
+			offer, new WikiPrice(95000, 94000), 90000, 100000, 10000, courier);
+
+		assertEquals(Integer.valueOf(10000), req.getOriginalMargin());
+		assertEquals(Integer.valueOf(9000), req.getPreviousPositionMargin());
+		assertEquals(1, req.getConsecutiveMarginDecreases());
+		assertEquals(0.1, req.getCumulativeMarginReductionPct(), 1e-9);
+		assertEquals(Integer.valueOf(90000), req.getUserAvgBuyPrice());
+	}
+
+	@Test
+	public void fourArgSnapshotDefaultsCourierStateToEmpty()
+	{
+		OfferRecord offer = buyOffer(1, 1, 5, System.currentTimeMillis());
+		OfferAdviceRequest req = ActiveOfferAdvisorService.buildSnapshot(offer, null, null, 100000);
+		assertNull(req.getOriginalMargin());
+		assertNull(req.getPreviousPositionMargin());
+		assertEquals(0, req.getConsecutiveMarginDecreases());
+		assertEquals(0.0, req.getCumulativeMarginReductionPct(), 1e-9);
 	}
 }

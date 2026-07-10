@@ -2665,6 +2665,18 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * The per-unit margin from the recommendation that seeded this item, if it is
+	 * still in the queue. Relayed to the advisor as the original margin baseline for
+	 * the decay exit and the joint reduction budget; null when unknown (advisor then
+	 * falls back to its existing behavior).
+	 */
+	public synchronized Integer getOriginalMargin(int itemId)
+	{
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		return rec == null ? null : rec.getMargin();
+	}
+
+	/**
 	 * Resolve the best sell price for an item. Session is the single source of truth:
 	 * it carries the most recent decision (initial smart-sell, or a manual/auto sell
 	 * adjustment) and is what the Flip Assist prompt reads. The panel's displayed
