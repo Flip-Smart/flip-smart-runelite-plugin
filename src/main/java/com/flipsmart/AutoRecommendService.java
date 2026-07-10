@@ -297,23 +297,20 @@ public class AutoRecommendService
 			return;
 		}
 
-		// getActiveFlipItemIds() includes all GE buy/sell items + collected items
-		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-
 		queue.clear();
 		session.clearStaleNotifications();
 		queue.setCurrentIndex(0);
 
-		queue.addFilteredByActive(recommendations, activeItemIds);
+		// Apply the same profit/volume/active filter Flip Finder's list uses, so the
+		// Assist queue is a subset of what Flip Finder displays. Already sorted
+		// slowest-filling first.
+		queue.addAll(filterAndSortRecommendations(recommendations));
 
 		if (queue.isEmpty())
 		{
 			updateStatus("Auto: All recommendations already in GE");
 			return;
 		}
-
-		// Sort by volume ascending - slowest items listed first
-		queue.sortByVolumeAscending();
 
 		active = true;
 		queue.setLastQueueRefreshMillis(System.currentTimeMillis());
@@ -1139,15 +1136,33 @@ public class AutoRecommendService
 
 	private List<FlipRecommendation> filterAndSortRecommendations(List<FlipRecommendation> newRecommendations)
 	{
-		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-		int priceOffset = config.priceOffset();
-		int minProfit = config.minimumProfit();
-		List<FlipRecommendation> filtered = new ArrayList<>();
 		for (FlipRecommendation rec : newRecommendations)
 		{
 			queue.putItemName(rec.getItemId(), rec.getItemName());
+		}
+		return filterSurfaceable(newRecommendations, plugin.getActiveFlipItemIds(),
+			config.priceOffset(), config.minimumProfit(), config.minimumVolume());
+	}
+
+	/**
+	 * The pool a player may be shown in Flip Assist: recommendations that are not
+	 * already on the GE and that clear the same minimum-profit and minimum-volume
+	 * filters Flip Finder's list applies ({@link FocusedFlip#passesRecommendationFilters}),
+	 * sorted slowest-filling first. Shared by both start() and refreshQueue() so the
+	 * Assist queue never surfaces an item Flip Finder would hide.
+	 */
+	static List<FlipRecommendation> filterSurfaceable(
+		List<FlipRecommendation> recommendations,
+		Set<Integer> activeItemIds,
+		int priceOffset,
+		int minProfit,
+		int minVolume)
+	{
+		List<FlipRecommendation> filtered = new ArrayList<>();
+		for (FlipRecommendation rec : recommendations)
+		{
 			if (!activeItemIds.contains(rec.getItemId())
-				&& FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
+				&& FocusedFlip.passesRecommendationFilters(rec, priceOffset, minProfit, minVolume))
 			{
 				filtered.add(rec);
 			}
