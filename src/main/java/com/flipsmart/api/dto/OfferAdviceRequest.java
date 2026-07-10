@@ -22,6 +22,13 @@ public class OfferAdviceRequest
 	private final Integer currentMarketLow;
 	private final Integer userAvgBuyPrice;
 
+	// Courier state (#918): the backend advisor is stateless, so cross-poll
+	// state travels on the request and is echoed back from the previous response.
+	private final Integer originalMargin;
+	private final Integer previousPositionMargin;
+	private final int consecutiveMarginDecreases;
+	private final double cumulativeMarginReductionPct;
+
 	public static String toIsoUtc(long epochMillis)
 	{
 		if (epochMillis <= 0)

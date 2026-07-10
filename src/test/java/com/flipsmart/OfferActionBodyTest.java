@@ -55,4 +55,34 @@ public class OfferActionBodyTest
 		assertFalse(body.has("user_avg_buy_price"));
 		assertTrue(body.has("item_id"));
 	}
+
+	@Test
+	public void includesCourierStateFields()
+	{
+		OfferAdviceRequest req = OfferAdviceRequest.builder()
+			.itemId(4151).pool("mid_vol").side("buy").stage("initial")
+			.listedAtMillis(1781035200000L).listedPrice(100000).listedQuantity(10).filledQuantity(5)
+			.originalMargin(10000).previousPositionMargin(9000)
+			.consecutiveMarginDecreases(1).cumulativeMarginReductionPct(0.1)
+			.build();
+		JsonObject body = FlipSmartApiClient.buildOfferActionBody(req);
+		assertEquals(10000, body.get("original_margin").getAsInt());
+		assertEquals(9000, body.get("previous_position_margin").getAsInt());
+		assertEquals(1, body.get("consecutive_margin_decreases").getAsInt());
+		assertEquals(0.1, body.get("cumulative_margin_reduction_pct").getAsDouble(), 1e-9);
+	}
+
+	@Test
+	public void omitsNullCourierMarginsButKeepsCounters()
+	{
+		OfferAdviceRequest req = OfferAdviceRequest.builder()
+			.itemId(1).pool("mid_vol").side("buy").stage("initial")
+			.listedAtMillis(1781035200000L).listedPrice(5).listedQuantity(1).filledQuantity(0)
+			.build();
+		JsonObject body = FlipSmartApiClient.buildOfferActionBody(req);
+		assertFalse(body.has("original_margin"));
+		assertFalse(body.has("previous_position_margin"));
+		assertEquals(0, body.get("consecutive_margin_decreases").getAsInt());
+		assertEquals(0.0, body.get("cumulative_margin_reduction_pct").getAsDouble(), 1e-9);
+	}
 }

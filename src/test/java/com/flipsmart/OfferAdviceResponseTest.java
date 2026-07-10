@@ -33,4 +33,25 @@ public class OfferAdviceResponseTest
 		assertNull(r.getNewPrice());
 		assertNull(r.getNetProfitEstimate());
 	}
+
+	@Test
+	public void deserializesCourierStateFields()
+	{
+		String json = "{\"action\":\"wait\",\"reason\":\"monitoring\",\"position_margin\":3100,"
+			+ "\"consecutive_margin_decreases\":2,\"cumulative_margin_reduction_pct\":0.15}";
+		OfferAdviceResponse r = gson.fromJson(json, OfferAdviceResponse.class);
+		assertEquals(Integer.valueOf(3100), r.getPositionMargin());
+		assertEquals(2, r.getConsecutiveMarginDecreases());
+		assertEquals(0.15, r.getCumulativeMarginReductionPct(), 1e-9);
+	}
+
+	@Test
+	public void defaultsCourierCountersWhenAbsent()
+	{
+		String json = "{\"action\":\"wait\",\"reason\":\"x\"}";
+		OfferAdviceResponse r = gson.fromJson(json, OfferAdviceResponse.class);
+		assertNull(r.getPositionMargin());
+		assertEquals(0, r.getConsecutiveMarginDecreases());
+		assertEquals(0.0, r.getCumulativeMarginReductionPct(), 1e-9);
+	}
 }
