@@ -5,7 +5,8 @@ import com.flipsmart.util.ItemUtils;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.api.Player;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.FontManager;
 import net.runelite.client.ui.overlay.Overlay;
@@ -25,7 +26,8 @@ import static net.runelite.client.ui.overlay.OverlayManager.OPTION_CONFIGURE;
 
 /**
  * In-game overlay that displays all 8 Grand Exchange offer slots with real-time status.
- * Hidden when the player is at the Grand Exchange area, shown everywhere else.
+ * Shown regardless of world location; hidden only while a trade or inventory window
+ * (Grand Exchange, GE collection box, bank, or bank deposit box) is open.
  */
 public class GrandExchangeOverlay extends Overlay
 {
@@ -35,10 +37,7 @@ public class GrandExchangeOverlay extends Overlay
 	// String constants
 	private static final String OVERLAY_TITLE = "Exchange Viewer";
 	private static final String NO_OFFERS_MESSAGE = "No offers";
-	
-	// Grand Exchange region ID
-	private static final int GE_REGION_ID = 12598;
-	
+
 	private static final Color COLOR_BUY = new Color(0, 128, 0);  // Dark green
 	private static final Color COLOR_SELL = new Color(180, 0, 0); // Dark red
 	private static final Color COLOR_COMPLETE = new Color(200, 180, 50); // Gold
@@ -110,19 +109,23 @@ public class GrandExchangeOverlay extends Overlay
 	}
 	
 	/**
-	 * Check if the player is at the Grand Exchange area.
+	 * Whether the overlay should be suppressed because a trade or inventory window
+	 * is open on screen — its contents would be redundant with, or visually conflict
+	 * with, the native window. Covers the Grand Exchange, its collection box, the
+	 * bank, and the bank deposit box.
 	 */
-	private boolean isAtGrandExchange()
+	static boolean shouldSuppressOverlay(Client client)
 	{
-		Player localPlayer = client.getLocalPlayer();
-		if (localPlayer == null)
-		{
-			return false;
-		}
-		
-		// Get player's current region ID
-		int regionId = localPlayer.getWorldLocation().getRegionID();
-		return regionId == GE_REGION_ID;
+		return isInterfaceOpen(client, InterfaceID.GE_OFFERS)
+			|| isInterfaceOpen(client, InterfaceID.GE_COLLECT)
+			|| isInterfaceOpen(client, InterfaceID.BANKMAIN)
+			|| isInterfaceOpen(client, InterfaceID.BANK_DEPOSITBOX);
+	}
+
+	private static boolean isInterfaceOpen(Client client, int groupId)
+	{
+		Widget root = client.getWidget(groupId, 0);
+		return root != null && !root.isHidden();
 	}
 
 	@Override
@@ -133,12 +136,12 @@ public class GrandExchangeOverlay extends Overlay
 			return null;
 		}
 		
-		// Hide when player is at the Grand Exchange area
-		if (isAtGrandExchange())
+		// Hide while a GE/bank window is open — the native window already shows this info
+		if (shouldSuppressOverlay(client))
 		{
 			return null;
 		}
-		
+
 		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
 		
 		// GE offers may be null if player hasn't opened GE this session
