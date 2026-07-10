@@ -39,10 +39,10 @@ public class ActiveOfferAdvisorService
 	private final Map<Integer, CourierState> courierByItem = new ConcurrentHashMap<>();
 
 	private volatile Consumer<OfferAdviceResponse> onSurfacePrice;
-	private volatile IntConsumer onHandoff;
+	private volatile Consumer<OfferAdviceResponse> onHandoff;
 	private volatile IntConsumer onClearSurface;
 
-	public void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, IntConsumer onHandoff, IntConsumer onClearSurface)
+	public void setCallbacks(Consumer<OfferAdviceResponse> onSurfacePrice, Consumer<OfferAdviceResponse> onHandoff, IntConsumer onClearSurface)
 	{
 		this.onSurfacePrice = onSurfacePrice;
 		this.onHandoff = onHandoff;
@@ -109,7 +109,8 @@ public class ActiveOfferAdvisorService
 				}
 				if (onHandoff != null)
 				{
-					onHandoff.accept(itemId);
+					resp.setItemIdHint(itemId);
+					onHandoff.accept(resp);
 				}
 				break;
 			case NONE:

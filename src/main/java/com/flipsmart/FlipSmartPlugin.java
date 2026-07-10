@@ -2000,9 +2000,9 @@ public class FlipSmartPlugin extends Plugin
 		return null;
 	}
 
-	public void handleActiveOfferHandoff(int itemId)
+	public void handleActiveOfferHandoff(OfferAdviceResponse resp)
 	{
-		if (autoRecommendService == null)
+		if (autoRecommendService == null || resp == null || resp.getItemIdHint() == null)
 		{
 			return;
 		}
@@ -2010,6 +2010,14 @@ public class FlipSmartPlugin extends Plugin
 		if (sess == null)
 		{
 			return;
+		}
+		int itemId = resp.getItemIdHint();
+		// AC2 cancel-and-sell-partial carries the advisor's (jittered) resell price;
+		// adopt it so the eventual sell lists at the backend price (#918 AC6) rather
+		// than a plugin-recomputed one.
+		if (resp.getNewPrice() != null)
+		{
+			sess.setRecommendedPrice(itemId, resp.getNewPrice());
 		}
 		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{

@@ -51,7 +51,7 @@ public class ActiveOfferDispositionCacheTest
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
 		final int[] handoffItem = {-1};
 		final int[] cleared = {-1};
-		svc.setCallbacks(null, id -> handoffItem[0] = id, id -> cleared[0] = id);
+		svc.setCallbacks(null, resp -> handoffItem[0] = resp.getItemIdHint(), id -> cleared[0] = id);
 
 		OfferAdviceResponse move = new OfferAdviceResponse();
 		move.setAction(MOVE_PRICE_DOWN);

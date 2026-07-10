@@ -528,7 +528,9 @@ public class AutoRecommendService
 		if (repricePending)
 		{
 			int repriceQty = resolveRepriceQuantity(itemId);
-			FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, resellPrice, repriceQty, config.priceOffset());
+			// resellPrice is the advisor's backend price, already jittered (#918 AC6) —
+			// do NOT re-apply the plugin priceOffset or it would double-adjust.
+			FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, resellPrice, repriceQty);
 			invokeFocusCallback(focus);
 			updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(resellPrice)));
 			return SellFocusResult.FOCUSED;
@@ -1684,12 +1686,15 @@ public class AutoRecommendService
 	{
 		Integer resellPrice = staleOffers.getResellPrice(offer.getItemId());
 		String overlayMsg;
-		if (!offer.isBuy() && resellPrice != null)
+		if (resellPrice != null)
 		{
 			Integer net = staleOffers.getResellNet(offer.getItemId());
 			String netSuffix = net == null ? ""
 				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
-			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", offer.getItemName(),
+			// A priced buy prompt is the competitive buy reprice (advisor move_price_up);
+			// a priced sell prompt is a re-sell/exit at the advised price.
+			String verb = offer.isBuy() ? "Adjust buy" : "Re-sell";
+			overlayMsg = String.format("%s %s at:\n%s gp%s", verb, offer.getItemName(),
 				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
