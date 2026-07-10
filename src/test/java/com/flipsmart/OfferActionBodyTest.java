@@ -42,13 +42,17 @@ public class OfferActionBodyTest
 		assertFalse("null last_fill omitted", body.has("last_fill_at"));
 	}
 
+	private OfferAdviceRequest.OfferAdviceRequestBuilder createBaseRequestBuilder()
+	{
+		return OfferAdviceRequest.builder()
+			.itemId(1).pool("mid_vol").side("buy").stage("initial")
+			.listedAtMillis(1781035200000L).listedPrice(5).listedQuantity(1).filledQuantity(0);
+	}
+
 	@Test
 	public void omitsNullMarketAndBuyPrice()
 	{
-		OfferAdviceRequest req = OfferAdviceRequest.builder()
-			.itemId(1).pool("mid_vol").side("buy").stage("initial")
-			.listedAtMillis(1781035200000L).listedPrice(5).listedQuantity(1).filledQuantity(0)
-			.build();
+		OfferAdviceRequest req = createBaseRequestBuilder().build();
 		JsonObject body = FlipSmartApiClient.buildOfferActionBody(req);
 		assertFalse(body.has("current_market_high"));
 		assertFalse(body.has("current_market_low"));
@@ -75,10 +79,7 @@ public class OfferActionBodyTest
 	@Test
 	public void omitsNullCourierMarginsButKeepsCounters()
 	{
-		OfferAdviceRequest req = OfferAdviceRequest.builder()
-			.itemId(1).pool("mid_vol").side("buy").stage("initial")
-			.listedAtMillis(1781035200000L).listedPrice(5).listedQuantity(1).filledQuantity(0)
-			.build();
+		OfferAdviceRequest req = createBaseRequestBuilder().build();
 		JsonObject body = FlipSmartApiClient.buildOfferActionBody(req);
 		assertFalse(body.has("original_margin"));
 		assertFalse(body.has("previous_position_margin"));
