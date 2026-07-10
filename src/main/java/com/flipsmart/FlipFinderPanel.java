@@ -39,6 +39,7 @@ import javax.swing.event.PopupMenuListener;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -738,6 +739,12 @@ public class FlipFinderPanel extends PluginPanel
 
 	private long settingsPopupClosedAt;
 
+	// Live references to the open pop-out and its filter spinners, so the Update button
+	// and the click-out (pop-out dismiss) handler can commit whatever the user typed.
+	private JPopupMenu activeSettingsPopup;
+	private JSpinner minProfitSpinner;
+	private JSpinner minVolumeSpinner;
+
 	private void showSettingsPopout(JComponent anchor)
 	{
 		// A click on the gear while the pop-out is open first dismisses it
@@ -761,6 +768,12 @@ public class FlipFinderPanel extends PluginPanel
 			public void popupMenuWillBecomeInvisible(PopupMenuEvent e)
 			{
 				settingsPopupClosedAt = System.currentTimeMillis();
+				// Capture whatever the user typed but didn't Enter before the click-out
+				// tears the pop-out down, then release the references.
+				commitFilterSpinners();
+				activeSettingsPopup = null;
+				minProfitSpinner = null;
+				minVolumeSpinner = null;
 			}
 
 			@Override
@@ -778,9 +791,12 @@ public class FlipFinderPanel extends PluginPanel
 		body.add(Box.createVerticalStrut(6));
 		body.add(buildMinVolumeRow());
 		body.add(Box.createVerticalStrut(6));
+		body.add(buildUpdateButtonRow());
+		body.add(Box.createVerticalStrut(6));
 		body.add(buildHideButtonsRow());
 
 		popup.add(body);
+		activeSettingsPopup = popup;
 		popup.show(anchor, 0, anchor.getHeight());
 	}
 
@@ -797,12 +813,29 @@ public class FlipFinderPanel extends PluginPanel
 		JSpinner spinner = new JSpinner(
 			new SpinnerNumberModel(config.minimumProfit(), 0, Integer.MAX_VALUE, 1000));
 		spinner.setToolTipText(FILTER_TOOLTIP);
+		commitOnFocusLost(spinner);
 		spinner.addChangeListener(e -> applyFilterSettingDebounced(
 			CONFIG_KEY_MIN_PROFIT, (Integer) spinner.getValue()));
+		minProfitSpinner = spinner;
 
 		row.add(label);
 		row.add(spinner);
 		return row;
+	}
+
+	/**
+	 * Make the spinner's editor commit typed text to its model on focus loss (Swing's
+	 * default reverts unparseable text but does not commit valid text without Enter),
+	 * so tabbing between the two filter fields captures what was typed.
+	 */
+	private static void commitOnFocusLost(JSpinner spinner)
+	{
+		JComponent editor = spinner.getEditor();
+		if (editor instanceof JSpinner.DefaultEditor)
+		{
+			((JSpinner.DefaultEditor) editor).getTextField()
+				.setFocusLostBehavior(JFormattedTextField.COMMIT);
+		}
 	}
 
 	private JPanel buildMinVolumeRow()
@@ -818,11 +851,35 @@ public class FlipFinderPanel extends PluginPanel
 		JSpinner spinner = new JSpinner(
 			new SpinnerNumberModel(config.minimumVolume(), 0, Integer.MAX_VALUE, 100));
 		spinner.setToolTipText(FILTER_TOOLTIP);
+		commitOnFocusLost(spinner);
 		spinner.addChangeListener(e -> applyFilterSettingDebounced(
 			CONFIG_KEY_MIN_VOLUME, (Integer) spinner.getValue()));
+		minVolumeSpinner = spinner;
 
 		row.add(label);
 		row.add(spinner);
+		return row;
+	}
+
+	private JPanel buildUpdateButtonRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JButton update = new JButton("Update");
+		update.setFont(FONT_PLAIN_12);
+		update.setFocusable(false);
+		update.setToolTipText("Apply the profit and volume filters and refresh the list");
+		// Closing the pop-out runs commitFilterSpinners() via popupMenuWillBecomeInvisible,
+		// so the button shares the single commit+apply path used by click-out.
+		update.addActionListener(e -> {
+			if (activeSettingsPopup != null)
+			{
+				activeSettingsPopup.setVisible(false);
+			}
+		});
+
+		row.add(update);
 		return row;
 	}
 
@@ -848,6 +905,59 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		configManager.setConfiguration(CONFIG_GROUP, key, value);
 		populateRecommendations(new ArrayList<>(currentRecommendations));
+	}
+
+	/**
+	 * Force the spinner's edited text into its model and return the resulting value,
+	 * so a value the user TYPED is captured without pressing Enter. Unparseable text
+	 * (letters, empty) is discarded and the last valid value is kept.
+	 */
+	static int commitSpinner(JSpinner spinner)
+	{
+		try
+		{
+			spinner.commitEdit();
+		}
+		catch (ParseException ex)
+		{
+			JComponent editor = spinner.getEditor();
+			if (editor instanceof JSpinner.DefaultEditor)
+			{
+				((JSpinner.DefaultEditor) editor).getTextField().setValue(spinner.getValue());
+			}
+		}
+		return (Integer) spinner.getValue();
+	}
+
+	/**
+	 * Commit both filter spinners and apply them in a single pass — cancelling any
+	 * pending debounce so the values take effect immediately and the list re-renders
+	 * once. Used by the Update button and by dismissing the pop-out (click-out).
+	 */
+	private void commitFilterSpinners()
+	{
+		if (minProfitSpinner == null || minVolumeSpinner == null)
+		{
+			return;
+		}
+		int minProfit = commitSpinner(minProfitSpinner);
+		int minVolume = commitSpinner(minVolumeSpinner);
+
+		cancelFilterDebounce(CONFIG_KEY_MIN_PROFIT);
+		cancelFilterDebounce(CONFIG_KEY_MIN_VOLUME);
+
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_MIN_PROFIT, minProfit);
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_MIN_VOLUME, minVolume);
+		populateRecommendations(new ArrayList<>(currentRecommendations));
+	}
+
+	private void cancelFilterDebounce(String key)
+	{
+		Timer existing = filterSettingDebounceTimers.get(key);
+		if (existing != null && existing.isRunning())
+		{
+			existing.stop();
+		}
 	}
 
 	// Coalesces rapid spinner adjustments (e.g. holding the up/down arrows)
