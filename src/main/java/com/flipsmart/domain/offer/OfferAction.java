@@ -6,6 +6,7 @@ public enum OfferAction
 	CANCEL_AND_RELIST_OTHER("cancel_and_relist_other"),
 	CANCEL_AND_SELL_PARTIAL("cancel_and_sell_partial"),
 	MOVE_PRICE_DOWN("move_price_down"),
+	MOVE_PRICE_UP("move_price_up"),
 	EXIT_AT_BREAKEVEN("exit_at_breakeven"),
 	EXIT_AT_LOSS("exit_at_loss");
 

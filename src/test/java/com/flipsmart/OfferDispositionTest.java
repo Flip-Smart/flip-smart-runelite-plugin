@@ -11,8 +11,15 @@ public class OfferDispositionTest
 	public void priceActionsSurface()
 	{
 		assertEquals(OfferDisposition.SURFACE_PRICE, OfferDisposition.route(OfferAction.MOVE_PRICE_DOWN));
+		assertEquals(OfferDisposition.SURFACE_PRICE, OfferDisposition.route(OfferAction.MOVE_PRICE_UP));
 		assertEquals(OfferDisposition.SURFACE_PRICE, OfferDisposition.route(OfferAction.EXIT_AT_BREAKEVEN));
 		assertEquals(OfferDisposition.SURFACE_PRICE, OfferDisposition.route(OfferAction.EXIT_AT_LOSS));
+	}
+
+	@Test
+	public void moveUpParsesFromWire()
+	{
+		assertEquals(OfferAction.MOVE_PRICE_UP, OfferAction.fromWire("move_price_up"));
 	}
 
 	@Test
