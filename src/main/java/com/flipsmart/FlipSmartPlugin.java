@@ -2006,19 +2006,11 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		PlayerSession sess = getSession();
-		if (sess == null)
-		{
-			return;
-		}
 		int itemId = resp.getItemIdHint();
-		// AC2 cancel-and-sell-partial carries the advisor's (jittered) resell price;
-		// adopt it so the eventual sell lists at the backend price (#918 AC6) rather
-		// than a plugin-recomputed one.
-		if (resp.getNewPrice() != null)
-		{
-			sess.setRecommendedPrice(itemId, resp.getNewPrice());
-		}
+		// Cancel handoff only enqueues the offer for the existing cancel/sell flow.
+		// The advisor's resell price is deliberately NOT adopted here as the session
+		// price: the downstream sell focus re-applies the configured price offset, so
+		// seeding an already-jittered advisor price would double-adjust it.
 		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId)
