@@ -40,12 +40,12 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	public void addHighlight(int itemId)
 	{
-		highlightedItemIds.add(itemId);
+		highlightedItemIds.add(itemManager.canonicalize(itemId));
 	}
 
 	public void removeHighlight(int itemId)
 	{
-		highlightedItemIds.remove(itemId);
+		highlightedItemIds.remove(itemManager.canonicalize(itemId));
 		outlineCache.keySet().removeIf(key -> (int) (key >> 32) == itemId);
 	}
 
