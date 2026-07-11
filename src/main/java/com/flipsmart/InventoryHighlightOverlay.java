@@ -21,6 +21,7 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	private static final int GE_INTERFACE_GROUP = 465;
 	private static final int GE_OFFER_PANEL_CHILD = 26;
+	private static final int SINGLE_ITEM_QUANTITY = 1;
 
 	private final Set<Integer> highlightedItemIds = ConcurrentHashMap.newKeySet();
 
@@ -39,12 +40,12 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 
 	public void addHighlight(int itemId)
 	{
-		highlightedItemIds.add(itemId);
+		highlightedItemIds.add(itemManager.canonicalize(itemId));
 	}
 
 	public void removeHighlight(int itemId)
 	{
-		highlightedItemIds.remove(itemId);
+		highlightedItemIds.remove(itemManager.canonicalize(itemId));
 		outlineCache.keySet().removeIf(key -> (int) (key >> 32) == itemId);
 	}
 
@@ -57,7 +58,7 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
-		if (!highlightedItemIds.contains(itemId))
+		if (!highlightedItemIds.contains(itemManager.canonicalize(itemId)))
 		{
 			return;
 		}
@@ -88,8 +89,13 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		java.awt.geom.Area clipArea = new java.awt.geom.Area(new Rectangle(
 			bounds.x - 10, bounds.y - 10,
 			bounds.width + 20, bounds.height + 20));
-		clipArea.subtract(new java.awt.geom.Area(new Rectangle(
-			bounds.x, bounds.y, bounds.width / 2, bounds.height / 3)));
+		// Stacks render a quantity number in the top-left corner; crop it out so the
+		// glow doesn't obscure it. A single item shows no number, so highlight fully.
+		if (quantity > SINGLE_ITEM_QUANTITY)
+		{
+			clipArea.subtract(new java.awt.geom.Area(new Rectangle(
+				bounds.x, bounds.y, bounds.width / 2, bounds.height / 3)));
+		}
 		graphics.setClip(clipArea);
 
 		Composite originalComposite = graphics.getComposite();
