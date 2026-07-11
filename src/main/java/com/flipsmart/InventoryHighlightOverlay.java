@@ -57,7 +57,7 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 	@Override
 	public void renderItemOverlay(Graphics2D graphics, int itemId, WidgetItem widgetItem)
 	{
-		if (!highlightedItemIds.contains(itemId))
+		if (!highlightedItemIds.contains(itemManager.canonicalize(itemId)))
 		{
 			return;
 		}
@@ -88,8 +88,13 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		java.awt.geom.Area clipArea = new java.awt.geom.Area(new Rectangle(
 			bounds.x - 10, bounds.y - 10,
 			bounds.width + 20, bounds.height + 20));
-		clipArea.subtract(new java.awt.geom.Area(new Rectangle(
-			bounds.x, bounds.y, bounds.width / 2, bounds.height / 3)));
+		// Stacks render a quantity number in the top-left corner; crop it out so the
+		// glow doesn't obscure it. A single item shows no number, so highlight fully.
+		if (quantity > 1)
+		{
+			clipArea.subtract(new java.awt.geom.Area(new Rectangle(
+				bounds.x, bounds.y, bounds.width / 2, bounds.height / 3)));
+		}
 		graphics.setClip(clipArea);
 
 		Composite originalComposite = graphics.getComposite();
