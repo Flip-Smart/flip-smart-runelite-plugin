@@ -236,17 +236,27 @@ public final class PanelFormat
 	}
 
 	/**
+	 * Shared setup for a transparent icon canvas: antialiasing on, cleared to fully
+	 * transparent so the icon draws over a blank background instead of opaque black.
+	 */
+	private static Graphics2D createTransparentIconGraphics(BufferedImage icon)
+	{
+		Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(AlphaComposite.Clear);
+		g.fillRect(0, 0, icon.getWidth(), icon.getHeight());
+		g.setComposite(AlphaComposite.SrcOver);
+		return g;
+	}
+
+	/**
 	 * Draw a bar chart icon onto a 14x14 image with the given colors.
 	 */
 	public static BufferedImage drawChartIcon(Color barColor, Color baselineColor)
 	{
 		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(barColor);
 		g.fillRect(1, 9, 3, 4);   // Short bar
@@ -266,12 +276,7 @@ public final class PanelFormat
 	public static BufferedImage drawClockIcon(Color color)
 	{
 		BufferedImage icon = new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 12, 12);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(color);
 		g.setStroke(new BasicStroke(1.2f));
@@ -329,12 +334,7 @@ public final class PanelFormat
 	public static BufferedImage drawBlockIcon(Color color)
 	{
 		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(color);
 		g.setStroke(new BasicStroke(1.5f));
@@ -351,12 +351,7 @@ public final class PanelFormat
 	public static BufferedImage drawRefreshIcon(Color color)
 	{
 		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(color);
 		g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
