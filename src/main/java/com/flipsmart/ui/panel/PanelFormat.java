@@ -225,6 +225,12 @@ public final class PanelFormat
 		return htmlRow(coloured(HEX_MUTED, "Tax: " + formatGP(clampInt(total))));
 	}
 
+	/** Qty: progress/total in the muted secondary colour (e.g. "Qty: 3/5"). */
+	public static String qtyHtml(int done, long total)
+	{
+		return htmlRow(coloured(HEX_MUTED, "Qty: " + done + "/" + total));
+	}
+
 	/** Wrap card-row content as a Swing HTML label body. */
 	private static String htmlRow(String inner)
 	{

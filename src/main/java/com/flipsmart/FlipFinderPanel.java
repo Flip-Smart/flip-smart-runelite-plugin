@@ -3259,7 +3259,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createActiveFlipPanel(ActiveFlip flip)
 	{
-		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 195, true);
+		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 210, true);
 
 		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
@@ -3274,6 +3274,8 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel currentProfitLabel = CardWidgets.createStyledLabel("Current Profit: ...", Color.WHITE);
 		JLabel potentialLabel = CardWidgets.createStyledLabel("Max Potential Profit: ...", Color.WHITE);
 		potentialLabel.setFont(FONT_PLAIN_11);
+		JLabel qtyLabel = CardWidgets.createStyledLabel("Qty: ...", COLOR_TEXT_GRAY);
+		qtyLabel.setFont(FONT_PLAIN_11);
 		JLabel liquidityLabel = CardWidgets.createStyledLabel("Liquidity: ...", Color.CYAN);
 		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
 
@@ -3289,7 +3291,7 @@ public class FlipFinderPanel extends PluginPanel
 		rowDivider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
 		detailsPanel.add(rowDivider);
 		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
-		CardWidgets.addLabelsWithSpacing(detailsPanel, currentProfitLabel, potentialLabel,
+		CardWidgets.addLabelsWithSpacing(detailsPanel, currentProfitLabel, potentialLabel, qtyLabel,
 			liquidityLabel, riskLabel);
 
 		if (offerDispositionLookup != null)
@@ -3327,7 +3329,7 @@ public class FlipFinderPanel extends PluginPanel
 			populateActiveFlipCard(flip,
 				new ActiveFlipCardPanels(panel, headerHolder[0].topPanel, headerHolder[0].namePanel, detailsPanel),
 				new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
-					potentialLabel, taxLabel, liquidityLabel, riskLabel));
+					potentialLabel, qtyLabel, taxLabel, liquidityLabel, riskLabel));
 		});
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
 			ColorScheme.DARKER_GRAY_COLOR, refreshIcon, buyLimitLabel);
@@ -3341,7 +3343,7 @@ public class FlipFinderPanel extends PluginPanel
 		populateActiveFlipCard(flip,
 			new ActiveFlipCardPanels(panel, topPanel, namePanel, detailsPanel),
 			new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
-				potentialLabel, taxLabel, liquidityLabel, riskLabel));
+				potentialLabel, qtyLabel, taxLabel, liquidityLabel, riskLabel));
 
 		// Store default background color as client property (will be overwritten if price indicator is applied)
 		panel.putClientProperty("baseBackgroundColor", ColorScheme.DARKER_GRAY_COLOR);
@@ -3450,12 +3452,13 @@ public class FlipFinderPanel extends PluginPanel
 		final JLabel marginLabel;
 		final JLabel currentProfitLabel;
 		final JLabel potentialLabel;
+		final JLabel qtyLabel;
 		final JLabel taxLabel;
 		final JLabel liquidityLabel;
 		final JLabel riskLabel;
 
 		ActiveFlipCardLabels(JLabel pricesLabel, JLabel buyLimitLabel, JLabel marginLabel,
-			JLabel currentProfitLabel, JLabel potentialLabel, JLabel taxLabel,
+			JLabel currentProfitLabel, JLabel potentialLabel, JLabel qtyLabel, JLabel taxLabel,
 			JLabel liquidityLabel, JLabel riskLabel)
 		{
 			this.pricesLabel = pricesLabel;
@@ -3463,6 +3466,7 @@ public class FlipFinderPanel extends PluginPanel
 			this.marginLabel = marginLabel;
 			this.currentProfitLabel = currentProfitLabel;
 			this.potentialLabel = potentialLabel;
+			this.qtyLabel = qtyLabel;
 			this.taxLabel = taxLabel;
 			this.liquidityLabel = liquidityLabel;
 			this.riskLabel = riskLabel;
@@ -3496,6 +3500,13 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				}
 
+				// Realized fills (sold-so-far) drive both Qty and Current Profit; compute once.
+				RealizedFlipProfit.Result realized = RealizedFlipProfit.compute(
+					plugin.getOfferStore().forItem(flip.getItemId()), flip.getItemId(), flip.getAverageBuyPrice(),
+					flip.getFirstBuyTime() != null ? TimeUtils.parseIsoToMillis(flip.getFirstBuyTime()) : 0L);
+				long fullQty = (long) realized.soldQuantity + flip.getTotalQuantity();
+				labels.qtyLabel.setText(PanelFormat.qtyHtml(realized.soldQuantity, fullQty));
+
 				// The flip's own sell price (session-recommended, else computed) drives both the
 				// side effects and the Max Potential Profit figure.
 				Integer flipSellPrice = resolveSmartSellPrice(flip, high, plugin.getSession());
@@ -3506,7 +3517,7 @@ public class FlipFinderPanel extends PluginPanel
 
 				if (hasValidMarketPrices(high, low))
 				{
-					populateActiveFlipMarketRows(flip, panels, labels, low, high, flipSellPrice);
+					populateActiveFlipMarketRows(flip, panels, labels, low, high, flipSellPrice, realized, fullQty);
 				}
 				else
 				{
@@ -3606,14 +3617,9 @@ public class FlipFinderPanel extends PluginPanel
 	 * position rows (current profit, max potential profit) once prices are available.
 	 */
 	private void populateActiveFlipMarketRows(ActiveFlip flip, ActiveFlipCardPanels panels,
-		ActiveFlipCardLabels labels, int low, int high, Integer flipSellPrice)
+		ActiveFlipCardLabels labels, int low, int high, Integer flipSellPrice,
+		RealizedFlipProfit.Result realized, long fullQty)
 	{
-		long firstBuyMs = flip.getFirstBuyTime() != null
-			? TimeUtils.parseIsoToMillis(flip.getFirstBuyTime())
-			: 0L;
-		RealizedFlipProfit.Result realized = RealizedFlipProfit.compute(
-			plugin.getOfferStore().forItem(flip.getItemId()), flip.getItemId(),
-			flip.getAverageBuyPrice(), firstBuyMs);
 		ActiveFlipCardMetrics.Result metrics = ActiveFlipCardMetrics.compute(
 			low, high, flip.getItemId(), flip.getAverageBuyPrice(), realized.soldQuantity, flip.getTotalQuantity());
 
@@ -3628,7 +3634,6 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Max Potential Profit uses the flip's OWN buy/sell prices (not the wiki spread):
 		// (sell - buy - tax) x full flip quantity.
-		long fullQty = (long) realized.soldQuantity + flip.getTotalQuantity();
 		long maxPotentialProfit = 0L;
 		if (flipSellPrice != null && flipSellPrice > 0)
 		{
@@ -3651,116 +3656,52 @@ public class FlipFinderPanel extends PluginPanel
 	private JPanel createPendingOrderPanel(PendingOrder pending)
 	{
 		Color bgColor = new Color(55, 55, 65); // Slightly different color for pending
-		JPanel panel = CardWidgets.createBaseItemPanel(bgColor, 180, false);
+		JPanel panel = CardWidgets.createBaseItemPanel(bgColor, 210, false);
 
-		// Top section: Item icon and name
-		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor);
-		JPanel topPanel = header.topPanel;
-		JPanel namePanel = header.namePanel;
-
-		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = CardWidgets.createDetailsPanel(bgColor);
 
-		// Row 1: Buy: X | Sell: Y (with placeholders until data loads)
-		String sellText = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
-			? PanelFormat.formatGPExact(pending.recommendedSellPrice) : "...";
-		JLabel pricesLabel = CardWidgets.createStyledLabel(
-			String.format(FORMAT_BUY_SELL, PanelFormat.formatGPExact(pending.pricePerItem), sellText), Color.WHITE);
+		// --- Top "live" block ---
+		JLabel pricesLabel = CardWidgets.createStyledLabel("Live Price: ...", Color.WHITE);
+		JLabel marginLabel = CardWidgets.createStyledLabel("Live Margin: ...", Color.WHITE);
+		JLabel taxLabel = CardWidgets.createStyledLabel("Tax: ...", COLOR_TEXT_GRAY);
+		taxLabel.setFont(FONT_PLAIN_11);
 
-		// Row 2: Qty: X/Y (Limit: Z)
-		JLabel qtyLabel = CardWidgets.createStyledLabel(
-			String.format("Qty: %d/%d (Limit: ...)", pending.quantityFilled, pending.quantity), COLOR_TEXT_GRAY);
-
-		// Row 3: Tax = W
-		JLabel taxLabel = CardWidgets.createStyledLabel("Tax = ...", Color.CYAN);
-
-		// Row 4: Margin: X (Y% ROI)
-		JLabel marginLabel = CardWidgets.createStyledLabel("Margin: ...", COLOR_YELLOW);
-
-		// Row 5: Profit: X | Cost: Y
-		int potentialInvestment = pending.quantity * pending.pricePerItem;
-		JLabel profitCostLabel = CardWidgets.createStyledLabel(
-			String.format("Profit: ... | Cost: %s", PanelFormat.formatGP(potentialInvestment)), COLOR_PROFIT_GREEN);
-
-		// Row 6: Liquidity: X (Rating) | Y/hr
+		// --- Bottom "reference" block (no Current Profit — nothing sold on a buy) ---
+		JLabel potentialLabel = CardWidgets.createStyledLabel("Max Potential Profit: ...", Color.WHITE);
+		potentialLabel.setFont(FONT_PLAIN_11);
+		JLabel qtyLabel = CardWidgets.createStyledLabel("Qty: ...", COLOR_TEXT_GRAY);
+		qtyLabel.setFont(FONT_PLAIN_11);
 		JLabel liquidityLabel = CardWidgets.createStyledLabel("Liquidity: ...", Color.CYAN);
-
-		// Row 7: Risk: X (Rating)
 		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
 
-		// Add all rows with small spacing
-		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel, 
-			profitCostLabel, liquidityLabel, riskLabel);
+		JLabel buyLimitLabel = CardWidgets.createStyledLabel("Buy limit: ...", COLOR_TEXT_GRAY);
+		buyLimitLabel.setFont(FONT_PLAIN_11);
+
+		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, marginLabel, taxLabel);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
+		JSeparator rowDivider = new JSeparator();
+		rowDivider.setForeground(new Color(70, 70, 70));
+		rowDivider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+		detailsPanel.add(rowDivider);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
+		CardWidgets.addLabelsWithSpacing(detailsPanel, potentialLabel, qtyLabel, liquidityLabel, riskLabel);
+
+		// Header with refresh + corner buy-limit, matching the active-flip cards
+		JLabel refreshIcon = createRefreshIconLabel(() ->
+		{
+			apiClient.invalidateCache(pending.itemId);
+			populatePendingCardRows(pending, pricesLabel, marginLabel, taxLabel, qtyLabel,
+				potentialLabel, liquidityLabel, riskLabel, buyLimitLabel);
+		});
+		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor, refreshIcon, buyLimitLabel);
+		JPanel topPanel = header.topPanel;
+		JPanel namePanel = header.namePanel;
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
-		// Fetch market data to populate all fields
-		apiClient.getItemAnalysisAsync(pending.itemId).thenAccept(analysis ->
-		{
-			SwingUtilities.invokeLater(() ->
-			{
-				Integer buyLimit = null;
-				FlipAnalysis.Liquidity liquidity = null;
-				FlipAnalysis.Risk risk = null;
-				Integer currentSellPrice = null;
-				
-				if (analysis != null)
-				{
-					buyLimit = analysis.getBuyLimit();
-					liquidity = analysis.getLiquidity();
-					risk = analysis.getRisk();
-					
-					if (analysis.getCurrentPrices() != null)
-					{
-						currentSellPrice = analysis.getCurrentPrices().getHigh();
-					}
-				}
-				
-				// Use recommended sell price or current market price
-				Integer sellPrice = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
-					? pending.recommendedSellPrice : currentSellPrice;
-				
-				if (sellPrice != null && sellPrice > 0)
-				{
-					// Row 1: Update prices
-					pricesLabel.setText(PanelFormat.formatBuySellText(pending.pricePerItem, sellPrice));
-
-					int geTax = GeTax.taxFor(pending.itemId, sellPrice);
-
-					// Calculate margin and profit
-					int marginPerItem = sellPrice - pending.pricePerItem - geTax;
-					int totalProfit = marginPerItem * pending.quantity;
-					double roi = (marginPerItem * 100.0) / pending.pricePerItem;
-					
-					// Row 2: Update Qty (Limit) | Tax
-					String limitText = buyLimit != null ? String.valueOf(buyLimit) : "?";
-					qtyLabel.setText(String.format("Qty: %d/%d (Limit: %s)", 
-						pending.quantityFilled, pending.quantity, limitText));
-					taxLabel.setText(String.format("Tax = %s", PanelFormat.formatGP(geTax * pending.quantity)));
-					
-					// Row 3: Update Margin
-					marginLabel.setText(PanelFormat.formatMarginText(marginPerItem, roi, totalProfit <= 0));
-					marginLabel.setForeground(totalProfit <= 0 ? COLOR_LOSS_RED : COLOR_YELLOW);
-					
-					// Row 4: Update Profit | Cost
-					profitCostLabel.setText(PanelFormat.formatProfitCostText(totalProfit, potentialInvestment));
-					profitCostLabel.setForeground(totalProfit > 0 ? COLOR_PROFIT_GREEN : COLOR_LOSS_RED);
-				}
-				else
-				{
-					pricesLabel.setText(PanelFormat.formatBuySellText(pending.pricePerItem, null));
-					marginLabel.setText("Margin: N/A");
-					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", PanelFormat.formatGP(potentialInvestment)));
-				}
-				
-				// Row 5: Update Liquidity
-				updateLiquidityLabel(liquidityLabel, liquidity);
-				
-				// Row 6: Update Risk
-				updateRiskLabel(riskLabel, risk);
-			});
-		});
+		populatePendingCardRows(pending, pricesLabel, marginLabel, taxLabel, qtyLabel,
+			potentialLabel, liquidityLabel, riskLabel, buyLimitLabel);
 
 		// Add click listener for focus selection
 		panel.addMouseListener(new MouseAdapter()
@@ -3801,6 +3742,73 @@ public class FlipFinderPanel extends PluginPanel
 		}
 
 		return panel;
+	}
+
+	/**
+	 * Fetch market analysis and (re)populate a pending buy card's rows. Reused by the
+	 * initial build and the refresh button. Mirrors the active-flip card layout minus
+	 * Current Profit (nothing is sold on a pending buy).
+	 */
+	private void populatePendingCardRows(PendingOrder pending, JLabel pricesLabel, JLabel marginLabel,
+		JLabel taxLabel, JLabel qtyLabel, JLabel potentialLabel, JLabel liquidityLabel,
+		JLabel riskLabel, JLabel buyLimitLabel)
+	{
+		qtyLabel.setText(PanelFormat.qtyHtml(pending.quantityFilled, pending.quantity));
+
+		apiClient.getItemAnalysisAsync(pending.itemId).thenAccept(analysis ->
+			SwingUtilities.invokeLater(() ->
+			{
+				Integer high = null;
+				Integer low = null;
+				Integer buyLimit = null;
+				FlipAnalysis.Liquidity liquidity = null;
+				FlipAnalysis.Risk risk = null;
+
+				if (analysis != null)
+				{
+					buyLimit = analysis.getBuyLimit();
+					liquidity = analysis.getLiquidity();
+					risk = analysis.getRisk();
+					if (analysis.getCurrentPrices() != null)
+					{
+						high = analysis.getCurrentPrices().getHigh();
+						low = analysis.getCurrentPrices().getLow();
+					}
+				}
+
+				buyLimitLabel.setText("Buy limit: " + (buyLimit != null ? PanelFormat.formatGP(buyLimit) : "?"));
+
+				if (high != null && high > 0 && low != null && low > 0)
+				{
+					int margin = high - low;
+					double roi = (margin * 100.0) / low;
+					long totalTax = (long) GeTax.taxFor(pending.itemId, high) * pending.quantity;
+					pricesLabel.setText(PanelFormat.livePriceHtml(low, high));
+					marginLabel.setText(PanelFormat.liveMarginHtml(margin, roi));
+					taxLabel.setText(PanelFormat.taxHtml(totalTax));
+				}
+				else
+				{
+					pricesLabel.setText("Live Price: N/A");
+					marginLabel.setText("Live Margin: N/A");
+					taxLabel.setText("Tax: N/A");
+				}
+
+				// Max Potential Profit for the pending buy: (sell - buy - tax) x ordered qty,
+				// where sell is the flip's recommended sell price (else the current market high).
+				Integer sellPrice = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
+					? pending.recommendedSellPrice : high;
+				long maxPotentialProfit = 0L;
+				if (sellPrice != null && sellPrice > 0)
+				{
+					int sellTax = GeTax.taxFor(pending.itemId, sellPrice);
+					maxPotentialProfit = ((long) sellPrice - pending.pricePerItem - sellTax) * pending.quantity;
+				}
+				potentialLabel.setText(PanelFormat.maxPotentialProfitHtml(maxPotentialProfit));
+
+				updateLiquidityLabel(liquidityLabel, liquidity);
+				updateRiskLabel(riskLabel, risk);
+			}));
 	}
 	
 	/**
