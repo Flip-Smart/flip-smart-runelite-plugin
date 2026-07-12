@@ -2447,41 +2447,48 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private HeaderPanels createItemHeaderPanels(int itemId, String itemName, Color bgColor)
 	{
+		return createItemHeaderPanels(itemId, itemName, bgColor, null);
+	}
+
+	private HeaderPanels createItemHeaderPanels(int itemId, String itemName, Color bgColor, JLabel trailingIcon)
+	{
 		JPanel topPanel = new JPanel(new BorderLayout(4, 0));
 		topPanel.setBackground(bgColor);
 
 		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
 		namePanel.setBackground(bgColor);
 
-		// Get item image
 		AsyncBufferedImage itemImage = itemManager.getImage(itemId);
 		JLabel iconLabel = new JLabel();
 		CardWidgets.setupIconLabel(iconLabel, itemImage);
 
-		// Use HTML to allow text wrapping for long item names
 		String escapedName = PanelFormat.escapeHtml(itemName);
 		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(FONT_BOLD_13);
-		// Limit the name label width to ensure icons always fit
-		// Panel is ~220px wide, minus item icon (36px), block+chart icons (40px), padding (14px) = ~130px for name
-		nameLabel.setPreferredSize(new Dimension(130, nameLabel.getPreferredSize().height));
-		nameLabel.setMaximumSize(new Dimension(130, Integer.MAX_VALUE));
+		// Narrow the name a little more when a third (refresh) icon shares the corner
+		int nameWidth = trailingIcon != null ? 108 : 130;
+		nameLabel.setPreferredSize(new Dimension(nameWidth, nameLabel.getPreferredSize().height));
+		nameLabel.setMaximumSize(new Dimension(nameWidth, Integer.MAX_VALUE));
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 
-		// Create icons panel with chart icon and block icon
 		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
 		iconsPanel.setOpaque(false);
 
-		// Create block icon
-		JLabel blockIconLabel = createBlockIconLabel(itemId, itemName);
-		iconsPanel.add(blockIconLabel);
+		iconsPanel.add(createBlockIconLabel(itemId, itemName));
+		iconsPanel.add(createChartIconLabel(itemId));
 
-		// Create chart icon
-		JLabel chartIconLabel = createChartIconLabel(itemId);
-		iconsPanel.add(chartIconLabel);
+		if (trailingIcon != null)
+		{
+			// Visible divider so the refresh action reads as distinct from the two existing icons
+			JLabel divider = new JLabel("|");
+			divider.setForeground(COLOR_TEXT_GRAY);
+			divider.setBorder(BorderFactory.createEmptyBorder(0, 3, 0, 1));
+			iconsPanel.add(divider);
+			iconsPanel.add(trailingIcon);
+		}
 
 		topPanel.add(namePanel, BorderLayout.CENTER);
 		topPanel.add(iconsPanel, BorderLayout.EAST);
@@ -2528,6 +2535,58 @@ public class FlipFinderPanel extends PluginPanel
 		});
 
 		return chartLabel;
+	}
+
+	private JLabel createRefreshIconLabel(Runnable onRefresh)
+	{
+		java.awt.image.BufferedImage refreshIcon = PanelFormat.drawRefreshIcon(new Color(120, 200, 255));
+
+		JLabel refreshLabel = new JLabel(new ImageIcon(refreshIcon));
+		refreshLabel.setToolTipText("Refresh latest prices.");
+		refreshLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		refreshLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+		refreshLabel.setOpaque(false);
+
+		refreshLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				e.consume();
+				if (!refreshLabel.isEnabled())
+				{
+					return;
+				}
+				refreshLabel.setEnabled(false);
+				refreshLabel.setCursor(Cursor.getDefaultCursor());
+				onRefresh.run();
+				// Re-enable shortly after; the async re-populate updates the rows independently
+				javax.swing.Timer timer = new javax.swing.Timer(1200, ev ->
+				{
+					refreshLabel.setEnabled(true);
+					refreshLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+				});
+				timer.setRepeats(false);
+				timer.start();
+			}
+
+			@Override
+			public void mouseEntered(MouseEvent e)
+			{
+				if (refreshLabel.isEnabled())
+				{
+					refreshLabel.setIcon(new ImageIcon(PanelFormat.drawRefreshIcon(new Color(170, 225, 255))));
+				}
+			}
+
+			@Override
+			public void mouseExited(MouseEvent e)
+			{
+				refreshLabel.setIcon(new ImageIcon(refreshIcon));
+			}
+		});
+
+		return refreshLabel;
 	}
 
 	/**
@@ -3176,12 +3235,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createActiveFlipPanel(ActiveFlip flip)
 	{
-		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 180, true);
-
-		// Top section: Item icon and name
-		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
-		JPanel topPanel = header.topPanel;
-		JPanel namePanel = header.namePanel;
+		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 210, true);
 
 		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
@@ -3242,6 +3296,23 @@ public class FlipFinderPanel extends PluginPanel
 				}
 			}
 		}
+
+		// Holder defers topPanel/namePanel capture: the refresh closure is built before the
+		// header panels exist (the header needs the finished icon), so it reads through this
+		// array instead of the not-yet-declared locals.
+		HeaderPanels[] headerHolder = new HeaderPanels[1];
+		JLabel refreshIcon = createRefreshIconLabel(() ->
+		{
+			apiClient.invalidateCache(flip.getItemId());
+			populateActiveFlipCard(flip, panel, headerHolder[0].topPanel, headerHolder[0].namePanel, detailsPanel,
+				pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel, profitPotentialLabel,
+				taxLabel, liquidityLabel, riskLabel);
+		});
+		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
+			ColorScheme.DARKER_GRAY_COLOR, refreshIcon);
+		headerHolder[0] = header;
+		JPanel topPanel = header.topPanel;
+		JPanel namePanel = header.namePanel;
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
