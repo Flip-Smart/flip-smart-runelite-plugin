@@ -27,6 +27,13 @@ public final class PanelFormat
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
+	// Value colours for the active-flip card HTML rows (hex, no leading #).
+	private static final String HEX_PRICE_LOW = "6fb1ff";    // market low (buy side)
+	private static final String HEX_PRICE_HIGH = "ffab54";   // market high (sell side)
+	private static final String HEX_PROFIT = "5ee66e";       // green: profit
+	private static final String HEX_LOSS = "ff6b6b";         // red: loss
+	private static final String HEX_PROFIT_LABEL = "ffce54"; // gold: "Current Profit" label
+	private static final String HEX_MUTED = "9aa0a8";        // gray: secondary label
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String VOLUME_NA = "Volume: N/A";
@@ -181,18 +188,97 @@ public final class PanelFormat
 		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
 	}
 
+	/** Top "live" price row: market low (blue) | market high (orange); label keeps the label colour. */
+	public static String livePriceHtml(int low, int high)
+	{
+		return htmlRow("Live Price: " + coloured(HEX_PRICE_LOW, formatGPExact(low))
+			+ " | " + coloured(HEX_PRICE_HIGH, formatGPExact(high)));
+	}
+
+	/** Live Margin: gross market spread coloured green (profit) / red (loss), with ROI. No "+" prefix. */
+	public static String liveMarginHtml(int margin, double roiPercent)
+	{
+		String colour = margin < 0 ? HEX_LOSS : HEX_PROFIT;
+		return htmlRow("Live Margin: "
+			+ coloured(colour, GpUtils.formatGPSigned(margin) + String.format(" (%.1f%% ROI)", roiPercent)));
+	}
+
+	/** Current Profit: gold label + realized value coloured green (profit) / red (loss). */
+	public static String currentProfitHtml(long realizedNet)
+	{
+		String colour = realizedNet < 0 ? HEX_LOSS : HEX_PROFIT;
+		return htmlRow(coloured(HEX_PROFIT_LABEL, "Current Profit: ")
+			+ coloured(colour, GpUtils.formatGPSigned(clampInt(realizedNet))));
+	}
+
+	/** Max Potential Profit: muted label + value coloured green (profit) / red (loss). */
+	public static String maxPotentialProfitHtml(long maxProfit)
+	{
+		String colour = maxProfit < 0 ? HEX_LOSS : HEX_PROFIT;
+		return htmlRow(coloured(HEX_MUTED, "Max Potential Profit: ")
+			+ coloured(colour, GpUtils.formatGPSigned(clampInt(maxProfit))));
+	}
+
+	/** Tax: whole row in the muted secondary colour, matching the Potential label. */
+	public static String taxHtml(long total)
+	{
+		return htmlRow(coloured(HEX_MUTED, "Tax: " + formatGP(clampInt(total))));
+	}
+
+	/** Qty: progress/total in the muted secondary colour (e.g. "Qty: 3/5"). */
+	public static String qtyHtml(int done, long total)
+	{
+		return htmlRow(coloured(HEX_MUTED, "Qty: " + done + "/" + total));
+	}
+
+	/** Wrap card-row content as a Swing HTML label body. */
+	private static String htmlRow(String inner)
+	{
+		return "<html>" + inner + "</html>";
+	}
+
+	/** Colour a span of text with the given hex (no leading #). */
+	private static String coloured(String hex, String text)
+	{
+		return "<font color='#" + hex + "'>" + text + "</font>";
+	}
+
+	/** Saturating cast of a long into the int range for the gp formatters. */
+	private static int clampInt(long v)
+	{
+		if (v > Integer.MAX_VALUE)
+		{
+			return Integer.MAX_VALUE;
+		}
+		if (v < Integer.MIN_VALUE)
+		{
+			return Integer.MIN_VALUE;
+		}
+		return (int) v;
+	}
+
+	/**
+	 * Shared setup for a transparent icon canvas: antialiasing on, cleared to fully
+	 * transparent so the icon draws over a blank background instead of opaque black.
+	 */
+	private static Graphics2D createTransparentIconGraphics(BufferedImage icon)
+	{
+		Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(AlphaComposite.Clear);
+		g.fillRect(0, 0, icon.getWidth(), icon.getHeight());
+		g.setComposite(AlphaComposite.SrcOver);
+		return g;
+	}
+
 	/**
 	 * Draw a bar chart icon onto a 14x14 image with the given colors.
 	 */
 	public static BufferedImage drawChartIcon(Color barColor, Color baselineColor)
 	{
 		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(barColor);
 		g.fillRect(1, 9, 3, 4);   // Short bar
@@ -212,12 +298,7 @@ public final class PanelFormat
 	public static BufferedImage drawClockIcon(Color color)
 	{
 		BufferedImage icon = new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 12, 12);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(color);
 		g.setStroke(new BasicStroke(1.2f));
@@ -275,17 +356,31 @@ public final class PanelFormat
 	public static BufferedImage drawBlockIcon(Color color)
 	{
 		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, 14, 14);
-		g.setComposite(AlphaComposite.SrcOver);
+		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(color);
 		g.setStroke(new BasicStroke(1.5f));
 		g.drawOval(1, 1, 11, 11);
 		g.drawLine(3, 11, 11, 3);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
+	 * Draw a circular-arrow refresh icon onto a 14x14 image with the given color.
+	 */
+	public static BufferedImage drawRefreshIcon(Color color)
+	{
+		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = createTransparentIconGraphics(icon);
+
+		g.setColor(color);
+		g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+		// Open ring (~250 deg) with a clear gap at the top-right where the arrowhead sits
+		g.drawArc(3, 4, 8, 8, 30, 250);
+		// Solid arrowhead at the ring's open (top-right) end, tip pointing right = clockwise reload
+		g.fillPolygon(new int[] {8, 13, 9}, new int[] {1, 4, 7}, 3);
 
 		g.dispose();
 		return icon;
