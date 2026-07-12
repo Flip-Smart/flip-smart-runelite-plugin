@@ -21,18 +21,16 @@ public class PanelFormatActiveFlipsTest
 	}
 
 	@Test
-	public void currentProfitIsSignedShortForm()
+	public void profitCombinedShowsRealizedSignedAndPotential()
 	{
-		assertEquals("Current Profit: +1.2M", PanelFormat.formatCurrentProfitText(1_200_000L));
-		assertEquals("Current Profit: -500.0K", PanelFormat.formatCurrentProfitText(-500_000L));
-		assertEquals("Current Profit: 0", PanelFormat.formatCurrentProfitText(0L));
-	}
-
-	@Test
-	public void profitPotentialProfitSignedCostUnsigned()
-	{
-		assertEquals("Profit Potential: 180.0K | Cost: 3.6M", PanelFormat.formatProfitPotentialText(180_000L, 3_600_000L));
-		assertEquals("Profit Potential: -12.0K | Cost: 1.0M", PanelFormat.formatProfitPotentialText(-12_000L, 1_000_000L));
+		assertEquals("Current Profit: +35.0K | Potential: 539.0K",
+			PanelFormat.formatProfitCombinedText(35_000L, 539_000L));
+		assertEquals("Current Profit: +1.2M | Potential: 180.0K",
+			PanelFormat.formatProfitCombinedText(1_200_000L, 180_000L));
+		assertEquals("Current Profit: -12.0K | Potential: -5.0K",
+			PanelFormat.formatProfitCombinedText(-12_000L, -5_000L));
+		assertEquals("Current Profit: 0 | Potential: 0",
+			PanelFormat.formatProfitCombinedText(0L, 0L));
 	}
 
 	@Test

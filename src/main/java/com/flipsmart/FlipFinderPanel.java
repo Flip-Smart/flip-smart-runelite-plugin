@@ -3236,7 +3236,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel createActiveFlipPanel(ActiveFlip flip)
 	{
-		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 210, true);
+		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 195, true);
 
 		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
@@ -3250,11 +3250,8 @@ public class FlipFinderPanel extends PluginPanel
 		// Row: Current Margin (market spread) with ROI
 		JLabel marginLabel = CardWidgets.createStyledLabel("Current Margin: ...", COLOR_YELLOW);
 
-		// Row: Current Profit (realized on units sold so far)
+		// Row: Current Profit (realized) | Potential (projected) on one line
 		JLabel currentProfitLabel = CardWidgets.createStyledLabel("Current Profit: ...", COLOR_PROFIT_GREEN);
-
-		// Row: Profit Potential | Cost
-		JLabel profitPotentialLabel = CardWidgets.createStyledLabel("Profit Potential: ...", COLOR_PROFIT_GREEN);
 
 		// Row: Tax (per-item | total)
 		JLabel taxLabel = CardWidgets.createStyledLabel("Tax: ...", Color.CYAN);
@@ -3266,7 +3263,7 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
 
 		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, buyLimitLabel, marginLabel,
-			currentProfitLabel, profitPotentialLabel);
+			currentProfitLabel);
 		// Deliberate blank spacer separating the pricing/profit block from tax/risk
 		detailsPanel.add(Box.createRigidArea(new Dimension(0, 8)));
 		CardWidgets.addLabelsWithSpacing(detailsPanel, taxLabel, liquidityLabel, riskLabel);
@@ -3306,7 +3303,7 @@ public class FlipFinderPanel extends PluginPanel
 			populateActiveFlipCard(flip,
 				new ActiveFlipCardPanels(panel, headerHolder[0].topPanel, headerHolder[0].namePanel, detailsPanel),
 				new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
-					profitPotentialLabel, taxLabel, liquidityLabel, riskLabel));
+					taxLabel, liquidityLabel, riskLabel));
 		});
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
 			ColorScheme.DARKER_GRAY_COLOR, refreshIcon);
@@ -3320,7 +3317,7 @@ public class FlipFinderPanel extends PluginPanel
 		populateActiveFlipCard(flip,
 			new ActiveFlipCardPanels(panel, topPanel, namePanel, detailsPanel),
 			new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
-				profitPotentialLabel, taxLabel, liquidityLabel, riskLabel));
+				taxLabel, liquidityLabel, riskLabel));
 
 		// Store default background color as client property (will be overwritten if price indicator is applied)
 		panel.putClientProperty("baseBackgroundColor", ColorScheme.DARKER_GRAY_COLOR);
@@ -3428,20 +3425,18 @@ public class FlipFinderPanel extends PluginPanel
 		final JLabel buyLimitLabel;
 		final JLabel marginLabel;
 		final JLabel currentProfitLabel;
-		final JLabel profitPotentialLabel;
 		final JLabel taxLabel;
 		final JLabel liquidityLabel;
 		final JLabel riskLabel;
 
 		ActiveFlipCardLabels(JLabel pricesLabel, JLabel buyLimitLabel, JLabel marginLabel,
-			JLabel currentProfitLabel, JLabel profitPotentialLabel, JLabel taxLabel,
+			JLabel currentProfitLabel, JLabel taxLabel,
 			JLabel liquidityLabel, JLabel riskLabel)
 		{
 			this.pricesLabel = pricesLabel;
 			this.buyLimitLabel = buyLimitLabel;
 			this.marginLabel = marginLabel;
 			this.currentProfitLabel = currentProfitLabel;
-			this.profitPotentialLabel = profitPotentialLabel;
 			this.taxLabel = taxLabel;
 			this.liquidityLabel = liquidityLabel;
 			this.riskLabel = riskLabel;
@@ -3485,8 +3480,7 @@ public class FlipFinderPanel extends PluginPanel
 				{
 					labels.pricesLabel.setText("Buy: N/A | Sell: N/A");
 					labels.marginLabel.setText("Current Margin: N/A");
-					labels.currentProfitLabel.setText("Current Profit: N/A");
-					labels.profitPotentialLabel.setText("Profit Potential: N/A");
+					labels.currentProfitLabel.setText("Current Profit: N/A | Potential: N/A");
 					labels.taxLabel.setText("Tax: N/A");
 					panels.panel.setToolTipText(null);
 				}
@@ -3607,11 +3601,9 @@ public class FlipFinderPanel extends PluginPanel
 		labels.marginLabel.setText(PanelFormat.formatCurrentMarginText(metrics.margin, metrics.roi));
 		labels.marginLabel.setForeground(metrics.margin < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
 
-		labels.currentProfitLabel.setText(PanelFormat.formatCurrentProfitText(realized.netProfit));
+		labels.currentProfitLabel.setText(
+			PanelFormat.formatProfitCombinedText(realized.netProfit, metrics.profitPotential));
 		labels.currentProfitLabel.setForeground(realized.netProfit < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
-
-		labels.profitPotentialLabel.setText(PanelFormat.formatProfitPotentialText(metrics.profitPotential, metrics.cost));
-		labels.profitPotentialLabel.setForeground(metrics.profitPotential < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
 
 		labels.taxLabel.setText(PanelFormat.formatTaxSplitText(metrics.perItemTax, metrics.totalTax));
 	}

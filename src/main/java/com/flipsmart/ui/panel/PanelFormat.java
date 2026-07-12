@@ -28,8 +28,7 @@ public final class PanelFormat
 	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
 	private static final String FORMAT_CURRENT_MARGIN = "Current Margin: %s gp (%.1f%% ROI)";
-	private static final String FORMAT_CURRENT_PROFIT = "Current Profit: %s";
-	private static final String FORMAT_PROFIT_POTENTIAL = "Profit Potential: %s | Cost: %s";
+	private static final String FORMAT_PROFIT_COMBINED = "Current Profit: %s | Potential: %s";
 	private static final String FORMAT_TAX_SPLIT = "Tax: %s | %s";
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
@@ -197,16 +196,14 @@ public final class PanelFormat
 		return String.format(FORMAT_CURRENT_MARGIN, signedShort(marginGp), roiPercent);
 	}
 
-	/** Current Profit: realized net on units sold so far (signed short form, no suffix). */
-	public static String formatCurrentProfitText(long netProfit)
+	/**
+	 * One-line profit row: realized net on units sold so far (signed, explicit +) and
+	 * projected full-flip potential (signed). Cost dropped to keep the card compact.
+	 */
+	public static String formatProfitCombinedText(long realizedNet, long potential)
 	{
-		return String.format(FORMAT_CURRENT_PROFIT, signedShort(clampInt(netProfit)));
-	}
-
-	/** Profit Potential | Cost: profit is signed short; cost is unsigned short. */
-	public static String formatProfitPotentialText(long profit, long cost)
-	{
-		return String.format(FORMAT_PROFIT_POTENTIAL, GpUtils.formatGPSigned(clampInt(profit)), formatGP(clampInt(cost)));
+		return String.format(FORMAT_PROFIT_COMBINED, signedShort(clampInt(realizedNet)),
+			GpUtils.formatGPSigned(clampInt(potential)));
 	}
 
 	/** Tax: per-item (exact) | total (short). */
