@@ -6,37 +6,40 @@ import org.junit.Test;
 public class PanelFormatActiveFlipsTest
 {
 	@Test
-	public void marketBuySellShowsLowThenHighWithCommas()
+	public void livePriceColoursLowBlueHighOrangeWithCommas()
 	{
-		assertEquals("Buy: 173 | Sell: 179", PanelFormat.formatMarketBuySellText(173, 179));
-		assertEquals("Buy: 1,234 | Sell: 5,678", PanelFormat.formatMarketBuySellText(1234, 5678));
+		assertEquals(
+			"<html>Live Price: <font color='#6fb1ff'>1,500,000</font> | <font color='#ffab54'>2,000,000</font></html>",
+			PanelFormat.livePriceHtml(1_500_000, 2_000_000));
 	}
 
 	@Test
-	public void currentMarginIsSignedGpWithRoi()
+	public void liveMarginGreenOnProfitRedOnLossNoPlusSign()
 	{
-		assertEquals("Current Margin: +6 gp (3.5% ROI)", PanelFormat.formatCurrentMarginText(6, 3.468));
-		assertEquals("Current Margin: -4 gp (-2.3% ROI)", PanelFormat.formatCurrentMarginText(-4, -2.31));
-		assertEquals("Current Margin: 0 gp (0.0% ROI)", PanelFormat.formatCurrentMarginText(0, 0.0));
+		assertEquals(
+			"<html>Live Margin: <font color='#5ee66e'>60.0K (1.5% ROI)</font></html>",
+			PanelFormat.liveMarginHtml(60_000, 1.5));
+		assertEquals(
+			"<html>Live Margin: <font color='#ff6b6b'>-4.0K (-2.3% ROI)</font></html>",
+			PanelFormat.liveMarginHtml(-4_000, -2.31));
 	}
 
 	@Test
-	public void profitCombinedShowsRealizedSignedAndPotential()
+	public void currentProfitGoldLabelValueColouredBySign()
 	{
-		assertEquals("Current Profit: +35.0K | Potential: 539.0K",
-			PanelFormat.formatProfitCombinedText(35_000L, 539_000L));
-		assertEquals("Current Profit: +1.2M | Potential: 180.0K",
-			PanelFormat.formatProfitCombinedText(1_200_000L, 180_000L));
-		assertEquals("Current Profit: -12.0K | Potential: -5.0K",
-			PanelFormat.formatProfitCombinedText(-12_000L, -5_000L));
-		assertEquals("Current Profit: 0 | Potential: 0",
-			PanelFormat.formatProfitCombinedText(0L, 0L));
+		assertEquals(
+			"<html><font color='#ffce54'>Current Profit: </font><font color='#5ee66e'>35.0K</font></html>",
+			PanelFormat.currentProfitHtml(35_000L));
+		assertEquals(
+			"<html><font color='#ffce54'>Current Profit: </font><font color='#ff6b6b'>-12.0K</font></html>",
+			PanelFormat.currentProfitHtml(-12_000L));
 	}
 
 	@Test
-	public void taxSplitPerItemExactTotalShort()
+	public void potentialMutedLabelValueColouredBySign()
 	{
-		assertEquals("Tax: 2 | 60.0K", PanelFormat.formatTaxSplitText(2, 60_000L));
-		assertEquals("Tax: 1,000 | 5.0M", PanelFormat.formatTaxSplitText(1000, 5_000_000L));
+		assertEquals(
+			"<html><font color='#9aa0a8'>Potential: </font><font color='#5ee66e'>539.0K</font></html>",
+			PanelFormat.potentialHtml(539_000L));
 	}
 }

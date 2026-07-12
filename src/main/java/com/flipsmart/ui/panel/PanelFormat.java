@@ -27,9 +27,13 @@ public final class PanelFormat
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
-	private static final String FORMAT_CURRENT_MARGIN = "Current Margin: %s gp (%.1f%% ROI)";
-	private static final String FORMAT_PROFIT_COMBINED = "Current Profit: %s | Potential: %s";
-	private static final String FORMAT_TAX_SPLIT = "Tax: %s | %s";
+	// Value colours for the active-flip card HTML rows (hex, no leading #).
+	private static final String HEX_PRICE_LOW = "6fb1ff";    // market low (buy side)
+	private static final String HEX_PRICE_HIGH = "ffab54";   // market high (sell side)
+	private static final String HEX_PROFIT = "5ee66e";       // green: profit
+	private static final String HEX_LOSS = "ff6b6b";         // red: loss
+	private static final String HEX_PROFIT_LABEL = "ffce54"; // gold: "Current Profit" label
+	private static final String HEX_MUTED = "9aa0a8";        // gray: secondary label
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String VOLUME_NA = "Volume: N/A";
@@ -184,38 +188,35 @@ public final class PanelFormat
 		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
 	}
 
-	/** Row 1: market low labeled "Buy", market high labeled "Sell". */
-	public static String formatMarketBuySellText(int low, int high)
+	/** Top "live" price row: market low (blue) | market high (orange); label keeps the label colour. */
+	public static String livePriceHtml(int low, int high)
 	{
-		return String.format(FORMAT_BUY_SELL, formatGPExact(low), formatGPExact(high));
+		return "<html>Live Price: <font color='#" + HEX_PRICE_LOW + "'>" + formatGPExact(low)
+			+ "</font> | <font color='#" + HEX_PRICE_HIGH + "'>" + formatGPExact(high) + "</font></html>";
 	}
 
-	/** Current Margin: gross market spread (signed, " gp") with ROI percentage. */
-	public static String formatCurrentMarginText(int marginGp, double roiPercent)
+	/** Live Margin: gross market spread coloured green (profit) / red (loss), with ROI. No "+" prefix. */
+	public static String liveMarginHtml(int margin, double roiPercent)
 	{
-		return String.format(FORMAT_CURRENT_MARGIN, signedShort(marginGp), roiPercent);
+		String colour = margin < 0 ? HEX_LOSS : HEX_PROFIT;
+		return "<html>Live Margin: <font color='#" + colour + "'>" + GpUtils.formatGPSigned(margin)
+			+ String.format(" (%.1f%% ROI)", roiPercent) + "</font></html>";
 	}
 
-	/**
-	 * One-line profit row: realized net on units sold so far (signed, explicit +) and
-	 * projected full-flip potential (signed). Cost dropped to keep the card compact.
-	 */
-	public static String formatProfitCombinedText(long realizedNet, long potential)
+	/** Current Profit: gold label + realized value coloured green (profit) / red (loss). */
+	public static String currentProfitHtml(long realizedNet)
 	{
-		return String.format(FORMAT_PROFIT_COMBINED, signedShort(clampInt(realizedNet)),
-			GpUtils.formatGPSigned(clampInt(potential)));
+		String colour = realizedNet < 0 ? HEX_LOSS : HEX_PROFIT;
+		return "<html><font color='#" + HEX_PROFIT_LABEL + "'>Current Profit: </font><font color='#"
+			+ colour + "'>" + GpUtils.formatGPSigned(clampInt(realizedNet)) + "</font></html>";
 	}
 
-	/** Tax: per-item (exact) | total (short). */
-	public static String formatTaxSplitText(int perItem, long total)
+	/** Potential: muted label + projected value coloured green (profit) / red (loss). */
+	public static String potentialHtml(long potential)
 	{
-		return String.format(FORMAT_TAX_SPLIT, formatGPExact(perItem), formatGP(clampInt(total)));
-	}
-
-	/** Short-form gp with an explicit '+' on positive values ("+6", "-6", "0"). */
-	private static String signedShort(int v)
-	{
-		return (v > 0 ? "+" : "") + GpUtils.formatGPSigned(v);
+		String colour = potential < 0 ? HEX_LOSS : HEX_PROFIT;
+		return "<html><font color='#" + HEX_MUTED + "'>Potential: </font><font color='#"
+			+ colour + "'>" + GpUtils.formatGPSigned(clampInt(potential)) + "</font></html>";
 	}
 
 	/** Saturating cast of a long into the int range for the gp formatters. */

@@ -4,7 +4,7 @@ import com.flipsmart.util.GeTax;
 
 /**
  * Market-based metrics for an active-flip card row (margin, ROI, profit potential,
- * tax split, break-even position). Pure: a function of the supplied prices and
+ * total tax, break-even position). Pure: a function of the supplied prices and
  * quantities, independent of Swing state.
  */
 public final class ActiveFlipCardMetrics
@@ -14,17 +14,14 @@ public final class ActiveFlipCardMetrics
 		public final int margin;
 		public final double roi;
 		public final long profitPotential;
-		public final int perItemTax;
 		public final long totalTax;
 		public final int positionNetPerUnit;
 
-		Result(int margin, double roi, long profitPotential, int perItemTax,
-			long totalTax, int positionNetPerUnit)
+		Result(int margin, double roi, long profitPotential, long totalTax, int positionNetPerUnit)
 		{
 			this.margin = margin;
 			this.roi = roi;
 			this.profitPotential = profitPotential;
-			this.perItemTax = perItemTax;
 			this.totalTax = totalTax;
 			this.positionNetPerUnit = positionNetPerUnit;
 		}
@@ -53,6 +50,6 @@ public final class ActiveFlipCardMetrics
 		long totalTax = (long) perItemTax * fullQuantity;
 		int positionNetPerUnit = high - averageBuyPrice - perItemTax;
 
-		return new Result(margin, roi, profitPotential, perItemTax, totalTax, positionNetPerUnit);
+		return new Result(margin, roi, profitPotential, totalTax, positionNetPerUnit);
 	}
 }
