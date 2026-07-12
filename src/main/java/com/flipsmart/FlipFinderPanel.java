@@ -2506,6 +2506,8 @@ public class FlipFinderPanel extends PluginPanel
 			JPanel eastStack = new JPanel();
 			eastStack.setLayout(new BoxLayout(eastStack, BoxLayout.Y_AXIS));
 			eastStack.setOpaque(false);
+			// Small right inset so the icons/buy-limit don't sit flush against the card edge
+			eastStack.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 4));
 			eastStack.add(iconsPanel);
 			eastStack.add(cornerSubtitle);
 			topPanel.add(eastStack, BorderLayout.EAST);
