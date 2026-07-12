@@ -3507,24 +3507,40 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void applySmartSellSideEffects(ActiveFlip flip, ActiveFlipCardPanels panels, Integer high)
 	{
-		PlayerSession session = plugin.getSession();
-		Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
-		Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
-			? sessionPrice
-			: SmartSellPricer.calculateSmartSellPrice(flip, high);
-		if (smartSellPrice == null || smartSellPrice <= 0)
+		Integer smartSellPrice = resolveSmartSellPrice(flip, high, plugin.getSession());
+		if (smartSellPrice == null)
 		{
 			return;
 		}
 
-		if ((sessionPrice == null || sessionPrice <= 0) && session != null)
-		{
-			session.setRecommendedPrice(flip.getItemId(), smartSellPrice);
-		}
 		displayedSellPrices.put(flip.getItemId(), smartSellPrice);
-
 		applyPriceIndicatorIfNeeded(flip, panels, smartSellPrice);
 		updateFocusIfSelected(flip, smartSellPrice);
+	}
+
+	/**
+	 * Prefer the session's already-recommended price; otherwise compute one and persist
+	 * it to the session so later cards/refreshes stay pinned to the same price.
+	 */
+	private static Integer resolveSmartSellPrice(ActiveFlip flip, Integer high, PlayerSession session)
+	{
+		Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+		if (isValidPrice(sessionPrice))
+		{
+			return sessionPrice;
+		}
+
+		Integer computedPrice = SmartSellPricer.calculateSmartSellPrice(flip, high);
+		if (isValidPrice(computedPrice) && session != null)
+		{
+			session.setRecommendedPrice(flip.getItemId(), computedPrice);
+		}
+		return isValidPrice(computedPrice) ? computedPrice : null;
+	}
+
+	private static boolean isValidPrice(Integer price)
+	{
+		return price != null && price > 0;
 	}
 
 	private void applyPriceIndicatorIfNeeded(ActiveFlip flip, ActiveFlipCardPanels panels, int smartSellPrice)
