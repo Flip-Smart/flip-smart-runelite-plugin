@@ -347,6 +347,31 @@ public final class PanelFormat
 	}
 
 	/**
+	 * Draw a circular-arrow refresh icon onto a 14x14 image with the given color.
+	 */
+	public static BufferedImage drawRefreshIcon(Color color)
+	{
+		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = icon.createGraphics();
+		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+		g.setComposite(AlphaComposite.Clear);
+		g.fillRect(0, 0, 14, 14);
+		g.setComposite(AlphaComposite.SrcOver);
+
+		g.setColor(color);
+		g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+		// ~300-degree arc leaves a gap at the top-right for the arrowhead
+		g.drawArc(2, 2, 9, 9, 60, 300);
+		// arrowhead at the arc's open end
+		g.drawLine(11, 3, 11, 6);
+		g.drawLine(11, 3, 8, 3);
+
+		g.dispose();
+		return icon;
+	}
+
+	/**
 	 * Get the base background color for a panel (either price indicator color or default).
 	 * Checks for stored client property first, falls back to default color.
 	 */
