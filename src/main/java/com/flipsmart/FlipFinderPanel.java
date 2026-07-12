@@ -3297,9 +3297,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 
-		// Holder defers topPanel/namePanel capture: the refresh closure is built before the
-		// header panels exist (the header needs the finished icon), so it reads through this
-		// array instead of the not-yet-declared locals.
+		// Array indirection: the refresh closure needs the header panels before createItemHeaderPanels produces them.
 		HeaderPanels[] headerHolder = new HeaderPanels[1];
 		JLabel refreshIcon = createRefreshIconLabel(() ->
 		{
@@ -3486,6 +3484,11 @@ public class FlipFinderPanel extends PluginPanel
 					int perItemTax = GeTax.taxFor(flip.getItemId(), high);
 					long totalTax = (long) perItemTax * fullQty;
 
+					int positionNetPerUnit = high - flip.getAverageBuyPrice() - perItemTax;
+					panel.setToolTipText(positionNetPerUnit < 0
+						? "Selling at the current price would be a loss - below your buy price plus tax."
+						: null);
+
 					pricesLabel.setText(PanelFormat.formatMarketBuySellText(low, high));
 					buyLimitLabel.setText(String.format("Buy limit: %s",
 						buyLimit != null ? PanelFormat.formatGPExact(buyLimit) : "?"));
@@ -3508,6 +3511,7 @@ public class FlipFinderPanel extends PluginPanel
 					currentProfitLabel.setText("Current Profit: N/A");
 					profitPotentialLabel.setText("Profit Potential: N/A");
 					taxLabel.setText("Tax: N/A");
+					panel.setToolTipText(null);
 				}
 
 				updateLiquidityLabel(liquidityLabel, liquidity);

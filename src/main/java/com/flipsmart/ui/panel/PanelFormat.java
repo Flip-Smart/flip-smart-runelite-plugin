@@ -27,7 +27,6 @@ public final class PanelFormat
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
-	private static final String FORMAT_MARKET_BUY_SELL = "Buy: %s | Sell: %s";
 	private static final String FORMAT_CURRENT_MARGIN = "Current Margin: %s gp (%.1f%% ROI)";
 	private static final String FORMAT_CURRENT_PROFIT = "Current Profit: %s";
 	private static final String FORMAT_PROFIT_POTENTIAL = "Profit Potential: %s | Cost: %s";
@@ -189,7 +188,7 @@ public final class PanelFormat
 	/** Row 1: market low labeled "Buy", market high labeled "Sell". */
 	public static String formatMarketBuySellText(int low, int high)
 	{
-		return String.format(FORMAT_MARKET_BUY_SELL, formatGPExact(low), formatGPExact(high));
+		return String.format(FORMAT_BUY_SELL, formatGPExact(low), formatGPExact(high));
 	}
 
 	/** Current Margin: gross market spread (signed, " gp") with ROI percentage. */
