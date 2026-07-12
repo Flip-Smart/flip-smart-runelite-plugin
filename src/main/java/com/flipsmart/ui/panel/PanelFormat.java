@@ -219,6 +219,12 @@ public final class PanelFormat
 			+ coloured(colour, GpUtils.formatGPSigned(clampInt(potential))));
 	}
 
+	/** Tax: whole row in the muted secondary colour, matching the Potential label. */
+	public static String taxHtml(long total)
+	{
+		return htmlRow(coloured(HEX_MUTED, "Tax: " + formatGP(clampInt(total))));
+	}
+
 	/** Wrap card-row content as a Swing HTML label body. */
 	private static String htmlRow(String inner)
 	{

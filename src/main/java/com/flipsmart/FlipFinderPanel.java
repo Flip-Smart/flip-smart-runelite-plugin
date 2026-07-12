@@ -3627,7 +3627,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Colours are baked into the HTML by PanelFormat, so no setForeground needed here.
 		labels.pricesLabel.setText(PanelFormat.livePriceHtml(low, high));
 		labels.marginLabel.setText(PanelFormat.liveMarginHtml(metrics.margin, metrics.roi));
-		labels.taxLabel.setText("Tax: " + PanelFormat.formatGP((int) Math.min(metrics.totalTax, Integer.MAX_VALUE)));
+		labels.taxLabel.setText(PanelFormat.taxHtml(metrics.totalTax));
 		labels.currentProfitLabel.setText(PanelFormat.currentProfitHtml(realized.netProfit));
 		// Net of tax so Potential is comparable to the (net) Current Profit — gross wildly overstates high-tax items
 		labels.potentialLabel.setText(PanelFormat.potentialHtml(metrics.profitPotential - metrics.totalTax));
