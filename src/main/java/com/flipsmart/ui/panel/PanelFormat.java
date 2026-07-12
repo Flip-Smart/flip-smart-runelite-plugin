@@ -191,32 +191,44 @@ public final class PanelFormat
 	/** Top "live" price row: market low (blue) | market high (orange); label keeps the label colour. */
 	public static String livePriceHtml(int low, int high)
 	{
-		return "<html>Live Price: <font color='#" + HEX_PRICE_LOW + "'>" + formatGPExact(low)
-			+ "</font> | <font color='#" + HEX_PRICE_HIGH + "'>" + formatGPExact(high) + "</font></html>";
+		return htmlRow("Live Price: " + coloured(HEX_PRICE_LOW, formatGPExact(low))
+			+ " | " + coloured(HEX_PRICE_HIGH, formatGPExact(high)));
 	}
 
 	/** Live Margin: gross market spread coloured green (profit) / red (loss), with ROI. No "+" prefix. */
 	public static String liveMarginHtml(int margin, double roiPercent)
 	{
 		String colour = margin < 0 ? HEX_LOSS : HEX_PROFIT;
-		return "<html>Live Margin: <font color='#" + colour + "'>" + GpUtils.formatGPSigned(margin)
-			+ String.format(" (%.1f%% ROI)", roiPercent) + "</font></html>";
+		return htmlRow("Live Margin: "
+			+ coloured(colour, GpUtils.formatGPSigned(margin) + String.format(" (%.1f%% ROI)", roiPercent)));
 	}
 
 	/** Current Profit: gold label + realized value coloured green (profit) / red (loss). */
 	public static String currentProfitHtml(long realizedNet)
 	{
 		String colour = realizedNet < 0 ? HEX_LOSS : HEX_PROFIT;
-		return "<html><font color='#" + HEX_PROFIT_LABEL + "'>Current Profit: </font><font color='#"
-			+ colour + "'>" + GpUtils.formatGPSigned(clampInt(realizedNet)) + "</font></html>";
+		return htmlRow(coloured(HEX_PROFIT_LABEL, "Current Profit: ")
+			+ coloured(colour, GpUtils.formatGPSigned(clampInt(realizedNet))));
 	}
 
 	/** Potential: muted label + projected value coloured green (profit) / red (loss). */
 	public static String potentialHtml(long potential)
 	{
 		String colour = potential < 0 ? HEX_LOSS : HEX_PROFIT;
-		return "<html><font color='#" + HEX_MUTED + "'>Potential: </font><font color='#"
-			+ colour + "'>" + GpUtils.formatGPSigned(clampInt(potential)) + "</font></html>";
+		return htmlRow(coloured(HEX_MUTED, "Potential: ")
+			+ coloured(colour, GpUtils.formatGPSigned(clampInt(potential))));
+	}
+
+	/** Wrap card-row content as a Swing HTML label body. */
+	private static String htmlRow(String inner)
+	{
+		return "<html>" + inner + "</html>";
+	}
+
+	/** Colour a span of text with the given hex (no leading #). */
+	private static String coloured(String hex, String text)
+	{
+		return "<font color='#" + hex + "'>" + text + "</font>";
 	}
 
 	/** Saturating cast of a long into the int range for the gp formatters. */
