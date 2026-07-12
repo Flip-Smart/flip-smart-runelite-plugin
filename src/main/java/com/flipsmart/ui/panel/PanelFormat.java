@@ -27,6 +27,11 @@ public final class PanelFormat
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";
+	private static final String FORMAT_BUY_INSTASELL = "Buy: %s | insta-sell: %s";
+	private static final String FORMAT_CURRENT_MARGIN = "Current Margin: %s gp (%.1f%% ROI)";
+	private static final String FORMAT_CURRENT_PROFIT = "Current Profit: %s";
+	private static final String FORMAT_PROFIT_POTENTIAL = "Profit Potential: %s | Cost: %s";
+	private static final String FORMAT_TAX_SPLIT = "Tax: %s | %s";
 	private static final String UNKNOWN_RATING = "Unknown";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String VOLUME_NA = "Volume: N/A";
@@ -179,6 +184,56 @@ public final class PanelFormat
 			? formatGPExact(sellPrice)
 			: "N/A";
 		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
+	}
+
+	/** Row 1: market low labeled "Buy", market high labeled "insta-sell" (labels intentionally inverted per design). */
+	public static String formatBuyInstaSellText(int low, int high)
+	{
+		return String.format(FORMAT_BUY_INSTASELL, formatGPExact(low), formatGPExact(high));
+	}
+
+	/** Current Margin: gross market spread (signed, " gp") with ROI percentage. */
+	public static String formatCurrentMarginText(int marginGp, double roiPercent)
+	{
+		return String.format(FORMAT_CURRENT_MARGIN, signedShort(marginGp), roiPercent);
+	}
+
+	/** Current Profit: realized net on units sold so far (signed short form, no suffix). */
+	public static String formatCurrentProfitText(long netProfit)
+	{
+		return String.format(FORMAT_CURRENT_PROFIT, signedShort(clampInt(netProfit)));
+	}
+
+	/** Profit Potential | Cost: profit is signed short; cost is unsigned short. */
+	public static String formatProfitPotentialText(long profit, long cost)
+	{
+		return String.format(FORMAT_PROFIT_POTENTIAL, GpUtils.formatGPSigned(clampInt(profit)), formatGP(clampInt(cost)));
+	}
+
+	/** Tax: per-item (exact) | total (short). */
+	public static String formatTaxSplitText(int perItem, long total)
+	{
+		return String.format(FORMAT_TAX_SPLIT, formatGPExact(perItem), formatGP(clampInt(total)));
+	}
+
+	/** Short-form gp with an explicit '+' on positive values ("+6", "-6", "0"). */
+	private static String signedShort(int v)
+	{
+		return (v > 0 ? "+" : "") + GpUtils.formatGPSigned(v);
+	}
+
+	/** Saturating cast of a long into the int range for the gp formatters. */
+	private static int clampInt(long v)
+	{
+		if (v > Integer.MAX_VALUE)
+		{
+			return Integer.MAX_VALUE;
+		}
+		if (v < Integer.MIN_VALUE)
+		{
+			return Integer.MIN_VALUE;
+		}
+		return (int) v;
 	}
 
 	/**
