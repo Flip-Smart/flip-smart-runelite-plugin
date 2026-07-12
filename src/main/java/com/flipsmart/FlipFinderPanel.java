@@ -16,6 +16,7 @@ import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.recommend.SmartSellPricer;
+import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.ui.panel.LoginPanel;
@@ -3302,9 +3303,10 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel refreshIcon = createRefreshIconLabel(() ->
 		{
 			apiClient.invalidateCache(flip.getItemId());
-			populateActiveFlipCard(flip, panel, headerHolder[0].topPanel, headerHolder[0].namePanel, detailsPanel,
-				pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel, profitPotentialLabel,
-				taxLabel, liquidityLabel, riskLabel);
+			populateActiveFlipCard(flip,
+				new ActiveFlipCardPanels(panel, headerHolder[0].topPanel, headerHolder[0].namePanel, detailsPanel),
+				new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
+					profitPotentialLabel, taxLabel, liquidityLabel, riskLabel));
 		});
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
 			ColorScheme.DARKER_GRAY_COLOR, refreshIcon);
@@ -3315,9 +3317,10 @@ public class FlipFinderPanel extends PluginPanel
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
-		populateActiveFlipCard(flip, panel, topPanel, namePanel, detailsPanel,
-			pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel, profitPotentialLabel,
-			taxLabel, liquidityLabel, riskLabel);
+		populateActiveFlipCard(flip,
+			new ActiveFlipCardPanels(panel, topPanel, namePanel, detailsPanel),
+			new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
+				profitPotentialLabel, taxLabel, liquidityLabel, riskLabel));
 
 		// Store default background color as client property (will be overwritten if price indicator is applied)
 		panel.putClientProperty("baseBackgroundColor", ColorScheme.DARKER_GRAY_COLOR);
@@ -3398,15 +3401,58 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Fetch fresh market analysis for an active-flip card and (re)populate its rows.
-	 * Reused by the initial card build and the manual refresh button. The smart-sell
-	 * price is still computed to drive the session write, focus update and price-indicator
-	 * background, even though it is no longer displayed.
+	 * Panels touched when (re)populating an active-flip card.
 	 */
-	private void populateActiveFlipCard(ActiveFlip flip, JPanel panel, JPanel topPanel, JPanel namePanel,
-		JPanel detailsPanel, JLabel pricesLabel, JLabel buyLimitLabel, JLabel marginLabel,
-		JLabel currentProfitLabel, JLabel profitPotentialLabel, JLabel taxLabel,
-		JLabel liquidityLabel, JLabel riskLabel)
+	private static class ActiveFlipCardPanels
+	{
+		final JPanel panel;
+		final JPanel topPanel;
+		final JPanel namePanel;
+		final JPanel detailsPanel;
+
+		ActiveFlipCardPanels(JPanel panel, JPanel topPanel, JPanel namePanel, JPanel detailsPanel)
+		{
+			this.panel = panel;
+			this.topPanel = topPanel;
+			this.namePanel = namePanel;
+			this.detailsPanel = detailsPanel;
+		}
+	}
+
+	/**
+	 * Detail-row labels populated on an active-flip card.
+	 */
+	private static class ActiveFlipCardLabels
+	{
+		final JLabel pricesLabel;
+		final JLabel buyLimitLabel;
+		final JLabel marginLabel;
+		final JLabel currentProfitLabel;
+		final JLabel profitPotentialLabel;
+		final JLabel taxLabel;
+		final JLabel liquidityLabel;
+		final JLabel riskLabel;
+
+		ActiveFlipCardLabels(JLabel pricesLabel, JLabel buyLimitLabel, JLabel marginLabel,
+			JLabel currentProfitLabel, JLabel profitPotentialLabel, JLabel taxLabel,
+			JLabel liquidityLabel, JLabel riskLabel)
+		{
+			this.pricesLabel = pricesLabel;
+			this.buyLimitLabel = buyLimitLabel;
+			this.marginLabel = marginLabel;
+			this.currentProfitLabel = currentProfitLabel;
+			this.profitPotentialLabel = profitPotentialLabel;
+			this.taxLabel = taxLabel;
+			this.liquidityLabel = liquidityLabel;
+			this.riskLabel = riskLabel;
+		}
+	}
+
+	/**
+	 * Fetch fresh market analysis for an active-flip card and (re)populate its rows.
+	 * Reused by the initial card build and the manual refresh button.
+	 */
+	private void populateActiveFlipCard(ActiveFlip flip, ActiveFlipCardPanels panels, ActiveFlipCardLabels labels)
 	{
 		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
 			SwingUtilities.invokeLater(() ->
@@ -3429,94 +3475,129 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				}
 
-				// --- Preserved side effects: smart-sell drives session/focus/background ---
-				PlayerSession session = plugin.getSession();
-				Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
-				Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
-					? sessionPrice
-					: SmartSellPricer.calculateSmartSellPrice(flip, high);
-				if (smartSellPrice != null && smartSellPrice > 0)
+				applySmartSellSideEffects(flip, panels, high);
+
+				if (hasValidMarketPrices(high, low))
 				{
-					if ((sessionPrice == null || sessionPrice <= 0) && session != null)
-					{
-						session.setRecommendedPrice(flip.getItemId(), smartSellPrice);
-					}
-					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
-
-					Integer recommendedPrice = flip.getRecommendedSellPrice();
-					if (recommendedPrice != null && recommendedPrice > 0 && !smartSellPrice.equals(recommendedPrice)
-						&& (currentFocus == null || currentFocus.getItemId() != flip.getItemId()))
-					{
-						Color priceIndicatorBg = smartSellPrice > recommendedPrice
-							? COLOR_PRICE_HIGHER_BG
-							: COLOR_PRICE_LOWER_BG;
-						CardWidgets.applyPriceIndicatorBackground(panel, topPanel, namePanel, detailsPanel, priceIndicatorBg);
-					}
-
-					if (currentFocus != null && currentFocus.getItemId() == flip.getItemId() && currentFocus.isSelling())
-					{
-						FocusedFlip updatedFocus = FocusedFlip.forSell(
-							flip.getItemId(), flip.getItemName(), smartSellPrice,
-							flip.getTotalQuantity(), config.priceOffset());
-						currentFocus = updatedFocus;
-						if (onFocusChanged != null)
-						{
-							onFocusChanged.accept(updatedFocus);
-						}
-					}
-				}
-
-				// --- Redesigned display rows (market-based) ---
-				if (high != null && high > 0 && low != null && low > 0)
-				{
-					long firstBuyMs = flip.getFirstBuyTime() != null
-						? TimeUtils.parseIsoToMillis(flip.getFirstBuyTime())
-						: 0L;
-					RealizedFlipProfit.Result realized = RealizedFlipProfit.compute(
-						plugin.getOfferStore().forItem(flip.getItemId()), flip.getItemId(),
-						flip.getAverageBuyPrice(), firstBuyMs);
-
-					int margin = high - low;
-					double roi = low > 0 ? (margin * 100.0) / low : 0.0;
-					long fullQty = (long) realized.soldQuantity + flip.getTotalQuantity();
-					long profitPotential = (long) margin * fullQty;
-					long cost = (long) low * fullQty;
-					int perItemTax = GeTax.taxFor(flip.getItemId(), high);
-					long totalTax = (long) perItemTax * fullQty;
-
-					int positionNetPerUnit = high - flip.getAverageBuyPrice() - perItemTax;
-					panel.setToolTipText(positionNetPerUnit < 0
-						? "Selling at the current price would be a loss - below your buy price plus tax."
-						: null);
-
-					pricesLabel.setText(PanelFormat.formatMarketBuySellText(low, high));
-					buyLimitLabel.setText(String.format("Buy limit: %s",
-						buyLimit != null ? PanelFormat.formatGPExact(buyLimit) : "?"));
-
-					marginLabel.setText(PanelFormat.formatCurrentMarginText(margin, roi));
-					marginLabel.setForeground(margin < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
-
-					currentProfitLabel.setText(PanelFormat.formatCurrentProfitText(realized.netProfit));
-					currentProfitLabel.setForeground(realized.netProfit < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
-
-					profitPotentialLabel.setText(PanelFormat.formatProfitPotentialText(profitPotential, cost));
-					profitPotentialLabel.setForeground(profitPotential < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
-
-					taxLabel.setText(PanelFormat.formatTaxSplitText(perItemTax, totalTax));
+					populateActiveFlipMarketRows(flip, panels, labels, low, high, buyLimit);
 				}
 				else
 				{
-					pricesLabel.setText("Buy: N/A | Sell: N/A");
-					marginLabel.setText("Current Margin: N/A");
-					currentProfitLabel.setText("Current Profit: N/A");
-					profitPotentialLabel.setText("Profit Potential: N/A");
-					taxLabel.setText("Tax: N/A");
-					panel.setToolTipText(null);
+					labels.pricesLabel.setText("Buy: N/A | Sell: N/A");
+					labels.marginLabel.setText("Current Margin: N/A");
+					labels.currentProfitLabel.setText("Current Profit: N/A");
+					labels.profitPotentialLabel.setText("Profit Potential: N/A");
+					labels.taxLabel.setText("Tax: N/A");
+					panels.panel.setToolTipText(null);
 				}
 
-				updateLiquidityLabel(liquidityLabel, liquidity);
-				updateRiskLabel(riskLabel, risk);
+				updateLiquidityLabel(labels.liquidityLabel, liquidity);
+				updateRiskLabel(labels.riskLabel, risk);
 			}));
+	}
+
+	private static boolean hasValidMarketPrices(Integer high, Integer low)
+	{
+		return high != null && high > 0 && low != null && low > 0;
+	}
+
+	/**
+	 * Smart-sell price still drives the session write, Flip Assist focus update and
+	 * price-indicator background, even though it is no longer displayed on the card.
+	 */
+	private void applySmartSellSideEffects(ActiveFlip flip, ActiveFlipCardPanels panels, Integer high)
+	{
+		PlayerSession session = plugin.getSession();
+		Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+		Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
+			? sessionPrice
+			: SmartSellPricer.calculateSmartSellPrice(flip, high);
+		if (smartSellPrice == null || smartSellPrice <= 0)
+		{
+			return;
+		}
+
+		if ((sessionPrice == null || sessionPrice <= 0) && session != null)
+		{
+			session.setRecommendedPrice(flip.getItemId(), smartSellPrice);
+		}
+		displayedSellPrices.put(flip.getItemId(), smartSellPrice);
+
+		applyPriceIndicatorIfNeeded(flip, panels, smartSellPrice);
+		updateFocusIfSelected(flip, smartSellPrice);
+	}
+
+	private void applyPriceIndicatorIfNeeded(ActiveFlip flip, ActiveFlipCardPanels panels, int smartSellPrice)
+	{
+		Integer recommendedPrice = flip.getRecommendedSellPrice();
+		boolean focusedOnThisFlip = currentFocus != null && currentFocus.getItemId() == flip.getItemId();
+		if (recommendedPrice == null || recommendedPrice <= 0 || smartSellPrice == recommendedPrice || focusedOnThisFlip)
+		{
+			return;
+		}
+
+		Color priceIndicatorBg = smartSellPrice > recommendedPrice
+			? COLOR_PRICE_HIGHER_BG
+			: COLOR_PRICE_LOWER_BG;
+		CardWidgets.applyPriceIndicatorBackground(panels.panel, panels.topPanel, panels.namePanel, panels.detailsPanel, priceIndicatorBg);
+	}
+
+	private void updateFocusIfSelected(ActiveFlip flip, int smartSellPrice)
+	{
+		if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() || !currentFocus.isSelling())
+		{
+			return;
+		}
+
+		FocusedFlip updatedFocus = FocusedFlip.forSell(
+			flip.getItemId(), flip.getItemName(), smartSellPrice,
+			flip.getTotalQuantity(), config.priceOffset());
+		currentFocus = updatedFocus;
+		if (onFocusChanged != null)
+		{
+			onFocusChanged.accept(updatedFocus);
+		}
+	}
+
+	/**
+	 * Render the market-based detail rows (margin, current profit, profit potential, tax)
+	 * once fresh buy/sell prices are available.
+	 */
+	private void populateActiveFlipMarketRows(ActiveFlip flip, ActiveFlipCardPanels panels,
+		ActiveFlipCardLabels labels, int low, int high, Integer buyLimit)
+	{
+		long firstBuyMs = flip.getFirstBuyTime() != null
+			? TimeUtils.parseIsoToMillis(flip.getFirstBuyTime())
+			: 0L;
+		RealizedFlipProfit.Result realized = RealizedFlipProfit.compute(
+			plugin.getOfferStore().forItem(flip.getItemId()), flip.getItemId(),
+			flip.getAverageBuyPrice(), firstBuyMs);
+		ActiveFlipCardMetrics.Result metrics = ActiveFlipCardMetrics.compute(
+			low, high, flip.getItemId(), flip.getAverageBuyPrice(), realized.soldQuantity, flip.getTotalQuantity());
+
+		if (metrics.positionNetPerUnit < 0)
+		{
+			panels.panel.setToolTipText("Selling at the current price would be a loss - below your buy price plus tax.");
+		}
+		else
+		{
+			panels.panel.setToolTipText(null);
+		}
+
+		labels.pricesLabel.setText(PanelFormat.formatMarketBuySellText(low, high));
+		labels.buyLimitLabel.setText(String.format("Buy limit: %s",
+			buyLimit != null ? PanelFormat.formatGPExact(buyLimit) : "?"));
+
+		labels.marginLabel.setText(PanelFormat.formatCurrentMarginText(metrics.margin, metrics.roi));
+		labels.marginLabel.setForeground(metrics.margin < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
+
+		labels.currentProfitLabel.setText(PanelFormat.formatCurrentProfitText(realized.netProfit));
+		labels.currentProfitLabel.setForeground(realized.netProfit < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
+
+		labels.profitPotentialLabel.setText(PanelFormat.formatProfitPotentialText(metrics.profitPotential, metrics.cost));
+		labels.profitPotentialLabel.setForeground(metrics.profitPotential < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
+
+		labels.taxLabel.setText(PanelFormat.formatTaxSplitText(metrics.perItemTax, metrics.totalTax));
 	}
 
 	/**
