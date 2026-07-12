@@ -376,12 +376,11 @@ public final class PanelFormat
 		Graphics2D g = createTransparentIconGraphics(icon);
 
 		g.setColor(color);
-		g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-		// ~300-degree arc leaves a gap at the top-right for the arrowhead
-		g.drawArc(2, 2, 9, 9, 60, 300);
-		// arrowhead at the arc's open end
-		g.drawLine(11, 3, 11, 6);
-		g.drawLine(11, 3, 8, 3);
+		g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
+		// Open ring (~250 deg) with a clear gap at the top-right where the arrowhead sits
+		g.drawArc(3, 4, 8, 8, 30, 250);
+		// Solid arrowhead at the ring's open (top-right) end, tip pointing right = clockwise reload
+		g.fillPolygon(new int[] {8, 13, 9}, new int[] {1, 4, 7}, 3);
 
 		g.dispose();
 		return icon;
