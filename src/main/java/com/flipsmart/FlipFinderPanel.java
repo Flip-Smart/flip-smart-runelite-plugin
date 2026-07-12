@@ -16,6 +16,7 @@ import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.recommend.SmartSellPricer;
+import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
@@ -3185,33 +3186,35 @@ public class FlipFinderPanel extends PluginPanel
 		// Details section using BoxLayout for vertical rows
 		JPanel detailsPanel = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
 
-		// Row 1: Buy: X | Sell: Y (placeholders until data loads)
-		JLabel pricesLabel = CardWidgets.createStyledLabel(
-			String.format("Buy: %s | Sell: ...", PanelFormat.formatGPExact(flip.getAverageBuyPrice())), Color.WHITE);
+		// Row: Buy (market low) | Sell (market high)
+		JLabel pricesLabel = CardWidgets.createStyledLabel("Buy: ... | Sell: ...", Color.WHITE);
 
-		// Row 2: Qty: X (Limit: Y)
-		JLabel qtyLabel = CardWidgets.createStyledLabel(
-			String.format("Qty: %d (Limit: ...)", flip.getTotalQuantity()), COLOR_TEXT_GRAY);
+		// Row: Buy limit
+		JLabel buyLimitLabel = CardWidgets.createStyledLabel("Buy limit: ...", COLOR_TEXT_GRAY);
 
-		// Row 3: Tax = Z
-		JLabel taxLabel = CardWidgets.createStyledLabel("Tax = ...", Color.CYAN);
+		// Row: Current Margin (market spread) with ROI
+		JLabel marginLabel = CardWidgets.createStyledLabel("Current Margin: ...", COLOR_YELLOW);
 
-		// Row 4: Margin: X (Y% ROI)
-		JLabel marginLabel = CardWidgets.createStyledLabel("Margin: ...", COLOR_YELLOW);
+		// Row: Current Profit (realized on units sold so far)
+		JLabel currentProfitLabel = CardWidgets.createStyledLabel("Current Profit: ...", COLOR_PROFIT_GREEN);
 
-		// Row 5: Profit: X | Cost: Y
-		JLabel profitCostLabel = CardWidgets.createStyledLabel(
-			String.format("Profit: ... | Cost: %s", PanelFormat.formatGP(flip.getTotalInvested())), COLOR_PROFIT_GREEN);
+		// Row: Profit Potential | Cost
+		JLabel profitPotentialLabel = CardWidgets.createStyledLabel("Profit Potential: ...", COLOR_PROFIT_GREEN);
 
-		// Row 6: Liquidity: X (Rating) | Y/hr
+		// Row: Tax (per-item | total)
+		JLabel taxLabel = CardWidgets.createStyledLabel("Tax: ...", Color.CYAN);
+
+		// Row: Liquidity
 		JLabel liquidityLabel = CardWidgets.createStyledLabel("Liquidity: ...", Color.CYAN);
 
-		// Row 7: Risk: X (Rating)
+		// Row: Risk
 		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
 
-		// Add all rows with small spacing
-		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, qtyLabel, taxLabel, marginLabel,
-			profitCostLabel, liquidityLabel, riskLabel);
+		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, buyLimitLabel, marginLabel,
+			currentProfitLabel, profitPotentialLabel);
+		// Deliberate blank spacer separating the pricing/profit block from tax/risk
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 8)));
+		CardWidgets.addLabelsWithSpacing(detailsPanel, taxLabel, liquidityLabel, riskLabel);
 
 		if (offerDispositionLookup != null)
 		{
@@ -3243,146 +3246,9 @@ public class FlipFinderPanel extends PluginPanel
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
-		// Fetch current market data to populate all fields
-		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
-		{
-			SwingUtilities.invokeLater(() ->
-			{
-				Integer currentMarketPrice = null;
-				Integer dailyVolume = null;
-				Integer buyLimit = null;
-				FlipAnalysis.Liquidity liquidity = null;
-				FlipAnalysis.Risk risk = null;
-				
-				if (analysis != null)
-				{
-					buyLimit = analysis.getBuyLimit();
-					liquidity = analysis.getLiquidity();
-					risk = analysis.getRisk();
-					
-					if (analysis.getCurrentPrices() != null)
-					{
-						FlipAnalysis.CurrentPrices prices = analysis.getCurrentPrices();
-						currentMarketPrice = prices.getHigh();
-					}
-					
-					// Get daily volume from liquidity info
-					if (liquidity != null && liquidity.getTotalVolumePerHour() != null)
-					{
-						dailyVolume = (int)(liquidity.getTotalVolumePerHour() * 24);
-					}
-				}
-				
-				// Session is the source of truth for sell price (initial smart-sell or
-				// any subsequent adjustment writes there). Only fall through to the
-				// freshly-computed smart-sell when the session has nothing yet.
-				PlayerSession session = plugin.getSession();
-				Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
-				Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
-					? sessionPrice
-					: SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
-				boolean pastThreshold = SmartSellPricer.shouldUseLossMinimizingPrice(flip, dailyVolume);
-
-				if (smartSellPrice != null && smartSellPrice > 0)
-				{
-					if ((sessionPrice == null || sessionPrice <= 0) && session != null)
-					{
-						session.setRecommendedPrice(flip.getItemId(), smartSellPrice);
-					}
-					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
-					
-					// Apply background color based on price comparison with original recommendation
-					// Green if selling higher than recommended, red if selling lower
-					Integer recommendedPrice = flip.getRecommendedSellPrice();
-					if (recommendedPrice != null && recommendedPrice > 0 && !smartSellPrice.equals(recommendedPrice))
-					{
-						Color priceIndicatorBg = smartSellPrice > recommendedPrice 
-							? COLOR_PRICE_HIGHER_BG  // Green - selling higher than estimate
-							: COLOR_PRICE_LOWER_BG;  // Red - selling lower than estimate
-						
-						// Apply to panel and all child panels (not focused panel - that has its own style)
-						if (currentFocus == null || currentFocus.getItemId() != flip.getItemId())
-						{
-							CardWidgets.applyPriceIndicatorBackground(panel, topPanel, namePanel, detailsPanel, priceIndicatorBg);
-						}
-					}
-					
-					// Update Flip Assist if this item is currently focused
-					if (currentFocus != null && currentFocus.getItemId() == flip.getItemId() && currentFocus.isSelling())
-					{
-						int priceOffset = config.priceOffset();
-						FocusedFlip updatedFocus = FocusedFlip.forSell(
-							flip.getItemId(),
-							flip.getItemName(),
-							smartSellPrice,
-							flip.getTotalQuantity(),
-							priceOffset
-						);
-						currentFocus = updatedFocus;
-						if (onFocusChanged != null)
-						{
-							onFocusChanged.accept(updatedFocus);
-						}
-					}
-					
-					// Row 1: Update Buy | Sell prices
-					String priceSuffix = pastThreshold ? "*" : "";
-					pricesLabel.setText(String.format("Buy: %s | Sell: %s%s", 
-						PanelFormat.formatGPExact(flip.getAverageBuyPrice()),
-						PanelFormat.formatGPExact(smartSellPrice),
-						priceSuffix));
-
-					int geTax = GeTax.taxFor(flip.getItemId(), smartSellPrice);
-
-					// Calculate margin and profit
-					int marginPerItem = smartSellPrice - flip.getAverageBuyPrice() - geTax;
-					int totalProfit = marginPerItem * flip.getTotalQuantity();
-					double roi = (marginPerItem * 100.0) / flip.getAverageBuyPrice();
-					
-					// Row 2: Update Qty (Limit) | Tax
-					String limitText = buyLimit != null ? String.valueOf(buyLimit) : "?";
-					qtyLabel.setText(String.format("Qty: %d (Limit: %s)", flip.getTotalQuantity(), limitText));
-					taxLabel.setText(String.format("Tax = %s", PanelFormat.formatGP(geTax * flip.getTotalQuantity())));
-					
-					// Row 3: Update Margin with ROI (show warning color if not profitable)
-					marginLabel.setText(PanelFormat.formatMarginText(marginPerItem, roi, totalProfit <= 0));
-					marginLabel.setForeground(totalProfit <= 0 ? COLOR_LOSS_RED : COLOR_YELLOW);
-					
-					// Row 4: Update Profit | Cost - use cyan for higher sell, orange for lower
-					profitCostLabel.setText(PanelFormat.formatProfitCostText(totalProfit, flip.getTotalInvested()));
-					if (totalProfit <= 0)
-					{
-						profitCostLabel.setForeground(COLOR_LOSS_RED);
-					}
-					else if (recommendedPrice != null && recommendedPrice > 0 && smartSellPrice > recommendedPrice)
-					{
-						profitCostLabel.setForeground(Color.CYAN);  // Cyan for higher-than-expected profit
-					}
-					else
-					{
-						profitCostLabel.setForeground(COLOR_PROFIT_GREEN);
-					}
-					
-					// Show warning tooltip if past threshold and losing money
-					if (pastThreshold && totalProfit < 0)
-					{
-						panel.setToolTipText("Price adjusted to minimize loss. Original recommended price was not achievable.");
-					}
-				}
-				else
-				{
-					pricesLabel.setText(PanelFormat.formatBuySellText(flip.getAverageBuyPrice(), null));
-					marginLabel.setText("Margin: N/A");
-					profitCostLabel.setText(String.format("Profit: N/A | Cost: %s", PanelFormat.formatGP(flip.getTotalInvested())));
-				}
-				
-				// Row 5: Update Liquidity
-				updateLiquidityLabel(liquidityLabel, liquidity);
-				
-				// Row 6: Update Risk
-				updateRiskLabel(riskLabel, risk);
-			});
-		});
+		populateActiveFlipCard(flip, panel, topPanel, namePanel, detailsPanel,
+			pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel, profitPotentialLabel,
+			taxLabel, liquidityLabel, riskLabel);
 
 		// Store default background color as client property (will be overwritten if price indicator is applied)
 		panel.putClientProperty("baseBackgroundColor", ColorScheme.DARKER_GRAY_COLOR);
@@ -3460,6 +3326,122 @@ public class FlipFinderPanel extends PluginPanel
 		});
 
 		return panel;
+	}
+
+	/**
+	 * Fetch fresh market analysis for an active-flip card and (re)populate its rows.
+	 * Reused by the initial card build and the manual refresh button. The smart-sell
+	 * price is still computed to drive the session write, focus update and price-indicator
+	 * background, even though it is no longer displayed.
+	 */
+	private void populateActiveFlipCard(ActiveFlip flip, JPanel panel, JPanel topPanel, JPanel namePanel,
+		JPanel detailsPanel, JLabel pricesLabel, JLabel buyLimitLabel, JLabel marginLabel,
+		JLabel currentProfitLabel, JLabel profitPotentialLabel, JLabel taxLabel,
+		JLabel liquidityLabel, JLabel riskLabel)
+	{
+		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
+			SwingUtilities.invokeLater(() ->
+			{
+				Integer high = null;
+				Integer low = null;
+				Integer buyLimit = null;
+				FlipAnalysis.Liquidity liquidity = null;
+				FlipAnalysis.Risk risk = null;
+
+				if (analysis != null)
+				{
+					buyLimit = analysis.getBuyLimit();
+					liquidity = analysis.getLiquidity();
+					risk = analysis.getRisk();
+					if (analysis.getCurrentPrices() != null)
+					{
+						high = analysis.getCurrentPrices().getHigh();
+						low = analysis.getCurrentPrices().getLow();
+					}
+				}
+
+				// --- Preserved side effects: smart-sell drives session/focus/background ---
+				PlayerSession session = plugin.getSession();
+				Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+				Integer smartSellPrice = (sessionPrice != null && sessionPrice > 0)
+					? sessionPrice
+					: SmartSellPricer.calculateSmartSellPrice(flip, high);
+				if (smartSellPrice != null && smartSellPrice > 0)
+				{
+					if ((sessionPrice == null || sessionPrice <= 0) && session != null)
+					{
+						session.setRecommendedPrice(flip.getItemId(), smartSellPrice);
+					}
+					displayedSellPrices.put(flip.getItemId(), smartSellPrice);
+
+					Integer recommendedPrice = flip.getRecommendedSellPrice();
+					if (recommendedPrice != null && recommendedPrice > 0 && !smartSellPrice.equals(recommendedPrice)
+						&& (currentFocus == null || currentFocus.getItemId() != flip.getItemId()))
+					{
+						Color priceIndicatorBg = smartSellPrice > recommendedPrice
+							? COLOR_PRICE_HIGHER_BG
+							: COLOR_PRICE_LOWER_BG;
+						CardWidgets.applyPriceIndicatorBackground(panel, topPanel, namePanel, detailsPanel, priceIndicatorBg);
+					}
+
+					if (currentFocus != null && currentFocus.getItemId() == flip.getItemId() && currentFocus.isSelling())
+					{
+						FocusedFlip updatedFocus = FocusedFlip.forSell(
+							flip.getItemId(), flip.getItemName(), smartSellPrice,
+							flip.getTotalQuantity(), config.priceOffset());
+						currentFocus = updatedFocus;
+						if (onFocusChanged != null)
+						{
+							onFocusChanged.accept(updatedFocus);
+						}
+					}
+				}
+
+				// --- Redesigned display rows (market-based) ---
+				if (high != null && high > 0 && low != null && low > 0)
+				{
+					long firstBuyMs = flip.getFirstBuyTime() != null
+						? TimeUtils.parseIsoToMillis(flip.getFirstBuyTime())
+						: 0L;
+					RealizedFlipProfit.Result realized = RealizedFlipProfit.compute(
+						plugin.getOfferStore().forItem(flip.getItemId()), flip.getItemId(),
+						flip.getAverageBuyPrice(), firstBuyMs);
+
+					int margin = high - low;
+					double roi = low > 0 ? (margin * 100.0) / low : 0.0;
+					long fullQty = (long) realized.soldQuantity + flip.getTotalQuantity();
+					long profitPotential = (long) margin * fullQty;
+					long cost = (long) low * fullQty;
+					int perItemTax = GeTax.taxFor(flip.getItemId(), high);
+					long totalTax = (long) perItemTax * fullQty;
+
+					pricesLabel.setText(PanelFormat.formatMarketBuySellText(low, high));
+					buyLimitLabel.setText(String.format("Buy limit: %s",
+						buyLimit != null ? PanelFormat.formatGPExact(buyLimit) : "?"));
+
+					marginLabel.setText(PanelFormat.formatCurrentMarginText(margin, roi));
+					marginLabel.setForeground(margin < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
+
+					currentProfitLabel.setText(PanelFormat.formatCurrentProfitText(realized.netProfit));
+					currentProfitLabel.setForeground(realized.netProfit < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
+
+					profitPotentialLabel.setText(PanelFormat.formatProfitPotentialText(profitPotential, cost));
+					profitPotentialLabel.setForeground(profitPotential < 0 ? COLOR_LOSS_RED : COLOR_PROFIT_GREEN);
+
+					taxLabel.setText(PanelFormat.formatTaxSplitText(perItemTax, totalTax));
+				}
+				else
+				{
+					pricesLabel.setText("Buy: N/A | Sell: N/A");
+					marginLabel.setText("Current Margin: N/A");
+					currentProfitLabel.setText("Current Profit: N/A");
+					profitPotentialLabel.setText("Profit Potential: N/A");
+					taxLabel.setText("Tax: N/A");
+				}
+
+				updateLiquidityLabel(liquidityLabel, liquidity);
+				updateRiskLabel(riskLabel, risk);
+			}));
 	}
 
 	/**
