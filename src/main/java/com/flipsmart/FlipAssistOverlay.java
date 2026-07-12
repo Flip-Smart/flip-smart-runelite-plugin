@@ -314,7 +314,12 @@ public class FlipAssistOverlay extends Overlay
 			{
 				return null;
 			}
-			return renderHintBox(graphics, message);
+			// The icon must track the message actually shown: only the item-carrying
+			// auto-status prompt ("Collect X") gets an icon. History/monitoring/login/
+			// hint prompts outrank it in selectNoFocusMessage but carry no item, so a
+			// leftover autoStatusItemId must not paint an icon onto them.
+			int hintIconItemId = iconForNoFocusMessage(message, autoStatusMessage, autoStatusItemId);
+			return renderHintBox(graphics, message, hintIconItemId);
 		}
 		
 		// Only show when GE is open or when we have an active flip
@@ -380,9 +385,8 @@ public class FlipAssistOverlay extends Overlay
 	 *   "Collect items from GE" subtitle
 	 *   [icon] item name
 	 */
-	private Dimension renderHintBox(Graphics2D graphics, String message)
+	private Dimension renderHintBox(Graphics2D graphics, String message, int itemId)
 	{
-		int itemId = autoStatusItemId;
 		boolean hasIcon = itemId > 0;
 		int hintIconSize = 20;
 
@@ -1037,7 +1041,23 @@ public class FlipAssistOverlay extends Overlay
 		}
 		return hintMessage;
 	}
-	
+
+	/**
+	 * The item icon to draw beside a no-focus hint message. Only the auto-status
+	 * prompt carries an item ("Collect X"); every other message source (history,
+	 * monitoring, login, hint, fallback) is text-only. Returning the item id only
+	 * when the displayed message is exactly the auto-status message keeps the icon
+	 * from bleeding onto a higher-priority text-only prompt.
+	 */
+	static int iconForNoFocusMessage(String displayedMessage, String autoStatusMessage, int autoStatusItemId)
+	{
+		if (autoStatusItemId > 0 && displayedMessage != null && displayedMessage.equals(autoStatusMessage))
+		{
+			return autoStatusItemId;
+		}
+		return 0;
+	}
+
 	private Widget[] getOfferPanelChildren()
 	{
 		Widget offerPanel = client.getWidget(GE_INTERFACE_GROUP, GE_OFFER_PANEL_CHILD);

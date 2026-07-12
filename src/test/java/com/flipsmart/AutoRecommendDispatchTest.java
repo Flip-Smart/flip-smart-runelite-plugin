@@ -173,7 +173,7 @@ public class AutoRecommendDispatchTest {
         service.addToStaleQueue(partialBuy);
 
         AtomicInteger capturedId = new AtomicInteger(-1);
-        service.setOnStaleOfferPrompted(capturedId::set);
+        service.setOnHighlightItemSlot(capturedId::set);
 
         ActionDecision d = service.resolveAndApply(-1);
 
@@ -195,7 +195,7 @@ public class AutoRecommendDispatchTest {
 
         AtomicInteger highlightCalls = new AtomicInteger();
         AtomicInteger lastHighlightItem = new AtomicInteger(-1);
-        service.setOnStaleOfferPrompted(id -> {
+        service.setOnHighlightItemSlot(id -> {
             highlightCalls.incrementAndGet();
             lastHighlightItem.set(id);
         });
@@ -538,6 +538,30 @@ public class AutoRecommendDispatchTest {
         String overlay = service.getLastOverlayMessage();
         assertTrue("overlay must mention item-200, not profit; got: " + overlay,
             overlay != null && overlay.contains("item-200"));
+    }
+
+    @Test
+    public void collectPromptLightsResolverChosenItemSlot() {
+        // The slot highlight must follow the collect prompt: when the resolver picks the
+        // completed BUY (item-200), the highlight callback must fire for 200 — not linger
+        // on the completed SELL (item-100) or any prior focus.
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.hasCollectableGEOffers()).thenReturn(true);
+
+        OfferRecord completedSell = OfferRecord
+            .newOffer(1, 0, 100, "item-100", false, 5, 300, 0L)
+            .withFill(5, 1500L, OfferState.FILLED, 1L);
+        OfferRecord completedBuy = OfferRecord
+            .newOffer(2, 5, 200, "item-200", true, 10, 100, 0L)
+            .withFill(10, 1000L, OfferState.FILLED, 2L);
+        offerStore.importRecords(Arrays.asList(completedSell, completedBuy));
+
+        AtomicInteger highlightedItem = new AtomicInteger(-1);
+        service.setOnHighlightItemSlot(highlightedItem::set);
+
+        service.resolveAndApply(-1);
+
+        assertEquals("highlight must follow the collect prompt's item", 200, highlightedItem.get());
     }
 
     // AC1/AC2 (#919): a skipped buy is snoozed for its cooldown, so the next resolve
