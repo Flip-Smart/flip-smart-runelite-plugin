@@ -6,10 +6,10 @@ import org.junit.Test;
 public class PanelFormatActiveFlipsTest
 {
 	@Test
-	public void buyInstaSellShowsLowThenHighWithCommas()
+	public void marketBuySellShowsLowThenHighWithCommas()
 	{
-		assertEquals("Buy: 173 | insta-sell: 179", PanelFormat.formatBuyInstaSellText(173, 179));
-		assertEquals("Buy: 1,234 | insta-sell: 5,678", PanelFormat.formatBuyInstaSellText(1234, 5678));
+		assertEquals("Buy: 173 | Sell: 179", PanelFormat.formatMarketBuySellText(173, 179));
+		assertEquals("Buy: 1,234 | Sell: 5,678", PanelFormat.formatMarketBuySellText(1234, 5678));
 	}
 
 	@Test
