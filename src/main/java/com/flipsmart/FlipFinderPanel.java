@@ -2474,14 +2474,14 @@ public class FlipFinderPanel extends PluginPanel
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setFont(FONT_BOLD_13);
 		// Narrow the name a little more when a third (refresh) icon shares the corner
-		int nameWidth = trailingIcon != null ? 108 : 130;
+		int nameWidth = trailingIcon != null ? 98 : 130;
 		nameLabel.setPreferredSize(new Dimension(nameWidth, nameLabel.getPreferredSize().height));
 		nameLabel.setMaximumSize(new Dimension(nameWidth, Integer.MAX_VALUE));
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
 
-		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
+		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 1, 0));
 		iconsPanel.setOpaque(false);
 
 		iconsPanel.add(createBlockIconLabel(itemId, itemName));
@@ -2492,7 +2492,7 @@ public class FlipFinderPanel extends PluginPanel
 			// Visible divider so the refresh action reads as distinct from the two existing icons
 			JLabel divider = new JLabel("|");
 			divider.setForeground(COLOR_TEXT_GRAY);
-			divider.setBorder(BorderFactory.createEmptyBorder(0, 3, 0, 1));
+			divider.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
 			iconsPanel.add(divider);
 			iconsPanel.add(trailingIcon);
 		}
@@ -2529,7 +2529,7 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
 		chartLabel.setToolTipText("View price history on FlipSmart website");
 		chartLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 4, 0, 0));
+		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 1, 0, 0));
 		chartLabel.setOpaque(false);
 
 		// Add click listener to open website
@@ -2566,7 +2566,7 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel refreshLabel = new JLabel(new ImageIcon(refreshIcon));
 		refreshLabel.setToolTipText("Refresh latest prices.");
 		refreshLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		refreshLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
+		refreshLabel.setBorder(BorderFactory.createEmptyBorder(0, 1, 0, 0));
 		refreshLabel.setOpaque(false);
 
 		refreshLabel.addMouseListener(new MouseAdapter()
@@ -3497,7 +3497,7 @@ public class FlipFinderPanel extends PluginPanel
 				applySmartSellSideEffects(flip, panels, high);
 
 				labels.buyLimitLabel.setText(
-					"Buy limit: " + (buyLimit != null ? PanelFormat.formatGPExact(buyLimit) : "?"));
+					"Buy limit: " + (buyLimit != null ? PanelFormat.formatGP(buyLimit) : "?"));
 
 				if (hasValidMarketPrices(high, low))
 				{
@@ -3627,7 +3627,8 @@ public class FlipFinderPanel extends PluginPanel
 		labels.marginLabel.setText(PanelFormat.liveMarginHtml(metrics.margin, metrics.roi));
 		labels.taxLabel.setText("Tax: " + PanelFormat.formatGP((int) Math.min(metrics.totalTax, Integer.MAX_VALUE)));
 		labels.currentProfitLabel.setText(PanelFormat.currentProfitHtml(realized.netProfit));
-		labels.potentialLabel.setText(PanelFormat.potentialHtml(metrics.profitPotential));
+		// Net of tax so Potential is comparable to the (net) Current Profit — gross wildly overstates high-tax items
+		labels.potentialLabel.setText(PanelFormat.potentialHtml(metrics.profitPotential - metrics.totalTax));
 	}
 
 	/**
