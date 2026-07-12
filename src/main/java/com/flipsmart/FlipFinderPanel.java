@@ -3272,7 +3272,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// --- Bottom "reference" block: the trade position ---
 		JLabel currentProfitLabel = CardWidgets.createStyledLabel("Current Profit: ...", Color.WHITE);
-		JLabel potentialLabel = CardWidgets.createStyledLabel("Potential: ...", Color.WHITE);
+		JLabel potentialLabel = CardWidgets.createStyledLabel("Max Potential Profit: ...", Color.WHITE);
 		potentialLabel.setFont(FONT_PLAIN_11);
 		JLabel liquidityLabel = CardWidgets.createStyledLabel("Liquidity: ...", Color.CYAN);
 		JLabel riskLabel = CardWidgets.createStyledLabel("Risk: ...", COLOR_YELLOW);
@@ -3496,21 +3496,24 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				}
 
-				applySmartSellSideEffects(flip, panels, high);
+				// The flip's own sell price (session-recommended, else computed) drives both the
+				// side effects and the Max Potential Profit figure.
+				Integer flipSellPrice = resolveSmartSellPrice(flip, high, plugin.getSession());
+				applySmartSellSideEffects(flip, panels, flipSellPrice);
 
 				labels.buyLimitLabel.setText(
 					"Buy limit: " + (buyLimit != null ? PanelFormat.formatGP(buyLimit) : "?"));
 
 				if (hasValidMarketPrices(high, low))
 				{
-					populateActiveFlipMarketRows(flip, panels, labels, low, high);
+					populateActiveFlipMarketRows(flip, panels, labels, low, high, flipSellPrice);
 				}
 				else
 				{
 					labels.pricesLabel.setText("Live Price: N/A");
 					labels.marginLabel.setText("Live Margin: N/A");
 					labels.currentProfitLabel.setText("Current Profit: N/A");
-					labels.potentialLabel.setText("Potential: N/A");
+					labels.potentialLabel.setText("Max Potential Profit: N/A");
 					labels.taxLabel.setText("Tax: N/A");
 					panels.panel.setToolTipText(null);
 				}
@@ -3526,12 +3529,11 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Smart-sell price still drives the session write, Flip Assist focus update and
-	 * price-indicator background, even though it is no longer displayed on the card.
+	 * The flip's sell price drives the session write, Flip Assist focus update and
+	 * price-indicator background, even though the price itself is not displayed.
 	 */
-	private void applySmartSellSideEffects(ActiveFlip flip, ActiveFlipCardPanels panels, Integer high)
+	private void applySmartSellSideEffects(ActiveFlip flip, ActiveFlipCardPanels panels, Integer smartSellPrice)
 	{
-		Integer smartSellPrice = resolveSmartSellPrice(flip, high, plugin.getSession());
 		if (smartSellPrice == null)
 		{
 			return;
@@ -3600,11 +3602,11 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Render the market-based detail rows (margin, current profit, profit potential, tax)
-	 * once fresh buy/sell prices are available.
+	 * Render the market-based detail rows (live price, live margin, tax) plus the
+	 * position rows (current profit, max potential profit) once prices are available.
 	 */
 	private void populateActiveFlipMarketRows(ActiveFlip flip, ActiveFlipCardPanels panels,
-		ActiveFlipCardLabels labels, int low, int high)
+		ActiveFlipCardLabels labels, int low, int high, Integer flipSellPrice)
 	{
 		long firstBuyMs = flip.getFirstBuyTime() != null
 			? TimeUtils.parseIsoToMillis(flip.getFirstBuyTime())
@@ -3624,13 +3626,22 @@ public class FlipFinderPanel extends PluginPanel
 			panels.panel.setToolTipText(null);
 		}
 
+		// Max Potential Profit uses the flip's OWN buy/sell prices (not the wiki spread):
+		// (sell - buy - tax) x full flip quantity.
+		long fullQty = (long) realized.soldQuantity + flip.getTotalQuantity();
+		long maxPotentialProfit = 0L;
+		if (flipSellPrice != null && flipSellPrice > 0)
+		{
+			int sellTax = GeTax.taxFor(flip.getItemId(), flipSellPrice);
+			maxPotentialProfit = ((long) flipSellPrice - flip.getAverageBuyPrice() - sellTax) * fullQty;
+		}
+
 		// Colours are baked into the HTML by PanelFormat, so no setForeground needed here.
 		labels.pricesLabel.setText(PanelFormat.livePriceHtml(low, high));
 		labels.marginLabel.setText(PanelFormat.liveMarginHtml(metrics.margin, metrics.roi));
 		labels.taxLabel.setText(PanelFormat.taxHtml(metrics.totalTax));
 		labels.currentProfitLabel.setText(PanelFormat.currentProfitHtml(realized.netProfit));
-		// Net of tax so Potential is comparable to the (net) Current Profit — gross wildly overstates high-tax items
-		labels.potentialLabel.setText(PanelFormat.potentialHtml(metrics.profitPotential - metrics.totalTax));
+		labels.potentialLabel.setText(PanelFormat.maxPotentialProfitHtml(maxPotentialProfit));
 	}
 
 	/**

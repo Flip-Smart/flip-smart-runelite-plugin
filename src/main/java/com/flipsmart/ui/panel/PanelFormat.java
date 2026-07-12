@@ -211,12 +211,12 @@ public final class PanelFormat
 			+ coloured(colour, GpUtils.formatGPSigned(clampInt(realizedNet))));
 	}
 
-	/** Potential: muted label + projected value coloured green (profit) / red (loss). */
-	public static String potentialHtml(long potential)
+	/** Max Potential Profit: muted label + value coloured green (profit) / red (loss). */
+	public static String maxPotentialProfitHtml(long maxProfit)
 	{
-		String colour = potential < 0 ? HEX_LOSS : HEX_PROFIT;
-		return htmlRow(coloured(HEX_MUTED, "Potential: ")
-			+ coloured(colour, GpUtils.formatGPSigned(clampInt(potential))));
+		String colour = maxProfit < 0 ? HEX_LOSS : HEX_PROFIT;
+		return htmlRow(coloured(HEX_MUTED, "Max Potential Profit: ")
+			+ coloured(colour, GpUtils.formatGPSigned(clampInt(maxProfit))));
 	}
 
 	/** Tax: whole row in the muted secondary colour, matching the Potential label. */

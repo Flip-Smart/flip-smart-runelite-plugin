@@ -13,15 +13,13 @@ public final class ActiveFlipCardMetrics
 	{
 		public final int margin;
 		public final double roi;
-		public final long profitPotential;
 		public final long totalTax;
 		public final int positionNetPerUnit;
 
-		Result(int margin, double roi, long profitPotential, long totalTax, int positionNetPerUnit)
+		Result(int margin, double roi, long totalTax, int positionNetPerUnit)
 		{
 			this.margin = margin;
 			this.roi = roi;
-			this.profitPotential = profitPotential;
 			this.totalTax = totalTax;
 			this.positionNetPerUnit = positionNetPerUnit;
 		}
@@ -45,11 +43,10 @@ public final class ActiveFlipCardMetrics
 		int margin = high - low;
 		double roi = low > 0 ? (margin * 100.0) / low : 0.0;
 		long fullQuantity = (long) realizedSoldQuantity + remainingQuantity;
-		long profitPotential = (long) margin * fullQuantity;
 		int perItemTax = GeTax.taxFor(itemId, high);
 		long totalTax = (long) perItemTax * fullQuantity;
 		int positionNetPerUnit = high - averageBuyPrice - perItemTax;
 
-		return new Result(margin, roi, profitPotential, totalTax, positionNetPerUnit);
+		return new Result(margin, roi, totalTax, positionNetPerUnit);
 	}
 }

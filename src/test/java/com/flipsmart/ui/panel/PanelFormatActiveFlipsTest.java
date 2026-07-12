@@ -36,10 +36,13 @@ public class PanelFormatActiveFlipsTest
 	}
 
 	@Test
-	public void potentialMutedLabelValueColouredBySign()
+	public void maxPotentialProfitMutedLabelValueColouredBySign()
 	{
 		assertEquals(
-			"<html><font color='#9aa0a8'>Potential: </font><font color='#5ee66e'>539.0K</font></html>",
-			PanelFormat.potentialHtml(539_000L));
+			"<html><font color='#9aa0a8'>Max Potential Profit: </font><font color='#5ee66e'>178.5K</font></html>",
+			PanelFormat.maxPotentialProfitHtml(178_500L));
+		assertEquals(
+			"<html><font color='#9aa0a8'>Max Potential Profit: </font><font color='#ff6b6b'>-49.6K</font></html>",
+			PanelFormat.maxPotentialProfitHtml(-49_600L));
 	}
 }
