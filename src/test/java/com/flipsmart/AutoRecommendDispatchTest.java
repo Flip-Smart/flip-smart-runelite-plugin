@@ -167,6 +167,28 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void collectedPartialWithLiveBuyOfferIsNotSurfacedAsList() {
+        // A partial fill collected while the buy is still filling must NOT prompt a sell — the flip
+        // shouldn't be split into a premature sell before the buy completes. Mirrors the
+        // active-sell-offer guard for a still-live buy.
+        when(plugin.getFilledGESlotCount()).thenReturn(7); // free slot: isolate the live-buy filter, not the slot gate
+
+        OfferRecord liveBuy = OfferRecord
+            .newOffer(2, 0, 43, "item-43", true, 5, 100, 0L)
+            .withFill(1, 100L, OfferState.PARTIAL_FILL, 1L); // 1/5 bought, buy still live
+        offerStore.importRecords(Arrays.asList(liveBuy));
+
+        session.addCollectedItem(43, 1, CollectOrigin.COMPLETED_BUY, 1L); // collected the 1 partial
+        session.setRecommendedPrice(43, 300);
+        when(plugin.getInventoryCountForItem(43)).thenReturn(1);
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertNotEquals("must not surface a sell for a partial while its buy is still filling",
+            ActionStep.LIST, d.getStep());
+    }
+
+    @Test
     public void onSellOrderPlacedRemovesItemFromCollectedSoAutoModeDoesNotReList() {
         when(plugin.getFilledGESlotCount()).thenReturn(7); // free slot so the held sell can list
         when(plugin.getInventoryCountForItem(55)).thenReturn(5);
