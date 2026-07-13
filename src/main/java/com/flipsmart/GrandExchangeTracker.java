@@ -916,6 +916,25 @@ public class GrandExchangeTracker
 		return null;
 	}
 
+	/**
+	 * Resolve the sell quantity to prompt. Inventory is a hard ceiling — the
+	 * player can never sell more than they hold — so an over-counted API value
+	 * is clamped down to inventory. When inventory is unknown (0) we trust the
+	 * API; when the API has no tracked position we fall back to inventory.
+	 */
+	static int resolveSellQuantity(int apiQuantity, int inventoryCount)
+	{
+		if (inventoryCount <= 0)
+		{
+			return apiQuantity;
+		}
+		if (apiQuantity <= 0)
+		{
+			return inventoryCount;
+		}
+		return Math.min(apiQuantity, inventoryCount);
+	}
+
 	private void setFocusForSell(ActiveFlip flip, int inventoryFallbackCount)
 	{
 		int sellPrice;
@@ -939,10 +958,8 @@ public class GrandExchangeTracker
 			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
 
-		// Use the higher of API quantity vs actual inventory count
-		// (inventory is the source of truth — player may have more than API tracked)
 		int apiQuantity = flip.getTotalQuantity();
-		int sellQuantity = Math.max(apiQuantity, inventoryFallbackCount);
+		int sellQuantity = resolveSellQuantity(apiQuantity, inventoryFallbackCount);
 
 		int priceOffset = config != null ? config.priceOffset() : 0;
 		FocusedFlip focus = FocusedFlip.forSell(
