@@ -204,6 +204,25 @@ public class TransactionLoggerTest
     }
 
     @Test
+    public void concurrentSameItemOffersInDifferentSlotsBothRecord()
+    {
+        // Two simultaneous buy offers for the same item in DIFFERENT slots each
+        // fill 2 — genuinely separate units. filledQuantity is per-offer, so they
+        // share item/round-trip/cumulative; only the GE slot distinguishes them.
+        // Both must be recorded, not collapsed as a duplicate.
+        TransactionLogger logger = newLogger(RSN);
+        OfferRecord slot3 = OfferRecord.newOffer(100, 3, 11926, "Odium ward", true, 4, 4_000_000, 1700000000000L)
+            .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot3, 2, 8_000_000L));
+
+        OfferRecord slot5 = OfferRecord.newOffer(200, 5, 11926, "Odium ward", true, 4, 4_000_000, 1700000000000L)
+            .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot5, 2, 8_000_000L));
+
+        assertEquals(2, captureAll().size());
+    }
+
+    @Test
     public void rejectedRecordsNothing()
     {
         TransactionLogger logger = newLogger(RSN);

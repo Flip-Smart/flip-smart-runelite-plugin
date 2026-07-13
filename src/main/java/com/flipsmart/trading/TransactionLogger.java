@@ -138,14 +138,19 @@ public final class TransactionLogger
 
     /**
      * Identity of a logical fill/placement that survives Collect-driven offer_id and
-     * timestamp churn: {@code rsn:itemId:isBuy:roundTrip:TYPE:cumulative}. Used only
-     * for client-side send suppression; the sent idempotency key is unchanged.
+     * timestamp churn: {@code rsn:itemId:isBuy:slot:roundTrip:TYPE:cumulative}. The GE
+     * slot is included because {@code filledQuantity} is per-offer, so two CONCURRENT
+     * same-item offers (different slots) can reach the same cumulative — without the
+     * slot they would collide and the second fill would be dropped. A real re-report
+     * keeps its slot even when its offer_id churns, so suppression still works. Used
+     * only for client-side send suppression; the sent idempotency key is unchanged.
      */
     static String normalizedDedupKey(String rsn, Integer roundTripId,
                                      com.flipsmart.domain.offer.OfferRecord r, Type type)
     {
         long cumulative = type == Type.PLACE ? 0 : r.getFilledQuantity();
-        return rsn + ":" + r.getItemId() + ":" + r.isBuy() + ":" + roundTripId + ":" + type + ":" + cumulative;
+        return rsn + ":" + r.getItemId() + ":" + r.isBuy() + ":" + r.getSlot()
+            + ":" + roundTripId + ":" + type + ":" + cumulative;
     }
 
     private TransactionRequest.Builder baseBuilder(com.flipsmart.domain.offer.OfferRecord r,
