@@ -499,6 +499,64 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void advisorResellSurfacesEvenWhenLocallyCompetitive() throws Exception {
+        // #918 surfacing bug: the Active-mode advisor is backend-authoritative. A reprice it
+        // surfaces must NOT be dropped by the local wiki competitiveness prune just because the
+        // offer still reads as "competitive" (green) locally — otherwise the prompt never shows.
+        when(config.flipTimeframe()).thenReturn(FlipSmartConfig.FlipTimeframe.ACTIVE);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE);
+        OfferRecord activeSell = OfferRecord
+            .newOffer(2, 0, 42, "item-42", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(activeSell));
+
+        service.surfaceAdvisorResell(activeSell, 250, 1000);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        String overlay = service.getLastOverlayMessage();
+        assertTrue("advisor reprice must surface despite a locally-competitive offer; got: " + overlay,
+            overlay != null && overlay.contains("Re-sell") && overlay.contains("250"));
+    }
+
+    @Test
+    public void advisorExitResellSurfacesEvenWhenLocallyCompetitive() throws Exception {
+        // #918 surfacing bug, exit variant: a margin-decay exit must surface even when the local
+        // competitiveness check reads the offer as competitive (green).
+        when(config.flipTimeframe()).thenReturn(FlipSmartConfig.FlipTimeframe.ACTIVE);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE);
+        OfferRecord partialBuy = OfferRecord
+            .newOffer(3, 0, 77, "item-77", true, 10, 100, 0L)
+            .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(partialBuy));
+
+        service.surfaceAdvisorExitResell(partialBuy, 250, -1000);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        String overlay = service.getLastOverlayMessage();
+        assertTrue("advisor exit must surface despite a locally-competitive offer; got: " + overlay,
+            overlay != null && overlay.contains("Cancel & re-sell") && overlay.contains("250"));
+    }
+
+    @Test
+    public void advisorCancelSurfacesEvenWhenLocallyCompetitive() throws Exception {
+        // #918 surfacing bug, bare-handoff variant: a no-price advisor cancel (e.g. a buy with no
+        // fills in its window) must surface even when the local competitiveness check reads the
+        // offer as competitive (green) — the advisor is authoritative.
+        when(config.flipTimeframe()).thenReturn(FlipSmartConfig.FlipTimeframe.ACTIVE);
+        when(plugin.calculateCompetitiveness(any())).thenReturn(FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE);
+        OfferRecord unfilledBuy = OfferRecord
+            .newOffer(5, 0, 99, "item-99", true, 10, 100, 0L);
+        offerStore.importRecords(Arrays.asList(unfilledBuy));
+
+        service.surfaceAdvisorCancel(unfilledBuy);
+        SwingUtilities.invokeAndWait(() -> {});
+
+        String overlay = service.getLastOverlayMessage();
+        assertTrue("advisor cancel must surface despite a locally-competitive offer; got: " + overlay,
+            overlay != null && overlay.contains("Consider cancelling") && overlay.contains("item-99"));
+    }
+
+    @Test
     public void originalMarginPersistsAfterRecommendationQueueCycles() {
         // #918: the advisor's original-margin baseline is a property of the ACTIVE OFFER,
         // captured at placement — it must survive the recommendation queue refreshing to

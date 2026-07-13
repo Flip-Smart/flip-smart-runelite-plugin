@@ -2025,7 +2025,7 @@ public class FlipSmartPlugin extends Plugin
 				}
 				else
 				{
-					autoRecommendService.addToStaleQueue(offer);
+					autoRecommendService.surfaceAdvisorCancel(offer);
 				}
 				break;
 			}
