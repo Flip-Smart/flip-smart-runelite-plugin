@@ -2627,9 +2627,7 @@ public class AutoRecommendService
 			{
 				continue;
 			}
-			// Mirror buildResolverInput: hold the sell for a collected partial while its buy is
-			// still live so auto-mode doesn't prompt selling before the buy finishes filling.
-			if (offerStore.hasLiveBuyOfferForItem(itemId))
+			if (isItemBeingAcquired(itemId))
 			{
 				continue;
 			}
@@ -2686,6 +2684,12 @@ public class AutoRecommendService
 		{
 			return null; // off-thread — cannot determine; caller must NOT treat as absent
 		}
+	}
+
+	/** True if a live buy offer is still filling for this item — don't surface it for sale yet. */
+	private boolean isItemBeingAcquired(int itemId)
+	{
+		return offerStore.hasLiveBuyOfferForItem(itemId);
 	}
 
 	private boolean isItemInInventory(int itemId)
@@ -3041,10 +3045,7 @@ public class AutoRecommendService
 				{
 					continue;
 				}
-				// Still acquiring this item — a live buy is filling (e.g. a partial fill collected
-				// while the buy runs on). Don't surface a sell for the collected partial until the
-				// buy completes or is cancelled, so we never split one flip into a premature sell.
-				if (offerStore.hasLiveBuyOfferForItem(itemId))
+				if (isItemBeingAcquired(itemId))
 				{
 					continue;
 				}
