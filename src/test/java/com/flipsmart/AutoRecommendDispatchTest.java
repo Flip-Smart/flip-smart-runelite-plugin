@@ -89,6 +89,36 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void collectedBuyAwaitingSellPriceHoldsSlotInsteadOfNewBuy() {
+        // Repro of the in-game bug: a just-collected buy (item 2550) is in inventory but its
+        // sell price hasn't resolved yet (e.g. a wiki-price timeout). Auto must NOT jump to a
+        // new buy (surfaceable item 21 from setUp) — it holds the free slot for the pending sell.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        when(plugin.getInventoryCountForItem(2550)).thenReturn(15000);
+        session.addCollectedItem(2550, 15000, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
+        // no recommended price for 2550 → resolveBestSellPrice null → pending sell
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertNotEquals(ActionStep.PLACE_BUY, d.getStep());
+        assertEquals(ActionKind.IDLE, d.getKind());
+    }
+
+    @Test
+    public void collectedBuySurfacesSellOncePriceResolves() {
+        // Once the sell price lands, the held item lists (SELL_WAITING) ahead of a new buy.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        when(plugin.getInventoryCountForItem(2550)).thenReturn(15000);
+        session.addCollectedItem(2550, 15000, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
+        session.setRecommendedPrice(2550, 839);
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertEquals(ActionStep.LIST, d.getStep());
+        assertEquals(2550, d.getItemId());
+    }
+
+    @Test
     public void identicalStateTwiceReturnsSameDecision() {
         when(plugin.getFilledGESlotCount()).thenReturn(7); // a free slot so the held sell can surface
         when(plugin.getInventoryCountForItem(11)).thenReturn(3);

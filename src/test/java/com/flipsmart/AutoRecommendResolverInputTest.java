@@ -7,6 +7,8 @@ import com.flipsmart.trading.OfferStore;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.when;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
@@ -46,6 +48,38 @@ public class AutoRecommendResolverInputTest {
         assertEquals(100, in.getCompletedAwaitingCollection().get(0).getItemId());
         assertEquals(8, in.getSlotLimit());
         assertEquals(1, in.getFilledSlotCount());
+    }
+
+    @Test
+    public void unpricedCollectedItemWithinGraceBlocksNewBuy() {
+        // Just-collected, in inventory, but no sell price yet (e.g. a wiki-price timeout).
+        // It must NOT appear as a listable item, but it MUST flag a pending-sell block so
+        // the resolver holds the free slot instead of surfacing a new buy.
+        when(plugin.getInventoryCountForItem(777)).thenReturn(3);
+        session.addCollectedItem(777, 3,
+            com.flipsmart.recommend.CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
+        // no recommended price set → resolveBestSellPrice returns null
+
+        ResolverInput in = service.buildResolverInput(-1);
+
+        assertEquals(0, in.getCollectedAwaitingList().size());
+        assertTrue(in.isBlockBuyForPendingSell());
+        assertEquals(777, in.getPendingSellItemId());
+    }
+
+    @Test
+    public void unpricedCollectedItemPastGraceDoesNotBlockNewBuy() {
+        // If the price never resolves, the block must lift after the grace window so a
+        // stuck price can't wedge trading — auto resumes normal buys.
+        when(plugin.getInventoryCountForItem(777)).thenReturn(3);
+        session.addCollectedItem(777, 3,
+            com.flipsmart.recommend.CollectOrigin.COMPLETED_BUY,
+            System.currentTimeMillis() - 180_000L); // collected 3 min ago, past the grace window
+
+        ResolverInput in = service.buildResolverInput(-1);
+
+        assertEquals(0, in.getCollectedAwaitingList().size());
+        assertFalse(in.isBlockBuyForPendingSell());
     }
 
     @Test
