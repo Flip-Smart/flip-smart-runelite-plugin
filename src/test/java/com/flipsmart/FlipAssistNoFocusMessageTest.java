@@ -118,4 +118,50 @@ public class FlipAssistNoFocusMessageTest
 	{
 		assertEquals(LOGIN, select(false, false, null, null, false, true));
 	}
+
+	// --- iconForNoFocusMessage: the icon must track the DISPLAYED message ---
+
+	private static final String COLLECT_ITEM = "Collect Obsidian platebody";
+	private static final int OBSIDIAN_ID = 21301;
+
+	// The item-carrying auto-status prompt shows its icon.
+	@Test
+	public void iconShownForAutoStatusItemPrompt()
+	{
+		assertEquals(OBSIDIAN_ID,
+			FlipAssistOverlay.iconForNoFocusMessage(COLLECT_ITEM, COLLECT_ITEM, OBSIDIAN_ID));
+	}
+
+	// Bug: a higher-priority text-only prompt (e.g. "Open GE History") must NOT
+	// inherit the leftover item icon from a prior "Collect X" auto-status message.
+	@Test
+	public void noIconWhenHistoryPromptOutranksAutoStatus()
+	{
+		assertEquals(0,
+			FlipAssistOverlay.iconForNoFocusMessage(HIST, COLLECT_ITEM, OBSIDIAN_ID));
+	}
+
+	// A text-only auto-status message (itemId 0, e.g. "Waiting for flips") shows no icon.
+	@Test
+	public void noIconForTextOnlyAutoStatus()
+	{
+		assertEquals(0,
+			FlipAssistOverlay.iconForNoFocusMessage(HINT, HINT, 0));
+	}
+
+	// Null displayed message → no icon.
+	@Test
+	public void noIconForNullMessage()
+	{
+		assertEquals(0,
+			FlipAssistOverlay.iconForNoFocusMessage(null, COLLECT_ITEM, OBSIDIAN_ID));
+	}
+
+	// No auto-status message at all → no icon regardless of leftover id.
+	@Test
+	public void noIconWhenNoAutoStatusMessage()
+	{
+		assertEquals(0,
+			FlipAssistOverlay.iconForNoFocusMessage(MONITOR, null, OBSIDIAN_ID));
+	}
 }

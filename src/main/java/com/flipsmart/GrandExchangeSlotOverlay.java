@@ -304,11 +304,17 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, OfferRecord trackedOffer,
 									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
 	{
-		// Draw colored border around the entire slot
-		boolean hasAdjustment = adjustmentHighlights.containsKey(slot) || stickyAdjustmentSlots.contains(slot);
-		if (hasAdjustment)
+		// Draw colored border around the entire slot. A current-action highlight
+		// (bright amber pulse) always wins over a skipped-item reminder on the same
+		// slot; a sticky-only slot renders dimmed so it reads as secondary and never
+		// competes with the slot the Flip Assist panel is currently prompting.
+		if (adjustmentHighlights.containsKey(slot))
 		{
 			drawOrangeGlow(graphics, bounds);
+		}
+		else if (stickyAdjustmentSlots.contains(slot))
+		{
+			drawDimReminderGlow(graphics, bounds);
 		}
 		else if (config.highlightSlotBorders() && competitiveness != FlipSmartPlugin.OfferCompetitiveness.UNKNOWN)
 		{
@@ -847,5 +853,25 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setColor(borderColor);
 		graphics.setStroke(new BasicStroke(2));
 		graphics.drawRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 4, 4);
+	}
+
+	/**
+	 * Dimmed, non-pulsing amber border for a skipped-item reminder. Kept visually
+	 * subordinate to the bright current-action glow so it reminds without competing
+	 * with the slot the Flip Assist panel is actively prompting.
+	 */
+	private void drawDimReminderGlow(Graphics2D graphics, Rectangle bounds)
+	{
+		Stroke originalStroke = graphics.getStroke();
+		Color reminderColor = new Color(
+			COLOR_FLIP_ASSIST_GLOW.getRed(),
+			COLOR_FLIP_ASSIST_GLOW.getGreen(),
+			COLOR_FLIP_ASSIST_GLOW.getBlue(),
+			90
+		);
+		graphics.setColor(reminderColor);
+		graphics.setStroke(new BasicStroke(2));
+		graphics.drawRoundRect(bounds.x, bounds.y, bounds.width, bounds.height, 4, 4);
+		graphics.setStroke(originalStroke);
 	}
 }

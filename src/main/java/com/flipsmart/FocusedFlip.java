@@ -134,5 +134,17 @@ public class FocusedFlip
 		int geTax = GeTax.taxFor(rec.getItemId(), adjSell);
 		return (margin - geTax) * rec.getRecommendedQuantity();
 	}
+
+	/**
+	 * Whether a recommendation clears the user's minimum-profit and minimum-volume
+	 * filters. Flip Finder's list ({@code FlipFinderPanel.shouldDisplay}) and the
+	 * Flip Assist queue ({@code AutoRecommendService}) share this predicate so both
+	 * surface the same items.
+	 */
+	public static boolean passesRecommendationFilters(FlipRecommendation rec, int priceOffset, int minProfit, int minVolume)
+	{
+		return calculateAdjustedProfit(rec, priceOffset) >= minProfit
+			&& rec.getDailyVolume() >= minVolume;
+	}
 }
 

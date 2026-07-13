@@ -705,11 +705,16 @@ public class FlipSmartPlugin extends Plugin
 
 	public void updateInventoryHighlightForFocus(FocusedFlip focus)
 	{
-		inventoryHighlightOverlay.clearAll();
-		if (focus != null && focus.isSelling())
+		// The overlay canonicalizes item ids, which RuneLite requires on the client thread.
+		// Clear + add run together so a rapid focus change can't leave a stale highlight.
+		clientThread.invoke(() ->
 		{
-			inventoryHighlightOverlay.addHighlight(focus.getItemId());
-		}
+			inventoryHighlightOverlay.clearAll();
+			if (focus != null && focus.isSelling())
+			{
+				inventoryHighlightOverlay.addHighlight(focus.getItemId());
+			}
+		});
 	}
 
 	public void handleAutoRecommendFocusChanged(FocusedFlip focus)

@@ -95,6 +95,21 @@ public class AutoRecommendService
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
+	// Coins icon for the sell-side "Collect profit" prompt, so every collect prompt
+	// carries an icon (buy collects show the item; sell collects show coins).
+	private static final int COINS_ITEM_ID = 995;
+
+	/**
+	 * How long after collecting a buy the resolver keeps holding the free slot for the
+	 * item's sell while its sell price resolves (covers a transient wiki-price timeout).
+	 * Sized to comfortably cover realistic resolution latency — an in-field incident took
+	 * ~47s (a wiki-price timeout on a freshly collected item) and the OSRS wiki /latest is
+	 * ~60s CDN-cached, so a too-short window would let the wrong-buy reappear. Past this
+	 * window auto resumes normal buys so a permanently-stuck price can't wedge trading —
+	 * the held item stays sellable and re-surfaces as a LIST the moment its price lands.
+	 */
+	private static final long PENDING_SELL_PRICE_GRACE_MS = 90_000L;
+
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
@@ -135,7 +150,10 @@ public class AutoRecommendService
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
-	private volatile java.util.function.IntConsumer onStaleOfferPrompted;
+	// Clears all transient slot highlights and lights the live slot for the given
+	// item. Used by both the stale re-sell prompt and the collect prompt so the
+	// bright box always tracks the currently-prompted item.
+	private volatile java.util.function.IntConsumer onHighlightItemSlot;
 
 	// Clears all GE slot adjustment highlights when the stale-offer queue drains,
 	// so a slot highlight never lingers without a matching prompt.
@@ -227,9 +245,9 @@ public class AutoRecommendService
 		this.onOverlayMessageChanged = callback;
 	}
 
-	public void setOnStaleOfferPrompted(java.util.function.IntConsumer callback)
+	public void setOnHighlightItemSlot(java.util.function.IntConsumer callback)
 	{
-		this.onStaleOfferPrompted = callback;
+		this.onHighlightItemSlot = callback;
 	}
 
 	public void setOnClearAllHighlights(Runnable callback)
@@ -301,23 +319,20 @@ public class AutoRecommendService
 			return;
 		}
 
-		// getActiveFlipItemIds() includes all GE buy/sell items + collected items
-		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-
 		queue.clear();
 		session.clearStaleNotifications();
 		queue.setCurrentIndex(0);
 
-		queue.addFilteredByActive(recommendations, activeItemIds);
+		// Apply the same profit/volume/active filter Flip Finder's list uses, so the
+		// Assist queue is a subset of what Flip Finder displays. Already sorted
+		// slowest-filling first.
+		queue.addAll(filterAndSortRecommendations(recommendations));
 
 		if (queue.isEmpty())
 		{
 			updateStatus("Auto: All recommendations already in GE");
 			return;
 		}
-
-		// Sort by volume ascending - slowest items listed first
-		queue.sortByVolumeAscending();
 
 		active = true;
 		queue.setLastQueueRefreshMillis(System.currentTimeMillis());
@@ -883,13 +898,36 @@ public class AutoRecommendService
 		// Retire any sticky boxes whose cooldown lapsed or whose offer is gone before we
 		// decide what to surface (cheap no-op when nothing is sticky).
 		reconcileStickyHighlights();
-		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
+		ResolverInput input = buildResolverInput(excludeItemId);
+		ActionDecision decision = actionResolver.resolve(input);
 		log.debug("Auto-recommend: resolver decision {}/{} item={} slot={}",
 			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		lastAppliedDecision = decision;
 		applyDecision(decision);
+		// When the only thing we could have done was a buy we suppressed for a pending sell,
+		// tell the player we're holding for that item's price rather than showing a vague wait.
+		// Guarded by staleOffers.isEmpty() so we never clobber a re-sell prompt that
+		// applyDecision(IDLE)->promptCollection surfaces for a cooling-down stale offer (which
+		// the resolver excludes from its input but promptCollection still shows).
+		if (decision.getStep() == ActionStep.NONE && input.isBlockBuyForPendingSell()
+			&& staleOffers.isEmpty())
+		{
+			surfacePendingSellStatus(input.getPendingSellItemId());
+		}
 		return decision;
+	}
+
+	/** Overlay message shown while auto holds a slot for a collected item awaiting its sell price. */
+	private void surfacePendingSellStatus(int itemId)
+	{
+		if (itemId <= 0)
+		{
+			return;
+		}
+		String name = resolveItemName(itemId);
+		updateStatus("Auto: Preparing to sell " + name);
+		invokeOverlayMessageCallback("Preparing to sell " + name, itemId);
 	}
 
 	/**
@@ -913,7 +951,8 @@ public class AutoRecommendService
 		{
 			return;
 		}
-		ActionDecision decision = actionResolver.resolve(buildResolverInput(-1, false));
+		ResolverInput input = buildResolverInput(-1, false);
+		ActionDecision decision = actionResolver.resolve(input);
 		if (decision.equals(lastAppliedDecision))
 		{
 			return;
@@ -923,6 +962,14 @@ public class AutoRecommendService
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		lastAppliedDecision = decision;
 		applyDecision(decision);
+		// Mirror resolveAndApply: when a buy was suppressed for a pending sell, hold with a
+		// clear message instead of the generic wait (keeps both resolve paths consistent).
+		// Same staleOffers guard so a cooling-down re-sell prompt is never clobbered.
+		if (decision.getStep() == ActionStep.NONE && input.isBlockBuyForPendingSell()
+			&& staleOffers.isEmpty())
+		{
+			surfacePendingSellStatus(input.getPendingSellItemId());
+		}
 	}
 
 	private void applyDecision(ActionDecision decision)
@@ -1147,15 +1194,33 @@ public class AutoRecommendService
 
 	private List<FlipRecommendation> filterAndSortRecommendations(List<FlipRecommendation> newRecommendations)
 	{
-		Set<Integer> activeItemIds = plugin.getActiveFlipItemIds();
-		int priceOffset = config.priceOffset();
-		int minProfit = config.minimumProfit();
-		List<FlipRecommendation> filtered = new ArrayList<>();
 		for (FlipRecommendation rec : newRecommendations)
 		{
 			queue.putItemName(rec.getItemId(), rec.getItemName());
+		}
+		return filterSurfaceable(newRecommendations, plugin.getActiveFlipItemIds(),
+			config.priceOffset(), config.minimumProfit(), config.minimumVolume());
+	}
+
+	/**
+	 * The pool a player may be shown in Flip Assist: recommendations that are not
+	 * already on the GE and that clear the same minimum-profit and minimum-volume
+	 * filters Flip Finder's list applies ({@link FocusedFlip#passesRecommendationFilters}),
+	 * sorted slowest-filling first. Shared by both start() and refreshQueue() so the
+	 * Assist queue never surfaces an item Flip Finder would hide.
+	 */
+	static List<FlipRecommendation> filterSurfaceable(
+		List<FlipRecommendation> recommendations,
+		Set<Integer> activeItemIds,
+		int priceOffset,
+		int minProfit,
+		int minVolume)
+	{
+		List<FlipRecommendation> filtered = new ArrayList<>();
+		for (FlipRecommendation rec : recommendations)
+		{
 			if (!activeItemIds.contains(rec.getItemId())
-				&& FocusedFlip.calculateAdjustedProfit(rec, priceOffset) >= minProfit)
+				&& FocusedFlip.passesRecommendationFilters(rec, priceOffset, minProfit, minVolume))
 			{
 				filtered.add(rec);
 			}
@@ -1723,11 +1788,35 @@ public class AutoRecommendService
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
 		invokeOverlayMessageCallback(overlayMsg, offer.getItemId());
+		highlightItemSlot(offer.getItemId());
+	}
 
-		java.util.function.IntConsumer staleCallback = onStaleOfferPrompted;
-		if (staleCallback != null)
+	/**
+	 * Clear transient slot highlights and light the live GE slot for {@code itemId}
+	 * so the bright box matches the currently-prompted item (the wired callback,
+	 * {@code highlightSlotForItem}, clears then sets). Sticky skip-reminder boxes on
+	 * other slots are preserved (and rendered dimmed) by the overlay.
+	 */
+	private void highlightItemSlot(int itemId)
+	{
+		java.util.function.IntConsumer cb = onHighlightItemSlot;
+		if (cb != null)
 		{
-			staleCallback.accept(offer.getItemId());
+			cb.accept(itemId);
+		}
+	}
+
+	/**
+	 * Drop all transient slot highlights when a no-focus prompt has no slot of its
+	 * own to point at (monitoring / waiting), so a bright box from a prior focus
+	 * doesn't linger under it. Sticky skip-reminder boxes are preserved.
+	 */
+	private void clearTransientHighlights()
+	{
+		Runnable cb = onClearAllHighlights;
+		if (cb != null)
+		{
+			cb.run();
 		}
 	}
 
@@ -2812,8 +2901,10 @@ public class AutoRecommendService
 		else
 		{
 			updateStatus("Auto: Collect profit from GE");
-			invokeOverlayMessageCallback("Collect profit from GE");
+			invokeOverlayMessageCallback("Collect profit from GE", COINS_ITEM_ID);
 		}
+		// Light the collect target's own slot so the highlight matches the prompt.
+		highlightItemSlot(target.getItemId());
 	}
 
 	private void promptCollection()
@@ -2840,17 +2931,23 @@ public class AutoRecommendService
 			else
 			{
 				updateStatus("Auto: Collect profit from GE");
-				invokeOverlayMessageCallback("Collect profit from GE");
+				invokeOverlayMessageCallback("Collect profit from GE", COINS_ITEM_ID);
 			}
+			// Light the collect target's own slot so the highlight matches the prompt.
+			highlightItemSlot(first.getItemId());
 		}
 		else if (adjustments.hasBuyDeadlines() || adjustments.hasSellStates())
 		{
+			// Monitoring/waiting prompts point at no slot of their own, so drop any
+			// bright box left over from a prior focus rather than let it linger.
+			clearTransientHighlights();
 			// Offers are being monitored for staleness — don't say "Waiting for flips"
 			updateStatus("Auto: Monitoring active offers");
 			invokeOverlayMessageCallback("Monitoring active offers");
 		}
 		else
 		{
+			clearTransientHighlights();
 			if (!plugin.isPremium() && !hasAvailableGESlots())
 			{
 				updateStatus("Auto: Waiting for flips");
@@ -3013,6 +3110,8 @@ public class AutoRecommendService
 		PlayerSession session = plugin.getSession();
 
 		List<CollectedItem> collected = new ArrayList<>();
+		boolean blockBuyForPendingSell = false;
+		int pendingSellItemId = -1;
 		if (session != null)
 		{
 			for (Integer itemId : session.getCollectedItemIds())
@@ -3028,6 +3127,19 @@ public class AutoRecommendService
 				Integer resolvedPrice = resolveBestSellPrice(itemId);
 				if (resolvedPrice == null || resolvedPrice <= 0)
 				{
+					// The sell price hasn't resolved yet (e.g. a transient wiki-price timeout).
+					// For a short grace window after collection, flag a pending sell so the
+					// resolver holds the free slot instead of spending it on a new buy that
+					// would strand this just-collected item. Past the window we fall through,
+					// so a permanently-unresolved price can never wedge trading.
+					if (now - session.getCollectedAtMillis(itemId) < PENDING_SELL_PRICE_GRACE_MS)
+					{
+						blockBuyForPendingSell = true;
+						if (pendingSellItemId < 0)
+						{
+							pendingSellItemId = itemId;
+						}
+					}
 					continue;
 				}
 				CollectOrigin origin = session.getCollectOrigin(itemId);
@@ -3061,10 +3173,10 @@ public class AutoRecommendService
 			.collect(java.util.stream.Collectors.toList());
 		if (logInput)
 		{
-			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
+			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={} pendingSell={}",
 				filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
 				view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
-				staleSnapshot.size(), completed.size());
+				staleSnapshot.size(), completed.size(), blockBuyForPendingSell ? pendingSellItemId : -1);
 		}
 
 		return ResolverInput.builder()
@@ -3072,6 +3184,7 @@ public class AutoRecommendService
 			.filledSlotCount(filledSlots)
 			.surfaceableBuy(hasSurfaceable, surfaceableItemId)
 			.nowMillis(now)
+			.blockBuyForPendingSell(blockBuyForPendingSell, pendingSellItemId)
 			.completedAwaitingCollection(completed)
 			.staleOffers(staleSnapshot)
 			.collectedAwaitingList(collected)

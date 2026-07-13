@@ -89,6 +89,36 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void collectedBuyAwaitingSellPriceHoldsSlotInsteadOfNewBuy() {
+        // Repro of the in-game bug: a just-collected buy (item 2550) is in inventory but its
+        // sell price hasn't resolved yet (e.g. a wiki-price timeout). Auto must NOT jump to a
+        // new buy (surfaceable item 21 from setUp) — it holds the free slot for the pending sell.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        when(plugin.getInventoryCountForItem(2550)).thenReturn(15000);
+        session.addCollectedItem(2550, 15000, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
+        // no recommended price for 2550 → resolveBestSellPrice null → pending sell
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertNotEquals(ActionStep.PLACE_BUY, d.getStep());
+        assertEquals(ActionKind.IDLE, d.getKind());
+    }
+
+    @Test
+    public void collectedBuySurfacesSellOncePriceResolves() {
+        // Once the sell price lands, the held item lists (SELL_WAITING) ahead of a new buy.
+        when(plugin.getFilledGESlotCount()).thenReturn(7);
+        when(plugin.getInventoryCountForItem(2550)).thenReturn(15000);
+        session.addCollectedItem(2550, 15000, CollectOrigin.COMPLETED_BUY, System.currentTimeMillis());
+        session.setRecommendedPrice(2550, 839);
+
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertEquals(ActionStep.LIST, d.getStep());
+        assertEquals(2550, d.getItemId());
+    }
+
+    @Test
     public void identicalStateTwiceReturnsSameDecision() {
         when(plugin.getFilledGESlotCount()).thenReturn(7); // a free slot so the held sell can surface
         when(plugin.getInventoryCountForItem(11)).thenReturn(3);
@@ -173,7 +203,7 @@ public class AutoRecommendDispatchTest {
         service.addToStaleQueue(partialBuy);
 
         AtomicInteger capturedId = new AtomicInteger(-1);
-        service.setOnStaleOfferPrompted(capturedId::set);
+        service.setOnHighlightItemSlot(capturedId::set);
 
         ActionDecision d = service.resolveAndApply(-1);
 
@@ -195,7 +225,7 @@ public class AutoRecommendDispatchTest {
 
         AtomicInteger highlightCalls = new AtomicInteger();
         AtomicInteger lastHighlightItem = new AtomicInteger(-1);
-        service.setOnStaleOfferPrompted(id -> {
+        service.setOnHighlightItemSlot(id -> {
             highlightCalls.incrementAndGet();
             lastHighlightItem.set(id);
         });
@@ -598,6 +628,30 @@ public class AutoRecommendDispatchTest {
         String overlay = service.getLastOverlayMessage();
         assertTrue("overlay must mention item-200, not profit; got: " + overlay,
             overlay != null && overlay.contains("item-200"));
+    }
+
+    @Test
+    public void collectPromptLightsResolverChosenItemSlot() {
+        // The slot highlight must follow the collect prompt: when the resolver picks the
+        // completed BUY (item-200), the highlight callback must fire for 200 — not linger
+        // on the completed SELL (item-100) or any prior focus.
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.hasCollectableGEOffers()).thenReturn(true);
+
+        OfferRecord completedSell = OfferRecord
+            .newOffer(1, 0, 100, "item-100", false, 5, 300, 0L)
+            .withFill(5, 1500L, OfferState.FILLED, 1L);
+        OfferRecord completedBuy = OfferRecord
+            .newOffer(2, 5, 200, "item-200", true, 10, 100, 0L)
+            .withFill(10, 1000L, OfferState.FILLED, 2L);
+        offerStore.importRecords(Arrays.asList(completedSell, completedBuy));
+
+        AtomicInteger highlightedItem = new AtomicInteger(-1);
+        service.setOnHighlightItemSlot(highlightedItem::set);
+
+        service.resolveAndApply(-1);
+
+        assertEquals("highlight must follow the collect prompt's item", 200, highlightedItem.get());
     }
 
     // AC1/AC2 (#919): a skipped buy is snoozed for its cooldown, so the next resolve

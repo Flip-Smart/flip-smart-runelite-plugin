@@ -91,7 +91,7 @@ public class FlipsEndpoints
 	 */
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
 		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots, boolean isMembersWorld)
+		Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume)
 	{
 		String apiUrl = transport.getApiUrl();
 
@@ -99,6 +99,7 @@ public class FlipsEndpoints
 		StringBuilder urlBuilder = new StringBuilder(128);
 		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
 		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
+		appendFilterParams(urlBuilder, minProfit, minVolume);
 
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
@@ -149,6 +150,23 @@ public class FlipsEndpoints
 	}
 
 	/**
+	 * Append the user's Min Profit / Min Volume filters so the backend selects the pool
+	 * from the full item universe under these thresholds. Omitted when unset (≤ 0) so
+	 * default-config requests keep the same URL — and cache key — as before.
+	 */
+	static void appendFilterParams(StringBuilder urlBuilder, int minProfit, int minVolume)
+	{
+		if (minProfit > 0)
+		{
+			urlBuilder.append(String.format("&min_profit=%d", minProfit));
+		}
+		if (minVolume > 0)
+		{
+			urlBuilder.append(String.format("&min_volume=%d", minVolume));
+		}
+	}
+
+	/**
 	 * Fetch the bundled 2-minute poll ({@code GET /plugin/sync}) in one round-trip:
 	 * recommendations, active flips, completed flips, statistics and entitlements.
 	 * Query parameters mirror {@link #getFlipRecommendationsAsync} so the same
@@ -156,13 +174,14 @@ public class FlipsEndpoints
 	 */
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
 		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots, boolean isMembersWorld)
+		Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume)
 	{
 		String apiUrl = transport.getApiUrl();
 
 		StringBuilder urlBuilder = new StringBuilder(128);
 		urlBuilder.append(String.format("%s/plugin/sync?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
 		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
+		appendFilterParams(urlBuilder, minProfit, minVolume);
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(urlBuilder.toString())

@@ -611,7 +611,16 @@ public interface FlipSmartConfig extends Config
 		return true;
 	}
 
-	// Hidden — coming soon, not exposed in UI
+	// Hidden — coming soon, not exposed in UI. Needs @ConfigItem so RuneLite's config
+	// proxy resolves the default (false) instead of returning null and NPE-ing on unbox.
+	@ConfigItem(
+		keyName = "notifyFlipSuggestion",
+		name = "Flip Suggestion",
+		description = "Notify when a new flip suggestion is available",
+		section = NOTIFICATIONS_SECTION,
+		position = 2,
+		hidden = true
+	)
 	default boolean notifyFlipSuggestion()
 	{
 		return false;

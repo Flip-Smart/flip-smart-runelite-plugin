@@ -56,7 +56,7 @@ public class ServiceWiring
 		autoRecommendService.setOnFocusChanged(plugin::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
-		autoRecommendService.setOnStaleOfferPrompted(plugin::highlightSlotForItem);
+		autoRecommendService.setOnHighlightItemSlot(plugin::highlightSlotForItem);
 		autoRecommendService.setOnClearAllHighlights(geSlotOverlay::clearAllAdjustmentHighlights);
 		autoRecommendService.setOnStickyHighlight(geSlotOverlay::setStickyAdjustmentHighlight);
 		autoRecommendService.setOnClearStickyHighlight(geSlotOverlay::clearStickyAdjustmentHighlight);

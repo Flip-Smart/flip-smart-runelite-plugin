@@ -61,6 +61,7 @@ public class FlipSmartApiClient
 {
 	private static final String JSON_KEY_ITEM_ID = "item_id";
 
+	private final FlipSmartConfig config;
 	private final ApiHttpTransport transport;
 	private final FlipsEndpoints flips;
 	private final TransactionEndpoints transactions;
@@ -77,6 +78,7 @@ public class FlipSmartApiClient
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
 	{
 		// Use the injected Gson's builder to create a customized instance
+		this.config = config;
 		Gson customGson = gson.newBuilder().create();
 		// Derive from the injected OkHttpClient as required by RuneLite — newBuilder()
 		// shares its connection pool and dispatcher — adding a hard per-call timeout
@@ -210,7 +212,7 @@ public class FlipSmartApiClient
 		Integer filledSlots, boolean isMembersWorld)
 	{
 		return flips.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, isMembersWorld);
+			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume());
 	}
 
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
@@ -218,7 +220,7 @@ public class FlipSmartApiClient
 		Integer filledSlots, boolean isMembersWorld)
 	{
 		return flips.getPluginSyncAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, isMembersWorld);
+			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume());
 	}
 
 	@Deprecated(since = "1.5.0", forRemoval = true)
