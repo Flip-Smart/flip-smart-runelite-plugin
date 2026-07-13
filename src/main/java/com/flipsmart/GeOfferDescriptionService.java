@@ -223,25 +223,10 @@ public class GeOfferDescriptionService
 	 */
 	int[] resolveOfferContext()
 	{
-		// Source #1: Flip Assist focus. When the player has picked a recommendation
-		// this carries the richest context (recommended price/qty), but focus tracks
-		// the plugin's *next recommended action* — which is routinely a different item
-		// than the panel currently open. Only trust it when it agrees with the item
-		// actually on screen; otherwise the focused item's wiki price/volume bleeds
-		// onto an unrelated offer panel while 2+ flips are active. When no
-		// on-screen item can be determined yet (e.g. a fresh buy before an item is
-		// picked), focus is still the best available signal.
-		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
-		if (focus != null)
+		int[] focusCtx = resolveFlipAssistFocusContext();
+		if (focusCtx != null)
 		{
-			Integer onScreenItemId = resolveOnScreenItemId();
-			if (onScreenItemId == null || onScreenItemId == focus.getItemId())
-			{
-				boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
-				int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
-				int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
-				return new int[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
-			}
+			return focusCtx;
 		}
 
 		// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
@@ -258,6 +243,39 @@ public class GeOfferDescriptionService
 		// geBuyExamineText / geSellExamineText script callbacks don't fire on
 		// the current Jagex setup window, leaving SETUP_DESC un-replaced.
 		return resolveSetupWindowContext();
+	}
+
+	/**
+	 * Source #1: Flip Assist focus. When the player has picked a recommendation
+	 * this carries the richest context (recommended price/qty), but focus tracks
+	 * the plugin's *next recommended action* — which is routinely a different item
+	 * than the panel currently open. Only trust it when it agrees with the item
+	 * actually on screen; otherwise the focused item's wiki price/volume bleeds
+	 * onto an unrelated offer panel while 2+ flips are active. When no
+	 * on-screen item can be determined yet (e.g. a fresh buy before an item is
+	 * picked), focus is still the best available signal.
+	 *
+	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
+	 *         Flip Assist focus is absent or disagrees with the on-screen item.
+	 */
+	private int[] resolveFlipAssistFocusContext()
+	{
+		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
+		if (focus == null)
+		{
+			return null;
+		}
+
+		Integer onScreenItemId = resolveOnScreenItemId();
+		if (onScreenItemId != null && onScreenItemId != focus.getItemId())
+		{
+			return null;
+		}
+
+		boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
+		int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
+		int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
+		return new int[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
 	}
 
 	/**
