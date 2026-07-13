@@ -2710,6 +2710,10 @@ public class AutoRecommendService
 			{
 				continue;
 			}
+			if (isItemBeingAcquired(itemId))
+			{
+				continue;
+			}
 
 			int result = evaluateCollectedItem(itemId, staleItems);
 			if (result >= 0)
@@ -2763,6 +2767,12 @@ public class AutoRecommendService
 		{
 			return null; // off-thread — cannot determine; caller must NOT treat as absent
 		}
+	}
+
+	/** True if a live buy offer is still filling for this item — don't surface it for sale yet. */
+	private boolean isItemBeingAcquired(int itemId)
+	{
+		return offerStore.hasLiveBuyOfferForItem(itemId);
 	}
 
 	private boolean isItemInInventory(int itemId)
@@ -3148,6 +3158,10 @@ public class AutoRecommendService
 			for (Integer itemId : session.getCollectedItemIds())
 			{
 				if (offerStore.hasActiveSellOfferForItem(itemId))
+				{
+					continue;
+				}
+				if (isItemBeingAcquired(itemId))
 				{
 					continue;
 				}
