@@ -221,17 +221,27 @@ public class GeOfferDescriptionService
 	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
 	 *         no actionable context can be determined.
 	 */
-	private int[] resolveOfferContext()
+	int[] resolveOfferContext()
 	{
-		// Source #1: Flip Assist focus. When the player has picked a
-		// recommendation, this is canonical — no slot guessing needed.
+		// Source #1: Flip Assist focus. When the player has picked a recommendation
+		// this carries the richest context (recommended price/qty), but focus tracks
+		// the plugin's *next recommended action* — which is routinely a different item
+		// than the panel currently open. Only trust it when it agrees with the item
+		// actually on screen; otherwise the focused item's wiki price/volume bleeds
+		// onto an unrelated offer panel while 2+ flips are active. When no
+		// on-screen item can be determined yet (e.g. a fresh buy before an item is
+		// picked), focus is still the best available signal.
 		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
 		if (focus != null)
 		{
-			boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
-			int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
-			int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
-			return new int[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
+			Integer onScreenItemId = resolveOnScreenItemId();
+			if (onScreenItemId == null || onScreenItemId == focus.getItemId())
+			{
+				boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
+				int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
+				int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
+				return new int[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
+			}
 		}
 
 		// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
@@ -248,6 +258,33 @@ public class GeOfferDescriptionService
 		// geBuyExamineText / geSellExamineText script callbacks don't fire on
 		// the current Jagex setup window, leaving SETUP_DESC un-replaced.
 		return resolveSetupWindowContext();
+	}
+
+	/**
+	 * The item id the open GE panel is actually showing, independent of Flip Assist
+	 * focus: the committed offer on the active slot (in-flight status panel) if any,
+	 * else the item selected in the "Set up offer" window. Returns {@code null} when
+	 * neither surface exposes an item yet — the caller then treats focus as
+	 * authoritative.
+	 */
+	private Integer resolveOnScreenItemId()
+	{
+		int slot = resolveActiveSlot();
+		if (slot >= 0)
+		{
+			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+			if (offers != null && slot < offers.length)
+			{
+				GrandExchangeOffer offer = offers[slot];
+				if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
+				{
+					return offer.getItemId();
+				}
+			}
+		}
+
+		int[] setupCtx = resolveSetupWindowContext();
+		return setupCtx == null ? null : setupCtx[0];
 	}
 
 	/**
