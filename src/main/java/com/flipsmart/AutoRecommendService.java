@@ -95,6 +95,10 @@ public class AutoRecommendService
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
+	// Coins icon for the sell-side "Collect profit" prompt, so every collect prompt
+	// carries an icon (buy collects show the item; sell collects show coins).
+	private static final int COINS_ITEM_ID = 995;
+
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
@@ -135,7 +139,10 @@ public class AutoRecommendService
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
-	private volatile java.util.function.IntConsumer onStaleOfferPrompted;
+	// Clears all transient slot highlights and lights the live slot for the given
+	// item. Used by both the stale re-sell prompt and the collect prompt so the
+	// bright box always tracks the currently-prompted item.
+	private volatile java.util.function.IntConsumer onHighlightItemSlot;
 
 	// Clears all GE slot adjustment highlights when the stale-offer queue drains,
 	// so a slot highlight never lingers without a matching prompt.
@@ -223,9 +230,9 @@ public class AutoRecommendService
 		this.onOverlayMessageChanged = callback;
 	}
 
-	public void setOnStaleOfferPrompted(java.util.function.IntConsumer callback)
+	public void setOnHighlightItemSlot(java.util.function.IntConsumer callback)
 	{
-		this.onStaleOfferPrompted = callback;
+		this.onHighlightItemSlot = callback;
 	}
 
 	public void setOnClearAllHighlights(Runnable callback)
@@ -1715,11 +1722,35 @@ public class AutoRecommendService
 		updateStatus("Auto: " + overlayMsg);
 		invokeFocusCallback(null);
 		invokeOverlayMessageCallback(overlayMsg, offer.getItemId());
+		highlightItemSlot(offer.getItemId());
+	}
 
-		java.util.function.IntConsumer staleCallback = onStaleOfferPrompted;
-		if (staleCallback != null)
+	/**
+	 * Clear transient slot highlights and light the live GE slot for {@code itemId}
+	 * so the bright box matches the currently-prompted item (the wired callback,
+	 * {@code highlightSlotForItem}, clears then sets). Sticky skip-reminder boxes on
+	 * other slots are preserved (and rendered dimmed) by the overlay.
+	 */
+	private void highlightItemSlot(int itemId)
+	{
+		java.util.function.IntConsumer cb = onHighlightItemSlot;
+		if (cb != null)
 		{
-			staleCallback.accept(offer.getItemId());
+			cb.accept(itemId);
+		}
+	}
+
+	/**
+	 * Drop all transient slot highlights when a no-focus prompt has no slot of its
+	 * own to point at (monitoring / waiting), so a bright box from a prior focus
+	 * doesn't linger under it. Sticky skip-reminder boxes are preserved.
+	 */
+	private void clearTransientHighlights()
+	{
+		Runnable cb = onClearAllHighlights;
+		if (cb != null)
+		{
+			cb.run();
 		}
 	}
 
@@ -2742,8 +2773,10 @@ public class AutoRecommendService
 		else
 		{
 			updateStatus("Auto: Collect profit from GE");
-			invokeOverlayMessageCallback("Collect profit from GE");
+			invokeOverlayMessageCallback("Collect profit from GE", COINS_ITEM_ID);
 		}
+		// Light the collect target's own slot so the highlight matches the prompt.
+		highlightItemSlot(target.getItemId());
 	}
 
 	private void promptCollection()
@@ -2770,17 +2803,23 @@ public class AutoRecommendService
 			else
 			{
 				updateStatus("Auto: Collect profit from GE");
-				invokeOverlayMessageCallback("Collect profit from GE");
+				invokeOverlayMessageCallback("Collect profit from GE", COINS_ITEM_ID);
 			}
+			// Light the collect target's own slot so the highlight matches the prompt.
+			highlightItemSlot(first.getItemId());
 		}
 		else if (adjustments.hasBuyDeadlines() || adjustments.hasSellStates())
 		{
+			// Monitoring/waiting prompts point at no slot of their own, so drop any
+			// bright box left over from a prior focus rather than let it linger.
+			clearTransientHighlights();
 			// Offers are being monitored for staleness — don't say "Waiting for flips"
 			updateStatus("Auto: Monitoring active offers");
 			invokeOverlayMessageCallback("Monitoring active offers");
 		}
 		else
 		{
+			clearTransientHighlights();
 			if (!plugin.isPremium() && !hasAvailableGESlots())
 			{
 				updateStatus("Auto: Waiting for flips");
