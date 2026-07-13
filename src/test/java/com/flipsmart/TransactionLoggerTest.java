@@ -185,6 +185,25 @@ public class TransactionLoggerTest
     }
 
     @Test
+    public void collectReDetectionUnderNewOfferIdIsSuppressed()
+    {
+        // Collect vacates the GE slot; the same physical fill is re-reported under
+        // a NEW offerId + createdAt, so the offerId/timestamp-based key churns and
+        // the send isn't suppressed (the Cow/Ray over-count). The same logical fill
+        // — same item, side, round trip and cumulative — must record only once.
+        TransactionLogger logger = newLogger(RSN);
+        OfferRecord first = OfferRecord.newOffer(8, 3, 11926, "Odium ward", true, 6, 4_000_000, 1700000000000L)
+            .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, first, 2, 8_000_000L));
+
+        OfferRecord reDetected = OfferRecord.newOffer(12, 3, 11926, "Odium ward", true, 6, 4_000_000, 1700000200000L)
+            .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000200500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, reDetected, 2, 8_000_000L));
+
+        assertEquals(1, captureAll().size());
+    }
+
+    @Test
     public void rejectedRecordsNothing()
     {
         TransactionLogger logger = newLogger(RSN);

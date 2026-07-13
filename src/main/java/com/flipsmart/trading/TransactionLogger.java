@@ -93,13 +93,13 @@ public final class TransactionLogger
     {
         String rsn = rsnSupplier.get().orElse(null);
         String key = idempotencyKey(rsn, r, Type.PLACE);
-        if (!seenKeys.add(key))
-        {
-            return;
-        }
         // Zero-fill placement: peek the current cycle rather than recordFill, since no
         // quantity actually moved and peeking must never trip a zero-crossing.
         Integer roundTripId = roundTripLedger.peekRoundTripId(rsn, r.getItemId());
+        if (alreadySent(key, normalizedDedupKey(rsn, roundTripId, r, Type.PLACE)))
+        {
+            return;
+        }
         apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).roundTripId(roundTripId).build());
     }
 
@@ -107,13 +107,45 @@ public final class TransactionLogger
     {
         String rsn = rsnSupplier.get().orElse(null);
         String key = idempotencyKey(rsn, r, Type.FILL);
-        if (!seenKeys.add(key))
+        // Peek (non-mutating) the round trip this fill belongs to for the dedup key
+        // BEFORE the guard, so a suppressed duplicate never advances the ledger.
+        Integer roundTripId = roundTripLedger.peekRoundTripId(rsn, r.getItemId());
+        if (alreadySent(key, normalizedDedupKey(rsn, roundTripId, r, Type.FILL)))
         {
             return;
         }
         int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
-        Integer roundTripId = roundTripLedger.recordFill(rsn, r.getItemId(), r.isBuy(), newlyFilled);
-        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(roundTripId).build());
+        Integer assignedRoundTripId = roundTripLedger.recordFill(rsn, r.getItemId(), r.isBuy(), newlyFilled);
+        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(assignedRoundTripId).build());
+    }
+
+    /**
+     * True if either the exact per-record key or the churn-resistant normalized key
+     * has already been sent this session; records both so a later re-report — under
+     * the same record OR a Collect-re-detected new offerId — is suppressed. Purely
+     * additive: anything not matched is sent exactly as before.
+     */
+    private boolean alreadySent(String key, String normalizedKey)
+    {
+        synchronized (seenKeys)
+        {
+            boolean seen = seenKeys.contains(key) || seenKeys.contains(normalizedKey);
+            seenKeys.add(key);
+            seenKeys.add(normalizedKey);
+            return seen;
+        }
+    }
+
+    /**
+     * Identity of a logical fill/placement that survives Collect-driven offer_id and
+     * timestamp churn: {@code rsn:itemId:isBuy:roundTrip:TYPE:cumulative}. Used only
+     * for client-side send suppression; the sent idempotency key is unchanged.
+     */
+    static String normalizedDedupKey(String rsn, Integer roundTripId,
+                                     com.flipsmart.domain.offer.OfferRecord r, Type type)
+    {
+        long cumulative = type == Type.PLACE ? 0 : r.getFilledQuantity();
+        return rsn + ":" + r.getItemId() + ":" + r.isBuy() + ":" + roundTripId + ":" + type + ":" + cumulative;
     }
 
     private TransactionRequest.Builder baseBuilder(com.flipsmart.domain.offer.OfferRecord r,
