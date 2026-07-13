@@ -498,6 +498,16 @@ public class FlipSmartApiClient
 		{
 			body.addProperty("user_avg_buy_price", req.getUserAvgBuyPrice());
 		}
+		if (req.getOriginalMargin() != null)
+		{
+			body.addProperty("original_margin", req.getOriginalMargin());
+		}
+		if (req.getPreviousPositionMargin() != null)
+		{
+			body.addProperty("previous_position_margin", req.getPreviousPositionMargin());
+		}
+		body.addProperty("consecutive_margin_decreases", req.getConsecutiveMarginDecreases());
+		body.addProperty("cumulative_margin_reduction_pct", req.getCumulativeMarginReductionPct());
 		return body;
 	}
 

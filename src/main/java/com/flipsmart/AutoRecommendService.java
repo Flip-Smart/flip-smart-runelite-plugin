@@ -173,6 +173,17 @@ public class AutoRecommendService
 	// cleared by slot even after the offer has left the GE (the item lookup would then fail).
 	private final Map<Integer, Integer> stickyHighlightSlots = new java.util.concurrent.ConcurrentHashMap<>();
 
+	// Items whose surfaced resell price is a margin-decay EXIT (#918 AC2) rather than a
+	// buy reprice, so the prompt reads "Cancel & re-sell" instead of "Adjust buy".
+	private final java.util.Set<Integer> advisorExitResellItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+	// Items whose stale-queue prompt originates from the Active-mode advisor (SURFACE_PRICE
+	// reprices and margin-decay exits). These are backend-authoritative and must bypass the local
+	// wiki competitiveness prune that governs legacy stale-offer prompts — otherwise an advisor
+	// reprice/exit on an offer the local check still reads as "competitive" (green) is dropped
+	// before it can surface.
+	private final java.util.Set<Integer> advisorSurfacedItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
 
@@ -358,6 +369,8 @@ public class AutoRecommendService
 		// AC5/AC6: toggling auto-mode off clears every skip cooldown and its sticky box.
 		skipCooldown.clearAll();
 		stickyHighlightSlots.clear();
+		advisorExitResellItems.clear();
+		advisorSurfacedItems.clear();
 		Runnable resetHighlights = onResetAllHighlights;
 		if (resetHighlights != null)
 		{
@@ -440,6 +453,7 @@ public class AutoRecommendService
 				plugin.setRecommendedSellPrice(itemId, rec.getRecommendedSellPrice());
 				adjustments.putBuyPrice(itemId, rec.getRecommendedBuyPrice());
 				scheduleAdjustmentTimer(itemId, rec.getRecommendedBuyPrice());
+				captureOriginalMargin(itemId, rec);
 				log.debug("Auto-recommend: Non-focused buy for item {} - stored sell price {} from queue",
 					itemId, rec.getRecommendedSellPrice());
 			}
@@ -449,6 +463,7 @@ public class AutoRecommendService
 			plugin.setRecommendedSellPrice(itemId, current.getRecommendedSellPrice());
 			adjustments.putBuyPrice(itemId, current.getRecommendedBuyPrice());
 			scheduleAdjustmentTimer(itemId, current.getRecommendedBuyPrice());
+			captureOriginalMargin(itemId, current);
 			log.debug("Auto-recommend: Buy order placed for {} - re-resolving", current.getItemName());
 		}
 
@@ -543,7 +558,9 @@ public class AutoRecommendService
 		if (repricePending)
 		{
 			int repriceQty = resolveRepriceQuantity(itemId);
-			FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, resellPrice, repriceQty, config.priceOffset());
+			// resellPrice is the advisor's backend price, already jittered (#918 AC6) —
+			// do NOT re-apply the plugin priceOffset or it would double-adjust.
+			FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, resellPrice, repriceQty);
 			invokeFocusCallback(focus);
 			updateStatus(String.format(MSG_SELL_FORMAT, itemName, GpUtils.formatGPWithSuffix(resellPrice)));
 			return SellFocusResult.FOCUSED;
@@ -1704,24 +1721,7 @@ public class AutoRecommendService
 		if (session != null)
 		{
 			List<OfferRecord> currentOffers = offerStore.liveOffers();
-			staleOffers.pruneIrrelevant(o ->
-			{
-				OfferRecord current = currentOffers.stream()
-					.filter(t -> t.getItemId() == o.getItemId() && t.getState() != OfferState.FILLED)
-					.findFirst().orElse(null);
-				if (current == null)
-				{
-					return true; // No longer in GE
-				}
-				// 12h ladder prompts are backend-authoritative — keep them regardless of competitiveness.
-				if (!competitivenessGateApplies(config.flipTimeframe()))
-				{
-					return false;
-				}
-				// Re-check competitiveness — wiki prices may have refreshed
-				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
-				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
-			});
+			staleOffers.pruneIrrelevant(o -> staleOfferNoLongerRelevant(o, currentOffers));
 		}
 
 		if (staleOffers.isEmpty())
@@ -1749,12 +1749,27 @@ public class AutoRecommendService
 	{
 		Integer resellPrice = staleOffers.getResellPrice(offer.getItemId());
 		String overlayMsg;
-		if (!offer.isBuy() && resellPrice != null)
+		if (resellPrice != null)
 		{
 			Integer net = staleOffers.getResellNet(offer.getItemId());
 			String netSuffix = net == null ? ""
 				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
-			overlayMsg = String.format("Re-sell %s at:\n%s gp%s", offer.getItemName(),
+			// AC2 exit → cancel & re-sell; a priced buy prompt is the competitive buy
+			// reprice (move_price_up); a priced sell prompt is a re-sell/exit at the advised price.
+			String verb;
+			if (advisorExitResellItems.contains(offer.getItemId()))
+			{
+				verb = "Cancel & re-sell";
+			}
+			else if (offer.isBuy())
+			{
+				verb = "Adjust buy";
+			}
+			else
+			{
+				verb = "Re-sell";
+			}
+			overlayMsg = String.format("%s %s at:\n%s gp%s", verb, offer.getItemName(),
 				String.format("%,d", resellPrice), netSuffix);
 		}
 		else
@@ -1797,28 +1812,46 @@ public class AutoRecommendService
 		}
 	}
 
+	/**
+	 * Whether a queued stale/advisor offer should be pruned from the stale queue. Prunes when the
+	 * offer has left the GE (sold / collected / cancelled). Otherwise an advisor-surfaced prompt
+	 * (a SURFACE_PRICE reprice or margin-decay exit) is backend-authoritative and is kept
+	 * regardless of the local wiki competitiveness check — only legacy local-detection prompts are
+	 * subject to the green/red gate, which drops an offer that has drifted back to competitive.
+	 * Without the advisor bypass, a reprice/exit on an offer the local check still reads as
+	 * "competitive" (green) is pruned before it can surface.
+	 */
+	private boolean staleOfferNoLongerRelevant(OfferRecord queued, List<OfferRecord> currentOffers)
+	{
+		OfferRecord current = currentOffers.stream()
+			.filter(t -> t.getItemId() == queued.getItemId() && t.getState() != OfferState.FILLED)
+			.findFirst().orElse(null);
+		if (current == null)
+		{
+			return true; // No longer in GE
+		}
+		// Advisor prompts are backend-authoritative — never dropped for local competitiveness.
+		if (advisorSurfacedItems.contains(queued.getItemId()))
+		{
+			return false;
+		}
+		// 12h ladder prompts are backend-authoritative too — keep them regardless of competitiveness.
+		if (!competitivenessGateApplies(config.flipTimeframe()))
+		{
+			return false;
+		}
+		// Re-check competitiveness — wiki prices may have refreshed.
+		FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
+		return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
+	}
+
 	private void focusStaleOfferForItem(int itemId)
 	{
 		PlayerSession session = plugin.getSession();
 		if (session != null)
 		{
 			List<OfferRecord> currentOffers = offerStore.liveOffers();
-			staleOffers.pruneIrrelevant(o ->
-			{
-				OfferRecord current = currentOffers.stream()
-					.filter(t -> t.getItemId() == o.getItemId() && t.getState() != OfferState.FILLED)
-					.findFirst().orElse(null);
-				if (current == null)
-				{
-					return true;
-				}
-				if (!competitivenessGateApplies(config.flipTimeframe()))
-				{
-					return false;
-				}
-				FlipSmartPlugin.OfferCompetitiveness comp = plugin.calculateCompetitiveness(current);
-				return comp != FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE;
-			});
+			staleOffers.pruneIrrelevant(o -> staleOfferNoLongerRelevant(o, currentOffers));
 		}
 
 		if (staleOffers.isEmpty())
@@ -1849,6 +1882,8 @@ public class AutoRecommendService
 	{
 		skipCooldown.clear(itemId);
 		dropStickyHighlight(itemId);
+		advisorExitResellItems.remove(itemId);
+		advisorSurfacedItems.remove(itemId);
 	}
 
 	/** GE slot currently holding a live offer for the item, or null if none. */
@@ -1920,6 +1955,23 @@ public class AutoRecommendService
 	}
 
 	/**
+	 * Surface a bare advisor HANDOFF: the advisor decided to cancel with no reprice — e.g. a
+	 * buy with no fills in its window (CANCEL_AND_RELIST_OTHER). Marks the item as advisor-surfaced
+	 * so the "consider cancelling" prompt bypasses the local competitiveness prune (the advisor is
+	 * authoritative — a no-fill cancel has nothing to do with the local green/red price check), then
+	 * queues it.
+	 */
+	public synchronized void surfaceAdvisorCancel(OfferRecord offer)
+	{
+		if (offer == null)
+		{
+			return;
+		}
+		advisorSurfacedItems.add(offer.getItemId());
+		addToStaleQueue(offer);
+	}
+
+	/**
 	 * Add a tracked offer to the stale queue if not already present.
 	 * If the queue was empty, immediately shows the first prompt.
 	 */
@@ -1973,6 +2025,35 @@ public class AutoRecommendService
 		{
 			sess.setRecommendedPrice(offer.getItemId(), newPrice);
 		}
+		advisorExitResellItems.remove(offer.getItemId());
+		advisorSurfacedItems.add(offer.getItemId());
+		addToStaleQueue(offer);
+	}
+
+	/**
+	 * Surface a margin-decay exit (#918 AC2): cancel the remaining buy and re-sell the held
+	 * units at the advisor's already-jittered price. Stores the price in the stale-price map
+	 * (so the eventual sell lists via the no-offset path, honouring AC6) and marks the item as
+	 * an exit so the prompt reads "Cancel & re-sell" rather than "Adjust buy". Deliberately does
+	 * NOT set the session recommended price — that would flow through the offset-applying focus.
+	 */
+	public synchronized void surfaceAdvisorExitResell(OfferRecord offer, int resellPrice, Integer netProfitEstimate)
+	{
+		if (offer == null)
+		{
+			return;
+		}
+		staleOffers.putResellPrice(offer.getItemId(), resellPrice);
+		if (netProfitEstimate != null)
+		{
+			staleOffers.putResellNet(offer.getItemId(), netProfitEstimate);
+		}
+		else
+		{
+			staleOffers.removeResellNet(offer.getItemId());
+		}
+		advisorExitResellItems.add(offer.getItemId());
+		advisorSurfacedItems.add(offer.getItemId());
 		addToStaleQueue(offer);
 	}
 
@@ -1982,6 +2063,8 @@ public class AutoRecommendService
 	 */
 	public synchronized void removeAdvisorResell(int itemId)
 	{
+		advisorExitResellItems.remove(itemId);
+		advisorSurfacedItems.remove(itemId);
 		boolean wasHead = staleOffers.headIsItem(itemId);
 		staleOffers.removeOffer(itemId);
 		if (wasHead)
@@ -2751,6 +2834,39 @@ public class AutoRecommendService
 	private FlipRecommendation findRecommendationForItem(int itemId)
 	{
 		return queue.findRecommendationForItem(itemId);
+	}
+
+	/** Persist the flip's original per-unit margin at buy placement (#918), so it survives the
+	 * recommendation queue cycling. Captured once per placement from the seeding recommendation. */
+	private void captureOriginalMargin(int itemId, FlipRecommendation rec)
+	{
+		if (rec == null || rec.getMargin() <= 0)
+		{
+			return;
+		}
+		PlayerSession sess = plugin.getSession();
+		if (sess != null)
+		{
+			sess.setOriginalMargin(itemId, rec.getMargin());
+		}
+	}
+
+	/**
+	 * The flip's original per-unit margin — the fixed baseline the advisor measures decay and the
+	 * joint reduction budget against. Sourced from the active offer's captured value (persisted at
+	 * placement, survives queue cycling), falling back to the live queue for a freshly-recommended
+	 * item not yet placed. Null when unknown (advisor then falls back to its existing behavior).
+	 */
+	public synchronized Integer getOriginalMargin(int itemId)
+	{
+		PlayerSession sess = plugin.getSession();
+		Integer persisted = sess == null ? null : sess.getOriginalMargin(itemId);
+		if (persisted != null)
+		{
+			return persisted;
+		}
+		FlipRecommendation rec = findRecommendationForItem(itemId);
+		return rec == null ? null : rec.getMargin();
 	}
 
 	/**

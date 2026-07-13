@@ -15,6 +15,7 @@ public enum OfferDisposition
 		switch (action)
 		{
 			case MOVE_PRICE_DOWN:
+			case MOVE_PRICE_UP:
 			case EXIT_AT_BREAKEVEN:
 			case EXIT_AT_LOSS:
 				return SURFACE_PRICE;

@@ -51,7 +51,7 @@ public class ActiveOfferDispositionCacheTest
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
 		final int[] handoffItem = {-1};
 		final int[] cleared = {-1};
-		svc.setCallbacks(null, id -> handoffItem[0] = id, id -> cleared[0] = id);
+		svc.setCallbacks(null, resp -> handoffItem[0] = resp.getItemIdHint(), id -> cleared[0] = id);
 
 		OfferAdviceResponse move = new OfferAdviceResponse();
 		move.setAction(MOVE_PRICE_DOWN);
@@ -64,6 +64,29 @@ public class ActiveOfferDispositionCacheTest
 		assertEquals(7, handoffItem[0]);
 		assertEquals(7, cleared[0]);
 		assertNull(svc.getDisposition(7));
+	}
+
+	@Test
+	public void courierStateIsStoredFromResponseAndClearedOnReconcile()
+	{
+		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
+		OfferAdviceResponse resp = new OfferAdviceResponse();
+		resp.setAction("wait");
+		resp.setPositionMargin(3100);
+		resp.setConsecutiveMarginDecreases(2);
+		resp.setCumulativeMarginReductionPct(0.15);
+
+		svc.applyResponse(42, resp);
+
+		ActiveOfferAdvisorService.CourierState c = svc.getCourierState(42);
+		assertEquals(Integer.valueOf(3100), c.getPreviousPositionMargin());
+		assertEquals(2, c.getConsecutiveMarginDecreases());
+		assertEquals(0.15, c.getCumulativeMarginReductionPct(), 1e-9);
+
+		// item no longer active → courier state resets to EMPTY
+		svc.reconcile(java.util.Collections.emptySet());
+		assertNull(svc.getCourierState(42).getPreviousPositionMargin());
+		assertEquals(0, svc.getCourierState(42).getConsecutiveMarginDecreases());
 	}
 
 	@Test

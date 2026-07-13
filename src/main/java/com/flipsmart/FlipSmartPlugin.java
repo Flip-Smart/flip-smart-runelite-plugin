@@ -1759,9 +1759,16 @@ public class FlipSmartPlugin extends Plugin
 			}
 			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
 			WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
-			Integer avgBuy = offer.isBuy() ? null
-				: BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
-			requests.add(ActiveOfferAdvisorService.buildSnapshot(offer, market, avgBuy, dailyVolume));
+			Integer avgBuy = avgBuyPriceFor(offer);
+			// Gate the competitive re-prompts + margin-decay exit behind the experimental toggle:
+			// relaying the margin/courier only when it's on leaves the base advisor advice unchanged.
+			boolean aggressive = config.enableAggressiveAdvisor();
+			Integer originalMargin = ActiveOfferAdvisorService.relayedMargin(aggressive,
+				autoRecommendService == null ? null : autoRecommendService.getOriginalMargin(offer.getItemId()));
+			ActiveOfferAdvisorService.CourierState courier = ActiveOfferAdvisorService.relayedCourier(
+				aggressive, activeOfferAdvisorService.getCourierState(offer.getItemId()));
+			requests.add(ActiveOfferAdvisorService.buildSnapshot(
+				offer, market, avgBuy, dailyVolume, originalMargin, courier));
 		}
 		if (requests.isEmpty())
 		{
@@ -1797,6 +1804,25 @@ public class FlipSmartPlugin extends Plugin
 				}
 				return null;
 			});
+	}
+
+	/**
+	 * Average price the user paid for the units they hold. For a sell that is the
+	 * matched buy cost from active flips; for a partially-filled buy it is this
+	 * offer's own average fill (falling back to the listed price), which the
+	 * margin-decay exit (#918 AC2) needs.
+	 */
+	private Integer avgBuyPriceFor(com.flipsmart.domain.offer.OfferRecord offer)
+	{
+		if (!offer.isBuy())
+		{
+			return BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
+		}
+		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
+		{
+			return (int) Math.round(offer.getSpent() / (double) offer.getFilledQuantity());
+		}
+		return offer.getPrice();
 	}
 
 	public void applyActiveOfferSurface(OfferAdviceResponse resp)
@@ -1982,22 +2008,28 @@ public class FlipSmartPlugin extends Plugin
 		return null;
 	}
 
-	public void handleActiveOfferHandoff(int itemId)
+	public void handleActiveOfferHandoff(OfferAdviceResponse resp)
 	{
-		if (autoRecommendService == null)
+		if (autoRecommendService == null || resp == null || resp.getItemIdHint() == null)
 		{
 			return;
 		}
-		PlayerSession sess = getSession();
-		if (sess == null)
-		{
-			return;
-		}
+		int itemId = resp.getItemIdHint();
 		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId)
 			{
-				autoRecommendService.addToStaleQueue(offer);
+				if (resp.getNewPrice() != null)
+				{
+					// AC2 margin-decay exit: cancel the buy and re-sell the held units at the
+					// advisor's jittered price. Routed through the stale-price map (not the
+					// session price) so the sell lists via the no-offset path — no double-adjust.
+					autoRecommendService.surfaceAdvisorExitResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
+				}
+				else
+				{
+					autoRecommendService.surfaceAdvisorCancel(offer);
+				}
 				break;
 			}
 		}
