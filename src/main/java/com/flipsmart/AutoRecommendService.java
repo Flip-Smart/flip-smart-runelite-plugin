@@ -95,6 +95,17 @@ public class AutoRecommendService
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
+	/**
+	 * How long after collecting a buy the resolver keeps holding the free slot for the
+	 * item's sell while its sell price resolves (covers a transient wiki-price timeout).
+	 * Sized to comfortably cover realistic resolution latency — an in-field incident took
+	 * ~47s (a wiki-price timeout on a freshly collected item) and the OSRS wiki /latest is
+	 * ~60s CDN-cached, so a too-short window would let the wrong-buy reappear. Past this
+	 * window auto resumes normal buys so a permanently-stuck price can't wedge trading —
+	 * the held item stays sellable and re-surfaces as a LIST the moment its price lands.
+	 */
+	private static final long PENDING_SELL_PRICE_GRACE_MS = 90_000L;
+
 
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
@@ -872,13 +883,36 @@ public class AutoRecommendService
 		// Retire any sticky boxes whose cooldown lapsed or whose offer is gone before we
 		// decide what to surface (cheap no-op when nothing is sticky).
 		reconcileStickyHighlights();
-		ActionDecision decision = actionResolver.resolve(buildResolverInput(excludeItemId));
+		ResolverInput input = buildResolverInput(excludeItemId);
+		ActionDecision decision = actionResolver.resolve(input);
 		log.debug("Auto-recommend: resolver decision {}/{} item={} slot={}",
 			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		lastAppliedDecision = decision;
 		applyDecision(decision);
+		// When the only thing we could have done was a buy we suppressed for a pending sell,
+		// tell the player we're holding for that item's price rather than showing a vague wait.
+		// Guarded by staleOffers.isEmpty() so we never clobber a re-sell prompt that
+		// applyDecision(IDLE)->promptCollection surfaces for a cooling-down stale offer (which
+		// the resolver excludes from its input but promptCollection still shows).
+		if (decision.getStep() == ActionStep.NONE && input.isBlockBuyForPendingSell()
+			&& staleOffers.isEmpty())
+		{
+			surfacePendingSellStatus(input.getPendingSellItemId());
+		}
 		return decision;
+	}
+
+	/** Overlay message shown while auto holds a slot for a collected item awaiting its sell price. */
+	private void surfacePendingSellStatus(int itemId)
+	{
+		if (itemId <= 0)
+		{
+			return;
+		}
+		String name = resolveItemName(itemId);
+		updateStatus("Auto: Preparing to sell " + name);
+		invokeOverlayMessageCallback("Preparing to sell " + name, itemId);
 	}
 
 	/**
@@ -902,7 +936,8 @@ public class AutoRecommendService
 		{
 			return;
 		}
-		ActionDecision decision = actionResolver.resolve(buildResolverInput(-1, false));
+		ResolverInput input = buildResolverInput(-1, false);
+		ActionDecision decision = actionResolver.resolve(input);
 		if (decision.equals(lastAppliedDecision))
 		{
 			return;
@@ -912,6 +947,14 @@ public class AutoRecommendService
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		lastAppliedDecision = decision;
 		applyDecision(decision);
+		// Mirror resolveAndApply: when a buy was suppressed for a pending sell, hold with a
+		// clear message instead of the generic wait (keeps both resolve paths consistent).
+		// Same staleOffers guard so a cooling-down re-sell prompt is never clobbered.
+		if (decision.getStep() == ActionStep.NONE && input.isBlockBuyForPendingSell()
+			&& staleOffers.isEmpty())
+		{
+			surfacePendingSellStatus(input.getPendingSellItemId());
+		}
 	}
 
 	private void applyDecision(ActionDecision decision)
@@ -2943,6 +2986,8 @@ public class AutoRecommendService
 		PlayerSession session = plugin.getSession();
 
 		List<CollectedItem> collected = new ArrayList<>();
+		boolean blockBuyForPendingSell = false;
+		int pendingSellItemId = -1;
 		if (session != null)
 		{
 			for (Integer itemId : session.getCollectedItemIds())
@@ -2958,6 +3003,19 @@ public class AutoRecommendService
 				Integer resolvedPrice = resolveBestSellPrice(itemId);
 				if (resolvedPrice == null || resolvedPrice <= 0)
 				{
+					// The sell price hasn't resolved yet (e.g. a transient wiki-price timeout).
+					// For a short grace window after collection, flag a pending sell so the
+					// resolver holds the free slot instead of spending it on a new buy that
+					// would strand this just-collected item. Past the window we fall through,
+					// so a permanently-unresolved price can never wedge trading.
+					if (now - session.getCollectedAtMillis(itemId) < PENDING_SELL_PRICE_GRACE_MS)
+					{
+						blockBuyForPendingSell = true;
+						if (pendingSellItemId < 0)
+						{
+							pendingSellItemId = itemId;
+						}
+					}
 					continue;
 				}
 				CollectOrigin origin = session.getCollectOrigin(itemId);
@@ -2991,10 +3049,10 @@ public class AutoRecommendService
 			.collect(java.util.stream.Collectors.toList());
 		if (logInput)
 		{
-			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={}",
+			log.debug("Auto-recommend: resolver input filled={}/{} surfaceableBuy={} (item={}, idx={}) queue={} active={} collected={} stale={} completed={} pendingSell={}",
 				filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
 				view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
-				staleSnapshot.size(), completed.size());
+				staleSnapshot.size(), completed.size(), blockBuyForPendingSell ? pendingSellItemId : -1);
 		}
 
 		return ResolverInput.builder()
@@ -3002,6 +3060,7 @@ public class AutoRecommendService
 			.filledSlotCount(filledSlots)
 			.surfaceableBuy(hasSurfaceable, surfaceableItemId)
 			.nowMillis(now)
+			.blockBuyForPendingSell(blockBuyForPendingSell, pendingSellItemId)
 			.completedAwaitingCollection(completed)
 			.staleOffers(staleSnapshot)
 			.collectedAwaitingList(collected)

@@ -12,6 +12,8 @@ public final class ResolverInput {
     private final boolean hasSurfaceableBuy;
     private final int surfaceableBuyItemId;
     private final long nowMillis;
+    private final boolean blockBuyForPendingSell;
+    private final int pendingSellItemId;
     private final List<OfferRecord> completedAwaitingCollection;
     private final List<OfferRecord> staleOffers;
     private final List<CollectedItem> collectedAwaitingList;
@@ -22,6 +24,8 @@ public final class ResolverInput {
         this.hasSurfaceableBuy = b.hasSurfaceableBuy;
         this.surfaceableBuyItemId = b.surfaceableBuyItemId;
         this.nowMillis = b.nowMillis;
+        this.blockBuyForPendingSell = b.blockBuyForPendingSell;
+        this.pendingSellItemId = b.pendingSellItemId;
         this.completedAwaitingCollection =
             Collections.unmodifiableList(new ArrayList<>(b.completedAwaitingCollection));
         this.staleOffers =
@@ -35,6 +39,14 @@ public final class ResolverInput {
     public boolean hasSurfaceableBuy() { return hasSurfaceableBuy; }
     public int getSurfaceableBuyItemId() { return surfaceableBuyItemId; }
     public long getNowMillis() { return nowMillis; }
+    /**
+     * True when a just-collected item is awaiting a sell price that has not resolved yet
+     * (e.g. a transient wiki-price timeout) and is still within its grace window. While set,
+     * the resolver suppresses a new S2 buy so the free slot is held for the pending sell
+     * rather than spent on a fresh purchase.
+     */
+    public boolean isBlockBuyForPendingSell() { return blockBuyForPendingSell; }
+    public int getPendingSellItemId() { return pendingSellItemId; }
     public List<OfferRecord> getCompletedAwaitingCollection() { return completedAwaitingCollection; }
     public List<OfferRecord> getStaleOffers() { return staleOffers; }
     public List<CollectedItem> getCollectedAwaitingList() { return collectedAwaitingList; }
@@ -47,6 +59,8 @@ public final class ResolverInput {
         private boolean hasSurfaceableBuy;
         private int surfaceableBuyItemId = -1;
         private long nowMillis;
+        private boolean blockBuyForPendingSell;
+        private int pendingSellItemId = -1;
         private List<OfferRecord> completedAwaitingCollection = new ArrayList<>();
         private List<OfferRecord> staleOffers = new ArrayList<>();
         private List<CollectedItem> collectedAwaitingList = new ArrayList<>();
@@ -57,6 +71,9 @@ public final class ResolverInput {
             this.hasSurfaceableBuy = has; this.surfaceableBuyItemId = itemId; return this;
         }
         public Builder nowMillis(long v) { this.nowMillis = v; return this; }
+        public Builder blockBuyForPendingSell(boolean block, int itemId) {
+            this.blockBuyForPendingSell = block; this.pendingSellItemId = itemId; return this;
+        }
         public Builder completedAwaitingCollection(List<OfferRecord> v) {
             this.completedAwaitingCollection = v; return this;
         }

@@ -183,6 +183,20 @@ public class ActionResolverTest {
         ResolverInput in = base().filledSlotCount(5).surfaceableBuy(false, -1).build();
         assertEquals(ActionDecision.IDLE, resolver.resolve(in));
     }
+    @Test public void noS2WhenBlockedForPendingSell() {
+        // A just-collected item is awaiting its sell price: hold the free slot instead of
+        // spending it on a new buy that would strand the item we already own.
+        ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 21)
+            .blockBuyForPendingSell(true, 777).build();
+        assertEquals(ActionDecision.IDLE, resolver.resolve(in));
+    }
+    @Test public void pendingSellBlockDoesNotSuppressHigherPriority() {
+        // The block only gates the S2 buy — a more urgent S1 cancel must still fire.
+        ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 21)
+            .blockBuyForPendingSell(true, 777)
+            .staleOffers(Arrays.asList(staleBuyPartial(0, 11, 5L))).build();
+        assertEquals(ActionKind.S1, resolver.resolve(in).getKind());
+    }
 
     // ---- list-step requires a sell price (no empty label) ----
     @Test public void collectedItemWithoutSellPriceIsNotSurfaced() {

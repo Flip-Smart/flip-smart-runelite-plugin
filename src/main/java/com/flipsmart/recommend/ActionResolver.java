@@ -50,7 +50,12 @@ public final class ActionResolver {
             }
         }
 
-        if (in.getFilledSlotCount() < in.getSlotLimit() && in.hasSurfaceableBuy()) {
+        // Suppress a new buy while a just-collected item is awaiting its sell price: the free
+        // slot must be held for the pending sell, not spent on a fresh purchase that would
+        // strand the item we already own. Bounded by a grace window upstream so a permanently
+        // unresolved price can't wedge trading.
+        if (in.getFilledSlotCount() < in.getSlotLimit() && in.hasSurfaceableBuy()
+            && !in.isBlockBuyForPendingSell()) {
             candidates.add(new ActionDecision(ActionKind.S2, ActionStep.PLACE_BUY,
                 in.getSurfaceableBuyItemId(), -1, in.getNowMillis()));
         }
