@@ -26,6 +26,7 @@ import static org.mockito.Mockito.*;
 public class TransactionLoggerTest
 {
     private static final String RSN = "Zezima";
+    private static final String ITEM_NAME = "Odium ward";
 
     private FlipSmartApiClient apiClient;
     private PlayerSession session;
@@ -192,11 +193,11 @@ public class TransactionLoggerTest
         // the send isn't suppressed (the Cow/Ray over-count). The same logical fill
         // — same item, side, round trip and cumulative — must record only once.
         TransactionLogger logger = newLogger(RSN);
-        OfferRecord first = OfferRecord.newOffer(8, 3, 11926, "Odium ward", true, 6, 4_000_000, 1700000000000L)
+        OfferRecord first = OfferRecord.newOffer(8, 3, 11926, ITEM_NAME, true, 6, 4_000_000, 1700000000000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, first, 2, 8_000_000L));
 
-        OfferRecord reDetected = OfferRecord.newOffer(12, 3, 11926, "Odium ward", true, 6, 4_000_000, 1700000200000L)
+        OfferRecord reDetected = OfferRecord.newOffer(12, 3, 11926, ITEM_NAME, true, 6, 4_000_000, 1700000200000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000200500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, reDetected, 2, 8_000_000L));
 
@@ -211,11 +212,11 @@ public class TransactionLoggerTest
         // share item/round-trip/cumulative; only the GE slot distinguishes them.
         // Both must be recorded, not collapsed as a duplicate.
         TransactionLogger logger = newLogger(RSN);
-        OfferRecord slot3 = OfferRecord.newOffer(100, 3, 11926, "Odium ward", true, 4, 4_000_000, 1700000000000L)
+        OfferRecord slot3 = OfferRecord.newOffer(100, 3, 11926, ITEM_NAME, true, 4, 4_000_000, 1700000000000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot3, 2, 8_000_000L));
 
-        OfferRecord slot5 = OfferRecord.newOffer(200, 5, 11926, "Odium ward", true, 4, 4_000_000, 1700000000000L)
+        OfferRecord slot5 = OfferRecord.newOffer(200, 5, 11926, ITEM_NAME, true, 4, 4_000_000, 1700000000000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
         logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot5, 2, 8_000_000L));
 
