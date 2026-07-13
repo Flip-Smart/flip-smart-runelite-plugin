@@ -24,7 +24,7 @@ public final class ResolverInput {
         this.hasSurfaceableBuy = b.hasSurfaceableBuy;
         this.surfaceableBuyItemId = b.surfaceableBuyItemId;
         this.nowMillis = b.nowMillis;
-        this.blockBuyForPendingSell = b.blockBuyForPendingSell;
+        this.blockBuyForPendingSell = b.blockBuy;
         this.pendingSellItemId = b.pendingSellItemId;
         this.completedAwaitingCollection =
             Collections.unmodifiableList(new ArrayList<>(b.completedAwaitingCollection));
@@ -59,7 +59,7 @@ public final class ResolverInput {
         private boolean hasSurfaceableBuy;
         private int surfaceableBuyItemId = -1;
         private long nowMillis;
-        private boolean blockBuyForPendingSell;
+        private boolean blockBuy;
         private int pendingSellItemId = -1;
         private List<OfferRecord> completedAwaitingCollection = new ArrayList<>();
         private List<OfferRecord> staleOffers = new ArrayList<>();
@@ -72,7 +72,7 @@ public final class ResolverInput {
         }
         public Builder nowMillis(long v) { this.nowMillis = v; return this; }
         public Builder blockBuyForPendingSell(boolean block, int itemId) {
-            this.blockBuyForPendingSell = block; this.pendingSellItemId = itemId; return this;
+            this.blockBuy = block; this.pendingSellItemId = itemId; return this;
         }
         public Builder completedAwaitingCollection(List<OfferRecord> v) {
             this.completedAwaitingCollection = v; return this;
