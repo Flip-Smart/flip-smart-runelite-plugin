@@ -626,6 +626,26 @@ public interface FlipSmartConfig extends Config
 		return false;
 	}
 
+	@ConfigSection(
+		name = "Experimental",
+		description = "Opt-in features under active testing. May change or be removed.",
+		position = 7,
+		closedByDefault = true
+	)
+	String EXPERIMENTAL_SECTION = "experimental";
+
+	@ConfigItem(
+		keyName = "enableAggressiveAdvisor",
+		name = "Aggressive Advisor (EXPERIMENTAL)",
+		description = "In Active mode, add competitive re-price prompts and margin-decay early exits on top of the Active Offer Advisor. Experimental — off by default; the base wait / move-down / exit advice is unaffected.",
+		section = EXPERIMENTAL_SECTION,
+		position = 0
+	)
+	default boolean enableAggressiveAdvisor()
+	{
+		return false;
+	}
+
 	// ============================================
 	// Flip Style Enum
 	// ============================================

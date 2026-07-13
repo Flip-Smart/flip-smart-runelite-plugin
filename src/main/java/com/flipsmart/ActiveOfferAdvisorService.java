@@ -133,6 +133,22 @@ public class ActiveOfferAdvisorService
 		return buildSnapshot(offer, market, userAvgBuyPrice, dailyVolume, null, CourierState.EMPTY);
 	}
 
+	/**
+	 * Aggressive Advisor gate: the competitive re-prompts and margin-decay exit only evaluate when
+	 * the backend receives the original margin and courier counters. When the experimental toggle is
+	 * off we relay null / EMPTY so the backend runs only the base wait / move-down / exit advice.
+	 * Static + package-private so the gate stays unit-testable.
+	 */
+	static Integer relayedMargin(boolean aggressive, Integer originalMargin)
+	{
+		return aggressive ? originalMargin : null;
+	}
+
+	static CourierState relayedCourier(boolean aggressive, CourierState courier)
+	{
+		return aggressive ? courier : CourierState.EMPTY;
+	}
+
 	static OfferAdviceRequest buildSnapshot(
 		OfferRecord offer,
 		WikiPrice market,

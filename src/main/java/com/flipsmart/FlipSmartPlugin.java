@@ -1760,10 +1760,13 @@ public class FlipSmartPlugin extends Plugin
 			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
 			WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
 			Integer avgBuy = avgBuyPriceFor(offer);
-			Integer originalMargin = autoRecommendService == null ? null
-				: autoRecommendService.getOriginalMargin(offer.getItemId());
-			ActiveOfferAdvisorService.CourierState courier =
-				activeOfferAdvisorService.getCourierState(offer.getItemId());
+			// Gate the competitive re-prompts + margin-decay exit behind the experimental toggle:
+			// relaying the margin/courier only when it's on leaves the base advisor advice unchanged.
+			boolean aggressive = config.enableAggressiveAdvisor();
+			Integer originalMargin = ActiveOfferAdvisorService.relayedMargin(aggressive,
+				autoRecommendService == null ? null : autoRecommendService.getOriginalMargin(offer.getItemId()));
+			ActiveOfferAdvisorService.CourierState courier = ActiveOfferAdvisorService.relayedCourier(
+				aggressive, activeOfferAdvisorService.getCourierState(offer.getItemId()));
 			requests.add(ActiveOfferAdvisorService.buildSnapshot(
 				offer, market, avgBuy, dailyVolume, originalMargin, courier));
 		}

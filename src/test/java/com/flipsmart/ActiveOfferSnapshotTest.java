@@ -7,6 +7,7 @@ import com.flipsmart.api.dto.OfferAdviceRequest;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 
 public class ActiveOfferSnapshotTest
 {
@@ -89,5 +90,24 @@ public class ActiveOfferSnapshotTest
 		assertNull(req.getPreviousPositionMargin());
 		assertEquals(0, req.getConsecutiveMarginDecreases());
 		assertEquals(0.0, req.getCumulativeMarginReductionPct(), 1e-9);
+	}
+
+	@Test
+	public void aggressiveGateRelaysMarginOnlyWhenOn()
+	{
+		assertNull("margin must not be relayed when the aggressive advisor is off",
+			ActiveOfferAdvisorService.relayedMargin(false, 5000));
+		assertEquals(Integer.valueOf(5000), ActiveOfferAdvisorService.relayedMargin(true, 5000));
+	}
+
+	@Test
+	public void aggressiveGateRelaysCourierOnlyWhenOn()
+	{
+		ActiveOfferAdvisorService.CourierState courier =
+			new ActiveOfferAdvisorService.CourierState(9000, 2, 0.2);
+		assertSame("courier must be EMPTY when the aggressive advisor is off",
+			ActiveOfferAdvisorService.CourierState.EMPTY,
+			ActiveOfferAdvisorService.relayedCourier(false, courier));
+		assertSame(courier, ActiveOfferAdvisorService.relayedCourier(true, courier));
 	}
 }
