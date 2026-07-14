@@ -2994,7 +2994,7 @@ public class FlipFinderPanel extends PluginPanel
 	private int sellQuantityFor(ActiveFlip flip)
 	{
 		return GrandExchangeTracker.resolveSellQuantity(
-			flip.getTotalQuantity(), plugin.getInventoryCountForItem(flip.getItemId()));
+			flip.getTotalQuantity(), plugin.getInventoryCountSnapshot(flip.getItemId()));
 	}
 
 	private void setFocus(ActiveFlip flip, JPanel panel)
