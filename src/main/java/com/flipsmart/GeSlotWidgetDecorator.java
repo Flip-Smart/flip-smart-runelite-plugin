@@ -1,7 +1,12 @@
 package com.flipsmart;
 
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.util.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
@@ -160,5 +165,104 @@ public class GeSlotWidgetDecorator
         text.setText(v.text);
         text.setFontId(v.fontId);
         text.setXTextAlignment(v.xAlignment);
+    }
+
+    public void reconcile()
+    {
+        boolean bordersOn = config.highlightSlotBorders();
+        boolean timersOn = config.showOfferTimers();
+
+        GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+        if (offers == null)
+        {
+            return;
+        }
+
+        for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
+        {
+            Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, SLOT_CONTAINER_START + slot);
+            if (slotWidget == null || slotWidget.isHidden())
+            {
+                continue;
+            }
+
+            GrandExchangeOffer offer = offers[slot];
+            if (offer.getState() == GrandExchangeOfferState.EMPTY)
+            {
+                revertBorder(slotWidget);
+                revertStateText(slotWidget);
+                continue;
+            }
+
+            reconcileBorder(slotWidget, slot, bordersOn);
+            reconcileStateText(slotWidget, slot, offer, timersOn);
+        }
+    }
+
+    private void reconcileBorder(Widget slotWidget, int slot, boolean bordersOn)
+    {
+        if (!bordersOn)
+        {
+            revertBorder(slotWidget);
+            return;
+        }
+        OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
+        java.util.Optional<SlotBorderTint> tint =
+            SlotBorderTint.forOffer(plugin.calculateCompetitiveness(tracked), config.colorblindMode());
+        if (tint.isPresent())
+        {
+            applyBorder(slotWidget, tint.get());
+        }
+        else
+        {
+            revertBorder(slotWidget);
+        }
+    }
+
+    private void reconcileStateText(Widget slotWidget, int slot, GrandExchangeOffer offer, boolean timersOn)
+    {
+        OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
+        long lastActivity = tracked == null ? 0L : tracked.getEffectiveLastActivityAtMillis();
+        if (!timersOn || tracked == null || lastActivity <= 0)
+        {
+            revertStateText(slotWidget);
+            return;
+        }
+
+        boolean complete = offer.getState() == GrandExchangeOfferState.BOUGHT
+            || offer.getState() == GrandExchangeOfferState.SOLD;
+        String timer = complete && tracked.getCompletedAtMillis() > 0
+            ? TimeUtils.formatFrozenElapsedTime(lastActivity, tracked.getCompletedAtMillis())
+            : TimeUtils.formatElapsedTime(lastActivity);
+
+        String label = OfferSignal.isBuyState(offer.getState()) ? "Buy" : "Sell";
+        String colorHex = complete
+            ? (config.colorblindMode() ? "0066cc" : "4cbb17")
+            : "ffffff";
+
+        applyStateText(slotWidget, label, timer, colorHex);
+    }
+
+    public void revertAll()
+    {
+        for (int slot = 0; slot < GE_MAX_SLOTS; slot++)
+        {
+            Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, SLOT_CONTAINER_START + slot);
+            if (slotWidget != null)
+            {
+                revertBorder(slotWidget);
+                revertStateText(slotWidget);
+            }
+        }
+    }
+
+    public void shutDownRevert()
+    {
+        revertAll();
+        for (Integer id : registered.values())
+        {
+            client.getSpriteOverrides().remove(id);
+        }
+        registered.clear();
     }
 }
