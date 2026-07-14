@@ -45,7 +45,7 @@ public class GeSlotWidgetDecorator
     private final Map<Long, Integer> registered = new HashMap<>();
     private int nextCustomId = CUSTOM_SPRITE_BASE;
 
-    // slotWidget identityHash -> (borderChildIndex -> vanilla sprite id) captured before first override
+    // slot index -> (borderChildIndex -> vanilla sprite id) captured before first override
     private final Map<Integer, Map<Integer, Integer>> vanillaBorderIds = new HashMap<>();
 
     private final Map<Integer, VanillaText> vanillaText = new HashMap<>();
@@ -100,10 +100,10 @@ public class GeSlotWidgetDecorator
         return id;
     }
 
-    void applyBorder(Widget slotWidget, SlotBorderTint tint)
+    void applyBorder(int slot, Widget slotWidget, SlotBorderTint tint)
     {
         Map<Integer, Integer> captured = vanillaBorderIds
-            .computeIfAbsent(System.identityHashCode(slotWidget), k -> new HashMap<>());
+            .computeIfAbsent(slot, k -> new HashMap<>());
 
         for (int childIndex : BORDER_CHILDREN)
         {
@@ -118,9 +118,9 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    void revertBorder(Widget slotWidget)
+    void revertBorder(int slot, Widget slotWidget)
     {
-        Map<Integer, Integer> captured = vanillaBorderIds.get(System.identityHashCode(slotWidget));
+        Map<Integer, Integer> captured = vanillaBorderIds.get(slot);
         if (captured == null)
         {
             return;
@@ -135,14 +135,14 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    void applyStateText(Widget slotWidget, String label, String timer, String timerColorHex)
+    void applyStateText(int slot, Widget slotWidget, String label, String timer, String timerColorHex)
     {
         Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
         if (text == null)
         {
             return;
         }
-        vanillaText.computeIfAbsent(System.identityHashCode(text),
+        vanillaText.computeIfAbsent(slot,
             k -> new VanillaText(text.getText(), text.getFontId(), text.getXTextAlignment()));
 
         text.setXTextAlignment(WidgetTextAlignment.LEFT);
@@ -150,14 +150,14 @@ public class GeSlotWidgetDecorator
         text.setText(GeSlotStateText.build(label, timer, timerColorHex));
     }
 
-    void revertStateText(Widget slotWidget)
+    void revertStateText(int slot, Widget slotWidget)
     {
         Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
         if (text == null)
         {
             return;
         }
-        VanillaText v = vanillaText.get(System.identityHashCode(text));
+        VanillaText v = vanillaText.get(slot);
         if (v == null)
         {
             return;
@@ -189,43 +189,42 @@ public class GeSlotWidgetDecorator
             GrandExchangeOffer offer = offers[slot];
             if (offer.getState() == GrandExchangeOfferState.EMPTY)
             {
-                revertBorder(slotWidget);
-                revertStateText(slotWidget);
+                revertBorder(slot, slotWidget);
+                revertStateText(slot, slotWidget);
                 continue;
             }
 
-            reconcileBorder(slotWidget, slot, bordersOn);
-            reconcileStateText(slotWidget, slot, offer, timersOn);
+            OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
+            reconcileBorder(slotWidget, slot, tracked, bordersOn);
+            reconcileStateText(slotWidget, slot, tracked, offer, timersOn);
         }
     }
 
-    private void reconcileBorder(Widget slotWidget, int slot, boolean bordersOn)
+    private void reconcileBorder(Widget slotWidget, int slot, OfferRecord tracked, boolean bordersOn)
     {
         if (!bordersOn)
         {
-            revertBorder(slotWidget);
+            revertBorder(slot, slotWidget);
             return;
         }
-        OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
         java.util.Optional<SlotBorderTint> tint =
             SlotBorderTint.forOffer(plugin.calculateCompetitiveness(tracked), config.colorblindMode());
         if (tint.isPresent())
         {
-            applyBorder(slotWidget, tint.get());
+            applyBorder(slot, slotWidget, tint.get());
         }
         else
         {
-            revertBorder(slotWidget);
+            revertBorder(slot, slotWidget);
         }
     }
 
-    private void reconcileStateText(Widget slotWidget, int slot, GrandExchangeOffer offer, boolean timersOn)
+    private void reconcileStateText(Widget slotWidget, int slot, OfferRecord tracked, GrandExchangeOffer offer, boolean timersOn)
     {
-        OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
         long lastActivity = tracked == null ? 0L : tracked.getEffectiveLastActivityAtMillis();
         if (!timersOn || tracked == null || lastActivity <= 0)
         {
-            revertStateText(slotWidget);
+            revertStateText(slot, slotWidget);
             return;
         }
 
@@ -240,7 +239,7 @@ public class GeSlotWidgetDecorator
             ? (config.colorblindMode() ? "0066cc" : "4cbb17")
             : "ffffff";
 
-        applyStateText(slotWidget, label, timer, colorHex);
+        applyStateText(slot, slotWidget, label, timer, colorHex);
     }
 
     public void revertAll()
@@ -250,8 +249,8 @@ public class GeSlotWidgetDecorator
             Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, SLOT_CONTAINER_START + slot);
             if (slotWidget != null)
             {
-                revertBorder(slotWidget);
-                revertStateText(slotWidget);
+                revertBorder(slot, slotWidget);
+                revertStateText(slot, slotWidget);
             }
         }
     }
@@ -264,5 +263,7 @@ public class GeSlotWidgetDecorator
             client.getSpriteOverrides().remove(id);
         }
         registered.clear();
+        vanillaBorderIds.clear();
+        vanillaText.clear();
     }
 }
