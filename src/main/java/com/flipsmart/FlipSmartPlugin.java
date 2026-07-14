@@ -97,6 +97,9 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeSlotOverlay geSlotOverlay;
 
 	@Inject
+	private GeSlotWidgetDecorator geSlotDecorator;
+
+	@Inject
 	private FlipAssistOverlay flipAssistOverlay;
 
 	@Inject
@@ -656,6 +659,7 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.add(geSlotOverlay);
 		overlayManager.add(flipAssistOverlay);
 		overlayManager.add(inventoryHighlightOverlay);
+		clientThread.invoke(geSlotDecorator::reconcile);
 		mouseManager.registerMouseListener(overlayMouseListener);
 
 		// Initialize Flip Assist input listener for hotkey support
@@ -838,6 +842,7 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.remove(geSlotOverlay);
 		overlayManager.remove(flipAssistOverlay);
 		overlayManager.remove(inventoryHighlightOverlay);
+		clientThread.invoke(geSlotDecorator::shutDownRevert);
 		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
 		// Unregister Flip Assist input listener
@@ -920,6 +925,10 @@ public class FlipSmartPlugin extends Plugin
 	{
 		Player localPlayer = client.getLocalPlayer();
 		atGrandExchange = localPlayer != null && localPlayer.getWorldLocation().getRegionID() == GE_REGION_ID;
+		if (atGrandExchange)
+		{
+			geSlotDecorator.reconcile();
+		}
 
 		// On the first LOGGED_IN tick the local player is sometimes not yet
 		// populated, so syncRSN()'s early-return fires and we'd be stuck with
@@ -964,6 +973,7 @@ public class FlipSmartPlugin extends Plugin
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
 		persistAutoRecommendState();
+		geSlotDecorator.revertAll();
 
 		// Stop auto-recommend on logout
 		if (autoRecommendService != null && autoRecommendService.isActive())
