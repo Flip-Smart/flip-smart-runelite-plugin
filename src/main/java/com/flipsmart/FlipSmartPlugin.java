@@ -216,6 +216,11 @@ public class FlipSmartPlugin extends Plugin
 	// sees a complete snapshot, never a partially-rebuilt set.
 	private volatile java.util.Set<Integer> inventoryFlipItemIds = java.util.Collections.emptySet();
 
+	// Canonical item id -> inventory count, rebuilt on the client thread alongside
+	// inventoryFlipItemIds and published as one volatile swap. Safe to read off the
+	// client thread (e.g. the Swing EDT) where the live client inventory API cannot be.
+	private volatile java.util.Map<Integer, Integer> inventoryFlipItemCounts = java.util.Collections.emptyMap();
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -422,6 +427,17 @@ public class FlipSmartPlugin extends Plugin
 	public int getInventoryCountForItem(int itemId)
 	{
 		return activeFlipTracker.getInventoryCountForItem(itemId);
+	}
+
+	/**
+	 * Inventory count for an item from the last client-thread snapshot — safe to
+	 * read from any thread (e.g. the Swing EDT), unlike getInventoryCountForItem
+	 * which touches client-only API. Keyed by canonical id; a backend flip's item
+	 * id is already the canonical GE id.
+	 */
+	public int getInventoryCountSnapshot(int itemId)
+	{
+		return inventoryFlipItemCounts.getOrDefault(itemId, 0);
 	}
 
 	public String getItemName(int itemId)
@@ -1561,6 +1577,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			session.setCashStack(0);
 			inventoryFlipItemIds = java.util.Collections.emptySet();
+			inventoryFlipItemCounts = java.util.Collections.emptyMap();
 			return;
 		}
 
@@ -1568,6 +1585,7 @@ public class FlipSmartPlugin extends Plugin
 		Item[] items = inventory.getItems();
 
 		java.util.Set<Integer> currentInventoryIds = new java.util.HashSet<>();
+		java.util.Map<Integer, Integer> currentInventoryCounts = new java.util.HashMap<>();
 		for (Item item : items)
 		{
 			if (item.getId() == COINS_ITEM_ID)
@@ -1576,10 +1594,13 @@ public class FlipSmartPlugin extends Plugin
 			}
 			if (item.getId() > 0)
 			{
-				currentInventoryIds.add(itemManager.canonicalize(item.getId()));
+				int canonicalId = itemManager.canonicalize(item.getId());
+				currentInventoryIds.add(canonicalId);
+				currentInventoryCounts.merge(canonicalId, item.getQuantity(), Integer::sum);
 			}
 		}
 		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
+		inventoryFlipItemCounts = java.util.Collections.unmodifiableMap(currentInventoryCounts);
 
 		if (totalCash != session.getCurrentCashStack())
 		{
