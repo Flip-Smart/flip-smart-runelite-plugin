@@ -1,0 +1,75 @@
+package com.flipsmart;
+
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.SpritePixels;
+import net.runelite.client.game.SpriteManager;
+import net.runelite.client.util.ImageUtil;
+
+import javax.inject.Inject;
+import java.awt.image.BufferedImage;
+import java.util.HashMap;
+import java.util.Map;
+
+@Slf4j
+public class GeSlotWidgetDecorator
+{
+    static final int GE_INTERFACE_GROUP = 465;
+    static final int SLOT_CONTAINER_START = 7;
+    static final int GE_MAX_SLOTS = 8;
+
+    // Border-piece child indices within a GE slot widget (top,bottom,left,right,4 corners,divider,2 intersections,item box).
+    // Values from Flipping Utilities' GeSpriteLoader; confirm vs current client in QA (AC1).
+    static final int[] BORDER_CHILDREN = { 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17 };
+    // "Buy"/"Sell"/"Empty" state-text child index; from FU SlotActivityTimer; confirm in QA (AC6).
+    static final int STATE_TEXT_CHILD = 16;
+
+    // Custom sprite-id namespace: high base to avoid colliding with game sprite ids.
+    private static final int CUSTOM_SPRITE_BASE = 0x7F00_0000;
+
+    private final Client client;
+    private final FlipSmartConfig config;
+    private final FlipSmartPlugin plugin;
+    private final SpriteManager spriteManager;
+
+    // (vanillaSpriteId, tint) -> custom sprite id already registered in the override map
+    private final Map<Long, Integer> registered = new HashMap<>();
+    private int nextCustomId = CUSTOM_SPRITE_BASE;
+
+    @Inject
+    GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin, SpriteManager spriteManager)
+    {
+        this.client = client;
+        this.config = config;
+        this.plugin = plugin;
+        this.spriteManager = spriteManager;
+    }
+
+    private static long key(int vanillaSpriteId, SlotBorderTint tint)
+    {
+        return ((long) vanillaSpriteId << 8) | tint.ordinal();
+    }
+
+    int customSpriteId(int vanillaSpriteId, SlotBorderTint tint)
+    {
+        Long k = key(vanillaSpriteId, tint);
+        Integer existing = registered.get(k);
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        BufferedImage vanilla = spriteManager.getSprite(vanillaSpriteId, 0);
+        if (vanilla == null)
+        {
+            // Not loaded yet; keep vanilla this tick, retry next reconcile.
+            return vanillaSpriteId;
+        }
+
+        SpritePixels recolored = ImageUtil.getImageSpritePixels(SpriteRecolor.tint(vanilla, tint.getColor()), client);
+        int id = nextCustomId++;
+        client.getSpriteOverrides().put(id, recolored);
+        registered.put(k, id);
+        return id;
+    }
+}
