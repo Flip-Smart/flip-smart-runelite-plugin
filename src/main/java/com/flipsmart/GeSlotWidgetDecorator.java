@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.widgets.Widget;
+import net.runelite.api.widgets.WidgetTextAlignment;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.util.ImageUtil;
 
@@ -28,6 +29,8 @@ public class GeSlotWidgetDecorator
     // Custom sprite-id namespace: high base to avoid colliding with game sprite ids.
     private static final int CUSTOM_SPRITE_BASE = 0x7F00_0000;
 
+    private static final int SLOT_STATE_FONT_ID = 495;
+
     private final Client client;
     private final FlipSmartConfig config;
     private final FlipSmartPlugin plugin;
@@ -39,6 +42,21 @@ public class GeSlotWidgetDecorator
 
     // slotWidget identityHash -> (borderChildIndex -> vanilla sprite id) captured before first override
     private final Map<Integer, Map<Integer, Integer>> vanillaBorderIds = new HashMap<>();
+
+    private final Map<Integer, VanillaText> vanillaText = new HashMap<>();
+
+    private static final class VanillaText
+    {
+        final String text;
+        final int fontId;
+        final int xAlignment;
+        VanillaText(String text, int fontId, int xAlignment)
+        {
+            this.text = text;
+            this.fontId = fontId;
+            this.xAlignment = xAlignment;
+        }
+    }
 
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin, SpriteManager spriteManager)
@@ -110,5 +128,37 @@ public class GeSlotWidgetDecorator
                 piece.setSpriteId(e.getValue());
             }
         }
+    }
+
+    void applyStateText(Widget slotWidget, String label, String timer, String timerColorHex)
+    {
+        Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
+        if (text == null)
+        {
+            return;
+        }
+        vanillaText.computeIfAbsent(System.identityHashCode(text),
+            k -> new VanillaText(text.getText(), text.getFontId(), text.getXTextAlignment()));
+
+        text.setXTextAlignment(WidgetTextAlignment.LEFT);
+        text.setFontId(SLOT_STATE_FONT_ID);
+        text.setText(GeSlotStateText.build(label, timer, timerColorHex));
+    }
+
+    void revertStateText(Widget slotWidget)
+    {
+        Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
+        if (text == null)
+        {
+            return;
+        }
+        VanillaText v = vanillaText.get(System.identityHashCode(text));
+        if (v == null)
+        {
+            return;
+        }
+        text.setText(v.text);
+        text.setFontId(v.fontId);
+        text.setXTextAlignment(v.xAlignment);
     }
 }
