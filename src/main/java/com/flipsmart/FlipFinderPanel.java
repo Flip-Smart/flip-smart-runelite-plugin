@@ -2985,6 +2985,18 @@ public class FlipFinderPanel extends PluginPanel
 	 * Set an active flip as the current focus for Flip Assist.
 	 * Uses the cached sell price from the panel display to ensure consistency.
 	 */
+	/**
+	 * Sell quantity to focus on for an active flip, clamped to inventory so the
+	 * panel path agrees with the GE-tracker and auto-recommend paths. Without
+	 * this, a relist surfaced the raw backend quantity while the other writers
+	 * clamped to what's held, and the overlay flickered between the two.
+	 */
+	private int sellQuantityFor(ActiveFlip flip)
+	{
+		return GrandExchangeTracker.resolveSellQuantity(
+			flip.getTotalQuantity(), plugin.getInventoryCountForItem(flip.getItemId()));
+	}
+
 	private void setFocus(ActiveFlip flip, JPanel panel)
 	{
 		// Prefer session — it carries any sell-price adjustments. The displayed
@@ -3003,7 +3015,7 @@ public class FlipFinderPanel extends PluginPanel
 				flip.getItemId(),
 				flip.getItemName(),
 				cachedSellPrice,
-				flip.getTotalQuantity(),
+				sellQuantityFor(flip),
 				priceOffset
 			);
 			updateFocus(newFocus, panel);
@@ -3039,7 +3051,7 @@ public class FlipFinderPanel extends PluginPanel
 					flip.getItemId(),
 					flip.getItemName(),
 					sellPrice,
-					flip.getTotalQuantity(),
+					sellQuantityFor(flip),
 					priceOffset
 				);
 				
@@ -3604,7 +3616,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		FocusedFlip updatedFocus = FocusedFlip.forSell(
 			flip.getItemId(), flip.getItemName(), smartSellPrice,
-			flip.getTotalQuantity(), config.priceOffset());
+			sellQuantityFor(flip), config.priceOffset());
 		currentFocus = updatedFocus;
 		if (onFocusChanged != null)
 		{
