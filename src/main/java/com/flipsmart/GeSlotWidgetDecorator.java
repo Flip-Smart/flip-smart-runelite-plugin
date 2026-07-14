@@ -3,6 +3,7 @@ package com.flipsmart;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.SpritePixels;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.util.ImageUtil;
 
@@ -35,6 +36,9 @@ public class GeSlotWidgetDecorator
     // (vanillaSpriteId, tint) -> custom sprite id already registered in the override map
     private final Map<Long, Integer> registered = new HashMap<>();
     private int nextCustomId = CUSTOM_SPRITE_BASE;
+
+    // slotWidget identityHash -> (borderChildIndex -> vanilla sprite id) captured before first override
+    private final Map<Integer, Map<Integer, Integer>> vanillaBorderIds = new HashMap<>();
 
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin, SpriteManager spriteManager)
@@ -71,5 +75,40 @@ public class GeSlotWidgetDecorator
         client.getSpriteOverrides().put(id, recolored);
         registered.put(k, id);
         return id;
+    }
+
+    void applyBorder(Widget slotWidget, SlotBorderTint tint)
+    {
+        Map<Integer, Integer> captured = vanillaBorderIds
+            .computeIfAbsent(System.identityHashCode(slotWidget), k -> new HashMap<>());
+
+        for (int childIndex : BORDER_CHILDREN)
+        {
+            Widget piece = slotWidget.getChild(childIndex);
+            if (piece == null)
+            {
+                continue;
+            }
+            captured.putIfAbsent(childIndex, piece.getSpriteId());
+            int vanillaId = captured.get(childIndex);
+            piece.setSpriteId(customSpriteId(vanillaId, tint));
+        }
+    }
+
+    void revertBorder(Widget slotWidget)
+    {
+        Map<Integer, Integer> captured = vanillaBorderIds.get(System.identityHashCode(slotWidget));
+        if (captured == null)
+        {
+            return;
+        }
+        for (Map.Entry<Integer, Integer> e : captured.entrySet())
+        {
+            Widget piece = slotWidget.getChild(e.getKey());
+            if (piece != null)
+            {
+                piece.setSpriteId(e.getValue());
+            }
+        }
     }
 }
