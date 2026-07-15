@@ -1316,7 +1316,10 @@ public class FlipFinderPanel extends PluginPanel
 			catch (RuntimeException ex)
 			{
 				// One bad card must not starve the rest of the sweep.
-				log.debug("Active flip price refresh failed for a card: {}", ex.getMessage());
+				if (log.isDebugEnabled())
+				{
+					log.debug("Active flip price refresh failed for a card: {}", ex.getMessage());
+				}
 			}
 		}
 	}
