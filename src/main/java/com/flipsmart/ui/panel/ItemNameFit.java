@@ -101,18 +101,7 @@ public final class ItemNameFit
 
 		for (String word : text.split(" +"))
 		{
-			String rest = word;
-			while (measurer.widthOf(rest, size) > boxWidth)
-			{
-				int cut = longestPrefixThatFits(rest, boxWidth, size, measurer);
-				if (current.length() > 0)
-				{
-					lines.add(current.toString());
-					current.setLength(0);
-				}
-				lines.add(rest.substring(0, cut));
-				rest = rest.substring(cut);
-			}
+			String rest = flushOverlongWord(word, lines, current, boxWidth, size, measurer);
 			if (rest.isEmpty())
 			{
 				continue;
@@ -143,6 +132,24 @@ public final class ItemNameFit
 			lines.add("");
 		}
 		return lines;
+	}
+
+	/** Splits {@code word} across {@code lines} while it's wider than the box; returns the remainder. */
+	private static String flushOverlongWord(String word, List<String> lines, StringBuilder current, int boxWidth, int size, WidthMeasurer measurer)
+	{
+		String rest = word;
+		while (measurer.widthOf(rest, size) > boxWidth)
+		{
+			int cut = longestPrefixThatFits(rest, boxWidth, size, measurer);
+			if (current.length() > 0)
+			{
+				lines.add(current.toString());
+				current.setLength(0);
+			}
+			lines.add(rest.substring(0, cut));
+			rest = rest.substring(cut);
+		}
+		return rest;
 	}
 
 	/** At least 1, so a box too narrow for any glyph still terminates the split loop. */
