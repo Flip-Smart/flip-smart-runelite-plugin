@@ -142,7 +142,6 @@ public class FlipFinderPanel extends PluginPanel
 	private static final int ACTIVE_FLIPS_PRICE_REFRESH_MS = 60_000;
 	private static final int TAB_ACTIVE_FLIPS = 1;
 
-
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
 	private final transient ItemManager itemManager;
@@ -645,7 +644,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				stopActiveFlipsPriceTimer();
 			}
-			if (selectedIndex == 1 && !currentActiveFlips.isEmpty())
+			if (selectedIndex == TAB_ACTIVE_FLIPS && !currentActiveFlips.isEmpty())
 			{
 				// Switched to Active Flips tab, update status
 				int itemCount = currentActiveFlips.size();
@@ -1002,6 +1001,11 @@ public class FlipFinderPanel extends PluginPanel
 			refreshCountdownTimer.stop();
 			refreshCountdownTimer = null;
 		}
+		if (activeFlipsPriceTimer != null)
+		{
+			activeFlipsPriceTimer.stop();
+			activeFlipsPriceTimer = null;
+		}
 	}
 
 	/**
@@ -1257,7 +1261,6 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			activeFlipsPriceTimer = new javax.swing.Timer(ACTIVE_FLIPS_PRICE_REFRESH_MS,
 				e -> runActiveFlipsPriceRefresh());
-			activeFlipsPriceTimer.setRepeats(true);
 		}
 		if (!activeFlipsPriceTimer.isRunning())
 		{
@@ -1276,10 +1279,25 @@ public class FlipFinderPanel extends PluginPanel
 	/** A manual refresh is a full interval's worth of freshness, so restart the cadence. */
 	private void restartActiveFlipsPriceTimer()
 	{
-		if (activeFlipsPriceTimer != null && activeFlipsPriceTimer.isRunning())
+		startActiveFlipsPriceTimer();
+		activeFlipsPriceTimer.restart();
+	}
+
+	@Override
+	public void onActivate()
+	{
+		// The sidebar reopening fires no tab-change event, so this is the only signal
+		// that re-arms the price timer after a collapse.
+		if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
 		{
-			activeFlipsPriceTimer.restart();
+			startActiveFlipsPriceTimer();
 		}
+	}
+
+	@Override
+	public void onDeactivate()
+	{
+		stopActiveFlipsPriceTimer();
 	}
 
 	private void runActiveFlipsPriceRefresh()
@@ -1292,7 +1310,15 @@ public class FlipFinderPanel extends PluginPanel
 		// Copy: a refresh repopulates cards, which can rebuild the list underneath us.
 		for (Runnable refresher : new java.util.ArrayList<>(activeFlipCardRefreshers))
 		{
-			refresher.run();
+			try
+			{
+				refresher.run();
+			}
+			catch (RuntimeException ex)
+			{
+				// One bad card must not starve the rest of the sweep.
+				log.debug("Active flip price refresh failed for a card: {}", ex.getMessage());
+			}
 		}
 	}
 
@@ -3370,11 +3396,11 @@ public class FlipFinderPanel extends PluginPanel
 				new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
 					potentialLabel, qtyLabel, taxLabel, liquidityLabel, riskLabel));
 		};
-		activeFlipCardRefreshers.add(refreshCard);
 		JLabel refreshIcon = createRefreshIconLabel(refreshCard);
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
 			ColorScheme.DARKER_GRAY_COLOR, refreshIcon, buyLimitLabel);
 		headerHolder[0] = header;
+		activeFlipCardRefreshers.add(refreshCard);
 		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 		JPanel namePanel = header.namePanel;
