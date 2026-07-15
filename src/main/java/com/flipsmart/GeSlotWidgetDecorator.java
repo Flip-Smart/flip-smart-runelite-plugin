@@ -85,15 +85,17 @@ public class GeSlotWidgetDecorator
         this.spriteManager = spriteManager;
     }
 
-    private static long key(int vanillaSpriteId, SlotBorderTint tint)
+    // Different border children can share a vanilla sprite id while needing different outline
+    // shapes (e.g. a straight-edge piece vs. a corner piece), so edges must be part of the key.
+    private static long key(int vanillaSpriteId, SlotBorderTint tint, int edges)
     {
-        return ((long) vanillaSpriteId << 8) | tint.ordinal();
+        return ((long) vanillaSpriteId << 12) | ((long) (edges & 0xF) << 8) | tint.ordinal();
     }
 
     int customSpriteId(int vanillaSpriteId, SlotBorderTint tint, int edges, int width, int height,
                        int relX, int relY, int slotWidth, int slotHeight)
     {
-        Long k = key(vanillaSpriteId, tint);
+        Long k = key(vanillaSpriteId, tint, edges);
         Integer existing = registered.get(k);
         if (existing != null)
         {
