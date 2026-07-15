@@ -9,11 +9,6 @@ public final class SpriteRecolor
     {
     }
 
-    public static BufferedImage tint(BufferedImage src, Color color)
-    {
-        return tint(src, color, 1.0);
-    }
-
     /**
      * Multiply-tints each pixel toward {@code color}, then blends that result back toward the
      * original by {@code strength} (1.0 = full tint, 0.0 = untouched). Lower strengths keep the

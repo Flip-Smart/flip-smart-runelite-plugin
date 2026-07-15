@@ -1,6 +1,8 @@
 package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.util.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
@@ -48,8 +50,8 @@ public class GeSlotWidgetDecorator
     // Blend strength for the item-box fill: 0.5 keeps it light so the native texture shows through.
     private static final double TINT_STRENGTH = 0.5;
 
-    // "Buy"/"Sell"/"Empty" state-text child; we left-align it (clear of the top-right timer) and
-    // nudge it a few px off the border.
+    // "Buy"/"Sell"/"Empty" state-text child. We left-align it, nudge it a few px off the border,
+    // and append the color-tagged timer after the label.
     static final int STATE_TEXT_CHILD = 16;
     private static final int STATE_TEXT_INSET_X = 12;
 
@@ -171,7 +173,8 @@ public class GeSlotWidgetDecorator
     public void reconcile()
     {
         boolean bordersOn = config.highlightSlotBorders();
-        boolean decorate = bordersOn || config.showOfferTimers();
+        boolean timersOn = config.showOfferTimers();
+        boolean decorate = bordersOn || timersOn;
 
         GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
         if (offers == null)
@@ -199,7 +202,7 @@ public class GeSlotWidgetDecorator
             reconcileBorder(slotWidget, slot, tracked, bordersOn);
             if (decorate)
             {
-                applyStateText(slot, slotWidget);
+                applyStateText(slot, slotWidget, offer, tracked, timersOn);
             }
             else
             {
@@ -208,7 +211,7 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    void applyStateText(int slot, Widget slotWidget)
+    void applyStateText(int slot, Widget slotWidget, GrandExchangeOffer offer, OfferRecord tracked, boolean timersOn)
     {
         Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
         if (text == null)
@@ -218,13 +221,49 @@ public class GeSlotWidgetDecorator
         vanillaTextAlignment.putIfAbsent(slot, text.getXTextAlignment());
         vanillaTextX.putIfAbsent(slot, text.getOriginalX());
 
-        text.setXTextAlignment(WidgetTextAlignment.LEFT);
+        boolean changed = false;
+        if (text.getXTextAlignment() != WidgetTextAlignment.LEFT)
+        {
+            text.setXTextAlignment(WidgetTextAlignment.LEFT);
+            changed = true;
+        }
         int targetX = vanillaTextX.get(slot) + STATE_TEXT_INSET_X;
         if (text.getOriginalX() != targetX)
         {
             text.setOriginalX(targetX);
+            changed = true;
+        }
+
+        String desired = stateTextFor(offer, tracked, timersOn);
+        if (!desired.equals(text.getText()))
+        {
+            text.setText(desired);
+            changed = true;
+        }
+        if (changed)
+        {
             text.revalidate();
         }
+    }
+
+    private String stateTextFor(GrandExchangeOffer offer, OfferRecord tracked, boolean timersOn)
+    {
+        String label = OfferSignal.isBuyState(offer.getState()) ? "Buy" : "Sell";
+        long lastActivity = tracked == null ? 0L : tracked.getEffectiveLastActivityAtMillis();
+        if (!timersOn || tracked == null || lastActivity <= 0)
+        {
+            return label;
+        }
+
+        boolean complete = offer.getState() == GrandExchangeOfferState.BOUGHT
+            || offer.getState() == GrandExchangeOfferState.SOLD;
+        String timer = complete && tracked.getCompletedAtMillis() > 0
+            ? TimeUtils.formatFrozenElapsedTime(lastActivity, tracked.getCompletedAtMillis())
+            : TimeUtils.formatElapsedTime(lastActivity);
+        String colorHex = complete
+            ? (config.colorblindMode() ? "0066cc" : "4cbb17")
+            : "ffffff";
+        return GeSlotStateText.build(label, timer, colorHex);
     }
 
     void revertStateText(int slot, Widget slotWidget)
