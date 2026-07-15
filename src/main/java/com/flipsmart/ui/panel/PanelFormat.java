@@ -243,7 +243,7 @@ public final class PanelFormat
 		return "<font color='#" + hex + "'>" + text + "</font>";
 	}
 
-	/** Emphasise a span. The live prices are the number players actually read. */
+	/** Emphasise a span. The live prices are the numbers players actually read. */
 	private static String bold(String text)
 	{
 		return "<b>" + text + "</b>";

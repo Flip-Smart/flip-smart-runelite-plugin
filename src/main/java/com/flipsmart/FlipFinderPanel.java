@@ -1610,7 +1610,7 @@ public class FlipFinderPanel extends PluginPanel
 			int invested = currentActiveFlips.stream()
 				.mapToInt(ActiveFlip::getTotalInvested)
 				.sum();
-			if (tabbedPane.getSelectedIndex() == 1)
+			if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
 			{
 				statusLabel.setText(String.format("%d active %s | %s invested",
 					itemCount,
@@ -2542,7 +2542,10 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 		Dimension max = card.getMaximumSize();
-		card.setMaximumSize(new Dimension(max.width, max.height + extraNameHeight));
+		int raised = max.height > Integer.MAX_VALUE - extraNameHeight
+			? Integer.MAX_VALUE
+			: max.height + extraNameHeight;
+		card.setMaximumSize(new Dimension(max.width, raised));
 	}
 
 	/**
@@ -3673,6 +3676,12 @@ public class FlipFinderPanel extends PluginPanel
 		FocusedFlip updatedFocus = FocusedFlip.forSell(
 			flip.getItemId(), flip.getItemName(), smartSellPrice,
 			sellQuantityFor(flip), config.priceOffset());
+		// Re-pushing an unchanged focus clears the overlay's active prompt and re-writes
+		// the GE search varp, so a periodic refresh must not do it.
+		if (updatedFocus.equals(currentFocus))
+		{
+			return;
+		}
 		currentFocus = updatedFocus;
 		if (onFocusChanged != null)
 		{
@@ -3895,6 +3904,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
+		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing

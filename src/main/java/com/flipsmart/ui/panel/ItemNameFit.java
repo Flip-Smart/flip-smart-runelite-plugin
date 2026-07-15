@@ -63,7 +63,6 @@ public final class ItemNameFit
 
 	private ItemNameFit()
 	{
-		// Utility class - prevent instantiation
 	}
 
 	/**
