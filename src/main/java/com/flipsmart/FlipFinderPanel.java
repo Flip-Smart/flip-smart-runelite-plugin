@@ -1004,7 +1004,6 @@ public class FlipFinderPanel extends PluginPanel
 		if (activeFlipsPriceTimer != null)
 		{
 			activeFlipsPriceTimer.stop();
-			activeFlipsPriceTimer = null;
 		}
 	}
 
