@@ -11,6 +11,17 @@ public final class SpriteRecolor
 
     public static BufferedImage tint(BufferedImage src, Color color)
     {
+        return tint(src, color, 1.0);
+    }
+
+    /**
+     * Multiply-tints each pixel toward {@code color}, then blends that result back toward the
+     * original by {@code strength} (1.0 = full tint, 0.0 = untouched). Lower strengths keep the
+     * native texture visible for a lighter accent. Alpha is preserved; transparent pixels stay
+     * transparent.
+     */
+    public static BufferedImage tint(BufferedImage src, Color color, double strength)
+    {
         int w = src.getWidth();
         int h = src.getHeight();
         BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
@@ -29,9 +40,9 @@ public final class SpriteRecolor
                 int r = (argb >> 16) & 0xff;
                 int g = (argb >> 8) & 0xff;
                 int b = argb & 0xff;
-                int nr = r * color.getRed() / 255;
-                int ng = g * color.getGreen() / 255;
-                int nb = b * color.getBlue() / 255;
+                int nr = (int) Math.round(r + (r * color.getRed() / 255 - r) * strength);
+                int ng = (int) Math.round(g + (g * color.getGreen() / 255 - g) * strength);
+                int nb = (int) Math.round(b + (b * color.getBlue() / 255 - b) * strength);
                 out.setRGB(x, y, (a << 24) | (nr << 16) | (ng << 8) | nb);
             }
         }

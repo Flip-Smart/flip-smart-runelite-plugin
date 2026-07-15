@@ -1,8 +1,6 @@
 package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferRecord;
-import com.flipsmart.domain.offer.OfferSignal;
-import com.flipsmart.util.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
@@ -25,16 +23,38 @@ public class GeSlotWidgetDecorator
     static final int SLOT_CONTAINER_START = 7;
     static final int GE_MAX_SLOTS = 8;
 
-    // Border-piece child indices within a GE slot widget (top,bottom,left,right,4 corners,divider,2 intersections,item box).
-    // Values from Flipping Utilities' GeSpriteLoader; confirm vs current client in QA (AC1).
-    static final int[] BORDER_CHILDREN = { 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17 };
-    // "Buy"/"Sell"/"Empty" state-text child index; from FU SlotActivityTimer; confirm in QA (AC6).
+    // Frame pieces (drawn as a thin outer-edge outline) + the item background box (light fill).
+    // The full-width divider (13) is left vanilla so we don't touch the slot interior.
+    static final int[] BORDER_CHILDREN = { 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 17 };
+
+    // Which outer edge(s) each frame piece contributes to the slot's perimeter outline.
+    // Item box (17) is absent -> edges 0 -> rendered as a light fill instead of an outline.
+    private static final Map<Integer, Integer> BORDER_EDGES = new HashMap<>();
+    static
+    {
+        BORDER_EDGES.put(5, SpriteOutline.TOP);
+        BORDER_EDGES.put(6, SpriteOutline.BOTTOM);
+        BORDER_EDGES.put(7, SpriteOutline.LEFT);
+        BORDER_EDGES.put(8, SpriteOutline.RIGHT);
+        BORDER_EDGES.put(9, SpriteOutline.TOP | SpriteOutline.LEFT);
+        BORDER_EDGES.put(10, SpriteOutline.TOP | SpriteOutline.RIGHT);
+        BORDER_EDGES.put(11, SpriteOutline.BOTTOM | SpriteOutline.LEFT);
+        BORDER_EDGES.put(12, SpriteOutline.BOTTOM | SpriteOutline.RIGHT);
+        BORDER_EDGES.put(14, SpriteOutline.LEFT);
+        BORDER_EDGES.put(15, SpriteOutline.RIGHT);
+    }
+
+    private static final int OUTLINE_THICKNESS = 2;
+    // Blend strength for the item-box fill: 0.5 keeps it light so the native texture shows through.
+    private static final double TINT_STRENGTH = 0.5;
+
+    // "Buy"/"Sell"/"Empty" state-text child; we left-align it (clear of the top-right timer) and
+    // nudge it a few px off the border.
     static final int STATE_TEXT_CHILD = 16;
+    private static final int STATE_TEXT_INSET_X = 12;
 
     // Custom sprite-id namespace: high base to avoid colliding with game sprite ids.
     private static final int CUSTOM_SPRITE_BASE = 0x7F00_0000;
-
-    private static final int SLOT_STATE_FONT_ID = 495;
 
     private final Client client;
     private final FlipSmartConfig config;
@@ -45,23 +65,14 @@ public class GeSlotWidgetDecorator
     private final Map<Long, Integer> registered = new HashMap<>();
     private int nextCustomId = CUSTOM_SPRITE_BASE;
 
-    // slot index -> (borderChildIndex -> vanilla sprite id) captured before first override
+    // slot index -> (recolored child index -> vanilla sprite id) captured before first override
     private final Map<Integer, Map<Integer, Integer>> vanillaBorderIds = new HashMap<>();
 
-    private final Map<Integer, VanillaText> vanillaText = new HashMap<>();
+    // slot index -> the state-text widget's original x-alignment, captured before left-aligning it
+    private final Map<Integer, Integer> vanillaTextAlignment = new HashMap<>();
 
-    private static final class VanillaText
-    {
-        final String text;
-        final int fontId;
-        final int xAlignment;
-        VanillaText(String text, int fontId, int xAlignment)
-        {
-            this.text = text;
-            this.fontId = fontId;
-            this.xAlignment = xAlignment;
-        }
-    }
+    // slot index -> the state-text widget's original x position, captured before nudging it right
+    private final Map<Integer, Integer> vanillaTextX = new HashMap<>();
 
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin, SpriteManager spriteManager)
@@ -77,7 +88,8 @@ public class GeSlotWidgetDecorator
         return ((long) vanillaSpriteId << 8) | tint.ordinal();
     }
 
-    int customSpriteId(int vanillaSpriteId, SlotBorderTint tint)
+    int customSpriteId(int vanillaSpriteId, SlotBorderTint tint, int edges, int width, int height,
+                       int relX, int relY, int slotWidth, int slotHeight)
     {
         Long k = key(vanillaSpriteId, tint);
         Integer existing = registered.get(k);
@@ -86,16 +98,32 @@ public class GeSlotWidgetDecorator
             return existing;
         }
 
-        BufferedImage vanilla = spriteManager.getSprite(vanillaSpriteId, 0);
-        if (vanilla == null)
+        BufferedImage image;
+        if (edges == 0)
         {
-            // Not loaded yet; keep vanilla this tick, retry next reconcile.
-            return vanillaSpriteId;
+            // Item box: a light fill of the vanilla sprite.
+            BufferedImage vanilla = spriteManager.getSprite(vanillaSpriteId, 0);
+            if (vanilla == null)
+            {
+                // Not loaded yet; keep vanilla this tick, retry next reconcile.
+                return vanillaSpriteId;
+            }
+            image = SpriteRecolor.tint(vanilla, tint.getColor(), TINT_STRENGTH);
+        }
+        else
+        {
+            // Frame piece: a thin edge outline sized to the piece's rendered bounds (so the client
+            // tiles it exactly once), positioned at the slot border via the piece's overhang offset.
+            if (width <= 0 || height <= 0 || slotWidth <= 0 || slotHeight <= 0)
+            {
+                return vanillaSpriteId;
+            }
+            image = SpriteOutline.build(width, height, edges, tint.getColor(), OUTLINE_THICKNESS,
+                relX, relY, slotWidth, slotHeight);
         }
 
-        SpritePixels recolored = ImageUtil.getImageSpritePixels(SpriteRecolor.tint(vanilla, tint.getColor()), client);
         int id = nextCustomId++;
-        client.getSpriteOverrides().put(id, recolored);
+        client.getSpriteOverrides().put(id, ImageUtil.getImageSpritePixels(image, client));
         registered.put(k, id);
         return id;
     }
@@ -104,6 +132,9 @@ public class GeSlotWidgetDecorator
     {
         Map<Integer, Integer> captured = vanillaBorderIds
             .computeIfAbsent(slot, k -> new HashMap<>());
+
+        int slotWidth = slotWidget.getWidth();
+        int slotHeight = slotWidget.getHeight();
 
         for (int childIndex : BORDER_CHILDREN)
         {
@@ -114,7 +145,9 @@ public class GeSlotWidgetDecorator
             }
             captured.putIfAbsent(childIndex, piece.getSpriteId());
             int vanillaId = captured.get(childIndex);
-            piece.setSpriteId(customSpriteId(vanillaId, tint));
+            int edges = BORDER_EDGES.getOrDefault(childIndex, 0);
+            piece.setSpriteId(customSpriteId(vanillaId, tint, edges, piece.getWidth(), piece.getHeight(),
+                piece.getRelativeX(), piece.getRelativeY(), slotWidth, slotHeight));
         }
     }
 
@@ -135,42 +168,10 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    void applyStateText(int slot, Widget slotWidget, String label, String timer, String timerColorHex)
-    {
-        Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
-        if (text == null)
-        {
-            return;
-        }
-        vanillaText.computeIfAbsent(slot,
-            k -> new VanillaText(text.getText(), text.getFontId(), text.getXTextAlignment()));
-
-        text.setXTextAlignment(WidgetTextAlignment.LEFT);
-        text.setFontId(SLOT_STATE_FONT_ID);
-        text.setText(GeSlotStateText.build(label, timer, timerColorHex));
-    }
-
-    void revertStateText(int slot, Widget slotWidget)
-    {
-        Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
-        if (text == null)
-        {
-            return;
-        }
-        VanillaText v = vanillaText.get(slot);
-        if (v == null)
-        {
-            return;
-        }
-        text.setText(v.text);
-        text.setFontId(v.fontId);
-        text.setXTextAlignment(v.xAlignment);
-    }
-
     public void reconcile()
     {
         boolean bordersOn = config.highlightSlotBorders();
-        boolean timersOn = config.showOfferTimers();
+        boolean decorate = bordersOn || config.showOfferTimers();
 
         GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
         if (offers == null)
@@ -196,7 +197,54 @@ public class GeSlotWidgetDecorator
 
             OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
             reconcileBorder(slotWidget, slot, tracked, bordersOn);
-            reconcileStateText(slotWidget, slot, tracked, offer, timersOn);
+            if (decorate)
+            {
+                applyStateText(slot, slotWidget);
+            }
+            else
+            {
+                revertStateText(slot, slotWidget);
+            }
+        }
+    }
+
+    void applyStateText(int slot, Widget slotWidget)
+    {
+        Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
+        if (text == null)
+        {
+            return;
+        }
+        vanillaTextAlignment.putIfAbsent(slot, text.getXTextAlignment());
+        vanillaTextX.putIfAbsent(slot, text.getOriginalX());
+
+        text.setXTextAlignment(WidgetTextAlignment.LEFT);
+        int targetX = vanillaTextX.get(slot) + STATE_TEXT_INSET_X;
+        if (text.getOriginalX() != targetX)
+        {
+            text.setOriginalX(targetX);
+            text.revalidate();
+        }
+    }
+
+    void revertStateText(int slot, Widget slotWidget)
+    {
+        Integer alignment = vanillaTextAlignment.get(slot);
+        if (alignment == null)
+        {
+            return;
+        }
+        Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
+        if (text == null)
+        {
+            return;
+        }
+        text.setXTextAlignment(alignment);
+        Integer originalX = vanillaTextX.get(slot);
+        if (originalX != null && text.getOriginalX() != originalX)
+        {
+            text.setOriginalX(originalX);
+            text.revalidate();
         }
     }
 
@@ -217,29 +265,6 @@ public class GeSlotWidgetDecorator
         {
             revertBorder(slot, slotWidget);
         }
-    }
-
-    private void reconcileStateText(Widget slotWidget, int slot, OfferRecord tracked, GrandExchangeOffer offer, boolean timersOn)
-    {
-        long lastActivity = tracked == null ? 0L : tracked.getEffectiveLastActivityAtMillis();
-        if (!timersOn || tracked == null || lastActivity <= 0)
-        {
-            revertStateText(slot, slotWidget);
-            return;
-        }
-
-        boolean complete = offer.getState() == GrandExchangeOfferState.BOUGHT
-            || offer.getState() == GrandExchangeOfferState.SOLD;
-        String timer = complete && tracked.getCompletedAtMillis() > 0
-            ? TimeUtils.formatFrozenElapsedTime(lastActivity, tracked.getCompletedAtMillis())
-            : TimeUtils.formatElapsedTime(lastActivity);
-
-        String label = OfferSignal.isBuyState(offer.getState()) ? "Buy" : "Sell";
-        String colorHex = complete
-            ? (config.colorblindMode() ? "0066cc" : "4cbb17")
-            : "ffffff";
-
-        applyStateText(slot, slotWidget, label, timer, colorHex);
     }
 
     public void revertAll()
@@ -264,6 +289,7 @@ public class GeSlotWidgetDecorator
         }
         registered.clear();
         vanillaBorderIds.clear();
-        vanillaText.clear();
+        vanillaTextAlignment.clear();
+        vanillaTextX.clear();
     }
 }

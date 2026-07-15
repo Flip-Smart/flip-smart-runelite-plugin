@@ -5,6 +5,7 @@ import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
+import com.flipsmart.util.TimeUtils;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -52,6 +53,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 	// Colors - designed to blend with GE's brown/tan color scheme
 	private static final Color COLOR_COMPETITIVE = new Color(76, 187, 23);        // OSRS green
 	private static final Color COLOR_UNCOMPETITIVE = new Color(215, 75, 75);      // Soft red
+	private static final Color COLOR_TIMER_TEXT = new Color(255, 255, 255);       // White
+	private static final Color COLOR_TIMER_SHADOW = new Color(0, 0, 0, 160);      // Subtle shadow
 	private static final Color COLOR_FLIP_ASSIST_GLOW = new Color(255, 185, 50);  // Orange glow for flip assist
 
 	// Colorblind-safe alternative colors (blue/orange instead of green/red)
@@ -285,9 +288,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 
 		OfferRecord trackedOffer = plugin.getOfferStore().bySlot(slot);
-		FlipSmartPlugin.OfferCompetitiveness competitiveness = plugin.calculateCompetitiveness(trackedOffer);
 
-		renderIndicatorBar(graphics, bounds, trackedOffer, offer, competitiveness, slot);
+		renderIndicatorBar(graphics, bounds, trackedOffer, offer, slot);
 
 		return checkForTooltip(bounds, offer);
 	}
@@ -296,11 +298,13 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Render the amber Flip Assist glow for the slot, if any.
 	 */
 	private void renderIndicatorBar(Graphics2D graphics, Rectangle bounds, OfferRecord trackedOffer,
-									GrandExchangeOffer offer, FlipSmartPlugin.OfferCompetitiveness competitiveness, int slot)
+									GrandExchangeOffer offer, int slot)
 	{
 		// A current-action highlight (bright amber pulse) always wins over a skipped-item
 		// reminder on the same slot; a sticky-only slot renders dimmed so it reads as
 		// secondary and never competes with the slot the Flip Assist panel is prompting.
+		// The competitiveness border itself is a native sprite recolor (GeSlotWidgetDecorator),
+		// not drawn here, so it always sits under the game's hover text.
 		if (adjustmentHighlights.containsKey(slot))
 		{
 			drawOrangeGlow(graphics, bounds);
@@ -308,6 +312,34 @@ public class GrandExchangeSlotOverlay extends Overlay
 		else if (stickyAdjustmentSlots.contains(slot))
 		{
 			drawDimReminderGlow(graphics, bounds);
+		}
+
+		// Timer in the top-right corner, clear of the "Buy"/"Sell" label (nudged in from the
+		// left border by GeSlotWidgetDecorator).
+		long effectiveLastActivity = trackedOffer == null ? 0L : trackedOffer.getEffectiveLastActivityAtMillis();
+		if (config.showOfferTimers() && trackedOffer != null && effectiveLastActivity > 0)
+		{
+			boolean isComplete = offer.getState() == GrandExchangeOfferState.BOUGHT ||
+								 offer.getState() == GrandExchangeOfferState.SOLD;
+
+			String timerText = isComplete && trackedOffer.getCompletedAtMillis() > 0
+				? TimeUtils.formatFrozenElapsedTime(effectiveLastActivity, trackedOffer.getCompletedAtMillis())
+				: TimeUtils.formatElapsedTime(effectiveLastActivity);
+
+			Font originalFont = graphics.getFont();
+			graphics.setFont(new Font("Arial", Font.BOLD, 11));
+			FontMetrics fm = graphics.getFontMetrics();
+
+			int timerWidth = fm.stringWidth(timerText);
+			int textX = bounds.x + bounds.width - timerWidth - 6;
+			int textY = bounds.y + 14;
+
+			graphics.setColor(COLOR_TIMER_SHADOW);
+			graphics.drawString(timerText, textX + 1, textY + 1);
+			graphics.setColor(isComplete ? getCompetitiveColor() : COLOR_TIMER_TEXT);
+			graphics.drawString(timerText, textX, textY);
+
+			graphics.setFont(originalFont);
 		}
 	}
 
