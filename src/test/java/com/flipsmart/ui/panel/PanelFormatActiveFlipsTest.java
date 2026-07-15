@@ -6,10 +6,11 @@ import org.junit.Test;
 public class PanelFormatActiveFlipsTest
 {
 	@Test
-	public void livePriceColoursLowBlueHighOrangeWithCommas()
+	public void livePriceColoursLowBlueHighOrangeWithCommasAndBoldsBothValues()
 	{
 		assertEquals(
-			"<html>Live Price: <font color='#6fb1ff'>1,500,000</font> | <font color='#ffab54'>2,000,000</font></html>",
+			"<html>Live Price: <b><font color='#6fb1ff'>1,500,000</font></b>"
+				+ " | <b><font color='#ffab54'>2,000,000</font></b></html>",
 			PanelFormat.livePriceHtml(1_500_000, 2_000_000));
 	}
 
