@@ -19,6 +19,7 @@ import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
+import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.util.BuyPriceLookup;
@@ -138,7 +139,6 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Font FONT_PLAIN_11 = new Font(FONT_ARIAL, Font.PLAIN, 11);
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
 	private static final Font FONT_BOLD_12 = new Font(FONT_ARIAL, Font.BOLD, 12);
-	private static final Font FONT_BOLD_13 = new Font(FONT_ARIAL, Font.BOLD, 13);
 	private static final Font FONT_BOLD_16 = new Font(FONT_ARIAL, Font.BOLD, 16);
 	
 
@@ -2435,12 +2435,26 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		final JPanel topPanel;
 		final JPanel namePanel;
+		/** Pixels a wrapped name adds beyond one line; 0 when the name fits on one. */
+		final int extraNameHeight;
 
-		HeaderPanels(JPanel topPanel, JPanel namePanel)
+		HeaderPanels(JPanel topPanel, JPanel namePanel, int extraNameHeight)
 		{
 			this.topPanel = topPanel;
 			this.namePanel = namePanel;
+			this.extraNameHeight = extraNameHeight;
 		}
+	}
+
+	/** Give the card back the pixels a wrapped name took, so the cap cannot clip the last row. */
+	private static void allowForWrappedName(JPanel card, int extraNameHeight)
+	{
+		if (extraNameHeight <= 0)
+		{
+			return;
+		}
+		Dimension max = card.getMaximumSize();
+		card.setMaximumSize(new Dimension(max.width, max.height + extraNameHeight));
 	}
 
 	/**
@@ -2469,14 +2483,23 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel iconLabel = new JLabel();
 		CardWidgets.setupIconLabel(iconLabel, itemImage);
 
-		String escapedName = PanelFormat.escapeHtml(itemName);
-		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
+		JLabel nameLabel = new JLabel();
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(FONT_BOLD_13);
+		nameLabel.setVerticalAlignment(SwingConstants.TOP);
 		// Narrow the name a little more when a third (refresh) icon shares the corner
 		int nameWidth = trailingIcon != null ? 98 : 130;
-		nameLabel.setPreferredSize(new Dimension(nameWidth, nameLabel.getPreferredSize().height));
-		nameLabel.setMaximumSize(new Dimension(nameWidth, Integer.MAX_VALUE));
+		ItemNameFit.Fit nameFit = ItemNameFit.fit(itemName, nameWidth,
+			(text, size) -> nameLabel.getFontMetrics(new Font(FONT_ARIAL, Font.BOLD, size)).stringWidth(text));
+		Font nameFont = new Font(FONT_ARIAL, Font.BOLD, nameFit.getFontSize());
+		nameLabel.setFont(nameFont);
+		nameLabel.setText(nameFit.getHtml());
+		// Size the height from the line count we chose. Measuring the label before the
+		// width constraint applies reports a single line, which is what clipped names.
+		int nameLineHeight = nameLabel.getFontMetrics(nameFont).getHeight();
+		int nameHeight = nameFit.getLineCount() * nameLineHeight;
+		nameLabel.setPreferredSize(new Dimension(nameWidth, nameHeight));
+		nameLabel.setMaximumSize(new Dimension(nameWidth, nameHeight));
+		int extraNameHeight = (nameFit.getLineCount() - 1) * nameLineHeight;
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
@@ -2517,7 +2540,7 @@ public class FlipFinderPanel extends PluginPanel
 			topPanel.add(iconsPanel, BorderLayout.EAST);
 		}
 
-		return new HeaderPanels(topPanel, namePanel);
+		return new HeaderPanels(topPanel, namePanel, extraNameHeight);
 	}
 	
 	/**
@@ -3346,6 +3369,7 @@ public class FlipFinderPanel extends PluginPanel
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
 			ColorScheme.DARKER_GRAY_COLOR, refreshIcon, buyLimitLabel);
 		headerHolder[0] = header;
+		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 		JPanel namePanel = header.namePanel;
 
@@ -3706,6 +3730,7 @@ public class FlipFinderPanel extends PluginPanel
 				potentialLabel, liquidityLabel, riskLabel, buyLimitLabel);
 		});
 		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor, refreshIcon, buyLimitLabel);
+		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 		JPanel namePanel = header.namePanel;
 
