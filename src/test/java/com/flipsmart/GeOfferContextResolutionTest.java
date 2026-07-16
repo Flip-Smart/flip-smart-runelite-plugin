@@ -72,6 +72,8 @@ public class GeOfferContextResolutionTest
 		when(client.getVarbitValue(VarbitID.GE_SELECTEDSLOT)).thenReturn(slot);
 	}
 
+	private final GrandExchangeOffer[] offers = new GrandExchangeOffer[8];
+
 	/** Puts an in-flight sell offer on {@code slot} without selecting it. */
 	private void putOffer(int slot, int itemId, int price, int qty)
 	{
@@ -81,7 +83,6 @@ public class GeOfferContextResolutionTest
 		when(offer.getPrice()).thenReturn(price);
 		when(offer.getTotalQuantity()).thenReturn(qty);
 
-		GrandExchangeOffer[] offers = new GrandExchangeOffer[8];
 		offers[slot] = offer;
 		when(client.getGrandExchangeOffers()).thenReturn(offers);
 	}
@@ -235,5 +236,30 @@ public class GeOfferContextResolutionTest
 
 		assertNotNull(ctx);
 		assertEquals(RAW_KARAMBWAN, ctx[0]);
+	}
+
+	/**
+	 * The clicked-slot latch must not survive a GE visit: slots are reused between
+	 * visits, so a carried-over index can name a different item. After a reopen the
+	 * resolver falls back to the live selected slot until the player clicks again.
+	 */
+	@Test
+	public void reopeningGeClearsTheClickedSlotLatch()
+	{
+		GeOfferDescriptionService service = newService();
+
+		putOffer(0, RAW_KARAMBWAN, 274, 4500);
+		putOffer(3, SHARK, 960, 10_000);
+		when(client.getWidget(InterfaceID.GeOffers.SETUP_DESC)).thenReturn(null);
+
+		clickSlot(service, 0);
+		assertEquals("clicked slot owns the panel while the GE stays open",
+			RAW_KARAMBWAN, service.resolveOfferContext()[0]);
+
+		service.onGeOffersWidgetLoaded();
+		when(client.getVarbitValue(VarbitID.GE_SELECTEDSLOT)).thenReturn(3);
+
+		assertEquals("a reopened GE must not carry the previous visit's slot",
+			SHARK, service.resolveOfferContext()[0]);
 	}
 }

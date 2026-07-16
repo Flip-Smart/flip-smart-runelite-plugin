@@ -178,6 +178,16 @@ public class GeOfferDescriptionService
 		}
 	}
 
+	/**
+	 * Drops the remembered slot when the GE interface is (re)opened. Offers are
+	 * collected and slots reused between visits, so a slot index carried over from
+	 * a previous visit can name an entirely different item.
+	 */
+	public void onGeOffersWidgetLoaded()
+	{
+		lastClickedSlot = -1;
+	}
+
 	// ---------------------------------------------------------------------
 	// Offer status panel — per-frame
 	// ---------------------------------------------------------------------
