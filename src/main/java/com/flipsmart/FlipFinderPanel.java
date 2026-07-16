@@ -648,8 +648,8 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				// Switched to Active Flips tab, update status
 				int itemCount = currentActiveFlips.size();
-				int invested = currentActiveFlips.stream()
-					.mapToInt(ActiveFlip::getTotalInvested)
+				long invested = currentActiveFlips.stream()
+					.mapToLong(ActiveFlip::getTotalInvested)
 					.sum();
 				statusLabel.setText(String.format("%d active %s | %s invested",
 					itemCount,
@@ -1609,8 +1609,8 @@ public class FlipFinderPanel extends PluginPanel
 		if (!currentActiveFlips.isEmpty())
 		{
 			int itemCount = currentActiveFlips.size();
-			int invested = currentActiveFlips.stream()
-				.mapToInt(ActiveFlip::getTotalInvested)
+			long invested = currentActiveFlips.stream()
+				.mapToLong(ActiveFlip::getTotalInvested)
 				.sum();
 			if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
 			{

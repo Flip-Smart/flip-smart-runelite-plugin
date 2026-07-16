@@ -97,7 +97,7 @@ public final class GpUtils
 	 * @param amount The GP amount to format
 	 * @return Formatted string (e.g., "1.5M", "500K", "100")
 	 */
-	public static String formatGP(int amount)
+	public static String formatGP(long amount)
 	{
 		if (amount >= 1_000_000)
 		{
@@ -116,7 +116,7 @@ public final class GpUtils
 	 * @param amount The GP amount to format
 	 * @return Formatted string (e.g., "1.5M gp")
 	 */
-	public static String formatGPWithSuffix(int amount)
+	public static String formatGPWithSuffix(long amount)
 	{
 		return formatGP(amount) + " gp";
 	}
@@ -127,9 +127,9 @@ public final class GpUtils
 	 * @param amount The GP amount to format (can be negative)
 	 * @return Formatted string (e.g., "-1.5M", "500K", "100")
 	 */
-	public static String formatGPSigned(int amount)
+	public static String formatGPSigned(long amount)
 	{
-		int absAmount = Math.abs(amount);
+		long absAmount = Math.abs(amount);
 		String sign = amount < 0 ? "-" : "";
 
 		if (absAmount >= 1_000_000)
@@ -160,7 +160,7 @@ public final class GpUtils
 	 * @param amount The GP amount to format
 	 * @return Formatted string with commas (e.g., "1,234,567")
 	 */
-	public static String formatGPExact(int amount)
+	public static String formatGPExact(long amount)
 	{
 		return String.format("%,d", amount);
 	}

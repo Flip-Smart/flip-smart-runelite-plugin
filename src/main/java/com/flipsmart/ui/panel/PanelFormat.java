@@ -47,7 +47,7 @@ public final class PanelFormat
 	/**
 	 * Format GP amount for display
 	 */
-	public static String formatGP(int amount)
+	public static String formatGP(long amount)
 	{
 		return GpUtils.formatGPSigned(amount);
 	}
@@ -55,7 +55,7 @@ public final class PanelFormat
 	/**
 	 * Format GP amount with commas for exact input (e.g., "1,234,567")
 	 */
-	public static String formatGPExact(int amount)
+	public static String formatGPExact(long amount)
 	{
 		return GpUtils.formatGPExact(amount);
 	}
@@ -208,7 +208,7 @@ public final class PanelFormat
 	{
 		String colour = realizedNet < 0 ? HEX_LOSS : HEX_PROFIT;
 		return htmlRow(coloured(HEX_PROFIT_LABEL, "Current Profit: ")
-			+ coloured(colour, GpUtils.formatGPSigned(clampInt(realizedNet))));
+			+ coloured(colour, GpUtils.formatGPSigned(realizedNet)));
 	}
 
 	/** Max Potential Profit: muted label + value coloured green (profit) / red (loss). */
@@ -216,13 +216,13 @@ public final class PanelFormat
 	{
 		String colour = maxProfit < 0 ? HEX_LOSS : HEX_PROFIT;
 		return htmlRow(coloured(HEX_MUTED, "Max Potential Profit: ")
-			+ coloured(colour, GpUtils.formatGPSigned(clampInt(maxProfit))));
+			+ coloured(colour, GpUtils.formatGPSigned(maxProfit)));
 	}
 
 	/** Tax: whole row in the muted secondary colour, matching the Potential label. */
 	public static String taxHtml(long total)
 	{
-		return htmlRow(coloured(HEX_MUTED, "Tax: " + formatGP(clampInt(total))));
+		return htmlRow(coloured(HEX_MUTED, "Tax: " + formatGP(total)));
 	}
 
 	/** Qty: progress/total in the muted secondary colour (e.g. "Qty: 3/5"). */
@@ -247,20 +247,6 @@ public final class PanelFormat
 	private static String bold(String text)
 	{
 		return "<b>" + text + "</b>";
-	}
-
-	/** Saturating cast of a long into the int range for the gp formatters. */
-	private static int clampInt(long v)
-	{
-		if (v > Integer.MAX_VALUE)
-		{
-			return Integer.MAX_VALUE;
-		}
-		if (v < Integer.MIN_VALUE)
-		{
-			return Integer.MIN_VALUE;
-		}
-		return (int) v;
 	}
 
 	/**
