@@ -203,6 +203,29 @@ public class GeOfferContextResolutionTest
 	}
 
 	/**
+	 * Buy side: a stale <em>sell</em> slot must not capture a <em>buy</em> setup
+	 * screen. Direction comes from GE_NEWOFFER_TYPE on the setup path but from the
+	 * slot's own state on the slot path, so losing this sends the panel through the
+	 * sell builder and prints a breakeven where the wiki insta-buy belongs.
+	 */
+	@Test
+	public void setupWindowOwnsDirectionAndItemOnTheBuyScreen()
+	{
+		GeOfferDescriptionService service = newService();
+
+		putOffer(0, RAW_KARAMBWAN, 274, 4500); // an in-flight SELL
+		clickSlot(service, 0);
+		openSetupWindow(SHARK, 960, 500, false); // ... while BUYING sharks
+
+		int[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals("item must be the one on the setup screen", SHARK, ctx[0]);
+		assertEquals("direction must be the setup screen's, not the stale slot's", 1, ctx[1]);
+		assertEquals("price must be the setup screen's", 960, ctx[2]);
+	}
+
+	/**
 	 * No click ever recorded, so resolveActiveSlot() falls back to GE_SELECTEDSLOT,
 	 * which tracks the *hovered* slot. Hovering an unrelated in-flight offer must
 	 * not poison the setup window either — this is why clearing the clicked-slot
