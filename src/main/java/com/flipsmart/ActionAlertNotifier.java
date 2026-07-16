@@ -63,6 +63,7 @@ public class ActionAlertNotifier
 	 * Offer a decision for alerting. Safe to call on every resolve and every tick —
 	 * repeats of an unchanged action are silent.
 	 */
+	@SuppressWarnings("PMD.NullAssignment")
 	public void onDecision(ActionDecision decision)
 	{
 		String key = alertKey(decision);
