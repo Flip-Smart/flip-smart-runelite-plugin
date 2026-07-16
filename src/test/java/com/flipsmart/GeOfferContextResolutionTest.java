@@ -72,6 +72,7 @@ public class GeOfferContextResolutionTest
 		when(client.getVarbitValue(VarbitID.GE_SELECTEDSLOT)).thenReturn(slot);
 	}
 
+	@SuppressWarnings("PMD.SingularField")
 	private final GrandExchangeOffer[] offers = new GrandExchangeOffer[8];
 
 	/** Puts an in-flight sell offer on {@code slot} without selecting it. */
