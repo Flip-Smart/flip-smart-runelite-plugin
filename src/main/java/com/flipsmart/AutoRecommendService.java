@@ -973,6 +973,10 @@ public class AutoRecommendService
 		}
 		ResolverInput input = buildResolverInput(-1, false);
 		ActionDecision decision = actionResolver.resolve(input);
+		// Re-offer every tick, before the change guard: an alert suppressed while the client
+		// was focused is still pending, and this is what delivers it once the player looks
+		// away. The notifier dedupes, so an unchanged action stays silent.
+		notifyActionAlert(decision);
 		if (decision.equals(lastAppliedDecision))
 		{
 			return;
@@ -981,7 +985,6 @@ public class AutoRecommendService
 			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		lastAppliedDecision = decision;
-		notifyActionAlert(decision);
 		applyDecision(decision);
 		// Mirror resolveAndApply: when a buy was suppressed for a pending sell, hold with a
 		// clear message instead of the generic wait (keeps both resolve paths consistent).

@@ -6,6 +6,7 @@ import net.runelite.client.Notifier;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import java.util.function.IntFunction;
 import java.util.function.LongSupplier;
 
@@ -33,6 +34,7 @@ public class ActionAlertNotifier
 	private final Notifier notifier;
 	private final FlipSmartConfig config;
 	private final IntFunction<String> itemNames;
+	private final BooleanSupplier clientFocused;
 	private final LongSupplier clock;
 
 	/** alert key -> wall-clock instant at which it may fire again. */
@@ -40,23 +42,26 @@ public class ActionAlertNotifier
 
 	private volatile String lastAlertKey;
 
-	public ActionAlertNotifier(Notifier notifier, FlipSmartConfig config, IntFunction<String> itemNames)
+	public ActionAlertNotifier(Notifier notifier, FlipSmartConfig config, IntFunction<String> itemNames,
+		BooleanSupplier clientFocused)
 	{
-		this(notifier, config, itemNames, System::currentTimeMillis);
+		this(notifier, config, itemNames, clientFocused, System::currentTimeMillis);
 	}
 
 	/** Test seam: inject a deterministic clock. */
-	ActionAlertNotifier(Notifier notifier, FlipSmartConfig config, IntFunction<String> itemNames, LongSupplier clock)
+	ActionAlertNotifier(Notifier notifier, FlipSmartConfig config, IntFunction<String> itemNames,
+		BooleanSupplier clientFocused, LongSupplier clock)
 	{
 		this.notifier = notifier;
 		this.config = config;
 		this.itemNames = itemNames;
+		this.clientFocused = clientFocused;
 		this.clock = clock;
 	}
 
 	/**
-	 * Offer a decision for alerting. Safe to call on every resolve — repeats of an
-	 * unchanged action are silent.
+	 * Offer a decision for alerting. Safe to call on every resolve and every tick —
+	 * repeats of an unchanged action are silent.
 	 */
 	public void onDecision(ActionDecision decision)
 	{
@@ -67,6 +72,13 @@ public class ActionAlertNotifier
 			return;
 		}
 		if (key.equals(lastAlertKey))
+		{
+			return;
+		}
+		// While the client is focused RuneLite discards the notification, so treating it
+		// as delivered would strand the action: the player walks away and is never told.
+		// Leave it unconsumed instead — the next tick re-offers it once they look away.
+		if (clientFocused.getAsBoolean())
 		{
 			return;
 		}

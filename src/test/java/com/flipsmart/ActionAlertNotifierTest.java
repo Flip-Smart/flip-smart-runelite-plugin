@@ -35,6 +35,7 @@ public class ActionAlertNotifierTest
 	private Notifier notifier;
 	private FlipSmartConfig config;
 	private long now;
+	private boolean focused;
 	private ActionAlertNotifier alerts;
 
 	@Before
@@ -44,7 +45,8 @@ public class ActionAlertNotifierTest
 		config = mock(FlipSmartConfig.class);
 		when(config.actionAlert()).thenReturn(Notification.ON);
 		now = 1_000_000L;
-		alerts = new ActionAlertNotifier(notifier, config, this::name, () -> now);
+		focused = false;
+		alerts = new ActionAlertNotifier(notifier, config, this::name, () -> focused, () -> now);
 	}
 
 	private String name(int itemId)
@@ -245,6 +247,48 @@ public class ActionAlertNotifierTest
 		alerts.onDecision(cancel(OTHER_ITEM, 4));
 
 		verify(notifier, times(2)).notify(any(Notification.class), anyString());
+	}
+
+	/** While the client is focused RuneLite discards the notification, so we must not send one. */
+	@Test
+	public void focusedClientIsSilent()
+	{
+		focused = true;
+
+		alerts.onDecision(cancel(ITEM, 3));
+
+		verify(notifier, never()).notify(any(Notification.class), anyString());
+	}
+
+	/**
+	 * THE bug from live QA: an action that appears while the player is watching must not be
+	 * consumed. RuneLite throws the notification away when focused, so marking it delivered
+	 * strands the action — the player walks away and is never told. It must still fire once
+	 * they look away.
+	 */
+	@Test
+	public void alertSuppressedWhileFocusedStillFiresOnceUnfocused()
+	{
+		focused = true;
+		alerts.onDecision(collect(ITEM, 6));
+		alerts.onDecision(collect(ITEM, 6));
+		verify(notifier, never()).notify(any(Notification.class), anyString());
+
+		focused = false;
+		alerts.onDecision(collect(ITEM, 6));
+
+		verify(notifier, times(1)).notify(any(Notification.class), anyString());
+	}
+
+	/** Once delivered while away, the same pending action does not re-fire on later ticks. */
+	@Test
+	public void alertDeliveredWhileUnfocusedDoesNotRepeatOnTicks()
+	{
+		alerts.onDecision(collect(ITEM, 6));
+		alerts.onDecision(collect(ITEM, 6));
+		alerts.onDecision(collect(ITEM, 6));
+
+		verify(notifier, times(1)).notify(any(Notification.class), anyString());
 	}
 
 	/** The alert-key table: PLACE_BUY is item-agnostic, LIST is per-item, the rest are per-offer. */

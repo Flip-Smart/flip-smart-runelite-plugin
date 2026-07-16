@@ -19,6 +19,7 @@ import com.flipsmart.trading.OfferStore;
 import com.flipsmart.trading.RoundTripLedger;
 import com.flipsmart.trading.TransactionLogger;
 import net.runelite.client.Notifier;
+import net.runelite.client.ui.ClientUI;
 
 import javax.swing.SwingUtilities;
 
@@ -53,10 +54,11 @@ public class ServiceWiring
 	 */
 	public AutoRecommendService initializeAutoRecommendService(FlipSmartPlugin plugin, FlipSmartConfig config,
 		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore,
-		Notifier notifier)
+		Notifier notifier, ClientUI clientUI)
 	{
 		AutoRecommendService autoRecommendService = new AutoRecommendService(config, plugin, offerStore);
-		ActionAlertNotifier actionAlerts = new ActionAlertNotifier(notifier, config, plugin::getItemName);
+		ActionAlertNotifier actionAlerts = new ActionAlertNotifier(notifier, config, plugin::getItemName,
+			clientUI::isFocused);
 		autoRecommendService.setOnActionAlert(actionAlerts::onDecision);
 		autoRecommendService.setOnFocusChanged(plugin::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
