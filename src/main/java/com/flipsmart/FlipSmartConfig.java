@@ -5,6 +5,7 @@ import net.runelite.client.config.ConfigGroup;
 import net.runelite.client.config.ConfigItem;
 import net.runelite.client.config.ConfigSection;
 import net.runelite.client.config.Keybind;
+import net.runelite.client.config.Notification;
 
 import java.awt.event.KeyEvent;
 
@@ -580,7 +581,7 @@ public interface FlipSmartConfig extends Config
 	// ============================================
 	@ConfigSection(
 		name = "Notifications",
-		description = "Discord webhook notifications for trade events",
+		description = "In-game action alerts and Discord webhook notifications for trade events",
 		position = 6,
 		closedByDefault = false
 	)
@@ -624,6 +625,18 @@ public interface FlipSmartConfig extends Config
 	default boolean notifyFlipSuggestion()
 	{
 		return false;
+	}
+
+	@ConfigItem(
+		keyName = "actionAlert",
+		name = "Action Alert",
+		description = "Notify when a Grand Exchange offer needs action. Sound and desktop popup follow your RuneLite notification settings unless you override them here.",
+		section = NOTIFICATIONS_SECTION,
+		position = 3
+	)
+	default Notification actionAlert()
+	{
+		return Notification.ON;
 	}
 
 	@ConfigSection(
