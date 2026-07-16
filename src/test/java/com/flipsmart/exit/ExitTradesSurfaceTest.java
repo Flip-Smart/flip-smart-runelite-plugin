@@ -29,7 +29,7 @@ public class ExitTradesSurfaceTest
 		controller.setWikiPriceSupplier(itemId -> new WikiPrice(1100, 950));
 		controller.setInventoryQtySupplier(itemId -> 5);
 		controller.setOnFocusTarget(lastFocus::set);
-		controller.setOnStatusMessage(lastStatus::set);
+		controller.setOnStatusMessage((m, id) -> lastStatus.set(m));
 	}
 
 	private void seed(int slot, int itemId, boolean buy, int qty)

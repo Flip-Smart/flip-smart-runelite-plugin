@@ -9,6 +9,7 @@ import com.flipsmart.trading.OfferStore;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
@@ -26,7 +27,7 @@ public final class ExitTradesController
 	private IntFunction<WikiPrice> wikiPriceSupplier = itemId -> null;
 	private IntUnaryOperator inventoryQtySupplier = itemId -> 0;
 	private Consumer<FocusedFlip> onFocusTarget = f -> { };
-	private Consumer<String> onStatusMessage = m -> { };
+	private BiConsumer<String, Integer> onStatusMessage = (m, id) -> { };
 	private Runnable onComplete = () -> { };
 
 	private boolean active;
@@ -58,7 +59,7 @@ public final class ExitTradesController
 		this.onFocusTarget = cb;
 	}
 
-	public void setOnStatusMessage(Consumer<String> cb)
+	public void setOnStatusMessage(BiConsumer<String, Integer> cb)
 	{
 		this.onStatusMessage = cb;
 	}
@@ -199,7 +200,7 @@ public final class ExitTradesController
 		if (t.getPhase() == ExitPhase.PENDING_CANCEL)
 		{
 			onFocusTarget.accept(null);
-			onStatusMessage.accept("Exit Trades: cancel the buy offer for " + t.getItemName());
+			onStatusMessage.accept("Exit Trades: cancel the buy offer for " + t.getItemName(), t.getItemId());
 			return;
 		}
 		// PENDING (sell) or CANCELLED_HOLDING (resell bought stock)
@@ -207,7 +208,7 @@ public final class ExitTradesController
 			wikiPriceSupplier.apply(t.getItemId()));
 		if (price <= 0)
 		{
-			onStatusMessage.accept("Exit Trades: no price data — skipping " + t.getItemName());
+			onStatusMessage.accept("Exit Trades: no price data — skipping " + t.getItemName(), t.getItemId());
 			t.setPhase(ExitPhase.DONE);
 			surfaceCurrent();
 			return;
@@ -216,7 +217,7 @@ public final class ExitTradesController
 			? Math.max(1, inventoryQtySupplier.applyAsInt(t.getItemId()))
 			: Math.max(1, offerQuantity(t.getSlot()));
 		onFocusTarget.accept(FocusedFlip.forSell(t.getItemId(), t.getItemName(), price, qty));
-		onStatusMessage.accept("Exit Trades: re-list " + t.getItemName() + " at " + price);
+		onStatusMessage.accept("Exit Trades: re-list " + t.getItemName() + " at " + price, t.getItemId());
 	}
 
 	private int offerQuantity(int slot)

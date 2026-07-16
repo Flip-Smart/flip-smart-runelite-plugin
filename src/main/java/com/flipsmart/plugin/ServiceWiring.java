@@ -15,6 +15,7 @@ import com.flipsmart.ManualAdjustmentTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
 import com.flipsmart.GrandExchangeTracker;
+import com.flipsmart.exit.ExitTradesController;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.trading.RoundTripLedger;
 import com.flipsmart.trading.TransactionLogger;
@@ -87,6 +88,32 @@ public class ServiceWiring
 			resp -> SwingUtilities.invokeLater(() -> plugin.handleActiveOfferHandoff(resp)),
 			itemId -> SwingUtilities.invokeLater(() -> plugin.clearActiveOfferSurface(itemId)));
 		return activeOfferAdvisorService;
+	}
+
+	/**
+	 * Construct the Exit Trades controller and wire it to the overlay and offer stream.
+	 * Prompts route through the same amber focus glow the sell flow already uses; the
+	 * offer listener advances the queue and re-surfaces the next slot's prompt on change.
+	 *
+	 * @return the constructed ExitTradesController
+	 */
+	public ExitTradesController initializeExitTradesController(FlipSmartPlugin plugin,
+		FlipAssistOverlay flipAssistOverlay, OfferStore offerStore)
+	{
+		ExitTradesController controller = new ExitTradesController(offerStore);
+		controller.setBuyBasisSupplier(plugin::getExitBuyBasis);
+		controller.setWikiPriceSupplier(plugin::getWikiPrice);
+		controller.setInventoryQtySupplier(plugin::getExitInventoryQty);
+		controller.setOnFocusTarget(flipAssistOverlay::setFocusedFlip);
+		controller.setOnStatusMessage(flipAssistOverlay::setAutoStatusMessage);
+		controller.setOnComplete(() -> flipAssistOverlay.setAutoStatusMessage("Exit Trades complete", 0));
+		offerStore.addListener(event -> {
+			if (controller.onOfferChanged(event.record))
+			{
+				controller.surfaceCurrent();
+			}
+		});
+		return controller;
 	}
 
 	/**
