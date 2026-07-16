@@ -21,9 +21,9 @@ import static com.flipsmart.api.ApiHttpTransport.urlEncode;
 
 /**
  * Item analysis, flip recommendations and flip-adjustment endpoints.
- * Owns the per-item analysis cache. Analysis feeds slow-moving card display
- * fields (buy limit, liquidity, risk), so a long TTL is acceptable; live
- * prices on cards come from the active-flips payload, not from here.
+ * Analysis responses are cached for CACHE_DURATION_MS. The Active Flips cards read their
+ * live prices from here, so they invalidate per item before refetching rather than wait
+ * out this TTL.
  */
 public class FlipsEndpoints
 {

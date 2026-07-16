@@ -188,11 +188,11 @@ public final class PanelFormat
 		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
 	}
 
-	/** Top "live" price row: market low (blue) | market high (orange); label keeps the label colour. */
+	/** Top "live" price row: market low (blue) | market high (orange), both bold; label stays plain. */
 	public static String livePriceHtml(int low, int high)
 	{
-		return htmlRow("Live Price: " + coloured(HEX_PRICE_LOW, formatGPExact(low))
-			+ " | " + coloured(HEX_PRICE_HIGH, formatGPExact(high)));
+		return htmlRow("Live Price: " + bold(coloured(HEX_PRICE_LOW, formatGPExact(low)))
+			+ " | " + bold(coloured(HEX_PRICE_HIGH, formatGPExact(high))));
 	}
 
 	/** Live Margin: gross market spread coloured green (profit) / red (loss), with ROI. No "+" prefix. */
@@ -241,6 +241,12 @@ public final class PanelFormat
 	private static String coloured(String hex, String text)
 	{
 		return "<font color='#" + hex + "'>" + text + "</font>";
+	}
+
+	/** Emphasise a span. The live prices are the numbers players actually read. */
+	private static String bold(String text)
+	{
+		return "<b>" + text + "</b>";
 	}
 
 	/** Saturating cast of a long into the int range for the gp formatters. */

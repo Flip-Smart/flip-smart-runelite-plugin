@@ -1,6 +1,4 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.OfferAction;
-import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
@@ -19,6 +17,7 @@ import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
+import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.util.BuyPriceLookup;
@@ -138,9 +137,10 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Font FONT_PLAIN_11 = new Font(FONT_ARIAL, Font.PLAIN, 11);
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
 	private static final Font FONT_BOLD_12 = new Font(FONT_ARIAL, Font.BOLD, 12);
-	private static final Font FONT_BOLD_13 = new Font(FONT_ARIAL, Font.BOLD, 13);
 	private static final Font FONT_BOLD_16 = new Font(FONT_ARIAL, Font.BOLD, 16);
-	
+
+	private static final int ACTIVE_FLIPS_PRICE_REFRESH_MS = 60_000;
+	private static final int TAB_ACTIVE_FLIPS = 1;
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
@@ -183,7 +183,10 @@ public class FlipFinderPanel extends PluginPanel
 	private transient JPanel currentFocusedPanel = null;
 	private transient int currentFocusedItemId = -1;
 	private transient java.util.function.Consumer<FocusedFlip> onFocusChanged;
-	private transient java.util.function.IntFunction<OfferAdviceResponse> offerDispositionLookup;
+
+	/** Refresh closures for the cards currently on the Active Flips tab; rebuilt with the list. */
+	private final transient java.util.List<Runnable> activeFlipCardRefreshers = new java.util.ArrayList<>();
+	private transient javax.swing.Timer activeFlipsPriceTimer;
 
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
@@ -633,7 +636,15 @@ public class FlipFinderPanel extends PluginPanel
 		tabbedPane.addChangeListener(e ->
 		{
 			int selectedIndex = tabbedPane.getSelectedIndex();
-			if (selectedIndex == 1 && !currentActiveFlips.isEmpty())
+			if (selectedIndex == TAB_ACTIVE_FLIPS)
+			{
+				startActiveFlipsPriceTimer();
+			}
+			else
+			{
+				stopActiveFlipsPriceTimer();
+			}
+			if (selectedIndex == TAB_ACTIVE_FLIPS && !currentActiveFlips.isEmpty())
 			{
 				// Switched to Active Flips tab, update status
 				int itemCount = currentActiveFlips.size();
@@ -990,6 +1001,10 @@ public class FlipFinderPanel extends PluginPanel
 			refreshCountdownTimer.stop();
 			refreshCountdownTimer = null;
 		}
+		if (activeFlipsPriceTimer != null)
+		{
+			activeFlipsPriceTimer.stop();
+		}
 	}
 
 	/**
@@ -1233,6 +1248,80 @@ public class FlipFinderPanel extends PluginPanel
 			refreshCountdownTimer.start();
 		}
 		updateRefreshCountdownLabel();
+	}
+
+	/**
+	 * Live prices are only worth polling while someone is looking at them. The wiki feed
+	 * the backend reads is itself ~60s CDN-cached, so a faster cadence would buy nothing.
+	 */
+	private void startActiveFlipsPriceTimer()
+	{
+		if (activeFlipsPriceTimer == null)
+		{
+			activeFlipsPriceTimer = new javax.swing.Timer(ACTIVE_FLIPS_PRICE_REFRESH_MS,
+				e -> runActiveFlipsPriceRefresh());
+		}
+		if (!activeFlipsPriceTimer.isRunning())
+		{
+			activeFlipsPriceTimer.start();
+		}
+	}
+
+	private void stopActiveFlipsPriceTimer()
+	{
+		if (activeFlipsPriceTimer != null && activeFlipsPriceTimer.isRunning())
+		{
+			activeFlipsPriceTimer.stop();
+		}
+	}
+
+	/** A manual refresh is a full interval's worth of freshness, so restart the cadence. */
+	private void restartActiveFlipsPriceTimer()
+	{
+		startActiveFlipsPriceTimer();
+		activeFlipsPriceTimer.restart();
+	}
+
+	@Override
+	public void onActivate()
+	{
+		// The sidebar reopening fires no tab-change event, so this is the only signal
+		// that re-arms the price timer after a collapse.
+		if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
+		{
+			startActiveFlipsPriceTimer();
+		}
+	}
+
+	@Override
+	public void onDeactivate()
+	{
+		stopActiveFlipsPriceTimer();
+	}
+
+	private void runActiveFlipsPriceRefresh()
+	{
+		if (!isShowing() || tabbedPane.getSelectedIndex() != TAB_ACTIVE_FLIPS)
+		{
+			stopActiveFlipsPriceTimer();
+			return;
+		}
+		// Copy: a refresh repopulates cards, which can rebuild the list underneath us.
+		for (Runnable refresher : new java.util.ArrayList<>(activeFlipCardRefreshers))
+		{
+			try
+			{
+				refresher.run();
+			}
+			catch (RuntimeException ex)
+			{
+				// One bad card must not starve the rest of the sweep.
+				if (log.isDebugEnabled())
+				{
+					log.debug("Active flip price refresh failed for a card: {}", ex.getMessage());
+				}
+			}
+		}
 	}
 
 	private void updateRefreshCountdownLabel()
@@ -1523,7 +1612,7 @@ public class FlipFinderPanel extends PluginPanel
 			int invested = currentActiveFlips.stream()
 				.mapToInt(ActiveFlip::getTotalInvested)
 				.sum();
-			if (tabbedPane.getSelectedIndex() == 1)
+			if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
 			{
 				statusLabel.setText(String.format("%d active %s | %s invested",
 					itemCount,
@@ -1796,7 +1885,8 @@ public class FlipFinderPanel extends PluginPanel
 	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<PendingOrder> pendingOrders)
 	{
 		activeFlipsListContainer.removeAll();
-		
+		activeFlipCardRefreshers.clear();
+
 		// Build a map of pending orders by itemId for smart deduplication
 		java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId = buildPendingOrdersMap(pendingOrders);
 		
@@ -2435,12 +2525,29 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		final JPanel topPanel;
 		final JPanel namePanel;
+		/** Pixels a wrapped name adds beyond one line; 0 when the name fits on one. */
+		final int extraNameHeight;
 
-		HeaderPanels(JPanel topPanel, JPanel namePanel)
+		HeaderPanels(JPanel topPanel, JPanel namePanel, int extraNameHeight)
 		{
 			this.topPanel = topPanel;
 			this.namePanel = namePanel;
+			this.extraNameHeight = extraNameHeight;
 		}
+	}
+
+	/** Give the card back the pixels a wrapped name took, so the cap cannot clip the last row. */
+	private static void allowForWrappedName(JPanel card, int extraNameHeight)
+	{
+		if (extraNameHeight <= 0)
+		{
+			return;
+		}
+		Dimension max = card.getMaximumSize();
+		int raised = max.height > Integer.MAX_VALUE - extraNameHeight
+			? Integer.MAX_VALUE
+			: max.height + extraNameHeight;
+		card.setMaximumSize(new Dimension(max.width, raised));
 	}
 
 	/**
@@ -2469,14 +2576,23 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel iconLabel = new JLabel();
 		CardWidgets.setupIconLabel(iconLabel, itemImage);
 
-		String escapedName = PanelFormat.escapeHtml(itemName);
-		JLabel nameLabel = new JLabel("<html>" + escapedName + "</html>");
+		JLabel nameLabel = new JLabel();
 		nameLabel.setForeground(Color.WHITE);
-		nameLabel.setFont(FONT_BOLD_13);
+		nameLabel.setVerticalAlignment(SwingConstants.TOP);
 		// Narrow the name a little more when a third (refresh) icon shares the corner
 		int nameWidth = trailingIcon != null ? 98 : 130;
-		nameLabel.setPreferredSize(new Dimension(nameWidth, nameLabel.getPreferredSize().height));
-		nameLabel.setMaximumSize(new Dimension(nameWidth, Integer.MAX_VALUE));
+		ItemNameFit.Fit nameFit = ItemNameFit.fit(itemName, nameWidth,
+			(text, size) -> nameLabel.getFontMetrics(new Font(FONT_ARIAL, Font.BOLD, size)).stringWidth(text));
+		Font nameFont = new Font(FONT_ARIAL, Font.BOLD, nameFit.getFontSize());
+		nameLabel.setFont(nameFont);
+		nameLabel.setText(nameFit.getHtml());
+		// Size the height from the line count we chose. Measuring the label before the
+		// width constraint applies reports a single line, which is what clipped names.
+		int nameLineHeight = nameLabel.getFontMetrics(nameFont).getHeight();
+		int nameHeight = nameFit.getLineCount() * nameLineHeight;
+		nameLabel.setPreferredSize(new Dimension(nameWidth, nameHeight));
+		nameLabel.setMaximumSize(new Dimension(nameWidth, nameHeight));
+		int extraNameHeight = (nameFit.getLineCount() - 1) * nameLineHeight;
 
 		namePanel.add(iconLabel, BorderLayout.WEST);
 		namePanel.add(nameLabel, BorderLayout.CENTER);
@@ -2517,7 +2633,7 @@ public class FlipFinderPanel extends PluginPanel
 			topPanel.add(iconsPanel, BorderLayout.EAST);
 		}
 
-		return new HeaderPanels(topPanel, namePanel);
+		return new HeaderPanels(topPanel, namePanel, extraNameHeight);
 	}
 	
 	/**
@@ -2584,6 +2700,7 @@ public class FlipFinderPanel extends PluginPanel
 				refreshLabel.setEnabled(false);
 				refreshLabel.setCursor(Cursor.getDefaultCursor());
 				onRefresh.run();
+				restartActiveFlipsPriceTimer();
 				// Re-enable shortly after; the async re-populate updates the rows independently
 				javax.swing.Timer timer = new javax.swing.Timer(1200, ev ->
 				{
@@ -2912,38 +3029,6 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		this.onFocusChanged = callback;
 	}
-
-	public void setOfferDispositionLookup(java.util.function.IntFunction<OfferAdviceResponse> lookup)
-	{
-		this.offerDispositionLookup = lookup;
-	}
-
-	private static String activeOfferVerb(OfferAction action, Integer netProfitEstimate)
-	{
-		boolean isLoss = netProfitEstimate != null && netProfitEstimate < 0;
-		boolean isProfit = netProfitEstimate != null && netProfitEstimate > 0;
-		switch (action)
-		{
-			case MOVE_PRICE_DOWN:
-				return "Move price down";
-			case EXIT_AT_BREAKEVEN:
-				if (isLoss)
-				{
-					return "Exit at a loss";
-				}
-				return isProfit ? "Take profit" : "Exit at breakeven";
-			case EXIT_AT_LOSS:
-				return "Exit at a loss";
-			default:
-				return "";
-		}
-	}
-
-	private static String formatSignedGp(int amount)
-	{
-		return (amount >= 0 ? "+" : "-") + GpUtils.formatGP(Math.abs(amount));
-	}
-
 
 	/**
 	 * Set the callback for when authentication succeeds.
@@ -3306,46 +3391,22 @@ public class FlipFinderPanel extends PluginPanel
 		CardWidgets.addLabelsWithSpacing(detailsPanel, currentProfitLabel, potentialLabel, qtyLabel,
 			liquidityLabel, riskLabel);
 
-		if (offerDispositionLookup != null)
-		{
-			OfferAdviceResponse advice = offerDispositionLookup.apply(flip.getItemId());
-			String verb = advice != null && advice.getActionEnum() != null
-				? activeOfferVerb(advice.getActionEnum(), advice.getNetProfitEstimate())
-				: "";
-			if (!verb.isEmpty())
-			{
-				detailsPanel.add(Box.createRigidArea(new Dimension(0, 2)));
-
-				String verbLine = advice.getNewPrice() != null
-					? verb + ": " + String.format("%,d", advice.getNewPrice()) + "gp"
-					: verb;
-				JLabel verbLabel = CardWidgets.createStyledLabel(verbLine, Color.ORANGE);
-				verbLabel.setToolTipText(advice.getReason());
-				detailsPanel.add(verbLabel);
-
-				if (advice.getNetProfitEstimate() != null)
-				{
-					int net = advice.getNetProfitEstimate();
-					String keyword = net < 0 ? "Loss" : (net > 0 ? "Profit" : "Breakeven");
-					Color netColor = net < 0 ? new Color(255, 100, 100) : new Color(80, 255, 120);
-					detailsPanel.add(CardWidgets.createStyledLabel(keyword + ": " + formatSignedGp(net), netColor));
-				}
-			}
-		}
-
 		// Array indirection: the refresh closure needs the header panels before createItemHeaderPanels produces them.
 		HeaderPanels[] headerHolder = new HeaderPanels[1];
-		JLabel refreshIcon = createRefreshIconLabel(() ->
+		Runnable refreshCard = () ->
 		{
 			apiClient.invalidateCache(flip.getItemId());
 			populateActiveFlipCard(flip,
 				new ActiveFlipCardPanels(panel, headerHolder[0].topPanel, headerHolder[0].namePanel, detailsPanel),
 				new ActiveFlipCardLabels(pricesLabel, buyLimitLabel, marginLabel, currentProfitLabel,
 					potentialLabel, qtyLabel, taxLabel, liquidityLabel, riskLabel));
-		});
+		};
+		JLabel refreshIcon = createRefreshIconLabel(refreshCard);
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(),
 			ColorScheme.DARKER_GRAY_COLOR, refreshIcon, buyLimitLabel);
 		headerHolder[0] = header;
+		activeFlipCardRefreshers.add(refreshCard);
+		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 		JPanel namePanel = header.namePanel;
 
@@ -3617,6 +3678,12 @@ public class FlipFinderPanel extends PluginPanel
 		FocusedFlip updatedFocus = FocusedFlip.forSell(
 			flip.getItemId(), flip.getItemName(), smartSellPrice,
 			sellQuantityFor(flip), config.priceOffset());
+		// Re-pushing an unchanged focus clears the overlay's active prompt and re-writes
+		// the GE search varp, so a periodic refresh must not do it.
+		if (updatedFocus.equals(currentFocus))
+		{
+			return;
+		}
 		currentFocus = updatedFocus;
 		if (onFocusChanged != null)
 		{
@@ -3699,13 +3766,16 @@ public class FlipFinderPanel extends PluginPanel
 		CardWidgets.addLabelsWithSpacing(detailsPanel, potentialLabel, qtyLabel, liquidityLabel, riskLabel);
 
 		// Header with refresh + corner buy-limit, matching the active-flip cards
-		JLabel refreshIcon = createRefreshIconLabel(() ->
+		Runnable refreshCard = () ->
 		{
 			apiClient.invalidateCache(pending.itemId);
 			populatePendingCardRows(pending, pricesLabel, marginLabel, taxLabel, qtyLabel,
 				potentialLabel, liquidityLabel, riskLabel, buyLimitLabel);
-		});
+		};
+		activeFlipCardRefreshers.add(refreshCard);
+		JLabel refreshIcon = createRefreshIconLabel(refreshCard);
 		HeaderPanels header = createItemHeaderPanels(pending.itemId, pending.itemName, bgColor, refreshIcon, buyLimitLabel);
+		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 		JPanel namePanel = header.namePanel;
 
@@ -3836,6 +3906,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Top section: Item icon and name
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
+		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
 
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
