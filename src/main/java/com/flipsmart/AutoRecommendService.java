@@ -3035,6 +3035,11 @@ public class AutoRecommendService
 	 */
 	private void focusBuyOverlay(int itemId, String itemName, int buyPrice, int quantity, int sellPrice, String statusMsg)
 	{
+		if (plugin != null && plugin.getExitTradesController() != null
+			&& plugin.getExitTradesController().isActive())
+		{
+			return; // Exit Trades is sell-only; no new buy suggestions while active
+		}
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forBuy(itemId, itemName, buyPrice, quantity, sellPrice, priceOffset);
 		invokeFocusCallback(focus);
