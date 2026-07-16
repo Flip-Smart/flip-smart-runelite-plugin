@@ -45,6 +45,9 @@ public class GeOfferContextResolutionTest
 	private static final int GE_OFFERS_GROUP = 465;
 	private static final int INDEX_0_CHILD = 7;
 
+	private static final String MSG_SETUP_ITEM = "item must be the one on the setup screen";
+	private static final String MSG_SETUP_PRICE = "price must be the setup screen's";
+
 	private final Client client = mock(Client.class);
 
 	private GeOfferDescriptionService newService()
@@ -179,8 +182,8 @@ public class GeOfferContextResolutionTest
 		int[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
-		assertEquals("item must be the one on the setup screen", SHARK, ctx[0]);
-		assertEquals("price must be the setup screen's", 960, ctx[2]);
+		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
+		assertEquals(MSG_SETUP_PRICE, 960, ctx[2]);
 		assertEquals("qty must be the setup screen's", 10_000, ctx[3]);
 	}
 
@@ -197,8 +200,8 @@ public class GeOfferContextResolutionTest
 		int[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
-		assertEquals("item must be the one on the setup screen", SHARK, ctx[0]);
-		assertEquals("price must be the setup screen's", 960, ctx[2]);
+		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
+		assertEquals(MSG_SETUP_PRICE, 960, ctx[2]);
 		assertEquals("qty must be the setup screen's", 10_000, ctx[3]);
 	}
 
@@ -220,9 +223,9 @@ public class GeOfferContextResolutionTest
 		int[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
-		assertEquals("item must be the one on the setup screen", SHARK, ctx[0]);
+		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
 		assertEquals("direction must be the setup screen's, not the stale slot's", 1, ctx[1]);
-		assertEquals("price must be the setup screen's", 960, ctx[2]);
+		assertEquals(MSG_SETUP_PRICE, 960, ctx[2]);
 	}
 
 	/**
@@ -243,7 +246,7 @@ public class GeOfferContextResolutionTest
 		int[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
-		assertEquals("item must be the one on the setup screen", SHARK, ctx[0]);
+		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
 	}
 
 	/** With no setup window open, the clicked slot still owns the in-flight panel. */
