@@ -216,11 +216,16 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
-		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots, boolean isMembersWorld)
+		Integer cashStack, Integer inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
+		String rsn, Integer filledSlots, boolean isMembersWorld)
 	{
-		return flips.getPluginSyncAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
+		return flips.getPluginSyncAsync(cashStack, inventoryGp, flipStyle, limit, randomSeed, timeframe, rsn,
 			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume());
+	}
+
+	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, int inventoryGp)
+	{
+		return flips.pushRsnCapitalAsync(rsn, inventoryGp);
 	}
 
 	@Deprecated(since = "1.5.0", forRemoval = true)

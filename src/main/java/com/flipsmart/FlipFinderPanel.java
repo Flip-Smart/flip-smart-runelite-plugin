@@ -1155,8 +1155,8 @@ public class FlipFinderPanel extends PluginPanel
 		Integer filledSlots = getFilledSlots();
 
 		final boolean applyRecs = applyRecommendations;
-		apiClient.getPluginSyncAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots,
-			plugin.isMembersWorld()).thenAccept(sync ->
+		apiClient.getPluginSyncAsync(cashStack, getInventoryGp(), flipStyle, limit, randomSeed, timeframe, rsn,
+			filledSlots, plugin.isMembersWorld()).thenAccept(sync ->
 		{
 			if (sync == null)
 			{
@@ -2028,6 +2028,17 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		// This will be overridden by the plugin
 		// For now, return null to get all recommendations
+		return null;
+	}
+
+	/**
+	 * The player's real inventory coins, reported for the web "Capital Active" card.
+	 * Deliberately separate from {@link #getCashStack()}, which the cashstack
+	 * override may replace with a user-supplied figure. Null means "unknown, do not
+	 * record"; zero is a real reading and must be sent as such.
+	 */
+	protected Integer getInventoryGp()
+	{
 		return null;
 	}
 

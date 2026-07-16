@@ -167,14 +167,29 @@ public class FlipsEndpoints
 	}
 
 	/**
+	 * Append the player's real inventory coins for the web "Capital Active" card.
+	 * Unlike the filter params above, zero is sent rather than omitted: a player with
+	 * everything deployed into offers genuinely holds none, and dropping that would
+	 * leave the stored figure overstated indefinitely. Null alone means "unknown".
+	 * Kept off {@code appendSharedQueryParams} because /flip-finder has no use for it.
+	 */
+	static void appendInventoryGp(StringBuilder urlBuilder, Integer inventoryGp)
+	{
+		if (inventoryGp != null)
+		{
+			urlBuilder.append(String.format("&inventory_gp=%d", inventoryGp));
+		}
+	}
+
+	/**
 	 * Fetch the bundled 2-minute poll ({@code GET /plugin/sync}) in one round-trip:
 	 * recommendations, active flips, completed flips, statistics and entitlements.
 	 * Query parameters mirror {@link #getFlipRecommendationsAsync} so the same
 	 * panel inputs drive both.
 	 */
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
-		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume)
+		Integer cashStack, Integer inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
+		String rsn, Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume)
 	{
 		String apiUrl = transport.getApiUrl();
 
@@ -182,6 +197,7 @@ public class FlipsEndpoints
 		urlBuilder.append(String.format("%s/plugin/sync?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
 		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 		appendFilterParams(urlBuilder, minProfit, minVolume);
+		appendInventoryGp(urlBuilder, inventoryGp);
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(urlBuilder.toString())
@@ -189,6 +205,27 @@ public class FlipsEndpoints
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			transport.parse(jsonData, PluginSyncResponse.class));
+	}
+
+	/**
+	 * Flush the last-known inventory coins as the player logs out, so the web
+	 * "Capital Active" card does not sit on a reading up to a poll-interval old
+	 * for the whole time they are offline. Recurring reporting rides
+	 * {@link #getPluginSyncAsync} instead, so this fires once per session.
+	 * Best-effort: failures are swallowed rather than delaying logout.
+	 */
+	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, int inventoryGp)
+	{
+		JsonObject body = new JsonObject();
+		body.addProperty("rsn", rsn);
+		body.addProperty("inventory_gp", inventoryGp);
+
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(String.format("%s/rsn/capital", transport.getApiUrl()))
+			.post(RequestBody.create(JSON, body.toString()));
+
+		return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
+			.exceptionally(e -> false);
 	}
 
 	/**

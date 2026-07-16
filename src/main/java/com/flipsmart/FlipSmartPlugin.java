@@ -977,6 +977,7 @@ public class FlipSmartPlugin extends Plugin
 
 	public void handleLogoutState()
 	{
+		pushFinalCapitalSnapshot();
 		session.onLogout();
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
@@ -1004,6 +1005,25 @@ public class FlipSmartPlugin extends Plugin
 		{
 			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
 		}
+	}
+
+	/**
+	 * Report the final inventory coins as the player leaves, so the web card does not
+	 * sit on a poll-interval-old reading for as long as they stay offline.
+	 *
+	 * Must run before {@link PlayerSession#onLogout()}, which clears the RSN. The
+	 * logged-in guard matters: this same handler runs for the login screen shown at
+	 * startup, where the cash stack is still zero and reporting it would overwrite a
+	 * real stored value. Async, so logout is never delayed.
+	 */
+	private void pushFinalCapitalSnapshot()
+	{
+		if (!session.isLoggedIntoRunescape())
+		{
+			return;
+		}
+
+		getCurrentRsnSafe().ifPresent(rsn -> apiClient.pushRsnCapitalAsync(rsn, session.getCurrentCashStack()));
 	}
 
 	public void handleLoggedInState()
@@ -1495,6 +1515,14 @@ public class FlipSmartPlugin extends Plugin
 					}
 				}
 				return session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null;
+			}
+
+			@Override
+			protected Integer getInventoryGp()
+			{
+				// Never the override: this is the reported figure, not the one
+				// recommendations are built from. Zero is reported as zero.
+				return session.isLoggedIntoRunescape() ? session.getCurrentCashStack() : null;
 			}
 
 			@Override
