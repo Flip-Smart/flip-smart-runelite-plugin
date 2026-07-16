@@ -807,6 +807,8 @@ public class FlipFinderPanel extends PluginPanel
 		body.add(Box.createVerticalStrut(6));
 		body.add(buildUpdateButtonRow());
 		body.add(Box.createVerticalStrut(6));
+		body.add(buildExitTradesRow());
+		body.add(Box.createVerticalStrut(6));
 		body.add(buildHideButtonsRow());
 
 		popup.add(body);
@@ -894,6 +896,30 @@ public class FlipFinderPanel extends PluginPanel
 		});
 
 		row.add(update);
+		return row;
+	}
+
+	private JPanel buildExitTradesRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JButton exit = new JButton("Exit Trades…");
+		exit.setFont(FONT_PLAIN_12);
+		exit.setFocusable(false);
+		exit.setToolTipText("Unwind all open GE trades at breakeven or instant-sell prices");
+		exit.addActionListener(e -> {
+			if (activeSettingsPopup != null)
+			{
+				activeSettingsPopup.setVisible(false);
+			}
+			if (plugin.getExitTradesController() != null)
+			{
+				com.flipsmart.exit.ExitTradesDialog.open(this, plugin.getExitTradesController());
+			}
+		});
+
+		row.add(exit);
 		return row;
 	}
 
