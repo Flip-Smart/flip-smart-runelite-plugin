@@ -239,6 +239,31 @@ public class GeOfferContextResolutionTest
 	}
 
 	/**
+	 * The mirror of the bug: the in-flight status panel is owned by its committed
+	 * slot, so a setup window left visible underneath it must not speak for it.
+	 * onBeforeRender writes one resolved context to both panels, so without this
+	 * the fix would trade one cross-item bleed for another.
+	 */
+	@Test
+	public void inFlightDetailsPanelOutranksACoveredSetupWindow()
+	{
+		GeOfferDescriptionService service = newService();
+
+		putOffer(0, RAW_KARAMBWAN, 274, 4500);
+		clickSlot(service, 0);
+		openSetupWindow(SHARK, 960, 10_000, true);
+
+		Widget details = mock(Widget.class);
+		when(details.isHidden()).thenReturn(false);
+		when(client.getWidget(InterfaceID.GeOffers.DETAILS)).thenReturn(details);
+
+		int[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals("the details panel's own slot must win", RAW_KARAMBWAN, ctx[0]);
+	}
+
+	/**
 	 * The clicked-slot latch must not survive a GE visit: slots are reused between
 	 * visits, so a carried-over index can name a different item. After a reopen the
 	 * resolver falls back to the live selected slot until the player clicks again.

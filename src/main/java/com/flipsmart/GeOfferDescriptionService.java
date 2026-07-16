@@ -321,12 +321,19 @@ public class GeOfferDescriptionService
 
 	/**
 	 * Reads the current "Set up offer" screen state directly from varbits/varps.
-	 * Returns {@code null} when the setup window isn't open or no offer is being
-	 * built. Direction encoding: {@code GE_NEWOFFER_TYPE == 1} → sell, anything
-	 * else non-zero → buy.
+	 * Returns {@code null} when the setup window isn't the surface on screen or no
+	 * offer is being built. Direction encoding: {@code GE_NEWOFFER_TYPE == 1} →
+	 * sell, anything else non-zero → buy.
 	 */
 	private int[] resolveSetupWindowContext()
 	{
+		// The in-flight status panel is a different surface with a different
+		// authority (its committed slot), so the setup window never speaks for it.
+		if (isDetailsContainerVisible())
+		{
+			return null;
+		}
+
 		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
 		if (setupDesc == null || setupDesc.isHidden())
 		{
