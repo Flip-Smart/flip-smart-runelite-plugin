@@ -22,31 +22,31 @@ public class CompletedFlip
 	private int quantity;
 
 	@SerializedName("buy_price_per_item")
-	private int buyPricePerItem;
+	private long buyPricePerItem;
 
 	@SerializedName("buy_total")
-	private int buyTotal;
+	private long buyTotal;
 
 	@SerializedName("buy_time")
 	private String buyTime;
 
 	@SerializedName("sell_price_per_item")
-	private int sellPricePerItem;
+	private long sellPricePerItem;
 
 	@SerializedName("sell_total")
-	private int sellTotal;
+	private long sellTotal;
 
 	@SerializedName("sell_time")
 	private String sellTime;
 
 	@SerializedName("gross_profit")
-	private int grossProfit;
+	private long grossProfit;
 
 	@SerializedName("ge_tax")
-	private int geTax;
+	private long geTax;
 
 	@SerializedName("net_profit")
-	private int netProfit;
+	private long netProfit;
 
 	@SerializedName("roi_percent")
 	private double roiPercent;

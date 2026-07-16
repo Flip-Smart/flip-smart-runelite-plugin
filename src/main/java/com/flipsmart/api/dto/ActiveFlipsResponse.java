@@ -19,6 +19,6 @@ public class ActiveFlipsResponse
 	private int totalItems;
 
 	@SerializedName("total_invested")
-	private int totalInvested;
+	private long totalInvested;
 }
 

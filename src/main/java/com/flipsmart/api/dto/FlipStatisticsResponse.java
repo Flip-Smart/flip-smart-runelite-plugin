@@ -17,7 +17,7 @@ public class FlipStatisticsResponse
 	private int successfulFlips;
 
 	@SerializedName("total_profit")
-	private int totalProfit;
+	private long totalProfit;
 
 	@SerializedName("success_rate")
 	private double successRate;

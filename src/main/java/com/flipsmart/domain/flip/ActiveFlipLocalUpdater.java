@@ -56,7 +56,7 @@ public final class ActiveFlipLocalUpdater
 		flip.setTotalQuantity(filled);
 		flip.setOriginalQuantity(filled);
 		flip.setAverageBuyPrice(averageBuyPrice);
-		flip.setTotalInvested((int) Math.min(spent > 0 ? spent : (long) averageBuyPrice * filled, Integer.MAX_VALUE));
+		flip.setTotalInvested(spent > 0 ? spent : (long) averageBuyPrice * filled);
 		flip.setFirstBuyTime(nowIso);
 		flip.setLastBuyTime(nowIso);
 		flip.setTransactionCount(1);

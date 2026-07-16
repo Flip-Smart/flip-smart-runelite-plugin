@@ -25,7 +25,7 @@ public class ActiveFlip
 	private int averageBuyPrice;
 
 	@SerializedName("total_invested")
-	private int totalInvested;
+	private long totalInvested;
 
 	@SerializedName("first_buy_time")
 	private String firstBuyTime;

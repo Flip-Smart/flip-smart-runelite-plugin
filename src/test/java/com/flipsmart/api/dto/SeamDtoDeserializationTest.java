@@ -79,6 +79,44 @@ public class SeamDtoDeserializationTest
 	}
 
 	@Test
+	public void completedFlipParsesMoneyValuesAboveInt4()
+	{
+		// A single high-value flip whose totals exceed Integer.MAX_VALUE (2,147,483,647).
+		// Gson parses the whole response, so one over-int flip that fails to deserialize
+		// throws JsonSyntaxException and drops the ENTIRE Flip History panel, not one row.
+		long buyTotal = 3_000_000_000L;
+		long sellTotal = 3_200_000_000L;
+		long grossProfit = 200_000_000_000L;
+		long geTax = 4_000_000_000L;
+		long netProfit = 196_000_000_000L;
+		long perItemPrice = 2_400_000_000L; // e.g. a party hat, > int4 for a single item
+		String json = "{\"count\":1,\"flips\":[{\"id\":1,\"item_id\":4151,\"item_name\":\"Third age\","
+			+ "\"quantity\":1,\"buy_price_per_item\":" + perItemPrice + ",\"buy_total\":" + buyTotal + ","
+			+ "\"sell_price_per_item\":" + perItemPrice + ",\"sell_total\":" + sellTotal + ","
+			+ "\"gross_profit\":" + grossProfit + ",\"ge_tax\":" + geTax + ",\"net_profit\":" + netProfit + "}]}";
+		CompletedFlipsResponse r = gson.fromJson(json, CompletedFlipsResponse.class);
+		com.flipsmart.domain.flip.CompletedFlip f = r.getFlips().get(0);
+		assertEquals(perItemPrice, f.getBuyPricePerItem());
+		assertEquals(buyTotal, f.getBuyTotal());
+		assertEquals(perItemPrice, f.getSellPricePerItem());
+		assertEquals(sellTotal, f.getSellTotal());
+		assertEquals(grossProfit, f.getGrossProfit());
+		assertEquals(geTax, f.getGeTax());
+		assertEquals(netProfit, f.getNetProfit());
+	}
+
+	@Test
+	public void flipStatisticsParsesProfitAboveInt4()
+	{
+		// /flips/statistics returns SUM(net_profit); Postgres SUM(int4) is bigint, so the API
+		// can already emit past-int4 totals for a >2.1b/month window regardless of column type.
+		String json = "{\"total_flips\":42,\"successful_flips\":30,\"total_profit\":5000000000,"
+			+ "\"success_rate\":0.714,\"average_roi\":12.5}";
+		FlipStatisticsResponse r = gson.fromJson(json, FlipStatisticsResponse.class);
+		assertEquals(5_000_000_000L, r.getTotalProfit());
+	}
+
+	@Test
 	public void blocklistsResponseMapsListCountAndNestedSnakeCaseKeys()
 	{
 		String json = "{\"count\":1,\"blocklists\":[{\"id\":7,\"name\":\"My list\","
