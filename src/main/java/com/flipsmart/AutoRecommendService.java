@@ -198,6 +198,11 @@ public class AutoRecommendService
 	// detection so the per-tick re-resolve only repaints (and logs) when the action changes.
 	private ActionDecision lastAppliedDecision;
 
+	// Fires on each applied decision so action alerts can notify. The notifier owns its own
+	// change detection: resolveAndApply re-applies unchanged decisions on every offer event,
+	// while the tick re-resolve only calls on change.
+	private Consumer<ActionDecision> onActionAlert;
+
 	// Whether a FocusedFlip (buy/sell setup overlay) is currently shown. The game-tick
 	// re-resolve heals BLANK overlays only — it must never override an action already shown,
 	// so it stays out of the way of a direct focus (e.g. collect -> sell) that the resolver's
@@ -235,6 +240,11 @@ public class AutoRecommendService
 	public void setOnStatusChanged(Consumer<String> callback)
 	{
 		this.onStatusChanged = callback;
+	}
+
+	public void setOnActionAlert(Consumer<ActionDecision> callback)
+	{
+		this.onActionAlert = callback;
 	}
 
 	public void setOnQueueAdvanced(Runnable callback)
@@ -913,6 +923,7 @@ public class AutoRecommendService
 			decision.getKind(), decision.getStep(), decision.getItemId(), decision.getSlot());
 		focusedCollectedItemId = decision.getStep() == ActionStep.LIST ? decision.getItemId() : -1;
 		lastAppliedDecision = decision;
+		notifyActionAlert(decision);
 		applyDecision(decision);
 		// When the only thing we could have done was a buy we suppressed for a pending sell,
 		// tell the player we're holding for that item's price rather than showing a vague wait.
@@ -962,6 +973,10 @@ public class AutoRecommendService
 		}
 		ResolverInput input = buildResolverInput(-1, false);
 		ActionDecision decision = actionResolver.resolve(input);
+		// Re-offer every tick, before the change guard: an alert suppressed while the client
+		// was focused is still pending, and this is what delivers it once the player looks
+		// away. The notifier dedupes, so an unchanged action stays silent.
+		notifyActionAlert(decision);
 		if (decision.equals(lastAppliedDecision))
 		{
 			return;
@@ -1037,6 +1052,14 @@ public class AutoRecommendService
 		String name = resolveItemName(itemId);
 		int qty = session.getCollectedQuantity(itemId);
 		focusSellForItem(itemId, name, qty);
+	}
+
+	private void notifyActionAlert(ActionDecision decision)
+	{
+		if (onActionAlert != null)
+		{
+			onActionAlert.accept(decision);
+		}
 	}
 
 	private String resolveItemName(int itemId)

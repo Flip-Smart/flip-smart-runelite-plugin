@@ -46,7 +46,9 @@ import net.runelite.api.widgets.Widget;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.ui.ClientUI;
 import net.runelite.client.input.KeyManager;
 import net.runelite.client.input.MouseListener;
 import net.runelite.client.input.MouseManager;
@@ -110,6 +112,12 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private ChatMessageManager chatMessageManager;
+
+	@Inject
+	private Notifier notifier;
+
+	@Inject
+	private ClientUI clientUI;
 
 	@Inject
 	private KeyManager keyManager;
@@ -685,7 +693,7 @@ public class FlipSmartPlugin extends Plugin
 			() -> { if (flipFinderPanel != null) flipFinderPanel.refresh(); },
 			() -> { if (flipFinderPanel != null) flipFinderPanel.refreshActiveFlips(); });
 		serviceWiring.wireServiceCallbacks(this, offlineSyncService, activeFlipTracker, refreshCoalescer);
-		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore);
+		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore, notifier, clientUI);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,

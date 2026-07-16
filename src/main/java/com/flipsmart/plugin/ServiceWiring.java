@@ -1,5 +1,6 @@
 package com.flipsmart.plugin;
 
+import com.flipsmart.ActionAlertNotifier;
 import com.flipsmart.ActiveFlipTracker;
 import com.flipsmart.ActiveOfferAdvisorService;
 import com.flipsmart.AutoRecommendService;
@@ -17,6 +18,8 @@ import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.trading.RoundTripLedger;
 import com.flipsmart.trading.TransactionLogger;
+import net.runelite.client.Notifier;
+import net.runelite.client.ui.ClientUI;
 
 import javax.swing.SwingUtilities;
 
@@ -50,9 +53,13 @@ public class ServiceWiring
 	 * @return the constructed AutoRecommendService
 	 */
 	public AutoRecommendService initializeAutoRecommendService(FlipSmartPlugin plugin, FlipSmartConfig config,
-		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore)
+		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore,
+		Notifier notifier, ClientUI clientUI)
 	{
 		AutoRecommendService autoRecommendService = new AutoRecommendService(config, plugin, offerStore);
+		ActionAlertNotifier actionAlerts = new ActionAlertNotifier(notifier, config, plugin::getItemName,
+			clientUI::isFocused);
+		autoRecommendService.setOnActionAlert(actionAlerts::onDecision);
 		autoRecommendService.setOnFocusChanged(plugin::handleAutoRecommendFocusChanged);
 		autoRecommendService.setOnOverlayMessageChanged(flipAssistOverlay::setAutoStatusMessage);
 		autoRecommendService.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
