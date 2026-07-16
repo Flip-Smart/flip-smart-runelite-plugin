@@ -324,6 +324,10 @@ public class GeOfferDescriptionService
 	 * Returns {@code null} when the setup window isn't the surface on screen or no
 	 * offer is being built. Direction encoding: {@code GE_NEWOFFER_TYPE == 1} →
 	 * sell, anything else non-zero → buy.
+	 *
+	 * <p>The per-frame path must read this itself: the geBuyExamineText /
+	 * geSellExamineText callbacks do not fire on the current Jagex setup window, so
+	 * nothing else would replace SETUP_DESC for an offer built without a focus.
 	 */
 	private int[] resolveSetupWindowContext()
 	{
