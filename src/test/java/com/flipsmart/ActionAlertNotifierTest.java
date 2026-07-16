@@ -194,6 +194,59 @@ public class ActionAlertNotifierTest
 			ActionAlertNotifier.message(decision(ActionKind.S4, ActionStep.REPRICE, ITEM, 3), this::name));
 	}
 
+	/**
+	 * S2 exists only while the queue has a surfaceable buy, so a refresh that briefly
+	 * empties it flaps PLACE_BUY -> COLLECT -> PLACE_BUY. Those are different keys, so
+	 * only the cooldown stops the third from re-alerting.
+	 */
+	@Test
+	public void flapWithinCooldownDoesNotReAlert()
+	{
+		alerts.onDecision(placeBuy(ITEM));
+		now += 1_000L;
+		alerts.onDecision(collect(OTHER_ITEM, 2));
+		now += 1_000L;
+		alerts.onDecision(placeBuy(ITEM));
+
+		verify(notifier, times(2)).notify(any(Notification.class), anyString());
+	}
+
+	/** Once the window lapses, a genuinely recurring action alerts again. */
+	@Test
+	public void flapAfterCooldownReAlerts()
+	{
+		alerts.onDecision(placeBuy(ITEM));
+		now += 1_000L;
+		alerts.onDecision(collect(OTHER_ITEM, 2));
+		now += ActionAlertNotifier.COOLDOWN_MS;
+		alerts.onDecision(placeBuy(ITEM));
+
+		verify(notifier, times(3)).notify(any(Notification.class), anyString());
+	}
+
+	/** The window holds right up to its boundary. */
+	@Test
+	public void stillCoolingJustBeforeExpiry()
+	{
+		alerts.onDecision(placeBuy(ITEM));
+		now += 1_000L;
+		alerts.onDecision(collect(OTHER_ITEM, 2));
+		now += ActionAlertNotifier.COOLDOWN_MS - 1_001L;
+		alerts.onDecision(placeBuy(ITEM));
+
+		verify(notifier, times(2)).notify(any(Notification.class), anyString());
+	}
+
+	/** Cooldowns are per key — one key cooling must not silence another. */
+	@Test
+	public void cooldownsAreIndependentPerKey()
+	{
+		alerts.onDecision(cancel(ITEM, 3));
+		alerts.onDecision(cancel(OTHER_ITEM, 4));
+
+		verify(notifier, times(2)).notify(any(Notification.class), anyString());
+	}
+
 	/** The alert-key table: PLACE_BUY is item-agnostic, LIST is per-item, the rest are per-offer. */
 	@Test
 	public void alertKeyTable()
