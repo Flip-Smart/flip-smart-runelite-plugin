@@ -178,6 +178,16 @@ public class GeOfferDescriptionService
 		}
 	}
 
+	/**
+	 * Drops the remembered slot when the GE interface is (re)opened. Offers are
+	 * collected and slots reused between visits, so a slot index carried over from
+	 * a previous visit can name an entirely different item.
+	 */
+	public void onGeOffersWidgetLoaded()
+	{
+		lastClickedSlot = -1;
+	}
+
 	// ---------------------------------------------------------------------
 	// Offer status panel — per-frame
 	// ---------------------------------------------------------------------
@@ -215,8 +225,9 @@ public class GeOfferDescriptionService
 
 	/**
 	 * Resolves the offer context (itemId, direction, price, quantity) from one of
-	 * three sources, in priority order: Flip Assist focus, the GE slot the player
-	 * clicked, or the live "Set up offer" screen state.
+	 * three sources, ordered by how authoritative each is about the item actually
+	 * on screen: Flip Assist focus (only when it agrees with the screen), the live
+	 * "Set up offer" window, then the committed offer on the active slot.
 	 *
 	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
 	 *         no actionable context can be determined.
@@ -229,20 +240,16 @@ public class GeOfferDescriptionService
 			return focusCtx;
 		}
 
-		// Source #2: the slot the player clicked. GE_SELECTEDSLOT is
-		// only used as a cold-start fallback (haven't seen a click yet).
-		int[] slotCtx = resolveSlotContext();
-		if (slotCtx != null)
+		// The setup window is pre-confirm and belongs to no committed slot, so
+		// while it is open it outranks the active slot: that slot may hold an
+		// unrelated in-flight offer the player merely hovered or clicked earlier.
+		int[] setupCtx = resolveSetupWindowContext();
+		if (setupCtx != null)
 		{
-			return slotCtx;
+			return setupCtx;
 		}
 
-		// Source #3: live "Set up offer" screen state (issue #684). Covers ad-hoc
-		// buy/sell offers being constructed without a Flip Assist focus — the
-		// slot is still EMPTY pre-confirm so #2 returns null, and the
-		// geBuyExamineText / geSellExamineText script callbacks don't fire on
-		// the current Jagex setup window, leaving SETUP_DESC un-replaced.
-		return resolveSetupWindowContext();
+		return resolveSlotContext();
 	}
 
 	/**
@@ -280,13 +287,21 @@ public class GeOfferDescriptionService
 
 	/**
 	 * The item id the open GE panel is actually showing, independent of Flip Assist
-	 * focus: the committed offer on the active slot (in-flight status panel) if any,
-	 * else the item selected in the "Set up offer" window. Returns {@code null} when
-	 * neither surface exposes an item yet — the caller then treats focus as
-	 * authoritative.
+	 * focus: the item selected in the "Set up offer" window if that window is open,
+	 * else the committed offer on the active slot (in-flight status panel). Returns
+	 * {@code null} when neither surface exposes an item yet — the caller then treats
+	 * focus as authoritative.
 	 */
 	private Integer resolveOnScreenItemId()
 	{
+		// The setup window covers the slot tiles, so when it is open the active
+		// slot's committed offer is not what the player is looking at.
+		int[] setupCtx = resolveSetupWindowContext();
+		if (setupCtx != null)
+		{
+			return setupCtx[0];
+		}
+
 		int slot = resolveActiveSlot();
 		if (slot >= 0)
 		{
@@ -301,18 +316,28 @@ public class GeOfferDescriptionService
 			}
 		}
 
-		int[] setupCtx = resolveSetupWindowContext();
-		return setupCtx == null ? null : setupCtx[0];
+		return null;
 	}
 
 	/**
 	 * Reads the current "Set up offer" screen state directly from varbits/varps.
-	 * Returns {@code null} when the setup window isn't open or no offer is being
-	 * built. Direction encoding: {@code GE_NEWOFFER_TYPE == 1} → sell, anything
-	 * else non-zero → buy.
+	 * Returns {@code null} when the setup window isn't the surface on screen or no
+	 * offer is being built. Direction encoding: {@code GE_NEWOFFER_TYPE == 1} →
+	 * sell, anything else non-zero → buy.
+	 *
+	 * <p>The per-frame path must read this itself: the geBuyExamineText /
+	 * geSellExamineText callbacks do not fire on the current Jagex setup window, so
+	 * nothing else would replace SETUP_DESC for an offer built without a focus.
 	 */
 	private int[] resolveSetupWindowContext()
 	{
+		// The in-flight status panel is a different surface with a different
+		// authority (its committed slot), so the setup window never speaks for it.
+		if (isDetailsContainerVisible())
+		{
+			return null;
+		}
+
 		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
 		if (setupDesc == null || setupDesc.isHidden())
 		{

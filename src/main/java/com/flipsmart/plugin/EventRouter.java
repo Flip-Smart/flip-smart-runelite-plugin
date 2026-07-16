@@ -227,6 +227,10 @@ public class EventRouter
 		{
 			geHistoryService.onHistoryWidgetLoaded();
 		}
+		if (event.getGroupId() == InterfaceID.GE_OFFERS && geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.onGeOffersWidgetLoaded();
+		}
 	}
 
 	public void onScriptCallbackEvent(ScriptCallbackEvent event)
