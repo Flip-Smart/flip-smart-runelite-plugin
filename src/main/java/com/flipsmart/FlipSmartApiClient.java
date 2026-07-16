@@ -223,7 +223,7 @@ public class FlipSmartApiClient
 			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume());
 	}
 
-	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, int inventoryGp)
+	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Integer inventoryGp)
 	{
 		return flips.pushRsnCapitalAsync(rsn, inventoryGp);
 	}

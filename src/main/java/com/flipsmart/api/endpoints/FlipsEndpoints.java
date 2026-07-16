@@ -214,7 +214,7 @@ public class FlipsEndpoints
 	 * {@link #getPluginSyncAsync} instead, so this fires once per session.
 	 * Best-effort: failures are swallowed rather than delaying logout.
 	 */
-	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, int inventoryGp)
+	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Integer inventoryGp)
 	{
 		JsonObject body = new JsonObject();
 		body.addProperty("rsn", rsn);
