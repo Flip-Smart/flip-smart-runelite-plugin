@@ -37,6 +37,6 @@ public class WikiPrice
 		{
 			return instaBuy;
 		}
-		return (instaBuy + instaSell) / 2;
+		return (int) (((long) instaBuy + instaSell) / 2);
 	}
 }
