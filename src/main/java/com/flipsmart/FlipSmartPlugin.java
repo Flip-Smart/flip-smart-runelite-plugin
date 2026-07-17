@@ -1322,6 +1322,7 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("RSN already pushed this session, skipping: {}", rsn);
 			return;
 		}
+		updateAccountTypeCache();
 		apiClient.updateRSN(rsn, accountType).thenAccept(confirmed ->
 		{
 			if (Boolean.TRUE.equals(confirmed))
