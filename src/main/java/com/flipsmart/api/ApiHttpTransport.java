@@ -1098,14 +1098,14 @@ public class ApiHttpTransport
 		}
 
 		String apiUrl = getApiUrl();
-		StringBuilder url = new StringBuilder(String.format("%s/auth/rsn?rsn=%s", apiUrl, urlEncode(rsn)));
+		String url = String.format("%s/auth/rsn?rsn=%s", apiUrl, urlEncode(rsn));
 		if (accountType != null && !accountType.isEmpty())
 		{
-			url.append("&account_type=").append(urlEncode(accountType));
+			url += "&account_type=" + urlEncode(accountType);
 		}
 
 		Request.Builder requestBuilder = new Request.Builder()
-			.url(url.toString())
+			.url(url)
 			.put(RequestBody.create(JSON, ""));
 
 		return executeAuthenticatedAsync(requestBuilder, jsonData ->
