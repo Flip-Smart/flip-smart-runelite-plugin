@@ -94,6 +94,19 @@ public class ExitTradesControllerAdvanceTest
 	}
 
 	@Test
+	public void sameItemAcrossTwoSlotsAttributesEventToCorrectSlot()
+	{
+		seed(0, 561, false); // sell item 561 in slot 0
+		seed(1, 561, false); // sell item 561 in slot 1 (same item, separate slot)
+		controller.start(ExitTradesMode.INSTANT);
+
+		// Slot 1's offer fills; only slot 1's target should advance, not slot 0's.
+		controller.onOfferChanged(rec(1, 561, false, 10, OfferState.FILLED));
+		assertEquals(ExitPhase.PENDING, controller.getTargets().get(0).getPhase());
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(1).getPhase());
+	}
+
+	@Test
 	public void actedCountZeroBeforeAnyAction()
 	{
 		seed(0, 561, false);

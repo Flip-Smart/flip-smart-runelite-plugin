@@ -195,6 +195,15 @@ public final class ExitTradesController
 			{
 				continue;
 			}
+			// A record that still occupies a slot belongs to the target in that exact slot — this
+			// disambiguates the same item listed across two slots. A fresh re-list (NEW) can land in
+			// any slot, and terminal records (COLLECTED/CANCELLED_EMPTY) carry no slot, so both fall
+			// back to item-only matching.
+			if (record.getSlot() != null && !isFreshSell(record)
+				&& record.getSlot().intValue() != t.getSlot())
+			{
+				continue;
+			}
 			// A finished sell (re-listed at the exit price, or sold on its own) closes a sell target.
 			if (t.getPhase() == ExitPhase.PENDING && !t.isBuy() && isFreshSell(record))
 			{
