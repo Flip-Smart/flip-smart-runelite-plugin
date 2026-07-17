@@ -37,8 +37,11 @@ public final class ExitTradesController
 	private Runnable onClearHighlights = () -> { };
 	private Runnable onComplete = () -> { };
 
-	private boolean active;
-	private ExitTradesMode mode;
+	// active/mode are read across threads — the client thread (resolver, overlay focus), the Swing
+	// EDT (cog button, panel focus guard), and the render thread (isModifyingActiveOffer) — so the
+	// buy-suppression / ownsOverlay checks see a consistent value without a one-tick stale read.
+	private volatile boolean active;
+	private volatile ExitTradesMode mode;
 	private volatile boolean modifyingActiveOffer;
 	private final List<ExitSlotTarget> targets = new ArrayList<>();
 
