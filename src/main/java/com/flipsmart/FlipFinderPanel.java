@@ -904,18 +904,31 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
 		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		JButton exit = new JButton("Exit Trades…");
+		boolean exitActive = plugin.getExitTradesController() != null
+			&& plugin.getExitTradesController().isActive();
+
+		JButton exit = new JButton(exitActive ? "Buy/Sell Mode" : "Exit Trades / Sell Only");
 		exit.setFont(FONT_PLAIN_12);
 		exit.setFocusable(false);
-		exit.setToolTipText("Unwind all open GE trades at breakeven or instant-sell prices");
+		exit.setToolTipText(exitActive
+			? "Leave sell-only mode and resume normal buy/sell recommendations"
+			: "Unwind all open GE trades at breakeven or instant-sell prices");
 		exit.addActionListener(e -> {
 			if (activeSettingsPopup != null)
 			{
 				activeSettingsPopup.setVisible(false);
 			}
-			if (plugin.getExitTradesController() != null)
+			if (plugin.getExitTradesController() == null)
 			{
-				com.flipsmart.exit.ExitTradesDialog.open(this, plugin.getExitTradesController());
+				return;
+			}
+			if (plugin.getExitTradesController().isActive())
+			{
+				plugin.exitSellOnlyMode();
+			}
+			else
+			{
+				com.flipsmart.exit.ExitTradesDialog.open(this, plugin::startExitTrades);
 			}
 		});
 
@@ -3081,6 +3094,12 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void setFocus(FlipRecommendation rec, JPanel panel)
 	{
+		// Exit Trades (any mode) is sell-only — never focus a new buy while it's active.
+		if (plugin.getExitTradesController() != null && plugin.getExitTradesController().isActive())
+		{
+			return;
+		}
+
 		// Block new buy-side flips when free user has hit their slot limit
 		PlayerSession session = plugin.getSession();
 		if (session != null && !plugin.isPremium()

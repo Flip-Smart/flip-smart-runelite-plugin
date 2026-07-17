@@ -200,6 +200,16 @@ public class EventRouter
 			return;
 		}
 
+		// During queue-driven Exit Trades (breakeven/instant), the flow owns the focus. Scope the
+		// prompt to the item actually on the sell screen so working slots out of order never shows a
+		// stale queue-pointer item. REGULAR sell-only mode falls through to the normal sell flow.
+		if (plugin.getExitTradesController() != null && plugin.getExitTradesController().ownsOverlay())
+		{
+			plugin.getExitTradesController().onSellScreenOpened(openItemId);
+			plugin.maybeRecalc12hSellPrice(openItemId);
+			return;
+		}
+
 		grandExchangeTracker.autoFocusOnActiveFlip(openItemId);
 		plugin.maybeRecalc12hSellPrice(openItemId);
 	}

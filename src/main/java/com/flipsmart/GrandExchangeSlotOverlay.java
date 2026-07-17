@@ -577,6 +577,14 @@ public class GrandExchangeSlotOverlay extends Overlay
 		if (step == FlipAssistOverlay.FlipAssistStep.SELECT_ITEM ||
 			step == FlipAssistOverlay.FlipAssistStep.SELL_ITEMS)
 		{
+			// During an Exit Trades re-list of an offer that still owns its slot, the item's own
+			// slot is already highlighted — don't also glow the sell button on empty slots.
+			if (step == FlipAssistOverlay.FlipAssistStep.SELL_ITEMS
+				&& plugin.getExitTradesController() != null
+				&& plugin.getExitTradesController().isModifyingActiveOffer())
+			{
+				return;
+			}
 			drawMainPanelButtonHighlights(graphics, step);
 			return;
 		}

@@ -17,6 +17,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.awt.Window;
+import java.util.function.Consumer;
 
 /** Center-screen pop-up letting the player pick a Breakeven or Instant exit. */
 public final class ExitTradesDialog
@@ -25,7 +26,11 @@ public final class ExitTradesDialog
 	{
 	}
 
-	public static void open(Component parent, ExitTradesController controller)
+	/**
+	 * @param onStart invoked with the chosen mode after the dialog closes. The caller is
+	 *               responsible for starting the run on the client thread (game-state reads).
+	 */
+	public static void open(Component parent, Consumer<ExitTradesMode> onStart)
 	{
 		Window owner = parent == null ? null : SwingUtilities.getWindowAncestor(parent);
 		JDialog dialog = new JDialog(owner, "Exit Trades", JDialog.ModalityType.APPLICATION_MODAL);
@@ -37,27 +42,31 @@ public final class ExitTradesDialog
 		heading.setBorder(BorderFactory.createEmptyBorder(10, 12, 0, 12));
 		dialog.add(heading, BorderLayout.NORTH);
 
-		JPanel cards = new JPanel(new GridLayout(1, 2, 8, 0));
+		JPanel cards = new JPanel(new GridLayout(1, 3, 8, 0));
 		cards.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 		cards.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
+		cards.add(card("Regular Sell",
+			"Sell-only: stops suggesting new buys but keeps the normal sell flow and prices. Stays on until you switch back to Buy/Sell mode.",
+			() -> {
+				dialog.dispose();
+				onStart.accept(ExitTradesMode.REGULAR);
+			}));
 		cards.add(card("Exit Trades (Breakeven)",
 			"Targets a fair, near-no-loss exit price. May still instant-sell for a small profit if the margin moved in your favor.",
 			() -> {
-				controller.start(ExitTradesMode.BREAKEVEN);
-				controller.surfaceCurrent();
 				dialog.dispose();
+				onStart.accept(ExitTradesMode.BREAKEVEN);
 			}));
 		cards.add(card("Exit Trades (Instant)",
 			"Lists at the current instant-sell price for an immediate exit, regardless of profit or loss.",
 			() -> {
-				controller.start(ExitTradesMode.INSTANT);
-				controller.surfaceCurrent();
 				dialog.dispose();
+				onStart.accept(ExitTradesMode.INSTANT);
 			}));
 		dialog.add(cards, BorderLayout.CENTER);
 
 		dialog.pack();
-		dialog.setMinimumSize(new Dimension(360, 190));
+		dialog.setMinimumSize(new Dimension(540, 190));
 		dialog.setLocationRelativeTo(owner);
 		dialog.setVisible(true);
 	}
