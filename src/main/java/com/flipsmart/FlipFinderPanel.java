@@ -13,6 +13,7 @@ import com.flipsmart.domain.flip.ActiveFlipLocalUpdater;
 import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
+import com.flipsmart.exit.ExitTradesDialog;
 import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
@@ -928,7 +929,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			else
 			{
-				com.flipsmart.exit.ExitTradesDialog.open(this, plugin::startExitTrades);
+				ExitTradesDialog.open(this, plugin::startExitTrades);
 			}
 		});
 
