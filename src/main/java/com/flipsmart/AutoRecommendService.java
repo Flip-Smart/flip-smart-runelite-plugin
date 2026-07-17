@@ -1814,6 +1814,10 @@ public class AutoRecommendService
 	 */
 	private void highlightItemSlot(int itemId)
 	{
+		if (exitOwnsOverlay())
+		{
+			return;
+		}
 		java.util.function.IntConsumer cb = onHighlightItemSlot;
 		if (cb != null)
 		{
@@ -1925,6 +1929,10 @@ public class AutoRecommendService
 	/** Track a skipped action's item and light its sticky orange box (AC7). */
 	private void keepStickyHighlight(int itemId)
 	{
+		if (exitOwnsOverlay())
+		{
+			return;
+		}
 		Integer slot = slotForLiveItem(itemId);
 		if (slot == null)
 		{
@@ -3035,6 +3043,10 @@ public class AutoRecommendService
 	 */
 	private void focusBuyOverlay(int itemId, String itemName, int buyPrice, int quantity, int sellPrice, String statusMsg)
 	{
+		if (exitSuppressesBuys())
+		{
+			return; // Exit Trades (any mode) is sell-only; no new buy suggestions while active
+		}
 		int priceOffset = config.priceOffset();
 		FocusedFlip focus = FocusedFlip.forBuy(itemId, itemName, buyPrice, quantity, sellPrice, priceOffset);
 		invokeFocusCallback(focus);
@@ -3045,8 +3057,31 @@ public class AutoRecommendService
 	// Callbacks
 	// =====================
 
+	/** Queue-driven Exit Trades (breakeven/instant) owns the overlay; auto-recommend stays fully silent. */
+	private boolean exitOwnsOverlay()
+	{
+		return plugin != null && plugin.getExitTradesController() != null
+			&& plugin.getExitTradesController().ownsOverlay();
+	}
+
+	/** Any Exit Trades mode (including REGULAR sell-only) suppresses new buy suggestions. */
+	private boolean exitSuppressesBuys()
+	{
+		return plugin != null && plugin.getExitTradesController() != null
+			&& plugin.getExitTradesController().isActive();
+	}
+
 	private void invokeFocusCallback(FocusedFlip focus)
 	{
+		if (exitOwnsOverlay())
+		{
+			return;
+		}
+		if (focus != null && focus.isBuying() && exitSuppressesBuys())
+		{
+			// Sell-only (any Exit Trades mode): drop buy focuses from every path, keep sells.
+			return;
+		}
 		Integer locked = queue.getLockedItemId();
 		if (locked != null && (focus == null || focus.getItemId() != locked))
 		{
@@ -3253,6 +3288,7 @@ public class AutoRecommendService
 			.surfaceableBuy(hasSurfaceable, surfaceableItemId)
 			.nowMillis(now)
 			.blockBuyForPendingSell(blockBuyForPendingSell, pendingSellItemId)
+			.buysSuppressed(exitSuppressesBuys())
 			.completedAwaitingCollection(completed)
 			.staleOffers(staleSnapshot)
 			.collectedAwaitingList(collected)

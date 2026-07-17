@@ -55,7 +55,7 @@ public final class ActionResolver {
         // strand the item we already own. Bounded by a grace window upstream so a permanently
         // unresolved price can't wedge trading.
         if (in.getFilledSlotCount() < in.getSlotLimit() && in.hasSurfaceableBuy()
-            && !in.isBlockBuyForPendingSell()) {
+            && !in.isBlockBuyForPendingSell() && !in.isBuysSuppressed()) {
             candidates.add(new ActionDecision(ActionKind.S2, ActionStep.PLACE_BUY,
                 in.getSurfaceableBuyItemId(), -1, in.getNowMillis()));
         }

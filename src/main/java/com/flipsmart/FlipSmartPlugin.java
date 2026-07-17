@@ -184,6 +184,10 @@ public class FlipSmartPlugin extends Plugin
 	@Getter
 	private AutoRecommendService autoRecommendService;
 
+	// Exit Trades controller (guided mass sell/cancel)
+	@Getter
+	private com.flipsmart.exit.ExitTradesController exitTradesController;
+
 	// Manual flip adjustment tracker (API-based staleness detection)
 	private ManualAdjustmentTracker manualAdjustmentTracker;
 
@@ -239,6 +243,8 @@ public class FlipSmartPlugin extends Plugin
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String AUTO_RECOMMEND_STATE_KEY_PREFIX = "autoRecommendState_";
+	private static final String EXIT_TRADES_STATE_KEY_PREFIX = "exitTradesState_";
+	private static final long EXIT_TRADES_MAX_AGE_MS = 7L * 24 * 60 * 60 * 1000; // 7 days
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
 
 	// Flip Assist input listener for hotkey handling
@@ -696,6 +702,7 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore, notifier, clientUI);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
+		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, geSlotOverlay, offerStore);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
@@ -982,6 +989,7 @@ public class FlipSmartPlugin extends Plugin
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
 		persistAutoRecommendState();
+		persistExitTradesState();
 		geSlotDecorator.revertAll();
 
 		// Stop auto-recommend on logout
@@ -1074,6 +1082,7 @@ public class FlipSmartPlugin extends Plugin
 		offlineSyncService.preloadPersistedOffers();
 
 		restoreAutoRecommendState();
+		restoreExitTradesState();
 
 		// Start the refresh timer if not already running (needed for manual adjustment checks)
 		if (!scheduler.isAutoRecommendRefreshTimerRunning())
@@ -2098,6 +2107,156 @@ public class FlipSmartPlugin extends Plugin
 				break;
 			}
 		}
+	}
+
+	// =====================
+	// Exit Trades suppliers & persistence
+	// =====================
+
+	/**
+	 * Cost basis for a breakeven exit: the average price actually paid on the most
+	 * recent filled buy for {@code itemId}, derived from the offer store. Returns 0
+	 * when unknown, which drives {@code ExitPriceResolver} to the mid-price fallback.
+	 */
+	public int getExitBuyBasis(int itemId)
+	{
+		if (offerStore == null)
+		{
+			return 0;
+		}
+		com.flipsmart.domain.offer.OfferRecord best = null;
+		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
+		{
+			if (r.isBuy() && r.getFilledQuantity() > 0
+				&& (best == null
+					|| r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis()))
+			{
+				best = r;
+			}
+		}
+		return best == null ? 0 : (int) (best.getSpent() / best.getFilledQuantity());
+	}
+
+	public int getExitInventoryQty(int itemId)
+	{
+		return activeFlipTracker != null ? activeFlipTracker.getInventoryCountForItem(itemId) : 0;
+	}
+
+	/**
+	 * Backend-computed exit sell price for {@code itemId} (the advisor's exit-at-breakeven,
+	 * stored in the session), used as the source of truth for breakeven mode. 0 when unknown.
+	 */
+	public int getExitBackendSellPrice(int itemId)
+	{
+		Integer price = session != null ? session.getRecommendedPrice(itemId) : null;
+		return price == null ? 0 : price;
+	}
+
+	/**
+	 * Begin an Exit Trades run. Runs on the client thread because surfacing re-validates against
+	 * live game state (inventory / offers), which must not be read from the Swing dialog thread.
+	 */
+	public void startExitTrades(com.flipsmart.exit.ExitTradesMode mode)
+	{
+		if (exitTradesController == null)
+		{
+			return;
+		}
+		clientThread.invoke(() ->
+		{
+			exitTradesController.start(mode);
+			// Clear any stale buy focus left over from auto-recommend so sell-only mode doesn't
+			// briefly flash a buy before the normal flow re-focuses (most visible in REGULAR).
+			if (flipAssistOverlay != null)
+			{
+				FocusedFlip current = flipAssistOverlay.getFocusedFlip();
+				if (current != null && current.isBuying())
+				{
+					flipAssistOverlay.setFocusedFlip(null);
+				}
+			}
+			exitTradesController.surfaceCurrent();
+		});
+	}
+
+	/** Leave Exit Trades (sell-only) mode: drop the run and hand the overlay back to auto-recommend. */
+	public void exitSellOnlyMode()
+	{
+		clientThread.invoke(() ->
+		{
+			if (exitTradesController != null)
+			{
+				exitTradesController.clear();
+			}
+			if (flipAssistOverlay != null)
+			{
+				flipAssistOverlay.setFocusedFlip(null);
+				flipAssistOverlay.setAutoStatusMessage("", 0);
+			}
+			if (geSlotOverlay != null)
+			{
+				geSlotOverlay.clearAllAdjustmentHighlights();
+			}
+		});
+	}
+
+	private String getExitTradesStateKey()
+	{
+		String rsn = session.getRsn();
+		if (rsn == null || rsn.isEmpty())
+		{
+			rsn = lastKnownRsn;
+		}
+		if (rsn == null || rsn.isEmpty())
+		{
+			return EXIT_TRADES_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
+		}
+		return EXIT_TRADES_STATE_KEY_PREFIX + rsn;
+	}
+
+	private void persistExitTradesState()
+	{
+		if (exitTradesController == null)
+		{
+			return;
+		}
+		com.flipsmart.exit.ExitTradesController.PersistedState state =
+			exitTradesController.getStateForPersistence(System.currentTimeMillis());
+		if (state == null)
+		{
+			// Nothing acted (AC6) or inactive: drop the run and clear any stale blob.
+			configManager.unsetConfiguration(CONFIG_GROUP, getExitTradesStateKey());
+			exitTradesController.clear();
+			return;
+		}
+		configManager.setConfiguration(CONFIG_GROUP, getExitTradesStateKey(), gson.toJson(state));
+	}
+
+	private void restoreExitTradesState()
+	{
+		if (exitTradesController == null)
+		{
+			return;
+		}
+		String json = configManager.getConfiguration(CONFIG_GROUP, getExitTradesStateKey());
+		if (json == null || json.isEmpty())
+		{
+			return;
+		}
+		try
+		{
+			com.flipsmart.exit.ExitTradesController.PersistedState state =
+				gson.fromJson(json, com.flipsmart.exit.ExitTradesController.PersistedState.class);
+			if (exitTradesController.restoreState(state, System.currentTimeMillis(), EXIT_TRADES_MAX_AGE_MS))
+			{
+				exitTradesController.surfaceCurrent(); // re-prompt pending slots (AC9 immediate resell)
+			}
+		}
+		catch (Exception e)
+		{
+			log.warn("Failed to restore exit-trades state: {}", e.getMessage());
+		}
+		configManager.unsetConfiguration(CONFIG_GROUP, getExitTradesStateKey());
 	}
 
 	// =====================
