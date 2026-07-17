@@ -158,9 +158,9 @@ public class FlipSmartApiClient
 		transport.setAuthToken(token);
 	}
 
-	public CompletableFuture<Boolean> updateRSN(String rsn)
+	public CompletableFuture<Boolean> updateRSN(String rsn, String accountType)
 	{
-		return transport.updateRSN(rsn);
+		return transport.updateRSN(rsn, accountType);
 	}
 
 	public void clearAuth()

@@ -222,6 +222,9 @@ public class FlipSmartPlugin extends Plugin
 	// from any thread (Swing EDT, scheduler). Defaults to true so unlinked callers see more items.
 	private volatile boolean membersWorld = true;
 
+	// Cached account-type string — updated on the client thread, read from any thread.
+	private volatile String accountType = null;
+
 	// Cached GE location flag — updated each game tick on the client thread.
 	private volatile boolean atGrandExchange = false;
 
@@ -362,6 +365,20 @@ public class FlipSmartPlugin extends Plugin
 	public void updateMembersWorldCache()
 	{
 		membersWorld = client.getWorldType().contains(WorldType.MEMBERS);
+	}
+
+	/**
+	 * Refresh the cached account-type string from the Client API.
+	 * Must be called on the client thread.
+	 */
+	public void updateAccountTypeCache()
+	{
+		accountType = AccountTypeMapper.toApiValue(client.getAccountType());
+	}
+
+	public String getAccountType()
+	{
+		return accountType;
 	}
 
 	public int getFlipSlotLimit()
@@ -1038,6 +1055,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		log.debug("Player logged in");
 		updateMembersWorldCache();
+		updateAccountTypeCache();
 		session.onLoggedIn();
 		syncRSN();
 
@@ -1304,7 +1322,7 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("RSN already pushed this session, skipping: {}", rsn);
 			return;
 		}
-		apiClient.updateRSN(rsn).thenAccept(confirmed ->
+		apiClient.updateRSN(rsn, accountType).thenAccept(confirmed ->
 		{
 			if (Boolean.TRUE.equals(confirmed))
 			{
