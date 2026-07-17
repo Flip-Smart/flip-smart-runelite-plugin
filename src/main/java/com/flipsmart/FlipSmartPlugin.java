@@ -1308,6 +1308,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			log.debug("RSN synced: {}", rsn);
 		}
+		updateAccountTypeCache();
 		pushRsnIfNeeded(rsn);
 	}
 
