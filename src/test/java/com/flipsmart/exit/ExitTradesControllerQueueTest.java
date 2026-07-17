@@ -11,6 +11,8 @@ import static org.junit.Assert.assertTrue;
 
 public class ExitTradesControllerQueueTest
 {
+	private static final String NATURE_RUNE = "Nature rune";
+
 	private OfferStore store;
 	private ExitTradesController controller;
 
@@ -32,7 +34,7 @@ public class ExitTradesControllerQueueTest
 	@Test
 	public void buildsQueueInSlotOrderSkippingEmpties()
 	{
-		place(0, 561, "Nature rune", false, 100, 1000);
+		place(0, 561, NATURE_RUNE, false, 100, 1000);
 		place(3, 4151, "Abyssal whip", true, 1_400_000, 1);
 		controller.start(ExitTradesMode.INSTANT);
 
@@ -48,8 +50,8 @@ public class ExitTradesControllerQueueTest
 	@Test
 	public void currentTargetIsFirstNonDone()
 	{
-		place(0, 561, "Nature rune", false, 100, 1000);
-		place(1, 561, "Nature rune", false, 100, 1000);
+		place(0, 561, NATURE_RUNE, false, 100, 1000);
+		place(1, 561, NATURE_RUNE, false, 100, 1000);
 		controller.start(ExitTradesMode.INSTANT);
 		controller.getTargets().get(0).setPhase(ExitPhase.DONE);
 		assertEquals(1, controller.currentTarget().getSlot());
@@ -58,7 +60,7 @@ public class ExitTradesControllerQueueTest
 	@Test
 	public void regularModeActiveWithNoQueueAndDoesNotOwnOverlay()
 	{
-		place(0, 561, "Nature rune", false, 100, 1000); // occupied slots are ignored in REGULAR
+		place(0, 561, NATURE_RUNE, false, 100, 1000); // occupied slots are ignored in REGULAR
 		controller.start(ExitTradesMode.REGULAR);
 		assertTrue(controller.isActive());       // suppresses buys
 		assertFalse(controller.ownsOverlay());   // hands overlay to the normal sell flow
@@ -71,7 +73,7 @@ public class ExitTradesControllerQueueTest
 	@Test
 	public void breakevenOwnsOverlay()
 	{
-		place(0, 561, "Nature rune", false, 100, 1000);
+		place(0, 561, NATURE_RUNE, false, 100, 1000);
 		controller.start(ExitTradesMode.BREAKEVEN);
 		assertTrue(controller.ownsOverlay());
 	}
@@ -79,7 +81,7 @@ public class ExitTradesControllerQueueTest
 	@Test
 	public void clearDeactivates()
 	{
-		place(0, 561, "Nature rune", false, 100, 1000);
+		place(0, 561, NATURE_RUNE, false, 100, 1000);
 		controller.start(ExitTradesMode.INSTANT);
 		controller.clear();
 		assertFalse(controller.isActive());
