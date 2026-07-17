@@ -223,7 +223,7 @@ public class FlipSmartPlugin extends Plugin
 	private volatile boolean membersWorld = true;
 
 	// Cached account-type string — updated on the client thread, read from any thread.
-	private volatile String accountType = null;
+	private volatile String accountType;
 
 	// Cached GE location flag — updated each game tick on the client thread.
 	private volatile boolean atGrandExchange = false;
