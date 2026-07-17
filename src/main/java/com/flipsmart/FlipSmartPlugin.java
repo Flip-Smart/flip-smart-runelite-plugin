@@ -702,7 +702,7 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore, notifier, clientUI);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
-		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, offerStore);
+		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, geSlotOverlay, offerStore);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
@@ -2140,6 +2140,64 @@ public class FlipSmartPlugin extends Plugin
 	public int getExitInventoryQty(int itemId)
 	{
 		return activeFlipTracker != null ? activeFlipTracker.getInventoryCountForItem(itemId) : 0;
+	}
+
+	/**
+	 * Backend-computed exit sell price for {@code itemId} (the advisor's exit-at-breakeven,
+	 * stored in the session), used as the source of truth for breakeven mode. 0 when unknown.
+	 */
+	public int getExitBackendSellPrice(int itemId)
+	{
+		Integer price = session != null ? session.getRecommendedPrice(itemId) : null;
+		return price == null ? 0 : price;
+	}
+
+	/**
+	 * Begin an Exit Trades run. Runs on the client thread because surfacing re-validates against
+	 * live game state (inventory / offers), which must not be read from the Swing dialog thread.
+	 */
+	public void startExitTrades(com.flipsmart.exit.ExitTradesMode mode)
+	{
+		if (exitTradesController == null)
+		{
+			return;
+		}
+		clientThread.invoke(() ->
+		{
+			exitTradesController.start(mode);
+			// Clear any stale buy focus left over from auto-recommend so sell-only mode doesn't
+			// briefly flash a buy before the normal flow re-focuses (most visible in REGULAR).
+			if (flipAssistOverlay != null)
+			{
+				FocusedFlip current = flipAssistOverlay.getFocusedFlip();
+				if (current != null && current.isBuying())
+				{
+					flipAssistOverlay.setFocusedFlip(null);
+				}
+			}
+			exitTradesController.surfaceCurrent();
+		});
+	}
+
+	/** Leave Exit Trades (sell-only) mode: drop the run and hand the overlay back to auto-recommend. */
+	public void exitSellOnlyMode()
+	{
+		clientThread.invoke(() ->
+		{
+			if (exitTradesController != null)
+			{
+				exitTradesController.clear();
+			}
+			if (flipAssistOverlay != null)
+			{
+				flipAssistOverlay.setFocusedFlip(null);
+				flipAssistOverlay.setAutoStatusMessage("", 0);
+			}
+			if (geSlotOverlay != null)
+			{
+				geSlotOverlay.clearAllAdjustmentHighlights();
+			}
+		});
 	}
 
 	private String getExitTradesStateKey()

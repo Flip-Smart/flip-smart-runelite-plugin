@@ -61,7 +61,7 @@ public class ExitTradesPersistenceTest
 		seed(1, 999, true);
 		controller.start(ExitTradesMode.INSTANT);
 		controller.onOfferChanged(OfferRecord.newOffer(1L, 1, 999, "x", true, 10, 100, 1L)
-			.withFill(2, 0L, OfferState.CANCELLED_PARTIAL, 2L)); // slot1 buy -> CANCELLED_HOLDING
+			.withFill(2, 0L, OfferState.CANCELLED_PARTIAL, 2L)); // slot1 buy -> AWAITING_COLLECT
 		ExitTradesController.PersistedState s = controller.getStateForPersistence(5000L);
 
 		ExitTradesController fresh = new ExitTradesController(store);
@@ -69,7 +69,7 @@ public class ExitTradesPersistenceTest
 		assertTrue(fresh.isActive());
 		assertEquals(ExitTradesMode.INSTANT, fresh.getMode());
 		assertEquals(2, fresh.getTargets().size());
-		assertEquals(ExitPhase.CANCELLED_HOLDING,
+		assertEquals(ExitPhase.AWAITING_COLLECT,
 			fresh.getTargets().stream().filter(t -> t.getSlot() == 1).findFirst().get().getPhase());
 	}
 

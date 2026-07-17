@@ -44,15 +44,43 @@ public class ExitTradesControllerAdvanceTest
 	}
 
 	@Test
-	public void buyCancelWithStockGoesHoldingThenDone()
+	public void buyCancelThenCollectThenResoldGoesDone()
 	{
 		seed(2, 4151, true);
 		controller.start(ExitTradesMode.INSTANT);
+		// Cancel a partially-filled buy: items still sit in the slot awaiting collection.
 		controller.onOfferChanged(rec(2, 4151, true, 3, OfferState.CANCELLED_PARTIAL));
-		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
 		assertEquals(1, controller.actedCount());
 
+		// Collect the bought stock into inventory.
+		controller.onOfferChanged(rec(2, 4151, true, 3, OfferState.COLLECTED));
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+
+		// Re-list the held stock as a sell.
 		controller.onOfferChanged(rec(2, 4151, false, 0, OfferState.NEW));
+		assertEquals(ExitPhase.DONE, controller.getTargets().get(0).getPhase());
+	}
+
+	@Test
+	public void fullyFilledBuyAwaitsCollectThenHolds()
+	{
+		seed(3, 4151, true);
+		controller.start(ExitTradesMode.INSTANT);
+		controller.onOfferChanged(rec(3, 4151, true, 10, OfferState.FILLED));
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
+		controller.onOfferChanged(rec(3, 4151, true, 10, OfferState.COLLECTED));
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+	}
+
+	@Test
+	public void soldSellAwaitsCollectThenDone()
+	{
+		seed(0, 561, false);
+		controller.start(ExitTradesMode.INSTANT);
+		controller.onOfferChanged(rec(0, 561, false, 10, OfferState.FILLED)); // sold on its own
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
+		controller.onOfferChanged(rec(0, 561, false, 10, OfferState.COLLECTED)); // profit collected
 		assertEquals(ExitPhase.DONE, controller.getTargets().get(0).getPhase());
 	}
 

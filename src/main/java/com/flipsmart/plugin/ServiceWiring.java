@@ -98,14 +98,17 @@ public class ServiceWiring
 	 * @return the constructed ExitTradesController
 	 */
 	public ExitTradesController initializeExitTradesController(FlipSmartPlugin plugin,
-		FlipAssistOverlay flipAssistOverlay, OfferStore offerStore)
+		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore)
 	{
 		ExitTradesController controller = new ExitTradesController(offerStore);
 		controller.setBuyBasisSupplier(plugin::getExitBuyBasis);
+		controller.setBackendSellPriceSupplier(plugin::getExitBackendSellPrice);
 		controller.setWikiPriceSupplier(plugin::getWikiPrice);
 		controller.setInventoryQtySupplier(plugin::getExitInventoryQty);
 		controller.setOnFocusTarget(flipAssistOverlay::setFocusedFlip);
 		controller.setOnStatusMessage(flipAssistOverlay::setAutoStatusMessage);
+		controller.setOnHighlightSlotForItem(plugin::highlightSlotForItem);
+		controller.setOnClearHighlights(geSlotOverlay::clearAllAdjustmentHighlights);
 		controller.setOnComplete(() -> flipAssistOverlay.setAutoStatusMessage("Exit Trades complete", 0));
 		offerStore.addListener(event -> {
 			if (controller.onOfferChanged(event.record))

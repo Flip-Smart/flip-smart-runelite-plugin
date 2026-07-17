@@ -14,6 +14,7 @@ public final class ResolverInput {
     private final long nowMillis;
     private final boolean blockBuyForPendingSell;
     private final int pendingSellItemId;
+    private final boolean buysSuppressed;
     private final List<OfferRecord> completedAwaitingCollection;
     private final List<OfferRecord> staleOffers;
     private final List<CollectedItem> collectedAwaitingList;
@@ -26,6 +27,7 @@ public final class ResolverInput {
         this.nowMillis = b.nowMillis;
         this.blockBuyForPendingSell = b.blockBuy;
         this.pendingSellItemId = b.pendingSellItemId;
+        this.buysSuppressed = b.buysSuppressed;
         this.completedAwaitingCollection =
             Collections.unmodifiableList(new ArrayList<>(b.completedAwaitingCollection));
         this.staleOffers =
@@ -47,6 +49,11 @@ public final class ResolverInput {
      */
     public boolean isBlockBuyForPendingSell() { return blockBuyForPendingSell; }
     public int getPendingSellItemId() { return pendingSellItemId; }
+    /**
+     * True while Exit Trades sell-only mode is active. Suppresses new S2 buys entirely so the
+     * resolver falls through to the next collect/sell action instead of stalling on a buy.
+     */
+    public boolean isBuysSuppressed() { return buysSuppressed; }
     public List<OfferRecord> getCompletedAwaitingCollection() { return completedAwaitingCollection; }
     public List<OfferRecord> getStaleOffers() { return staleOffers; }
     public List<CollectedItem> getCollectedAwaitingList() { return collectedAwaitingList; }
@@ -61,6 +68,7 @@ public final class ResolverInput {
         private long nowMillis;
         private boolean blockBuy;
         private int pendingSellItemId = -1;
+        private boolean buysSuppressed;
         private List<OfferRecord> completedAwaitingCollection = new ArrayList<>();
         private List<OfferRecord> staleOffers = new ArrayList<>();
         private List<CollectedItem> collectedAwaitingList = new ArrayList<>();
@@ -74,6 +82,7 @@ public final class ResolverInput {
         public Builder blockBuyForPendingSell(boolean block, int itemId) {
             this.blockBuy = block; this.pendingSellItemId = itemId; return this;
         }
+        public Builder buysSuppressed(boolean v) { this.buysSuppressed = v; return this; }
         public Builder completedAwaitingCollection(List<OfferRecord> v) {
             this.completedAwaitingCollection = v; return this;
         }

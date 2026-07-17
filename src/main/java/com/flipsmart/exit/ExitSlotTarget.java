@@ -12,6 +12,7 @@ public final class ExitSlotTarget
 	private final boolean buy;
 	private final int buyBasis;
 	private ExitPhase phase;
+	private int heldQuantity; // stock bought from a cancelled/filled buy, remembered across the collect lag
 
 	private ExitSlotTarget(int slot, int itemId, String itemName, boolean buy, int buyBasis, ExitPhase phase)
 	{
@@ -36,5 +37,10 @@ public final class ExitSlotTarget
 	public void setPhase(ExitPhase phase)
 	{
 		this.phase = phase;
+	}
+
+	public void setHeldQuantity(int heldQuantity)
+	{
+		this.heldQuantity = heldQuantity;
 	}
 }

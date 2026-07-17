@@ -10,11 +10,20 @@ public final class ExitPriceResolver
 	{
 	}
 
-	public static int resolve(ExitTradesMode mode, int itemId, int buyBasis, WikiPrice price)
+	public static int resolve(ExitTradesMode mode, int itemId, int buyBasis, int backendBreakeven, WikiPrice price)
 	{
-		if (mode == ExitTradesMode.BREAKEVEN && buyBasis > 0)
+		if (mode == ExitTradesMode.BREAKEVEN)
 		{
-			return GeTax.breakevenSellPrice(itemId, buyBasis);
+			// Prefer the backend's exit-at-breakeven (source of truth for cost basis + tax);
+			// fall back to the client-side tax calc only when the backend price is unavailable.
+			if (backendBreakeven > 0)
+			{
+				return backendBreakeven;
+			}
+			if (buyBasis > 0)
+			{
+				return GeTax.breakevenSellPrice(itemId, buyBasis);
+			}
 		}
 		if (mode == ExitTradesMode.INSTANT && price != null && price.instaSell > 0)
 		{

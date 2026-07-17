@@ -56,6 +56,27 @@ public class ExitTradesControllerQueueTest
 	}
 
 	@Test
+	public void regularModeActiveWithNoQueueAndDoesNotOwnOverlay()
+	{
+		place(0, 561, "Nature rune", false, 100, 1000); // occupied slots are ignored in REGULAR
+		controller.start(ExitTradesMode.REGULAR);
+		assertTrue(controller.isActive());       // suppresses buys
+		assertFalse(controller.ownsOverlay());   // hands overlay to the normal sell flow
+		assertEquals(0, controller.getTargets().size());
+		controller.surfaceCurrent();             // no-op; must not deactivate
+		assertTrue(controller.isActive());
+		assertNull(controller.currentTarget());
+	}
+
+	@Test
+	public void breakevenOwnsOverlay()
+	{
+		place(0, 561, "Nature rune", false, 100, 1000);
+		controller.start(ExitTradesMode.BREAKEVEN);
+		assertTrue(controller.ownsOverlay());
+	}
+
+	@Test
 	public void clearDeactivates()
 	{
 		place(0, 561, "Nature rune", false, 100, 1000);
