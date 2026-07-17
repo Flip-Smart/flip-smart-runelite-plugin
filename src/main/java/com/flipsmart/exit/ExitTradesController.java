@@ -118,7 +118,7 @@ public final class ExitTradesController
 			}
 			int basis = buyBasisSupplier.applyAsInt(r.getItemId());
 			targets.add(r.isBuy()
-				? ExitSlotTarget.buy(slot, r.getItemId(), r.getItemName(), basis)
+				? ExitSlotTarget.forBuy(slot, r.getItemId(), r.getItemName(), basis)
 				: ExitSlotTarget.sell(slot, r.getItemId(), r.getItemName(), basis));
 		}
 		active = !targets.isEmpty();
@@ -534,7 +534,7 @@ public final class ExitTradesController
 		for (PersistedTarget p : state.pending)
 		{
 			ExitSlotTarget t = p.buy
-				? ExitSlotTarget.buy(p.slot, p.itemId, p.itemName, p.buyBasis)
+				? ExitSlotTarget.forBuy(p.slot, p.itemId, p.itemName, p.buyBasis)
 				: ExitSlotTarget.sell(p.slot, p.itemId, p.itemName, p.buyBasis);
 			t.setPhase(ExitPhase.valueOf(p.phase));
 			targets.add(t);

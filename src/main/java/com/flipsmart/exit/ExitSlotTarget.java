@@ -29,7 +29,7 @@ public final class ExitSlotTarget
 		return new ExitSlotTarget(slot, itemId, itemName, false, buyBasis, ExitPhase.PENDING);
 	}
 
-	public static ExitSlotTarget buy(int slot, int itemId, String itemName, int buyBasis)
+	public static ExitSlotTarget forBuy(int slot, int itemId, String itemName, int buyBasis)
 	{
 		return new ExitSlotTarget(slot, itemId, itemName, true, buyBasis, ExitPhase.PENDING_CANCEL);
 	}

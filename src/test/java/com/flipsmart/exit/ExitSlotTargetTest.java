@@ -19,7 +19,7 @@ public class ExitSlotTargetTest
 	@Test
 	public void buyTargetStartsPendingCancel()
 	{
-		ExitSlotTarget t = ExitSlotTarget.buy(3, 4151, "Abyssal whip", 1_500_000);
+		ExitSlotTarget t = ExitSlotTarget.forBuy(3, 4151, "Abyssal whip", 1_500_000);
 		assertTrue(t.isBuy());
 		assertEquals(ExitPhase.PENDING_CANCEL, t.getPhase());
 	}
