@@ -7,6 +7,7 @@ import com.flipsmart.trading.OfferStore;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -69,7 +70,7 @@ public class ExitTradesSurfaceTest
 		seed(2, 4151, true, 10);
 		controller.start(ExitTradesMode.INSTANT);
 		controller.surfaceCurrent();
-		assertTrue(lastStatus.get().toLowerCase().contains("cancel"));
+		assertTrue(lastStatus.get().toLowerCase(Locale.ROOT).contains("cancel"));
 	}
 
 	@Test
