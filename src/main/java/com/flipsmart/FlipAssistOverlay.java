@@ -47,9 +47,9 @@ public class FlipAssistOverlay extends Overlay
 	private static final Color COLOR_TEXT = new Color(245, 240, 230);
 	private static final Color COLOR_TEXT_DIM = new Color(160, 150, 140);
 	private static final Color COLOR_GREEN_HINT = new Color(100, 220, 130);
-	// Buy/sell trade convention — light blue / light orange, matching the website Item Graph (#3b82f6 / #fb923c)
-	private static final Color COLOR_TRADE_BUY = new Color(0x3B, 0x82, 0xF6);
-	private static final Color COLOR_TRADE_SELL = new Color(0xFB, 0x92, 0x3C);
+	// Buy/sell trade convention — light blue / light orange, matching the website Item Graph (lightened for the dark overlay)
+	private static final Color COLOR_TRADE_BUY = new Color(0x60, 0xA5, 0xFA);
+	private static final Color COLOR_TRADE_SELL = new Color(0xFD, 0xBA, 0x74);
 	private static final Color COLOR_PROFIT = new Color(80, 255, 120);
 	private static final Color COLOR_LOSS = new Color(255, 100, 100);
 	private static final Color COLOR_STEP_COMPLETE = new Color(80, 200, 100);
