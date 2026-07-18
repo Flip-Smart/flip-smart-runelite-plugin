@@ -46,8 +46,10 @@ public class FlipAssistOverlay extends Overlay
 	private static final Color COLOR_ACCENT_GLOW = new Color(255, 185, 50, 60);
 	private static final Color COLOR_TEXT = new Color(245, 240, 230);
 	private static final Color COLOR_TEXT_DIM = new Color(160, 150, 140);
-	private static final Color COLOR_BUY = new Color(100, 220, 130);
-	private static final Color COLOR_SELL = new Color(255, 140, 80);
+	private static final Color COLOR_GREEN_HINT = new Color(100, 220, 130);
+	// Buy/sell trade convention — light blue / light orange, matching the website Item Graph (lightened for the dark overlay)
+	private static final Color COLOR_TRADE_BUY = new Color(0x60, 0xA5, 0xFA);
+	private static final Color COLOR_TRADE_SELL = new Color(0xFF, 0xA6, 0x57);
 	private static final Color COLOR_PROFIT = new Color(80, 255, 120);
 	private static final Color COLOR_LOSS = new Color(255, 100, 100);
 	private static final Color COLOR_STEP_COMPLETE = new Color(80, 200, 100);
@@ -560,7 +562,7 @@ public class FlipAssistOverlay extends Overlay
 			int nameMaxWidth = agoX - leftX - fm.stringWidth(head) - 4;
 			String name = truncateString(entry.getItemName(), Math.max(0, nameMaxWidth), fm);
 
-			graphics.setColor(entry.isBuy() ? COLOR_BUY : COLOR_SELL);
+			graphics.setColor(entry.isBuy() ? COLOR_TRADE_BUY : COLOR_TRADE_SELL);
 			graphics.drawString(head + name, leftX, textY);
 
 			graphics.setColor(COLOR_TEXT_DIM);
@@ -602,11 +604,11 @@ public class FlipAssistOverlay extends Overlay
 		}
 		if (trimmed.startsWith("Open GE History"))
 		{
-			return COLOR_BUY;
+			return COLOR_GREEN_HINT;
 		}
 		if (trimmed.endsWith("gp"))
 		{
-			return COLOR_BUY;
+			return COLOR_GREEN_HINT;
 		}
 		if (!trimmed.contains(":") && !trimmed.isEmpty()
 			&& !trimmed.startsWith("Consider") && !trimmed.startsWith("Re-sell")
@@ -615,7 +617,7 @@ public class FlipAssistOverlay extends Overlay
 			&& !trimmed.startsWith("Waiting") && !trimmed.startsWith("Checking")
 			&& !trimmed.startsWith("Auto"))
 		{
-			return COLOR_BUY;
+			return COLOR_GREEN_HINT;
 		}
 		return COLOR_TEXT;
 	}
@@ -683,7 +685,7 @@ public class FlipAssistOverlay extends Overlay
 		graphics.drawString(itemName, SECTION_PADDING + ICON_SIZE + 6, y + 10);
 
 		graphics.setFont(FontManager.getRunescapeSmallFont());
-		graphics.setColor(flip.isBuying() ? COLOR_BUY : COLOR_SELL);
+		graphics.setColor(flip.isBuying() ? COLOR_TRADE_BUY : COLOR_TRADE_SELL);
 		String stepLabel;
 		if (flip.isBuying())
 		{
@@ -835,7 +837,7 @@ public class FlipAssistOverlay extends Overlay
 
 		String priceLabel = flip.isBuying() ? "Buy at:" : "Sell at:";
 		drawLabelValue(graphics, priceLabel, PRICE_FORMAT.get().format(flip.getCurrentStepPrice()) + " gp",
-			y + lineHeight, flip.isBuying() ? COLOR_BUY : COLOR_SELL);
+			y + lineHeight, flip.isBuying() ? COLOR_TRADE_BUY : COLOR_TRADE_SELL);
 
 		drawLabelValue(graphics, "Qty:", PRICE_FORMAT.get().format(flip.getCurrentStepQuantity()),
 			y + lineHeight * 2, COLOR_TEXT);
