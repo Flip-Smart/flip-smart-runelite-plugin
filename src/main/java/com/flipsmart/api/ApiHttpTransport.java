@@ -1090,7 +1090,7 @@ public class ApiHttpTransport
 	 *
 	 * @return future completing true only when the server confirmed the update
 	 */
-	public CompletableFuture<Boolean> updateRSN(String rsn)
+	public CompletableFuture<Boolean> updateRSN(String rsn, String accountType)
 	{
 		if (rsn == null || rsn.isEmpty())
 		{
@@ -1099,6 +1099,10 @@ public class ApiHttpTransport
 
 		String apiUrl = getApiUrl();
 		String url = String.format("%s/auth/rsn?rsn=%s", apiUrl, urlEncode(rsn));
+		if (accountType != null && !accountType.isEmpty())
+		{
+			url += "&account_type=" + urlEncode(accountType);
+		}
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
