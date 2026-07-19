@@ -88,6 +88,8 @@ public class MarketDataEndpoints
 			return;
 		}
 
+		lastWikiPriceFetch.set(now);
+
 		String url = String.format("%s/plugin/prices", transport.getApiUrl());
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(url)
@@ -96,7 +98,6 @@ public class MarketDataEndpoints
 		CompletableFuture<Void> future = transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
 			parseWikiPriceResponse(jsonData);
-			lastWikiPriceFetch.set(System.currentTimeMillis());
 			return null;
 		});
 
