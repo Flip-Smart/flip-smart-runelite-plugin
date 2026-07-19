@@ -8,15 +8,9 @@ import com.flipsmart.api.dto.WikiPrice;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.Call;
-import okhttp3.Callback;
 import okhttp3.HttpUrl;
-import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.Response;
-import okhttp3.ResponseBody;
 
-import java.io.IOException;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,7 +25,6 @@ import java.util.function.Consumer;
 @Slf4j
 public class MarketDataEndpoints
 {
-	private static final String WIKI_PRICES_URL = "https://prices.runescape.wiki/api/v1/osrs/latest";
 	private static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
 
 	// In-memory cache of per-item 24h daily volume — short TTL so price-volume swings
@@ -46,7 +39,6 @@ public class MarketDataEndpoints
 
 	private final ApiHttpTransport transport;
 	private final Gson gson;
-	private final OkHttpClient httpClient;
 
 	// Cache for wiki prices: itemId -> WikiPrice
 	private final Map<Integer, WikiPrice> wikiPriceCache = new ConcurrentHashMap<>();
@@ -63,7 +55,6 @@ public class MarketDataEndpoints
 	{
 		this.transport = transport;
 		this.gson = transport.getGson();
-		this.httpClient = transport.getHttpClient();
 	}
 
 	/**
@@ -97,42 +88,19 @@ public class MarketDataEndpoints
 			return;
 		}
 
-		Request request = new Request.Builder()
-			.url(WIKI_PRICES_URL)
-			.header("User-Agent", "FlipSmart RuneLite Plugin - github.com/flipsmart")
-			.get()
-			.build();
+		String url = String.format("%s/plugin/prices", transport.getApiUrl());
+		Request.Builder requestBuilder = new Request.Builder()
+			.url(url)
+			.get();
 
-		httpClient.newCall(request).enqueue(new Callback()
+		CompletableFuture<Void> future = transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 		{
-			@Override
-			public void onFailure(Call call, IOException e)
-			{
-				log.warn("Failed to fetch wiki prices: {}", e.getMessage());
-				wikiPriceFetchInProgress.set(false);
-			}
-
-			@Override
-			public void onResponse(Call call, Response response) throws IOException
-			{
-				try (ResponseBody responseBody = response.body())
-				{
-					if (!response.isSuccessful() || responseBody == null)
-					{
-						log.warn("Wiki price API returned error: {}", response.code());
-						return;
-					}
-
-					String json = responseBody.string();
-					parseWikiPriceResponse(json);
-					lastWikiPriceFetch.set(System.currentTimeMillis());
-				}
-				finally
-				{
-					wikiPriceFetchInProgress.set(false);
-				}
-			}
+			parseWikiPriceResponse(jsonData);
+			lastWikiPriceFetch.set(System.currentTimeMillis());
+			return null;
 		});
+
+		future.whenComplete((result, ex) -> wikiPriceFetchInProgress.set(false));
 	}
 
 	/**
