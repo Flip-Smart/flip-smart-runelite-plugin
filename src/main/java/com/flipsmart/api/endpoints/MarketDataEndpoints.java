@@ -99,7 +99,7 @@ public class MarketDataEndpoints
 		{
 			parseWikiPriceResponse(jsonData);
 			return null;
-		});
+		}, error -> log.warn("Failed to fetch wiki prices: {}", error));
 
 		future.whenComplete((result, ex) -> wikiPriceFetchInProgress.set(false));
 	}
