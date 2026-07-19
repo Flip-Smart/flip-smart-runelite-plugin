@@ -110,6 +110,10 @@ public class MarketDataEndpoints
 	private void parseWikiPriceResponse(String json)
 	{
 		JsonObject root = gson.fromJson(json, JsonObject.class);
+		if (root == null)
+		{
+			return;
+		}
 		JsonObject data = root.getAsJsonObject("data");
 
 		if (data == null)
