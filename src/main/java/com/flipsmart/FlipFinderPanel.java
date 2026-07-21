@@ -3972,7 +3972,7 @@ public class FlipFinderPanel extends PluginPanel
 		StringBuilder tip = new StringBuilder(260);
 		if (flip.isQuantityAnomaly())
 		{
-			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Quantity Flagged</span>");
+			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Quantity Flagged (Edit)</span>");
 			tip.append("Recorded quantity looks higher than the item's 4h GE buy limit allows, so it may be over-counted. ");
 		}
 		if (flip.isPriceIsEstimated())
@@ -3981,7 +3981,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				text.append("<br>");
 			}
-			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Profit Flagged</span>");
+			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Profit Flagged (Edit)</span>");
 			tip.append("Price was recovered from offline trade history as a blended average, so the profit is an estimate. ");
 		}
 		text.append("</html>");
