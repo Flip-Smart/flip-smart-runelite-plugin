@@ -1,0 +1,22 @@
+{
+  "name": "cross-rsn-isolation",
+  "issue": 984,
+  "description": "The same item is bought and sold on two RSNs of one account. Each RSN's round trip is independent — two flips, one per RSN, with no cross-RSN buy/sell matching.",
+  "rsns": ["TestPlayer", "AltAccount"],
+  "events": [
+    {"is_buy": true,  "item_id": 4151, "item_name": "Abyssal whip", "quantity": 5, "price_per_item": 2500000, "rsn": "TestPlayer", "ge_slot": 0, "offset_seconds": -7200},
+    {"is_buy": true,  "item_id": 4151, "item_name": "Abyssal whip", "quantity": 5, "price_per_item": 2500000, "rsn": "AltAccount", "ge_slot": 0, "offset_seconds": -7000},
+    {"is_buy": false, "item_id": 4151, "item_name": "Abyssal whip", "quantity": 5, "price_per_item": 2600000, "rsn": "TestPlayer", "ge_slot": 1, "offset_seconds": -3600},
+    {"is_buy": false, "item_id": 4151, "item_name": "Abyssal whip", "quantity": 5, "price_per_item": 2600000, "rsn": "AltAccount", "ge_slot": 1, "offset_seconds": 0}
+  ],
+  "expected": {
+    "flip_count": 2,
+    "flips": [
+      {"item_id": 4151, "quantity": 5},
+      {"item_id": 4151, "quantity": 5}
+    ]
+  },
+  "plugin": {
+    "round_trip_ids": [1, 1, 1, 1]
+  }
+}
