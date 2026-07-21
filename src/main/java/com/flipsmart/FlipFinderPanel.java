@@ -3951,6 +3951,41 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
+	 * Build a small, non-alarming confidence badge for a completed flip, or
+	 * {@code null} when the flip is fully confident (nothing to show).
+	 */
+	private JLabel buildConfidenceLabel(CompletedFlip flip)
+	{
+		if (!flip.isPriceIsEstimated() && !flip.isQuantityAnomaly())
+		{
+			return null;
+		}
+
+		StringBuilder text = new StringBuilder("<html>");
+		StringBuilder tip = new StringBuilder();
+		if (flip.isPriceIsEstimated())
+		{
+			text.append("<span style='color:#B4B4B4;'>~ Est. price</span>");
+			tip.append("Price was recovered from offline trade history as a blended average, so it's an estimate. ");
+		}
+		if (flip.isQuantityAnomaly())
+		{
+			if (flip.isPriceIsEstimated())
+			{
+				text.append("&nbsp;&nbsp;");
+			}
+			text.append("<span style='color:#C89600;'>&#9888; Qty flagged</span>");
+			tip.append("Recorded quantity looks higher than the item's 4h GE buy limit allows, so it may be over-counted.");
+		}
+		text.append("</html>");
+
+		JLabel label = new JLabel(text.toString());
+		label.setFont(FONT_PLAIN_12);
+		label.setToolTipText(tip.toString().trim());
+		return label;
+	}
+
+	/**
 	 * Create a panel for a completed flip
 	 */
 	private JPanel createCompletedFlipPanel(CompletedFlip flip)
@@ -4016,6 +4051,18 @@ public class FlipFinderPanel extends PluginPanel
 		// Add horizontal glue to prevent stretching
 		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
 		detailsPanel.add(Box.createHorizontalGlue(), gbc);
+
+		// Confidence signal: badge flips whose price is an offline-history
+		// estimate or whose quantity looks over the GE buy limit, mirroring the
+		// web dashboard so a blended offline price isn't shown as exact.
+		JLabel confidenceLabel = buildConfidenceLabel(flip);
+		if (confidenceLabel != null)
+		{
+			gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.weightx = 0;
+			gbc.fill = GridBagConstraints.NONE; gbc.insets = new Insets(3, 0, 0, 0);
+			detailsPanel.add(confidenceLabel, gbc);
+			gbc.gridwidth = 1;
+		}
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
