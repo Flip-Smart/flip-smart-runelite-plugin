@@ -116,12 +116,15 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
 	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
 
-	// Hex colors for the completed-flip confidence badge (HTML label markup)
-	private static final String COLOR_ESTIMATED_HEX = "#B4B4B4";
-	private static final String COLOR_WARNING_HEX = "#C89600";
+	// Yellow used for the completed-flip anomaly badge (HTML label markup).
+	private static final String COLOR_ANOMALY_HEX = "#FFCC33";
+	private static final int BADGE_SECOND_LINE_HEIGHT = 18;
 
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
+
+	// Deep-links a flagged flip to the website's Flip History edit flow.
+	private static final String FLIP_EDIT_URL = "https://flipsmart.net/dashboard/flips?adjust=";
 
 	// Discord invite link
 	private static final String DISCORD_INVITE_URL = "https://discord.gg/8CrcM9qYF9";
@@ -3965,27 +3968,37 @@ public class FlipFinderPanel extends PluginPanel
 			return null;
 		}
 
-		StringBuilder text = new StringBuilder(150).append("<html>");
-		StringBuilder tip = new StringBuilder(200);
-		if (flip.isPriceIsEstimated())
-		{
-			text.append("<span style='color:").append(COLOR_ESTIMATED_HEX).append(";'>~ Est. price</span>");
-			tip.append("Price was recovered from offline trade history as a blended average, so it's an estimate. ");
-		}
+		StringBuilder text = new StringBuilder(240).append("<html>");
+		StringBuilder tip = new StringBuilder(260);
 		if (flip.isQuantityAnomaly())
 		{
-			if (flip.isPriceIsEstimated())
+			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Quantity Flagged</span>");
+			tip.append("Recorded quantity looks higher than the item's 4h GE buy limit allows, so it may be over-counted. ");
+		}
+		if (flip.isPriceIsEstimated())
+		{
+			if (flip.isQuantityAnomaly())
 			{
-				text.append("&nbsp;&nbsp;");
+				text.append("<br>");
 			}
-			text.append("<span style='color:").append(COLOR_WARNING_HEX).append(";'>&#9888; Qty flagged</span>");
-			tip.append("Recorded quantity looks higher than the item's 4h GE buy limit allows, so it may be over-counted.");
+			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Profit Flagged</span>");
+			tip.append("Price was recovered from offline trade history as a blended average, so the profit is an estimate. ");
 		}
 		text.append("</html>");
 
 		JLabel label = new JLabel(text.toString());
 		label.setFont(FONT_PLAIN_12);
-		label.setToolTipText(tip.toString().trim());
+		label.setToolTipText(tip.append("Click to edit this trade on the website.").toString());
+		label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		final int flipId = flip.getId();
+		label.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				LinkBrowser.browse(FLIP_EDIT_URL + flipId);
+			}
+		});
 		return label;
 	}
 
@@ -4066,6 +4079,10 @@ public class FlipFinderPanel extends PluginPanel
 			gbc.fill = GridBagConstraints.NONE; gbc.insets = new Insets(3, 0, 0, 0);
 			detailsPanel.add(confidenceLabel, gbc);
 			gbc.gridwidth = 1;
+			if (flip.isPriceIsEstimated() && flip.isQuantityAnomaly())
+			{
+				allowForWrappedName(panel, BADGE_SECOND_LINE_HEIGHT);
+			}
 		}
 
 		panel.add(topPanel, BorderLayout.NORTH);
