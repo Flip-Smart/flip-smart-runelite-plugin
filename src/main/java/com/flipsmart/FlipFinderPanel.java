@@ -115,7 +115,11 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_AUTO_RECOMMEND_BORDER = new Color(255, 185, 50);
 	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
 	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
-	
+
+	// Hex colors for the completed-flip confidence badge (HTML label markup)
+	private static final String COLOR_ESTIMATED_HEX = "#B4B4B4";
+	private static final String COLOR_WARNING_HEX = "#C89600";
+
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
 
@@ -3965,7 +3969,7 @@ public class FlipFinderPanel extends PluginPanel
 		StringBuilder tip = new StringBuilder(200);
 		if (flip.isPriceIsEstimated())
 		{
-			text.append("<span style='color:#B4B4B4;'>~ Est. price</span>");
+			text.append("<span style='color:").append(COLOR_ESTIMATED_HEX).append(";'>~ Est. price</span>");
 			tip.append("Price was recovered from offline trade history as a blended average, so it's an estimate. ");
 		}
 		if (flip.isQuantityAnomaly())
@@ -3974,7 +3978,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				text.append("&nbsp;&nbsp;");
 			}
-			text.append("<span style='color:#C89600;'>&#9888; Qty flagged</span>");
+			text.append("<span style='color:").append(COLOR_WARNING_HEX).append(";'>&#9888; Qty flagged</span>");
 			tip.append("Recorded quantity looks higher than the item's 4h GE buy limit allows, so it may be over-counted.");
 		}
 		text.append("</html>");
