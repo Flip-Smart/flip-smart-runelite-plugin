@@ -3961,8 +3961,8 @@ public class FlipFinderPanel extends PluginPanel
 			return null;
 		}
 
-		StringBuilder text = new StringBuilder("<html>");
-		StringBuilder tip = new StringBuilder();
+		StringBuilder text = new StringBuilder(150).append("<html>");
+		StringBuilder tip = new StringBuilder(200);
 		if (flip.isPriceIsEstimated())
 		{
 			text.append("<span style='color:#B4B4B4;'>~ Est. price</span>");
