@@ -115,7 +115,8 @@ public final class TransactionLogger
             return;
         }
         int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
-        Integer assignedRoundTripId = roundTripLedger.recordFill(rsn, r.getItemId(), r.isBuy(), newlyFilled);
+        Integer assignedRoundTripId = roundTripLedger.recordFill(
+            rsn, r.getItemId(), r.getSlot(), r.isBuy(), newlyFilled, r.getFilledQuantity());
         apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(assignedRoundTripId).build());
     }
 
