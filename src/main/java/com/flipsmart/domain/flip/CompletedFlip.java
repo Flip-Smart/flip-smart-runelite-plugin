@@ -56,5 +56,15 @@ public class CompletedFlip
 
 	@SerializedName("is_successful")
 	private boolean isSuccessful;
+
+	// True when the recorded price came from an offline history backfill (a
+	// blended average, not a live per-fill observation) — shown as an estimate.
+	@SerializedName("price_is_estimated")
+	private boolean priceIsEstimated;
+
+	// True when matched buy legs exceed the item's 4h GE buy limit (possible
+	// over-count from a re-emitted offer).
+	@SerializedName("quantity_anomaly")
+	private boolean quantityAnomaly;
 }
 

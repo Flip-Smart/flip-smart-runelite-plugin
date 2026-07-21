@@ -115,9 +115,16 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_AUTO_RECOMMEND_BORDER = new Color(255, 185, 50);
 	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
 	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
-	
+
+	// Yellow used for the completed-flip anomaly badge (HTML label markup).
+	private static final String COLOR_ANOMALY_HEX = "#FFCC33";
+	private static final int BADGE_SECOND_LINE_HEIGHT = 18;
+
 	// Website base URL for item pages
 	private static final String WEBSITE_ITEM_URL = "https://flipsmart.net/items/";
+
+	// Deep-links a flagged flip to the website's Flip History edit flow.
+	private static final String FLIP_EDIT_URL = "https://flipsmart.net/dashboard/flips?adjust=";
 
 	// Discord invite link
 	private static final String DISCORD_INVITE_URL = "https://discord.gg/8CrcM9qYF9";
@@ -3951,6 +3958,51 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
+	 * Build a small, non-alarming confidence badge for a completed flip, or
+	 * {@code null} when the flip is fully confident (nothing to show).
+	 */
+	private JLabel buildConfidenceLabel(CompletedFlip flip)
+	{
+		if (!flip.isPriceIsEstimated() && !flip.isQuantityAnomaly())
+		{
+			return null;
+		}
+
+		StringBuilder text = new StringBuilder(240).append("<html>");
+		StringBuilder tip = new StringBuilder(260);
+		if (flip.isQuantityAnomaly())
+		{
+			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Quantity Flagged (Edit)</span>");
+			tip.append("Recorded quantity looks higher than the item's 4h GE buy limit allows, so it may be over-counted. ");
+		}
+		if (flip.isPriceIsEstimated())
+		{
+			if (flip.isQuantityAnomaly())
+			{
+				text.append("<br>");
+			}
+			text.append("<span style='color:").append(COLOR_ANOMALY_HEX).append(";'>&#9888; Anomaly: Profit Flagged (Edit)</span>");
+			tip.append("Price was recovered from offline trade history as a blended average, so the profit is an estimate. ");
+		}
+		text.append("</html>");
+
+		JLabel label = new JLabel(text.toString());
+		label.setFont(FONT_PLAIN_12);
+		label.setToolTipText(tip.append("Click to edit this trade on the website.").toString());
+		label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		final int flipId = flip.getId();
+		label.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				LinkBrowser.browse(FLIP_EDIT_URL + flipId);
+			}
+		});
+		return label;
+	}
+
+	/**
 	 * Create a panel for a completed flip
 	 */
 	private JPanel createCompletedFlipPanel(CompletedFlip flip)
@@ -4016,6 +4068,22 @@ public class FlipFinderPanel extends PluginPanel
 		// Add horizontal glue to prevent stretching
 		gbc.gridx = 2; gbc.gridy = 0; gbc.weightx = 1.0; gbc.fill = GridBagConstraints.HORIZONTAL;
 		detailsPanel.add(Box.createHorizontalGlue(), gbc);
+
+		// Confidence signal: badge flips whose price is an offline-history
+		// estimate or whose quantity looks over the GE buy limit, mirroring the
+		// web dashboard so a blended offline price isn't shown as exact.
+		JLabel confidenceLabel = buildConfidenceLabel(flip);
+		if (confidenceLabel != null)
+		{
+			gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.weightx = 0;
+			gbc.fill = GridBagConstraints.NONE; gbc.insets = new Insets(3, 0, 0, 0);
+			detailsPanel.add(confidenceLabel, gbc);
+			gbc.gridwidth = 1;
+			if (flip.isPriceIsEstimated() && flip.isQuantityAnomaly())
+			{
+				allowForWrappedName(panel, BADGE_SECOND_LINE_HEIGHT);
+			}
+		}
 
 		panel.add(topPanel, BorderLayout.NORTH);
 		panel.add(detailsPanel, BorderLayout.CENTER);
