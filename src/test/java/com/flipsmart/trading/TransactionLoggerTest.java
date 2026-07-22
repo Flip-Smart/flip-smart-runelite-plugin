@@ -33,8 +33,6 @@ public class TransactionLoggerTest
     private static final int ITEM = 4151;
 
     private FlipSmartApiClient apiClient;
-    private PlayerSession session;
-    private RoundTripLedger ledger;
     private TransactionLogger logger;
 
     @Before
@@ -43,9 +41,9 @@ public class TransactionLoggerTest
         apiClient = mock(FlipSmartApiClient.class);
         when(apiClient.recordTransactionAsync(any(TransactionRequest.class)))
             .thenReturn(CompletableFuture.completedFuture(null));
-        session = mock(PlayerSession.class);
+        PlayerSession session = mock(PlayerSession.class);
         when(session.getRecommendedPrice(anyInt())).thenReturn(null);
-        ledger = new RoundTripLedger();
+        RoundTripLedger ledger = new RoundTripLedger();
         logger = new TransactionLogger(apiClient, session, () -> Optional.of(RSN), ledger);
     }
 
