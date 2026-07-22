@@ -69,7 +69,7 @@ public class GEHistoryService
 
 	// Monotonic game-tick counter and the tick of the most recent read, used to
 	// throttle the proactive re-scan. Only touched on the client thread.
-	private volatile long tickCount = 0;
+	private volatile long tickCount;
 	private volatile long lastReadTick = -PROACTIVE_RESCAN_INTERVAL_TICKS;
 
 	@Inject
