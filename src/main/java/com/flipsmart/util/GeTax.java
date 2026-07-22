@@ -11,7 +11,8 @@ import java.util.Set;
  * {@code flip-smart/app/constants.py} (GE_TAX_EXEMPT_ITEM_IDS). The set is
  * mirrored here so the GE-slot hover overlay can compute the player's true
  * post-tax profit without a network round-trip. If the backend list changes,
- * update both.
+ * update both. Drift is guarded by GeTaxExemptParityTest against a pinned set
+ * shared with the backend's parity test.
  *
  * Wiki reference:
  * https://oldschool.runescape.wiki/w/Category:Items_exempt_from_Grand_Exchange_tax
