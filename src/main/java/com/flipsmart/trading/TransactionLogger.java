@@ -115,8 +115,18 @@ public final class TransactionLogger
             return;
         }
         int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
-        Integer assignedRoundTripId = roundTripLedger.recordFill(rsn, r.getItemId(), r.isBuy(), newlyFilled);
-        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(assignedRoundTripId).build());
+        RoundTripLedger.FillResult fill = roundTripLedger.recordFillGuarded(
+            rsn, r.getItemId(), r.getSlot(), r.isBuy(), newlyFilled, r.getFilledQuantity());
+        if (fill.duplicateSuppressed)
+        {
+            // A duplicate/phantom closing fill (Collect re-detection under a churned offer_id) that
+            // the peek-based dedup above can't catch: the genuine close already advanced the cycle,
+            // so this fill's peeked id — and thus its dedup key — differs from the original's. The
+            // ledger recognised it as a byte-identical re-delivery and mutated nothing; forwarding
+            // it would stamp the backend with the next cycle's id, so drop it here.
+            return;
+        }
+        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).build());
     }
 
     /**

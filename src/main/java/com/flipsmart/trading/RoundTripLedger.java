@@ -17,6 +17,11 @@ import javax.inject.Singleton;
  * match a sell to buys strictly within one round trip instead of across unrelated
  * same-item positions. A full or over liquidation (held quantity returns to zero or
  * below) closes the current cycle; whatever follows starts a new one.
+ *
+ * The cycle id is deliberately item-scoped (not slot-scoped) so a round trip that spans
+ * several GE slots still matches. Slot is used only as a guard: a duplicate/phantom fill
+ * that repeats the exact fill which just closed a cycle is ignored so it cannot prematurely
+ * advance the cycle and poison the round-trip id of every later real fill.
  */
 @Singleton
 public final class RoundTripLedger
@@ -29,6 +34,13 @@ public final class RoundTripLedger
         public int heldQuantity;
         public int cycleId;
 
+        /**
+         * Fingerprint (slot:isBuy:cumulative) of the fill that most recently closed a cycle,
+         * or null when the current position is open. Session-local guard state — {@code transient}
+         * so persistence keeps the same on-disk shape (held + cycle only) as before this field.
+         */
+        public transient String lastClosingFingerprint;
+
         public Entry()
         {
         }
@@ -40,31 +52,90 @@ public final class RoundTripLedger
         }
     }
 
+    /** Outcome of a guarded fill: the round-trip id, and whether the fill was a suppressed
+     *  duplicate the caller should not forward. */
+    public static final class FillResult
+    {
+        public final Integer roundTripId;
+        public final boolean duplicateSuppressed;
+
+        public FillResult(Integer roundTripId, boolean duplicateSuppressed)
+        {
+            this.roundTripId = roundTripId;
+            this.duplicateSuppressed = duplicateSuppressed;
+        }
+    }
+
     private final Object lock = new Object();
     private final Map<String, Map<Integer, Entry>> byRsn = new HashMap<>();
 
     /**
-     * Apply a fill of {@code deltaQuantity} for (rsn, itemId) and return the round-trip
-     * id it belongs to. Returns {@code null} when {@code rsn} can't be resolved — the
-     * caller sends no id in that case rather than guess.
+     * Slot-unaware overload retained for round-trip accounting that has no GE slot to key on
+     * (and for tests exercising pure zero-crossing semantics). Applies no duplicate-fill guard.
      */
     public Integer recordFill(String rsn, int itemId, boolean isBuy, int deltaQuantity)
+    {
+        return recordFill(rsn, itemId, null, isBuy, deltaQuantity, 0);
+    }
+
+    /**
+     * Apply a fill of {@code deltaQuantity} for (rsn, itemId) and return the round-trip id it
+     * belongs to. Returns {@code null} when {@code rsn} can't be resolved — the caller sends no
+     * id in that case rather than guess.
+     *
+     * The cycle id stays item-scoped so the backend can still match a sell to buys of the same
+     * item across whichever GE slots the round trip happened to use. {@code slot} and
+     * {@code cumulativeQuantity} add a slot-keyed guard: a fill byte-identical to the one that
+     * just closed the current cycle — a duplicate or phantom re-delivery, arriving with no
+     * genuine fill in between — is ignored, so it cannot drive held below zero and advance the
+     * cycle a second time. That premature zero-cross is what stamps a wrong round-trip id on
+     * every subsequent real fill; the server-side watermark can only dedup, it cannot un-poison
+     * an already-sent id. Passing a null {@code slot} disables the guard (see the overload).
+     */
+    public Integer recordFill(String rsn, int itemId, Integer slot, boolean isBuy,
+                              int deltaQuantity, int cumulativeQuantity)
+    {
+        return recordFillGuarded(rsn, itemId, slot, isBuy, deltaQuantity, cumulativeQuantity).roundTripId;
+    }
+
+    /**
+     * As {@link #recordFill(String, int, Integer, boolean, int, int)} but also reports whether the
+     * fill was recognised as a duplicate re-delivery and suppressed. The peek-based send guard in
+     * {@code TransactionLogger} cannot catch a duplicate <em>closing</em> fill — the genuine close
+     * already advanced the cycle, so the duplicate peeks a different id and its dedup key misses —
+     * so the caller relies on this flag to avoid forwarding a fill that would reach the backend
+     * stamped with the next cycle's id.
+     */
+    public FillResult recordFillGuarded(String rsn, int itemId, Integer slot, boolean isBuy,
+                                        int deltaQuantity, int cumulativeQuantity)
     {
         synchronized (lock)
         {
             if (rsn == null || rsn.isEmpty())
             {
-                return null;
+                return new FillResult(null, false);
             }
             Entry e = entryFor(rsn, itemId);
+
+            String fingerprint = slot == null ? null : slot + ":" + isBuy + ":" + cumulativeQuantity;
+            if (fingerprint != null && fingerprint.equals(e.lastClosingFingerprint))
+            {
+                return new FillResult(e.cycleId, true);
+            }
+
             e.heldQuantity += isBuy ? deltaQuantity : -deltaQuantity;
             int roundTripId = e.cycleId;
             if (e.heldQuantity <= 0)
             {
                 e.cycleId++;
                 e.heldQuantity = 0;
+                e.lastClosingFingerprint = fingerprint;
             }
-            return roundTripId;
+            else
+            {
+                e.lastClosingFingerprint = null;
+            }
+            return new FillResult(roundTripId, false);
         }
     }
 
