@@ -1,0 +1,21 @@
+{
+  "name": "consolidation-partial-sells",
+  "issue": 895,
+  "description": "One buy of 100 Aldarium, sold across three partial fills, must consolidate into a single flip with NET sell totals (2% GE tax applied per fill). Locks the full price/tax/profit breakdown.",
+  "rsns": ["TestPlayer"],
+  "events": [
+    {"is_buy": true,  "item_id": 28816, "item_name": "Aldarium", "quantity": 100, "price_per_item": 29000, "ge_slot": 0, "offset_seconds": -3600},
+    {"is_buy": false, "item_id": 28816, "item_name": "Aldarium", "quantity": 30,  "price_per_item": 29500, "ge_slot": 1, "offset_seconds": -1800},
+    {"is_buy": false, "item_id": 28816, "item_name": "Aldarium", "quantity": 40,  "price_per_item": 29500, "ge_slot": 1, "offset_seconds": -1200},
+    {"is_buy": false, "item_id": 28816, "item_name": "Aldarium", "quantity": 30,  "price_per_item": 29500, "ge_slot": 1, "offset_seconds": 0}
+  ],
+  "expected": {
+    "flip_count": 1,
+    "flips": [
+      {"item_id": 28816, "quantity": 100, "buy_total": 2900000, "sell_total": 2891000, "gross_profit": 50000, "ge_tax": 59000, "net_profit": -9000}
+    ]
+  },
+  "plugin": {
+    "round_trip_ids": [1, 1, 1, 1]
+  }
+}

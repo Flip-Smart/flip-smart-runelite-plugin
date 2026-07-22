@@ -1,0 +1,22 @@
+{
+  "name": "separate-round-trips-eye-of-ayak",
+  "issue": 830,
+  "description": "Scapenomics prod bug: two fully round-tripped trades of the same item inside the 24h window (buy 7 / sell 7, then buy 7 / sell 7). Each position returns to zero, so they must be TWO flips of 7 — not one merged flip of 14 (the 'traded 7, reported 14' over-count).",
+  "rsns": ["TestPlayer"],
+  "events": [
+    {"is_buy": true,  "item_id": 30626, "item_name": "Eye of ayak", "quantity": 7, "price_per_item": 9300000, "ge_slot": 0, "offset_seconds": -36000},
+    {"is_buy": false, "item_id": 30626, "item_name": "Eye of ayak", "quantity": 7, "price_per_item": 9500000, "ge_slot": 1, "offset_seconds": -32400},
+    {"is_buy": true,  "item_id": 30626, "item_name": "Eye of ayak", "quantity": 7, "price_per_item": 9400000, "ge_slot": 0, "offset_seconds": -7200},
+    {"is_buy": false, "item_id": 30626, "item_name": "Eye of ayak", "quantity": 7, "price_per_item": 9600000, "ge_slot": 1, "offset_seconds": -3600}
+  ],
+  "expected": {
+    "flip_count": 2,
+    "flips": [
+      {"item_id": 30626, "quantity": 7},
+      {"item_id": 30626, "quantity": 7}
+    ]
+  },
+  "plugin": {
+    "round_trip_ids": [1, 1, 2, 2]
+  }
+}

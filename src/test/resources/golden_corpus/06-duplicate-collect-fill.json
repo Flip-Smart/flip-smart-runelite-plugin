@@ -1,0 +1,20 @@
+{
+  "name": "duplicate-collect-fill-watermark",
+  "issue": 974,
+  "description": "Cow prod bug: the Collect button churns the offer_id/timestamp and re-reports the SAME physical fill under a new idempotency key at the same cumulative FILL watermark. The watermark idempotency guard must drop the duplicate so the round trip is quantity 2, not 4.",
+  "rsns": ["ItIsCow"],
+  "events": [
+    {"is_buy": true,  "item_id": 8890, "item_name": "Cow", "quantity": 2, "price_per_item": 1000, "rsn": "ItIsCow", "ge_slot": 3, "total_quantity": 6, "offer_id": 8, "round_trip_id": 2, "idempotency_key": "ItIsCow:8:200:FILL:2", "offset_seconds": -7200},
+    {"is_buy": true,  "item_id": 8890, "item_name": "Cow", "quantity": 2, "price_per_item": 1000, "rsn": "ItIsCow", "ge_slot": 3, "total_quantity": 6, "offer_id": 8, "round_trip_id": 2, "idempotency_key": "ItIsCow:8:300:FILL:2", "offset_seconds": -7000},
+    {"is_buy": false, "item_id": 8890, "item_name": "Cow", "quantity": 2, "price_per_item": 1100, "rsn": "ItIsCow", "ge_slot": 4, "round_trip_id": 2, "idempotency_key": "ItIsCow:9:400:FILL:2", "offset_seconds": 0}
+  ],
+  "expected": {
+    "flip_count": 1,
+    "flips": [
+      {"item_id": 8890, "quantity": 2, "rsn": "ItIsCow"}
+    ]
+  },
+  "plugin": {
+    "skip": "Backend-only idempotency: the duplicate Collect fill is dropped by the watermark guard in transaction_service. Plugin-side dedup lives in OfferStore, not RoundTripLedger, so the raw round-trip ledger is not the mirror for this case."
+  }
+}

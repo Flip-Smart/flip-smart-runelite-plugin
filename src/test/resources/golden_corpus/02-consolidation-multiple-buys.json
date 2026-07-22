@@ -1,0 +1,21 @@
+{
+  "name": "consolidation-multiple-buys-single-sell",
+  "issue": 830,
+  "description": "Three partial buy fills (63 + 18 + 19 = 100) accumulate one open position, then a single sell of 100 closes it. Must be one flip whose buy_total is the weighted sum of all three buys.",
+  "rsns": ["TestPlayer"],
+  "events": [
+    {"is_buy": true,  "item_id": 28816, "item_name": "Aldarium", "quantity": 63,  "price_per_item": 29000, "ge_slot": 0, "offset_seconds": -7200},
+    {"is_buy": true,  "item_id": 28816, "item_name": "Aldarium", "quantity": 18,  "price_per_item": 29000, "ge_slot": 0, "offset_seconds": -6600},
+    {"is_buy": true,  "item_id": 28816, "item_name": "Aldarium", "quantity": 19,  "price_per_item": 29000, "ge_slot": 0, "offset_seconds": -6000},
+    {"is_buy": false, "item_id": 28816, "item_name": "Aldarium", "quantity": 100, "price_per_item": 29500, "ge_slot": 1, "offset_seconds": 0}
+  ],
+  "expected": {
+    "flip_count": 1,
+    "flips": [
+      {"item_id": 28816, "quantity": 100, "buy_total": 2900000}
+    ]
+  },
+  "plugin": {
+    "round_trip_ids": [1, 1, 1, 1]
+  }
+}

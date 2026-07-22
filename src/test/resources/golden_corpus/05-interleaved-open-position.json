@@ -1,0 +1,21 @@
+{
+  "name": "interleaved-open-position",
+  "issue": 830,
+  "description": "Interleaved buy/sell that never drops holdings to zero (buy 100, sell 30, buy 100, sell 150). A buy-limit purchased AFTER the first sell must still consolidate because the earlier position is only partially sold — ONE flip of 180.",
+  "rsns": ["TestPlayer"],
+  "events": [
+    {"is_buy": true,  "item_id": 239, "item_name": "White berries", "quantity": 100, "price_per_item": 200, "ge_slot": 0, "offset_seconds": -14400},
+    {"is_buy": false, "item_id": 239, "item_name": "White berries", "quantity": 30,  "price_per_item": 230, "ge_slot": 1, "offset_seconds": -10800},
+    {"is_buy": true,  "item_id": 239, "item_name": "White berries", "quantity": 100, "price_per_item": 205, "ge_slot": 0, "offset_seconds": -7200},
+    {"is_buy": false, "item_id": 239, "item_name": "White berries", "quantity": 150, "price_per_item": 230, "ge_slot": 1, "offset_seconds": 0}
+  ],
+  "expected": {
+    "flip_count": 1,
+    "flips": [
+      {"item_id": 239, "quantity": 180}
+    ]
+  },
+  "plugin": {
+    "round_trip_ids": [1, 1, 1, 1]
+  }
+}

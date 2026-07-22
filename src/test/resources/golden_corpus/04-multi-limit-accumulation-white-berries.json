@@ -1,0 +1,22 @@
+{
+  "name": "multi-limit-accumulation-white-berries",
+  "issue": 830,
+  "description": "31k white-berries prod bug: three 13,000 buy-limit windows accumulate 39,000 before ANY sell, then sold across two fills. The position never liquidates mid-way, so all buys stay in one open position — ONE flip of 39,000, not split at each buy-limit boundary.",
+  "rsns": ["TestPlayer"],
+  "events": [
+    {"is_buy": true,  "item_id": 239, "item_name": "White berries", "quantity": 13000, "price_per_item": 200, "ge_slot": 0, "offset_seconds": -43200},
+    {"is_buy": true,  "item_id": 239, "item_name": "White berries", "quantity": 13000, "price_per_item": 200, "ge_slot": 0, "offset_seconds": -28800},
+    {"is_buy": true,  "item_id": 239, "item_name": "White berries", "quantity": 13000, "price_per_item": 200, "ge_slot": 0, "offset_seconds": -14400},
+    {"is_buy": false, "item_id": 239, "item_name": "White berries", "quantity": 20000, "price_per_item": 230, "ge_slot": 1, "offset_seconds": -3600},
+    {"is_buy": false, "item_id": 239, "item_name": "White berries", "quantity": 19000, "price_per_item": 230, "ge_slot": 1, "offset_seconds": 0}
+  ],
+  "expected": {
+    "flip_count": 1,
+    "flips": [
+      {"item_id": 239, "quantity": 39000}
+    ]
+  },
+  "plugin": {
+    "round_trip_ids": [1, 1, 1, 1, 1]
+  }
+}
