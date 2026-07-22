@@ -3,22 +3,29 @@ package com.flipsmart;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.trading.OfferStore;
 import net.runelite.api.Client;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.chat.ChatMessageManager;
 import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link GEHistoryService}'s widget-text parsing helpers.
@@ -195,5 +202,105 @@ public class GEHistoryServiceTest
 		svc.registerOfflineFill(28924);
 		assertTrue(svc.hasUnverifiedOfflineFills());
 		verify(chatMessageManager, times(1)).queue(any());
+	}
+
+	// ----- proactive auto-backfill (#1053) ----------------------------
+
+	private Widget headerWidget(String text)
+	{
+		Widget w = mock(Widget.class);
+		when(w.getText()).thenReturn(text);
+		return w;
+	}
+
+	private Widget itemWidget(int itemId, int qty)
+	{
+		Widget w = mock(Widget.class);
+		when(w.getItemId()).thenReturn(itemId);
+		when(w.getItemQuantity()).thenReturn(qty);
+		return w;
+	}
+
+	private Widget priceWidget(String text)
+	{
+		Widget w = mock(Widget.class);
+		when(w.getText()).thenReturn(text);
+		return w;
+	}
+
+	/** A visible History list widget holding one "Bought:" row (4151 x5 @ 2,000). */
+	private Widget visibleHistoryList()
+	{
+		Widget header = headerWidget("Bought:");
+		Widget item = itemWidget(4151, 5);
+		Widget price = priceWidget(GE_YELLOW + "10,000 coins</col><br>= 2,000 each");
+		Widget[] rows = new Widget[]{header, item, price};
+		Widget list = mock(Widget.class);
+		when(list.isHidden()).thenReturn(false);
+		when(list.getDynamicChildren()).thenReturn(rows);
+		return list;
+	}
+
+	@Test
+	public void offlineFillWithHistoryTabOpenScrapesInsteadOfNagging()
+	{
+		Client client = mock(Client.class);
+		Widget list = visibleHistoryList();
+		when(client.getWidget(InterfaceID.GE_HISTORY, 3)).thenReturn(list);
+		ChatMessageManager chat = mock(ChatMessageManager.class);
+		GEHistoryService svc = new GEHistoryService(
+			client, mock(FlipSmartApiClient.class), mock(PlayerSession.class), chat, new OfferStore());
+
+		svc.registerOfflineFill(4151);
+
+		// Tab is already open, so we schedule a scrape rather than nagging.
+		verify(chat, never()).queue(any());
+	}
+
+	@Test
+	public void proactiveRescanPostsBackfillWhileHistoryVisibleWithoutNag()
+	{
+		Client client = mock(Client.class);
+		Widget list = visibleHistoryList();
+		when(client.getWidget(InterfaceID.GE_HISTORY, 3)).thenReturn(list);
+
+		PlayerSession session = mock(PlayerSession.class);
+		when(session.isOfflineSyncCompleted()).thenReturn(true);
+		when(session.getRsnSafe()).thenReturn(Optional.of("Zezima"));
+
+		FlipSmartApiClient api = mock(FlipSmartApiClient.class);
+		when(api.recordHistoryBackfillBatchAsync(eq("Zezima"), anyList()))
+			.thenReturn(CompletableFuture.completedFuture(null));
+
+		GEHistoryService svc = new GEHistoryService(
+			client, api, session, mock(ChatMessageManager.class), new OfferStore());
+
+		// No WidgetLoaded, no manual prompt — a plain tick with the tab visible
+		// must trigger a read + backfill post.
+		svc.onGameTick();
+
+		verify(api, times(1)).recordHistoryBackfillBatchAsync(eq("Zezima"), anyList());
+	}
+
+	@Test
+	public void proactiveRescanGatedUntilOfflineSyncCompletes()
+	{
+		Client client = mock(Client.class);
+		Widget list = visibleHistoryList();
+		when(client.getWidget(InterfaceID.GE_HISTORY, 3)).thenReturn(list);
+
+		PlayerSession session = mock(PlayerSession.class);
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+
+		FlipSmartApiClient api = mock(FlipSmartApiClient.class);
+		GEHistoryService svc = new GEHistoryService(
+			client, api, session, mock(ChatMessageManager.class), new OfferStore());
+
+		for (int i = 0; i < 40; i++)
+		{
+			svc.onGameTick();
+		}
+
+		verify(api, never()).recordHistoryBackfillBatchAsync(any(), anyList());
 	}
 }

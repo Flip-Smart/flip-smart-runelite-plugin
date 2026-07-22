@@ -27,6 +27,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * Reads the in-game GE History tab to recover actual fill prices for trades
  * completed while offline, then posts them to the API as is_history_backfill.
+ * <p>
+ * The read is triggered on multiple lifecycle points so it does not depend on
+ * the user acting on a one-shot chat nag: on the History WidgetLoaded, when an
+ * unverified offline fill is registered while the tab is already open, and by a
+ * throttled periodic re-scan for as long as the tab stays visible. All triggers
+ * only ever <em>read</em> the widget already on screen — the plugin never opens
+ * or drives the interface for the player.
  */
 @Slf4j
 @Singleton
@@ -40,6 +47,13 @@ public class GEHistoryService
 	// fixed-stride to handle variable-width rows.
 	private static final int GE_HISTORY_LIST_CHILD = 3;
 
+	// Minimum gap between reads triggered by the proactive re-scan, in game
+	// ticks (~0.6s each). Long enough that leaving the tab open does not spam
+	// POST /history-backfill-batch; short enough to pick up fills that land
+	// while the user is looking at the tab. Explicit WidgetLoaded/offline-fill
+	// reads are not throttled — only the periodic re-scan honours this.
+	private static final long PROACTIVE_RESCAN_INTERVAL_TICKS = 17;
+
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
@@ -52,6 +66,11 @@ public class GEHistoryService
 	private volatile boolean historyReadThisSession = false;
 	private volatile boolean chatPromptSent = false;
 	private volatile Runnable onBackfillComplete;
+
+	// Monotonic game-tick counter and the tick of the most recent read, used to
+	// throttle the proactive re-scan. Only touched on the client thread.
+	private volatile long tickCount;
+	private volatile long lastReadTick = -PROACTIVE_RESCAN_INTERVAL_TICKS;
 
 	@Inject
 	public GEHistoryService(
@@ -79,15 +98,46 @@ public class GEHistoryService
 	/** Called from FlipSmartPlugin.onGameTick. */
 	public void onGameTick()
 	{
+		tickCount++;
 		int prev = pendingHistoryReadTicks.get();
-		if (prev <= 0)
+		if (prev > 0)
+		{
+			if (pendingHistoryReadTicks.decrementAndGet() == 0)
+			{
+				readHistoryNow();
+			}
+			return;
+		}
+		maybeProactiveRescan();
+	}
+
+	/**
+	 * Proactive lifecycle trigger: while the History tab stays visible, re-read
+	 * it on a throttled cadence so fills that land after the initial open are
+	 * still recovered without waiting for another WidgetLoaded or a manual nag.
+	 * Gated on offline sync so we never latch {@code historyReadThisSession}
+	 * before the reconciler has had a chance to register offline fills.
+	 */
+	private void maybeProactiveRescan()
+	{
+		if (!session.isOfflineSyncCompleted())
 		{
 			return;
 		}
-		if (pendingHistoryReadTicks.decrementAndGet() == 0)
+		if (tickCount - lastReadTick < PROACTIVE_RESCAN_INTERVAL_TICKS)
+		{
+			return;
+		}
+		if (isHistoryWidgetVisible())
 		{
 			readHistoryNow();
 		}
+	}
+
+	private boolean isHistoryWidgetVisible()
+	{
+		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
+		return listWidget != null && !listWidget.isHidden();
 	}
 
 	private void readHistoryNow()
@@ -97,6 +147,7 @@ public class GEHistoryService
 		// allowed to stay populated until reset() so future reads (e.g. user
 		// reopens History) can still see what we'd registered.
 		historyReadThisSession = true;
+		lastReadTick = tickCount;
 
 		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
 		if (listWidget == null)
@@ -120,7 +171,15 @@ public class GEHistoryService
 		{
 			log.debug("Registered offline fill for itemId={} (pending count {})",
 				itemId, pendingOfflineFillItemIds.size());
-			maybeSendChatPrompt();
+			if (isHistoryWidgetVisible())
+			{
+				// Tab is already open — scrape it directly instead of nagging.
+				pendingHistoryReadTicks.set(2);
+			}
+			else
+			{
+				maybeSendChatPrompt();
+			}
 		}
 	}
 
@@ -193,6 +252,8 @@ public class GEHistoryService
 		historyReadThisSession = false;
 		pendingHistoryReadTicks.set(0);
 		chatPromptSent = false;
+		tickCount = 0;
+		lastReadTick = -PROACTIVE_RESCAN_INTERVAL_TICKS;
 	}
 
 	private List<GEHistoryEntry> parseHistoryEntries(Widget listWidget)
