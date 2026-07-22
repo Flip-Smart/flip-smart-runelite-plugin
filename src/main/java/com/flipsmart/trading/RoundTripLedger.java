@@ -52,6 +52,20 @@ public final class RoundTripLedger
         }
     }
 
+    /** Outcome of a guarded fill: the round-trip id, and whether the fill was a suppressed
+     *  duplicate the caller should not forward. */
+    public static final class FillResult
+    {
+        public final Integer roundTripId;
+        public final boolean duplicateSuppressed;
+
+        public FillResult(Integer roundTripId, boolean duplicateSuppressed)
+        {
+            this.roundTripId = roundTripId;
+            this.duplicateSuppressed = duplicateSuppressed;
+        }
+    }
+
     private final Object lock = new Object();
     private final Map<String, Map<Integer, Entry>> byRsn = new HashMap<>();
 
@@ -81,18 +95,32 @@ public final class RoundTripLedger
     public Integer recordFill(String rsn, int itemId, Integer slot, boolean isBuy,
                               int deltaQuantity, int cumulativeQuantity)
     {
+        return recordFillGuarded(rsn, itemId, slot, isBuy, deltaQuantity, cumulativeQuantity).roundTripId;
+    }
+
+    /**
+     * As {@link #recordFill(String, int, Integer, boolean, int, int)} but also reports whether the
+     * fill was recognised as a duplicate re-delivery and suppressed. The peek-based send guard in
+     * {@code TransactionLogger} cannot catch a duplicate <em>closing</em> fill — the genuine close
+     * already advanced the cycle, so the duplicate peeks a different id and its dedup key misses —
+     * so the caller relies on this flag to avoid forwarding a fill that would reach the backend
+     * stamped with the next cycle's id.
+     */
+    public FillResult recordFillGuarded(String rsn, int itemId, Integer slot, boolean isBuy,
+                                        int deltaQuantity, int cumulativeQuantity)
+    {
         synchronized (lock)
         {
             if (rsn == null || rsn.isEmpty())
             {
-                return null;
+                return new FillResult(null, false);
             }
             Entry e = entryFor(rsn, itemId);
 
             String fingerprint = slot == null ? null : slot + ":" + isBuy + ":" + cumulativeQuantity;
             if (fingerprint != null && fingerprint.equals(e.lastClosingFingerprint))
             {
-                return e.cycleId;
+                return new FillResult(e.cycleId, true);
             }
 
             e.heldQuantity += isBuy ? deltaQuantity : -deltaQuantity;
@@ -107,7 +135,7 @@ public final class RoundTripLedger
             {
                 e.lastClosingFingerprint = null;
             }
-            return roundTripId;
+            return new FillResult(roundTripId, false);
         }
     }
 
