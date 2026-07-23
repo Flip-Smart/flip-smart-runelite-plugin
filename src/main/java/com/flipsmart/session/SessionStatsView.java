@@ -12,6 +12,7 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
@@ -33,6 +34,9 @@ public final class SessionStatsView
 	private static final int ROW_HEIGHT = 18;
 	private static final String ARROW_EXPANDED = "▼";
 	private static final String ARROW_COLLAPSED = "▶";
+	// The panel inherits RuneLite's RuneScape pixel font, which lacks the
+	// triangle glyphs; Arial (as the rest of the panel uses) renders them.
+	private static final Font ARROW_FONT = new Font("Arial", Font.PLAIN, 11);
 
 	private final JPanel component = new JPanel();
 	private final JPanel body = new JPanel();
@@ -69,10 +73,11 @@ public final class SessionStatsView
 		header.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_HEIGHT));
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-		JLabel title = new JLabel("Session");
+		JLabel title = new JLabel("Session Stats");
 		title.setForeground(Color.LIGHT_GRAY);
 
 		toggleArrow.setForeground(Color.LIGHT_GRAY);
+		toggleArrow.setFont(ARROW_FONT);
 
 		header.add(title, BorderLayout.WEST);
 		header.add(toggleArrow, BorderLayout.EAST);
