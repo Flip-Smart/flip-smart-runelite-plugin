@@ -73,6 +73,20 @@ public interface FlipSmartConfig extends Config
 		return "";
 	}
 
+	// Collapsed state of the session-stats block. Persisted so the choice
+	// survives logout/relaunch; needs @ConfigItem so the config proxy resolves
+	// the default (expanded) instead of returning null on unbox.
+	@ConfigItem(
+		keyName = "sessionStatsCollapsed",
+		name = "",
+		description = "Whether the session stats block is collapsed (do not edit manually)",
+		hidden = true
+	)
+	default boolean sessionStatsCollapsed()
+	{
+		return false;
+	}
+
 	// ============================================
 	// Flip Finder Section
 	// ============================================

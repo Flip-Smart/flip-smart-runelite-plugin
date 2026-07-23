@@ -62,6 +62,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
 	private static final String CONFIG_KEY_MIN_VOLUME = "minVolume";
 	private static final String CONFIG_KEY_ENABLE_FLIP_ASSISTANT = "enableFlipAssistant";
+	private static final String CONFIG_KEY_SESSION_STATS_COLLAPSED = "sessionStatsCollapsed";
 	private static final String FILTER_TOOLTIP =
 		"Adding a minimum filter may limit the number of results you see.";
 
@@ -558,6 +559,10 @@ public class FlipFinderPanel extends PluginPanel
 		topPanel.add(statusPanel);
 		topPanel.add(overridePanel);
 		topPanel.add(sessionStatsView.getComponent());
+		// Restore the persisted collapsed state, then persist future toggles.
+		sessionStatsView.setCollapsed(config.sessionStatsCollapsed());
+		sessionStatsView.setToggleListener(collapsed ->
+			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_SESSION_STATS_COLLAPSED, collapsed));
 		updateCashstackOverrideIndicator();
 
 		// Recommended flips list container
