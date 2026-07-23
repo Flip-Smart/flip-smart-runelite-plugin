@@ -21,6 +21,9 @@ import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
+import com.flipsmart.session.SessionClock;
+import com.flipsmart.session.SessionStats;
+import com.flipsmart.session.SessionStatsView;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
@@ -165,6 +168,10 @@ public class FlipFinderPanel extends PluginPanel
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
+	private final SessionClock sessionClock = new SessionClock(System.currentTimeMillis());
+	private final SessionStatsView sessionStatsView = new SessionStatsView();
+	private javax.swing.Timer sessionStatsTimer;
+	private SessionStats.ProfitBase sessionProfitBase = SessionStats.ProfitBase.EMPTY;
 	private final transient FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
 	
 	// Scroll panes for preserving scroll position during refresh
@@ -550,6 +557,7 @@ public class FlipFinderPanel extends PluginPanel
 		topPanel.add(controlsPanel);
 		topPanel.add(statusPanel);
 		topPanel.add(overridePanel);
+		topPanel.add(sessionStatsView.getComponent());
 		updateCashstackOverrideIndicator();
 
 		// Recommended flips list container
@@ -1052,6 +1060,11 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			activeFlipsPriceTimer.stop();
 		}
+		if (sessionStatsTimer != null)
+		{
+			sessionStatsTimer.stop();
+			sessionStatsTimer = null;
+		}
 	}
 
 	/**
@@ -1065,6 +1078,8 @@ public class FlipFinderPanel extends PluginPanel
 		repaint();
 
 		startRefreshCountdownTimer();
+		recomputeSessionProfitBase();
+		startSessionStatsTimer();
 
 		// Load data
 		refresh();
@@ -1295,6 +1310,35 @@ public class FlipFinderPanel extends PluginPanel
 			refreshCountdownTimer.start();
 		}
 		updateRefreshCountdownLabel();
+	}
+
+	private void renderSessionStats()
+	{
+		sessionStatsView.render(SessionStats.snapshot(
+			sessionProfitBase, sessionClock.activeMs(System.currentTimeMillis())));
+	}
+
+	private void recomputeSessionProfitBase()
+	{
+		sessionProfitBase = SessionStats.computeBase(
+			currentCompletedFlips, currentActiveFlips, sessionClock.startMs());
+		renderSessionStats();
+	}
+
+	private void startSessionStatsTimer()
+	{
+		if (sessionStatsTimer == null)
+		{
+			sessionStatsTimer = new javax.swing.Timer(1000, e ->
+			{
+				sessionClock.update(plugin.isLoggedIntoRunescape(), System.currentTimeMillis());
+				renderSessionStats();
+			});
+		}
+		if (!sessionStatsTimer.isRunning())
+		{
+			sessionStatsTimer.start();
+		}
 	}
 
 	/**
@@ -1598,6 +1642,7 @@ public class FlipFinderPanel extends PluginPanel
 				currentActiveFlips.clear();
 				currentActiveFlips.addAll(filtered);
 			}
+			recomputeSessionProfitBase();
 			if (flipsFromBackend != null)
 			{
 				log.debug("Loaded {} active flips ({} from backend, {} filtered)",
@@ -1755,6 +1800,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				currentCompletedFlips.addAll(response.getFlips());
 			}
+			recomputeSessionProfitBase();
 
 			if (currentCompletedFlips.isEmpty())
 			{
