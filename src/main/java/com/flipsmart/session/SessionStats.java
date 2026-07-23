@@ -7,6 +7,7 @@ import com.flipsmart.util.GpUtils;
 import com.flipsmart.util.TimeUtils;
 
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Pure session-performance math: realised profit from completed flips sold within
@@ -90,7 +91,7 @@ public final class SessionStats
 		long hours = totalSeconds / 3600L;
 		long minutes = (totalSeconds % 3600L) / 60L;
 		long seconds = totalSeconds % 60L;
-		return String.format("%02d:%02d:%02d", hours, minutes, seconds);
+		return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds);
 	}
 
 	public static final class Snapshot
