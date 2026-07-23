@@ -47,7 +47,7 @@ public final class SessionStatsView
 	private final JLabel projectedRateValue = new JLabel();
 
 	private boolean collapsed;
-	private transient Consumer<Boolean> toggleListener;
+	private Consumer<Boolean> toggleListener;
 
 	public SessionStatsView()
 	{
