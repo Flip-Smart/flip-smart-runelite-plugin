@@ -15,7 +15,7 @@ public class SessionStatsViewTest
 	{
 		SessionStatsView view = new SessionStatsView();
 		assertFalse(view.isCollapsed());
-		assertTrue(view.getComponent().isVisible());
+		assertTrue(bodyPanel(view).isVisible());
 	}
 
 	@Test
@@ -45,6 +45,13 @@ public class SessionStatsViewTest
 		clickHeader(view);
 		assertFalse(view.isCollapsed());
 		assertEquals(Boolean.FALSE, notified.get());
+	}
+
+	/** The body panel is the root container's second child, after the header. */
+	private static java.awt.Component bodyPanel(SessionStatsView view)
+	{
+		java.awt.Container root = (java.awt.Container) view.getComponent();
+		return root.getComponent(1);
 	}
 
 	/** Drive the header's mouse listener the way a user click would. */
