@@ -1316,7 +1316,7 @@ public class FlipFinderPanel extends PluginPanel
 		long now = System.currentTimeMillis();
 		sessionStatsView.render(SessionStats.compute(
 			currentCompletedFlips, currentActiveFlips,
-			sessionClock.sessionStartMs(), sessionClock.activeMs(now)));
+			sessionClock.startMs(), sessionClock.activeMs(now)));
 	}
 
 	private void startSessionStatsTimer()

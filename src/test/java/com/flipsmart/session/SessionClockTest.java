@@ -10,7 +10,7 @@ public class SessionClockTest
 	public void noLoggedInTimeBeforeFirstLogin()
 	{
 		SessionClock clock = new SessionClock(1_000L);
-		assertEquals(1_000L, clock.sessionStartMs());
+		assertEquals(1_000L, clock.startMs());
 		assertEquals(0L, clock.activeMs(50_000L));
 	}
 

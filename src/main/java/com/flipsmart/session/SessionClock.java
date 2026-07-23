@@ -19,7 +19,7 @@ public final class SessionClock
 		this.sessionStartMs = sessionStartMs;
 	}
 
-	public long sessionStartMs()
+	public long startMs()
 	{
 		return sessionStartMs;
 	}
