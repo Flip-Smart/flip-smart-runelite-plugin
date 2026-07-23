@@ -25,13 +25,23 @@ public final class SessionStats
 	{
 	}
 
+	public static ProfitBase computeBase(List<CompletedFlip> completed, List<ActiveFlip> active,
+										 long sessionStartMs)
+	{
+		return new ProfitBase(realisedProfit(completed, sessionStartMs), unrealisedProfit(active));
+	}
+
+	public static Snapshot snapshot(ProfitBase base, long activeMs)
+	{
+		long projected = base.realisedProfit + base.unrealisedProfit;
+		return new Snapshot(base.realisedProfit, projected, activeMs,
+			gpPerHour(base.realisedProfit, activeMs), gpPerHour(projected, activeMs));
+	}
+
 	public static Snapshot compute(List<CompletedFlip> completed, List<ActiveFlip> active,
 								   long sessionStartMs, long activeMs)
 	{
-		long realised = realisedProfit(completed, sessionStartMs);
-		long projected = realised + unrealisedProfit(active);
-		return new Snapshot(realised, projected, activeMs,
-			gpPerHour(realised, activeMs), gpPerHour(projected, activeMs));
+		return snapshot(computeBase(completed, active, sessionStartMs), activeMs);
 	}
 
 	static long realisedProfit(List<CompletedFlip> completed, long sessionStartMs)
@@ -92,6 +102,19 @@ public final class SessionStats
 		long minutes = (totalSeconds % 3600L) / 60L;
 		long seconds = totalSeconds % 60L;
 		return String.format(Locale.ROOT, "%02d:%02d:%02d", hours, minutes, seconds);
+	}
+
+	public static final class ProfitBase
+	{
+		public static final ProfitBase EMPTY = new ProfitBase(0L, 0L);
+		public final long realisedProfit;
+		public final long unrealisedProfit;
+
+		public ProfitBase(long realisedProfit, long unrealisedProfit)
+		{
+			this.realisedProfit = realisedProfit;
+			this.unrealisedProfit = unrealisedProfit;
+		}
 	}
 
 	public static final class Snapshot

@@ -96,6 +96,36 @@ public class SessionStatsTest
 	}
 
 	@Test
+	public void computeBaseCapturesRealisedAndUnrealisedSeparately()
+	{
+		SessionStats.ProfitBase base = SessionStats.computeBase(
+			Collections.singletonList(completed("2026-07-22T13:00:00Z", 1000)),
+			Collections.singletonList(active(4151, 200, 100, 10)),
+			SESSION_START);
+		assertEquals(1000L, base.realisedProfit);
+		assertEquals(960L, base.unrealisedProfit);
+	}
+
+	@Test
+	public void snapshotDerivesProjectedAndRatesFromBase()
+	{
+		SessionStats.Snapshot snap = SessionStats.snapshot(
+			new SessionStats.ProfitBase(1000L, 960L), 3_600_000L);
+		assertEquals(1000L, snap.realisedProfit);
+		assertEquals(1960L, snap.projectedProfit);
+		assertEquals(Long.valueOf(1000L), snap.realisedGpPerHour);
+		assertEquals(Long.valueOf(1960L), snap.projectedGpPerHour);
+	}
+
+	@Test
+	public void emptyBaseIsZeroed()
+	{
+		SessionStats.Snapshot snap = SessionStats.snapshot(SessionStats.ProfitBase.EMPTY, 3_600_000L);
+		assertEquals(0L, snap.realisedProfit);
+		assertEquals(0L, snap.projectedProfit);
+	}
+
+	@Test
 	public void formatsSignedGpDurationAndRate()
 	{
 		assertEquals("+1.2M", SessionStats.formatSignedGp(1_200_000L));

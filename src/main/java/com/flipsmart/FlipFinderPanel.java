@@ -171,6 +171,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final SessionClock sessionClock = new SessionClock(System.currentTimeMillis());
 	private final SessionStatsView sessionStatsView = new SessionStatsView();
 	private javax.swing.Timer sessionStatsTimer;
+	private SessionStats.ProfitBase sessionProfitBase = SessionStats.ProfitBase.EMPTY;
 	private final transient FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
 	
 	// Scroll panes for preserving scroll position during refresh
@@ -1077,7 +1078,7 @@ public class FlipFinderPanel extends PluginPanel
 		repaint();
 
 		startRefreshCountdownTimer();
-		renderSessionStats();
+		recomputeSessionProfitBase();
 		startSessionStatsTimer();
 
 		// Load data
@@ -1313,10 +1314,15 @@ public class FlipFinderPanel extends PluginPanel
 
 	private void renderSessionStats()
 	{
-		long now = System.currentTimeMillis();
-		sessionStatsView.render(SessionStats.compute(
-			currentCompletedFlips, currentActiveFlips,
-			sessionClock.startMs(), sessionClock.activeMs(now)));
+		sessionStatsView.render(SessionStats.snapshot(
+			sessionProfitBase, sessionClock.activeMs(System.currentTimeMillis())));
+	}
+
+	private void recomputeSessionProfitBase()
+	{
+		sessionProfitBase = SessionStats.computeBase(
+			currentCompletedFlips, currentActiveFlips, sessionClock.startMs());
+		renderSessionStats();
 	}
 
 	private void startSessionStatsTimer()
@@ -1636,7 +1642,7 @@ public class FlipFinderPanel extends PluginPanel
 				currentActiveFlips.clear();
 				currentActiveFlips.addAll(filtered);
 			}
-			renderSessionStats();
+			recomputeSessionProfitBase();
 			if (flipsFromBackend != null)
 			{
 				log.debug("Loaded {} active flips ({} from backend, {} filtered)",
@@ -1794,7 +1800,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				currentCompletedFlips.addAll(response.getFlips());
 			}
-			renderSessionStats();
+			recomputeSessionProfitBase();
 
 			if (currentCompletedFlips.isEmpty())
 			{
