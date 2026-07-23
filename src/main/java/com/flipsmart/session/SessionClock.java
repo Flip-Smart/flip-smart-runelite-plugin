@@ -11,7 +11,8 @@ public final class SessionClock
 {
 	private final long sessionStartMs;
 	private long accumulatedActiveMs;
-	private Long loginStartMs;
+	private boolean loggedIn;
+	private long loginStartMs;
 
 	public SessionClock(long sessionStartMs)
 	{
@@ -25,20 +26,20 @@ public final class SessionClock
 
 	public void update(boolean loggedIn, long nowMs)
 	{
-		if (loggedIn && loginStartMs == null)
+		if (loggedIn && !this.loggedIn)
 		{
 			loginStartMs = nowMs;
 		}
-		else if (!loggedIn && loginStartMs != null)
+		else if (!loggedIn && this.loggedIn)
 		{
 			accumulatedActiveMs += Math.max(0L, nowMs - loginStartMs);
-			loginStartMs = null;
 		}
+		this.loggedIn = loggedIn;
 	}
 
 	public long activeMs(long nowMs)
 	{
-		long openSpan = loginStartMs != null ? Math.max(0L, nowMs - loginStartMs) : 0L;
+		long openSpan = loggedIn ? Math.max(0L, nowMs - loginStartMs) : 0L;
 		return accumulatedActiveMs + openSpan;
 	}
 }
