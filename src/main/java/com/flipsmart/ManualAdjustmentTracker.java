@@ -475,7 +475,7 @@ public class ManualAdjustmentTracker
 		String timeframe = config.flipTimeframe().getApiValue();
 		String flipStyle = config.flipStyle().getApiValue();
 
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots, isMembersWorld)
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots, isMembersWorld, false)
 			.thenAccept(response -> handleReplacementResponse(response, state))
 			.exceptionally(e ->
 			{
