@@ -835,6 +835,25 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Mark a buy as Flip Finder-sourced when an order is submitted for the focused item.
+	 * Fired for BOTH manual and Auto placements (via onOrderSubmitted, which is not skipped
+	 * during Auto), so the free-tier cap counts Auto-placed buys too. Manual GE listings of a
+	 * non-focused item never match, so they never count.
+	 */
+	public void handleOrderSubmittedForSourcing(int itemId, boolean isBuy)
+	{
+		if (!isBuy)
+		{
+			return;
+		}
+		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
+		if (focusedFlip != null && focusedFlip.getItemId() == itemId && focusedFlip.isBuying())
+		{
+			session.markFlipFinderSourced(itemId, System.currentTimeMillis());
+		}
+	}
+
 	public void handleGETrackerFocusClear(int itemId, boolean isBuy)
 	{
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
@@ -845,12 +864,6 @@ public class FlipSmartPlugin extends Plugin
 		boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
 		if (stepMatches)
 		{
-			if (isBuy)
-			{
-				// A buy was submitted for a focused Flip Finder item (manual focus or Auto) —
-				// mark it so it counts toward the free-tier Flip Finder cap for its whole flip.
-				session.markFlipFinderSourced(itemId, System.currentTimeMillis());
-			}
 			log.debug("Clearing Flip Assist focus - order submitted for {} ({})",
 				focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
 			flipAssistOverlay.clearFocus();
