@@ -119,4 +119,31 @@ public class SellFocusRetryTest
 		tracker.retryPendingSellFocusTick();
 		verify(autoRecommendService, times(1)).overrideFocusForSell(anyInt(), anyString());
 	}
+
+	@Test
+	public void manualMode_retriesBackendLookupAcrossTicks_thenStops()
+	{
+		// #1089 D5: with auto-recommend off, opening a sell screen must still retry
+		// the backend active-flip lookup across ticks. Before, manual mode issued a
+		// single one-shot lookup that silently failed when the backend snapshot
+		// lagged the just-opened screen, so the sell target never filled.
+		when(autoRecommendService.isActive()).thenReturn(false);
+
+		tracker.autoFocusOnActiveFlip(ITEM);   // manual path: 1 lookup + arms retry
+		verify(apiClient, times(1)).getActiveFlipsAsync(anyString());
+
+		for (int i = 0; i < RETRY_BUDGET_TICKS; i++)
+		{
+			tracker.retryPendingSellFocusTick();
+		}
+		// 1 (entry) + 6 (ticks) lookups, then the budget clears the pending retry.
+		verify(apiClient, times(1 + RETRY_BUDGET_TICKS)).getActiveFlipsAsync(anyString());
+
+		// Budget exhausted → further ticks are no-ops.
+		tracker.retryPendingSellFocusTick();
+		verify(apiClient, times(1 + RETRY_BUDGET_TICKS)).getActiveFlipsAsync(anyString());
+
+		// Manual mode never touches the auto-recommend local resolver.
+		verify(autoRecommendService, never()).overrideFocusForSell(anyInt(), anyString());
+	}
 }
