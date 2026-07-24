@@ -244,6 +244,36 @@ public class ActionResolverTest {
         assertEquals(73, resolver.resolve(in).getItemId());
     }
 
+    // ---- free-tier Flip Finder cap (gates new buys only, never sells) ----
+    @Test public void noS2WhenFlipFinderCapReached() {
+        ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 21)
+            .flipFinderCapReached(true).build();
+        assertEquals(ActionDecision.IDLE, resolver.resolve(in));
+    }
+    @Test public void s2WhenFlipFinderCapNotReached() {
+        ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 21)
+            .flipFinderCapReached(false).build();
+        ActionDecision d = resolver.resolve(in);
+        assertEquals(ActionKind.S2, d.getKind());
+        assertEquals(ActionStep.PLACE_BUY, d.getStep());
+        assertEquals(21, d.getItemId());
+    }
+    @Test public void flipFinderCapDoesNotSuppressSell() {
+        // Anti-deadlock: a free user at the cap must still be able to list collected sells.
+        ResolverInput in = base().filledSlotCount(7).flipFinderCapReached(true)
+            .collectedAwaitingList(Arrays.asList(
+                new CollectedItem(13, CollectOrigin.PARTIAL_CANCEL, true, 5L))).build();
+        ActionDecision d = resolver.resolve(in);
+        assertEquals(ActionKind.SELL_WAITING, d.getKind());
+        assertEquals(ActionStep.LIST, d.getStep());
+    }
+    @Test public void flipFinderCapDoesNotSuppressHigherPriority() {
+        ResolverInput in = base().filledSlotCount(7).surfaceableBuy(true, 21)
+            .flipFinderCapReached(true)
+            .staleOffers(Arrays.asList(staleBuyPartial(0, 11, 5L))).build();
+        assertEquals(ActionKind.S1, resolver.resolve(in).getKind());
+    }
+
     // ---- idle ----
     @Test public void idleWhenNothingActionable() {
         assertEquals(ActionDecision.IDLE, resolver.resolve(base().build()));

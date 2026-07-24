@@ -15,6 +15,7 @@ public final class ResolverInput {
     private final boolean blockBuyForPendingSell;
     private final int pendingSellItemId;
     private final boolean buysSuppressed;
+    private final boolean flipFinderCapReached;
     private final List<OfferRecord> completedAwaitingCollection;
     private final List<OfferRecord> staleOffers;
     private final List<CollectedItem> collectedAwaitingList;
@@ -28,6 +29,7 @@ public final class ResolverInput {
         this.blockBuyForPendingSell = b.blockBuy;
         this.pendingSellItemId = b.pendingSellItemId;
         this.buysSuppressed = b.buysSuppressed;
+        this.flipFinderCapReached = b.flipFinderCapReached;
         this.completedAwaitingCollection =
             Collections.unmodifiableList(new ArrayList<>(b.completedAwaitingCollection));
         this.staleOffers =
@@ -54,6 +56,13 @@ public final class ResolverInput {
      * resolver falls through to the next collect/sell action instead of stalling on a buy.
      */
     public boolean isBuysSuppressed() { return buysSuppressed; }
+    /**
+     * True when a free-tier user has reached their Flip Finder item cap. Suppresses new S2
+     * buys only — collecting, repricing, and listing collected sells stay available, so an
+     * at-cap free user can always finish (sell) their in-flight flips. Manual listings never
+     * set this (they are excluded from the count upstream).
+     */
+    public boolean isFlipFinderCapReached() { return flipFinderCapReached; }
     public List<OfferRecord> getCompletedAwaitingCollection() { return completedAwaitingCollection; }
     public List<OfferRecord> getStaleOffers() { return staleOffers; }
     public List<CollectedItem> getCollectedAwaitingList() { return collectedAwaitingList; }
@@ -69,6 +78,7 @@ public final class ResolverInput {
         private boolean blockBuy;
         private int pendingSellItemId = -1;
         private boolean buysSuppressed;
+        private boolean flipFinderCapReached;
         private List<OfferRecord> completedAwaitingCollection = new ArrayList<>();
         private List<OfferRecord> staleOffers = new ArrayList<>();
         private List<CollectedItem> collectedAwaitingList = new ArrayList<>();
@@ -83,6 +93,7 @@ public final class ResolverInput {
             this.blockBuy = block; this.pendingSellItemId = itemId; return this;
         }
         public Builder buysSuppressed(boolean v) { this.buysSuppressed = v; return this; }
+        public Builder flipFinderCapReached(boolean v) { this.flipFinderCapReached = v; return this; }
         public Builder completedAwaitingCollection(List<OfferRecord> v) {
             this.completedAwaitingCollection = v; return this;
         }

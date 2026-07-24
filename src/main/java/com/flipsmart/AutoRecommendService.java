@@ -93,7 +93,7 @@ public class AutoRecommendService
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
 	private static final String MSG_FREE_LIMIT_REACHED = "You're at your item limit for free tier. Monitoring your trades";
-	/** Total Grand Exchange slots available in-game (members). */
+	/** Total Grand Exchange slots available in-game (members) — the physical placement ceiling. */
 	private static final int MAX_GE_SLOTS = 8;
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
@@ -1309,7 +1309,7 @@ public class AutoRecommendService
 	{
 		executeOrDefer(() ->
 		{
-			if (!hasAvailableGESlots() && !hasCollectedItemsToSell())
+			if (!canStartNewBuy() && !hasCollectedItemsToSell())
 			{
 				// Don't overwrite stale offer prompts with "Monitoring active offers"
 				if (!staleOffers.isEmpty())
@@ -1321,7 +1321,7 @@ public class AutoRecommendService
 					promptCollection();
 				}
 			}
-			else if (hasCollectedItemsToSell() || (!queue.isEmpty() && hasAvailableGESlots()))
+			else if (hasCollectedItemsToSell() || (!queue.isEmpty() && canStartNewBuy()))
 			{
 				// Re-evaluate priorities: sells first, then buys from refreshed queue
 				focusNextAvailableAction();
@@ -2591,7 +2591,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		if (!hasAvailableGESlots())
+		if (!canStartNewBuy())
 		{
 			log.debug("Auto-recommend: All GE slots full - waiting for collection");
 			promptCollection();
@@ -2622,7 +2622,7 @@ public class AutoRecommendService
 		}
 
 		// Never show a buy recommendation when all GE slots are occupied
-		if (!hasAvailableGESlots())
+		if (!canStartNewBuy())
 		{
 			promptCollection();
 			return;
@@ -2716,7 +2716,7 @@ public class AutoRecommendService
 		focusedCollectedItemId = -1;
 
 		// No sellable items can be properly displayed - check buy queue
-		if (hasAvailableGESlots() && queue.cursorWithinBounds())
+		if (canStartNewBuy() && queue.cursorWithinBounds())
 		{
 			focusCurrent();
 		}
@@ -3196,16 +3196,14 @@ public class AutoRecommendService
 		return queue.size();
 	}
 
-	private boolean hasAvailableGESlots()
+	/**
+	 * Whether Auto may start a NEW buy: a physical GE slot is free AND (premium, or a free
+	 * user is under their Flip Finder cap). Selling collected items is never gated by this —
+	 * only by physical room — so an at-cap free user can still finish their in-flight flips.
+	 */
+	private boolean canStartNewBuy()
 	{
-		if (!plugin.isPremium())
-		{
-			// Free tier caps Flip Finder-sourced flips, not total slots — manual listings
-			// don't consume the cap. Still require a physically free GE slot to place into.
-			return plugin.getFlipFinderActiveCount() < plugin.getFlipSlotLimit()
-				&& plugin.getFilledGESlotCount() < MAX_GE_SLOTS;
-		}
-		return plugin.getFilledGESlotCount() < plugin.getFlipSlotLimit();
+		return plugin.getFilledGESlotCount() < MAX_GE_SLOTS && !plugin.isFlipFinderLimitReached();
 	}
 
 	ResolverInput buildResolverInput(int excludeItemId)
@@ -3277,7 +3275,10 @@ public class AutoRecommendService
 		}
 
 		int filledSlots = plugin.getFilledGESlotCount();
-		int slotLimit = plugin.getFlipSlotLimit();
+		// Physical GE room (8 for everyone) gates buys AND sells. The free-tier item cap is a
+		// separate concern threaded as flipFinderCapReached, so it only suppresses new buys —
+		// never the listing of a collected sell (which would deadlock an at-cap free user).
+		int slotLimit = MAX_GE_SLOTS;
 		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
 		// Drop any cooling-down stale offers so a skipped reprice/cancel action is not
 		// re-surfaced by the resolver until its cooldown lifts (AC6).
@@ -3299,6 +3300,7 @@ public class AutoRecommendService
 			.nowMillis(now)
 			.blockBuyForPendingSell(blockBuyForPendingSell, pendingSellItemId)
 			.buysSuppressed(exitSuppressesBuys())
+			.flipFinderCapReached(plugin.isFlipFinderLimitReached())
 			.completedAwaitingCollection(completed)
 			.staleOffers(staleSnapshot)
 			.collectedAwaitingList(collected)
