@@ -417,6 +417,15 @@ public class FlipSmartPlugin extends Plugin
 		return flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null;
 	}
 
+	/**
+	 * Local OfferStore records for an item — the fallback source for the recorded
+	 * buy price when the backend-sourced active-flips snapshot is empty (#1089 D4).
+	 */
+	public java.util.List<com.flipsmart.domain.offer.OfferRecord> getOfferRecordsForItem(int itemId)
+	{
+		return offerStore.forItem(itemId);
+	}
+
 	public boolean isAutoRecommendActive()
 	{
 		return autoRecommendService != null && autoRecommendService.isActive();
@@ -1951,7 +1960,8 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (!offer.isBuy())
 		{
-			return BuyPriceLookup.findAverageBuyPrice(getCurrentActiveFlips(), offer.getItemId());
+			return BuyPriceLookup.findAverageBuyPriceWithFallback(
+				getCurrentActiveFlips(), offerStore.forItem(offer.getItemId()), offer.getItemId());
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{
