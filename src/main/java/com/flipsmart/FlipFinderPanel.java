@@ -20,9 +20,11 @@ import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
+import com.flipsmart.ui.panel.FavoritesSort;
 import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
+import com.flipsmart.ui.panel.Paginator;
 import com.flipsmart.session.SessionClock;
 import com.flipsmart.session.SessionStats;
 import com.flipsmart.session.SessionStatsView;
@@ -61,6 +63,8 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
+	private static final String CONFIG_KEY_FAVORITES_SORT = "favoritesSort";
+	private static final int FAVORITES_PAGE_SIZE = 10;
 	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
 	private static final String CONFIG_KEY_MIN_VOLUME = "minVolume";
 	private static final String CONFIG_KEY_ENABLE_FLIP_ASSISTANT = "enableFlipAssistant";
@@ -195,6 +199,15 @@ public class FlipFinderPanel extends PluginPanel
 	private CompletedSort completedSort = CompletedSort.RECENCY;
 	private final java.util.Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
 
+	// Favorites tab sort + pagination controls
+	private FavoritesSort favoritesSort = FavoritesSort.PROFIT;
+	private int favoritesPage = 0;
+	private final java.util.Map<FavoritesSort, JLabel> favoritesSortTabs = new java.util.EnumMap<>(FavoritesSort.class);
+	private JLabel favoritesPageLabel;
+	private JLabel favoritesPrevPageLabel;
+	private JLabel favoritesNextPageLabel;
+	private JPanel favoritesPaginationRow;
+
 	// Login / auth subsystem (UI construction, credential + device-auth flow)
 	private transient LoginPanel loginPanel;
 	private JPanel mainPanel;
@@ -253,6 +266,9 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Restore the persisted Completed-tab sort (defaults to Recency)
 		this.completedSort = loadCompletedSort();
+
+		// Restore the persisted Favorites-tab sort (defaults to Profit)
+		this.favoritesSort = loadFavoritesSort();
 
 		// Initialize flip style dropdown so it's available for both panels
 		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
@@ -675,7 +691,9 @@ public class FlipFinderPanel extends PluginPanel
 		// BorderLayout leaves room for a sort row (NORTH) and pagination (SOUTH) around the list
 		JPanel favoritesTabPanel = new JPanel(new BorderLayout());
 		favoritesTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesTabPanel.add(buildFavoritesSortRow(), BorderLayout.NORTH);
 		favoritesTabPanel.add(favoritesScrollPane, BorderLayout.CENTER);
+		favoritesTabPanel.add(buildFavoritesPaginationRow(), BorderLayout.SOUTH);
 		tabbedPane.addTab("Favorites", favoritesTabPanel);
 
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
@@ -2499,21 +2517,183 @@ public class FlipFinderPanel extends PluginPanel
 	private void populateFavorites()
 	{
 		favoritesListContainer.removeAll();
-		if (currentFavorites.isEmpty())
+		List<FavoriteItem> sorted = new ArrayList<>(currentFavorites);
+		sorted.sort(favoritesSort.comparator());
+		int pages = Paginator.pageCount(sorted.size(), FAVORITES_PAGE_SIZE);
+		if (favoritesPage > pages - 1)
+		{
+			favoritesPage = pages - 1;
+		}
+		if (favoritesPage < 0)
+		{
+			favoritesPage = 0;
+		}
+		List<FavoriteItem> visible = Paginator.page(sorted, favoritesPage, FAVORITES_PAGE_SIZE);
+		if (visible.isEmpty())
 		{
 			favoritesListContainer.add(CardWidgets.createStyledLabel("No favorites yet. Tap the star on any item.",
 				ColorScheme.LIGHT_GRAY_COLOR));
 		}
 		else
 		{
-			for (FavoriteItem item : currentFavorites)
+			for (FavoriteItem item : visible)
 			{
 				favoritesListContainer.add(createFavoriteCard(item));
 				favoritesListContainer.add(Box.createRigidArea(new Dimension(0, 4)));
 			}
 		}
+		updateFavoritesPaginationControls(pages);
 		favoritesListContainer.revalidate();
 		favoritesListContainer.repaint();
+	}
+
+	/**
+	 * Build the sort row shown above the Favorites list, mirroring the Completed-tab
+	 * sort idiom: tab-style labels, one per {@link FavoritesSort}.
+	 */
+	private JPanel buildFavoritesSortRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(0, 4, 0, 0));
+
+		JLabel sortByLabel = new JLabel("Sort:");
+		sortByLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+		sortByLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+		row.add(sortByLabel);
+
+		Font tabFont = new Font(FONT_ARIAL, Font.BOLD, 11);
+		EmptyBorder tabBorder = new EmptyBorder(2, 7, 2, 7);
+		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+		for (FavoritesSort sort : FavoritesSort.values())
+		{
+			JLabel tab = new JLabel(sort.getLabel());
+			tab.setFont(tabFont);
+			tab.setBorder(tabBorder);
+			tab.setCursor(handCursor);
+			tab.setOpaque(true);
+			tab.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					selectFavoritesSort(sort);
+				}
+			});
+			favoritesSortTabs.put(sort, tab);
+			row.add(tab);
+		}
+
+		applyFavoritesSortTabStyles();
+		return row;
+	}
+
+	/** Persist the chosen sort, reset to page 0, restyle the tabs, and re-render the list. */
+	private void selectFavoritesSort(FavoritesSort sort)
+	{
+		if (sort == favoritesSort)
+		{
+			return;
+		}
+		favoritesSort = sort;
+		favoritesPage = 0;
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FAVORITES_SORT, sort.name());
+		applyFavoritesSortTabStyles();
+		populateFavorites();
+	}
+
+	/** Highlight the active sort tab (orange) and dim the others. */
+	private void applyFavoritesSortTabStyles()
+	{
+		for (java.util.Map.Entry<FavoritesSort, JLabel> entry : favoritesSortTabs.entrySet())
+		{
+			boolean selected = entry.getKey() == favoritesSort;
+			JLabel tab = entry.getValue();
+			tab.setForeground(selected ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+			tab.setBackground(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARK_GRAY_COLOR);
+		}
+	}
+
+	/** Read the persisted Favorites-tab sort, defaulting to Profit. */
+	private FavoritesSort loadFavoritesSort()
+	{
+		String saved = configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_FAVORITES_SORT);
+		if (saved != null)
+		{
+			try
+			{
+				return FavoritesSort.valueOf(saved);
+			}
+			catch (IllegalArgumentException ignored)
+			{
+				// Unknown/legacy value — fall through to the default.
+			}
+		}
+		return FavoritesSort.PROFIT;
+	}
+
+	/** Build the prev/page-label/next pagination row shown below the Favorites list. */
+	private JPanel buildFavoritesPaginationRow()
+	{
+		favoritesPaginationRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
+		favoritesPaginationRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		Font navFont = new Font(FONT_ARIAL, Font.BOLD, 12);
+		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+
+		favoritesPrevPageLabel = new JLabel("<");
+		favoritesPrevPageLabel.setFont(navFont);
+		favoritesPrevPageLabel.setForeground(Color.WHITE);
+		favoritesPrevPageLabel.setCursor(handCursor);
+		favoritesPrevPageLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (favoritesPage > 0)
+				{
+					favoritesPage--;
+					populateFavorites();
+				}
+			}
+		});
+
+		favoritesPageLabel = new JLabel("Page 1/1");
+		favoritesPageLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		favoritesPageLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+
+		favoritesNextPageLabel = new JLabel(">");
+		favoritesNextPageLabel.setFont(navFont);
+		favoritesNextPageLabel.setForeground(Color.WHITE);
+		favoritesNextPageLabel.setCursor(handCursor);
+		favoritesNextPageLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				int pages = Paginator.pageCount(currentFavorites.size(), FAVORITES_PAGE_SIZE);
+				if (favoritesPage < pages - 1)
+				{
+					favoritesPage++;
+					populateFavorites();
+				}
+			}
+		});
+
+		favoritesPaginationRow.add(favoritesPrevPageLabel);
+		favoritesPaginationRow.add(favoritesPageLabel);
+		favoritesPaginationRow.add(favoritesNextPageLabel);
+		favoritesPaginationRow.setVisible(false);
+		return favoritesPaginationRow;
+	}
+
+	/** Update the "Page x/y" text, enable/disable prev/next, and hide the row for a single page. */
+	private void updateFavoritesPaginationControls(int pages)
+	{
+		favoritesPageLabel.setText("Page " + (favoritesPage + 1) + "/" + pages);
+		favoritesPrevPageLabel.setForeground(favoritesPage > 0 ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+		favoritesNextPageLabel.setForeground(favoritesPage < pages - 1 ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+		favoritesPaginationRow.setVisible(pages > 1);
 	}
 
 	private JPanel createFavoriteCard(FavoriteItem item)
