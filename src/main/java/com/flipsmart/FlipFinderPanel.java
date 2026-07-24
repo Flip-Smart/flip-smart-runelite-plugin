@@ -163,9 +163,8 @@ public class FlipFinderPanel extends PluginPanel
 
 	private static final int ACTIVE_FLIPS_PRICE_REFRESH_MS = 60_000;
 	static final int TAB_RECOMMENDED = 0;
-	static final int TAB_FAVORITES = 1;
-	static final int TAB_ACTIVE_FLIPS = 2;
-	static final int TAB_COMPLETED = 3;
+	static final int TAB_ACTIVE_FLIPS = 1;
+	static final int TAB_COMPLETED = 2;
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
@@ -208,6 +207,15 @@ public class FlipFinderPanel extends PluginPanel
 	private JLabel favoritesPrevPageLabel;
 	private JLabel favoritesNextPageLabel;
 	private JPanel favoritesPaginationRow;
+
+	// In-tab favorites view (toggled from within the Recommended tab, no separate tab)
+	private boolean favoritesViewActive;
+	private JButton favoritesToggleButton;
+	private JPanel favoritesControlsPanel;
+	private JPanel recommendedCardPanel;
+	private final CardLayout recommendedCardLayout = new CardLayout();
+	private static final String CARD_ALGORITHM = "algorithm";
+	private static final String CARD_FAVORITES = "favorites";
 
 	// Premium-gated "flip only from favorites" toggle
 	private boolean flipOnlyFavorites;
@@ -694,22 +702,44 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 		
-		tabbedPane.addTab("Recommended", recommendedScrollPane);
+		// The Recommended tab swaps between the algorithm list and the favorites list via a
+		// centered toggle button, so the favorites view no longer needs its own tab.
+		JPanel toggleBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 4));
+		toggleBar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		favoritesToggleButton = new JButton("★ Favorites");
+		favoritesToggleButton.setFocusable(false);
+		favoritesToggleButton.setFont(FONT_PLAIN_11);
+		favoritesToggleButton.setMargin(new Insets(2, 10, 2, 10));
+		favoritesToggleButton.setForeground(STAR_ON_COLOR);
+		favoritesToggleButton.setToolTipText("Toggle between algorithm recommendations and your favorites");
+		favoritesToggleButton.addActionListener(e -> toggleFavoritesView());
+		toggleBar.add(favoritesToggleButton);
 
-		// BorderLayout leaves room for a header (sort row + flip-only-favorites toggle, NORTH)
-		// and pagination (SOUTH) around the list
-		JPanel favoritesHeaderPanel = new JPanel();
-		favoritesHeaderPanel.setLayout(new BoxLayout(favoritesHeaderPanel, BoxLayout.Y_AXIS));
-		favoritesHeaderPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		favoritesHeaderPanel.add(buildFavoritesSortRow());
-		favoritesHeaderPanel.add(buildFlipOnlyFavoritesRow());
+		// Favorites controls (sort row + flip-only checkbox), shown only in favorites view
+		favoritesControlsPanel = new JPanel();
+		favoritesControlsPanel.setLayout(new BoxLayout(favoritesControlsPanel, BoxLayout.Y_AXIS));
+		favoritesControlsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesControlsPanel.add(buildFavoritesSortRow());
+		favoritesControlsPanel.add(buildFlipOnlyFavoritesRow());
+		favoritesControlsPanel.setVisible(false);
 
-		JPanel favoritesTabPanel = new JPanel(new BorderLayout());
-		favoritesTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		favoritesTabPanel.add(favoritesHeaderPanel, BorderLayout.NORTH);
-		favoritesTabPanel.add(favoritesScrollPane, BorderLayout.CENTER);
-		favoritesTabPanel.add(buildFavoritesPaginationRow(), BorderLayout.SOUTH);
-		tabbedPane.addTab("Favorites", favoritesTabPanel);
+		JPanel recommendedControls = new JPanel();
+		recommendedControls.setLayout(new BoxLayout(recommendedControls, BoxLayout.Y_AXIS));
+		recommendedControls.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		recommendedControls.add(toggleBar);
+		recommendedControls.add(favoritesControlsPanel);
+
+		recommendedCardPanel = new JPanel(recommendedCardLayout);
+		recommendedCardPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		recommendedCardPanel.add(recommendedScrollPane, CARD_ALGORITHM);
+		recommendedCardPanel.add(favoritesScrollPane, CARD_FAVORITES);
+
+		JPanel recommendedTabPanel = new JPanel(new BorderLayout());
+		recommendedTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		recommendedTabPanel.add(recommendedControls, BorderLayout.NORTH);
+		recommendedTabPanel.add(recommendedCardPanel, BorderLayout.CENTER);
+		recommendedTabPanel.add(buildFavoritesPaginationRow(), BorderLayout.SOUTH);
+		tabbedPane.addTab("Recommended", recommendedTabPanel);
 
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
 
@@ -767,11 +797,6 @@ public class FlipFinderPanel extends PluginPanel
 				FlipFinderResponse response = new FlipFinderResponse();
 				response.setRecommendations(currentRecommendations);
 				updateStatusLabel(response);
-			}
-			else if (selectedIndex == TAB_FAVORITES)
-			{
-				updateFavoritesStatusLabel();
-				refreshFavoritesTab();
 			}
 		});
 
@@ -2523,6 +2548,39 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedListContainer.repaint();
 	}
 
+	/** Flip between the algorithm recommendations and the in-tab favorites view. */
+	private void toggleFavoritesView()
+	{
+		favoritesViewActive = !favoritesViewActive;
+		applyFavoritesViewState();
+		if (favoritesViewActive)
+		{
+			updateFavoritesStatusLabel();
+			refreshFavoritesTab();
+		}
+	}
+
+	/** Show/hide the favorites list, controls, pagination and update the toggle button for the current view. */
+	private void applyFavoritesViewState()
+	{
+		favoritesControlsPanel.setVisible(favoritesViewActive);
+		if (favoritesViewActive)
+		{
+			favoritesToggleButton.setText("Algorithm");
+			favoritesToggleButton.setForeground(Color.LIGHT_GRAY);
+			recommendedCardLayout.show(recommendedCardPanel, CARD_FAVORITES);
+		}
+		else
+		{
+			favoritesToggleButton.setText("★ Favorites");
+			favoritesToggleButton.setForeground(STAR_ON_COLOR);
+			recommendedCardLayout.show(recommendedCardPanel, CARD_ALGORITHM);
+			favoritesPaginationRow.setVisible(false);
+		}
+		recommendedCardPanel.revalidate();
+		recommendedCardPanel.repaint();
+	}
+
 	/** Fetch the enriched favorites list and repaint the Favorites tab. */
 	void refreshFavoritesTab()
 	{
@@ -2560,8 +2618,10 @@ public class FlipFinderPanel extends PluginPanel
 		List<FavoriteItem> visible = Paginator.page(sorted, favoritesPage, FAVORITES_PAGE_SIZE);
 		if (visible.isEmpty())
 		{
-			favoritesListContainer.add(CardWidgets.createStyledLabel("No favorites yet. Tap the star on any item.",
-				ColorScheme.LIGHT_GRAY_COLOR));
+			favoritesListContainer.add(createEmptyStatePanel(
+				"No favorites yet",
+				"<html><center>Tap the star on any item<br>to add it here</center></html>",
+				60));
 		}
 		else
 		{
@@ -3270,7 +3330,7 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				rollbackFavoriteToggle(wasFavorite, itemId, starLabel);
 			}
-			else if (tabbedPane.getSelectedIndex() == TAB_FAVORITES)
+			else if (tabbedPane.getSelectedIndex() == TAB_RECOMMENDED && favoritesViewActive)
 			{
 				refreshFavoritesTab();
 			}
