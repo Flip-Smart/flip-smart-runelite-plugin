@@ -392,6 +392,26 @@ public class FlipSmartPlugin extends Plugin
 		return offerStore.liveOffers().size() < slotLimit;
 	}
 
+	/**
+	 * Count of in-flight flips started from a Flip Finder recommendation. Items listed
+	 * manually (outside Flip Finder) are excluded, so they do not consume the free cap.
+	 * Prunes resolved flips as a side effect (an item releases once it leaves the
+	 * active-flip set — live offer or collected inventory).
+	 */
+	public int getFlipFinderActiveCount()
+	{
+		return session.retainAndCountFlipFinderActive(getActiveFlipItemIds());
+	}
+
+	/**
+	 * Whether a free-tier user has reached their Flip Finder item cap. Premium is never
+	 * limited; for free users only Flip Finder-sourced flips count, not manual listings.
+	 */
+	public boolean isFlipFinderLimitReached()
+	{
+		return !isPremium() && getFlipFinderActiveCount() >= getFlipSlotLimit();
+	}
+
 	public List<ActiveFlip> getCurrentActiveFlips()
 	{
 		return flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null;
@@ -825,6 +845,12 @@ public class FlipSmartPlugin extends Plugin
 		boolean stepMatches = (isBuy && focusedFlip.isBuying()) || (!isBuy && focusedFlip.isSelling());
 		if (stepMatches)
 		{
+			if (isBuy)
+			{
+				// A buy was submitted for a focused Flip Finder item (manual focus or Auto) —
+				// mark it so it counts toward the free-tier Flip Finder cap for its whole flip.
+				session.markFlipFinderSourced(itemId);
+			}
 			log.debug("Clearing Flip Assist focus - order submitted for {} ({})",
 				focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");
 			flipAssistOverlay.clearFocus();

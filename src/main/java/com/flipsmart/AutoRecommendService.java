@@ -92,6 +92,9 @@ public class AutoRecommendService
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
+	private static final String MSG_FREE_LIMIT_REACHED = "You're at your item limit for free tier. Monitoring your trades";
+	/** Total Grand Exchange slots available in-game (members). */
+	private static final int MAX_GE_SLOTS = 8;
 	private static final String MSG_SELL_FORMAT = "Auto: Sell %s @ %s";
 	private static final String MSG_BUY_FORMAT = "Auto: Buy %s @ %s";
 
@@ -3020,10 +3023,10 @@ public class AutoRecommendService
 		else
 		{
 			clearTransientHighlights();
-			if (!plugin.isPremium() && !hasAvailableGESlots())
+			if (plugin.isFlipFinderLimitReached())
 			{
 				updateStatus("Auto: Waiting for flips");
-				invokeOverlayMessageCallback(MSG_WAITING_FOR_FLIPS + "\nUpgrade to Premium for more slots");
+				invokeOverlayMessageCallback(MSG_FREE_LIMIT_REACHED);
 			}
 			else
 			{
@@ -3195,6 +3198,13 @@ public class AutoRecommendService
 
 	private boolean hasAvailableGESlots()
 	{
+		if (!plugin.isPremium())
+		{
+			// Free tier caps Flip Finder-sourced flips, not total slots — manual listings
+			// don't consume the cap. Still require a physically free GE slot to place into.
+			return plugin.getFlipFinderActiveCount() < plugin.getFlipSlotLimit()
+				&& plugin.getFilledGESlotCount() < MAX_GE_SLOTS;
+		}
 		return plugin.getFilledGESlotCount() < plugin.getFlipSlotLimit();
 	}
 

@@ -44,6 +44,10 @@ public class PlayerSession
 	private final Map<Integer, CollectOrigin> collectOrigins = new ConcurrentHashMap<>();
 	private final Map<Integer, Long> collectedAtMillis = new ConcurrentHashMap<>();
 
+	// Items whose flip was started from a Flip Finder recommendation (focused buy).
+	// Only these count toward the free-tier Flip Finder cap; manual listings never do.
+	private final Set<Integer> flipFinderSourcedItems = ConcurrentHashMap.newKeySet();
+
 	// =====================
 	// GE State
 	// =====================
@@ -175,6 +179,29 @@ public class PlayerSession
 		collectedQuantities.clear();
 		collectOrigins.clear();
 		collectedAtMillis.clear();
+	}
+
+	/** Mark an item as sourced from a Flip Finder recommendation (a focused buy was placed). */
+	public void markFlipFinderSourced(int itemId)
+	{
+		flipFinderSourcedItems.add(itemId);
+	}
+
+	public Set<Integer> getFlipFinderSourcedItems()
+	{
+		return Collections.unmodifiableSet(flipFinderSourcedItems);
+	}
+
+	/**
+	 * Drop any sourced item that is no longer an active flip, and return how many
+	 * remain — the count of in-flight Flip Finder flips. {@code activeFlipItemIds}
+	 * is the caller's live-offer ∪ collected-item set, so an item is retained for
+	 * its whole buy→sell lifecycle and released once the flip resolves.
+	 */
+	public int retainAndCountFlipFinderActive(Set<Integer> activeFlipItemIds)
+	{
+		flipFinderSourcedItems.retainAll(activeFlipItemIds);
+		return flipFinderSourcedItems.size();
 	}
 
 	public void restoreCollectedItems(Set<Integer> items)
@@ -336,6 +363,7 @@ public class PlayerSession
 		collectedAtMillis.clear();
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
+		flipFinderSourcedItems.clear();
 	}
 
 	// =====================
