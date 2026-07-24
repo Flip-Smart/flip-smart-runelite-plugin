@@ -80,16 +80,16 @@ public class RoundTripLedgerTest
         int afterLiquidation = ledger.peekRoundTripId(RSN, ITEM);
         assertNotEquals("a clean liquidation opens the next cycle", sell, afterLiquidation);
 
-        // A phantom re-delivery of the exact closing sell (same slot, same cumulative) reaches
-        // the ledger before client-side suppression catches it. It must NOT drive held negative
-        // and advance the cycle a second time.
+        // A phantom re-delivery of the exact closing sell (same slot + direction + cumulative) reaches
+        // the ledger before client-side suppression catches it. It must NOT drive held negative and
+        // advance the cycle a second time.
         int phantom = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
         assertEquals("the duplicate is ignored and returns the still-open cycle id",
             afterLiquidation, phantom);
         assertEquals("the duplicate did not advance the cycle",
             afterLiquidation, (int) ledger.peekRoundTripId(RSN, ITEM));
 
-        // The next genuine buy lands in the un-poisoned cycle the phantom tried to skip past.
+        // The next genuine buy opens the un-poisoned cycle the phantom tried to skip past.
         int nextBuy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
         assertEquals("the round trip after a phantom is the one the phantom tried to skip",
             afterLiquidation, nextBuy);
@@ -120,8 +120,9 @@ public class RoundTripLedgerTest
         ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
         int firstSell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
 
-        // A genuine new position reusing the same slot and quantity is preceded by a real buy,
-        // so it must build held again — the guard only ever suppresses an immediate re-delivery.
+        // A genuine new position reusing the same slot and quantity builds held again: the close
+        // cleared the absorbed baselines, so the new cycle's fills are absorbed from zero — suppression
+        // only ever catches a re-delivery of an already-absorbed cumulative within the open cycle.
         int secondBuy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
         assertNotEquals("the new cycle is distinct from the closed one", firstSell, secondBuy);
 
@@ -131,6 +132,31 @@ public class RoundTripLedgerTest
 
         int third = ledger.peekRoundTripId(RSN, ITEM);
         assertNotEquals("the genuine repeat still closes its cycle normally", secondSell, third);
+    }
+
+    @Test
+    public void relogDoesNotDoubleCountAnOpenBuy()
+    {
+        // Session 1: a buy fills to cumulative 1324 on slot 4 — held becomes 1324.
+        ledger.recordFill(RSN, ITEM, 4, true, 1324, 1324);
+
+        // Persist + restart (relog / rebuild): held, cycle, and per-slot absorbed cumulative restore.
+        Map<Integer, RoundTripLedger.Entry> exported = ledger.export(RSN);
+        RoundTripLedger restarted = new RoundTripLedger();
+        restarted.importState(RSN, exported);
+
+        // Login reconciliation re-feeds the still-open offer's full current cumulative, because the
+        // rebuilt OfferStore has no baseline yet and the GE signal looks like a fresh 1324 fill. A
+        // relog mints a fresh offer_id for the slot, so the guard must match on (slot, cumulative)
+        // alone — never offer_id — or this is added on top of the restored held (the double-count).
+        restarted.recordFill(RSN, ITEM, 4, true, 1324, 1324);
+
+        // Proof the true held is still 1324, not 2648: selling exactly 1324 must close the cycle.
+        int cycleBefore = restarted.peekRoundTripId(RSN, ITEM);
+        restarted.recordFill(RSN, ITEM, 4, false, 1324, 1324);
+        int cycleAfter = restarted.peekRoundTripId(RSN, ITEM);
+        assertNotEquals("selling the true held must close the round trip — no relog double-count",
+            cycleBefore, cycleAfter);
     }
 
     @Test
