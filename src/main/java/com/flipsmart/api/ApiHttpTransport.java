@@ -923,6 +923,11 @@ public class ApiHttpTransport
 	 */
 	void applyEntitlements(EntitlementsResponse entitlements)
 	{
+		if (entitlements == null)
+		{
+			return;
+		}
+
 		boolean rsnBlocked = entitlements.isRsnBlocked();
 		synchronized (authLock)
 		{
