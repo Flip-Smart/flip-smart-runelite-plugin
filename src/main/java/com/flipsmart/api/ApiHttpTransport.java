@@ -907,7 +907,7 @@ public class ApiHttpTransport
 			}
 			catch (Exception e)
 			{
-				log.error("Error parsing entitlements response: {}", e.getMessage());
+				log.error("Error parsing entitlements response", e);
 				return isPremium();
 			}
 		}, error -> log.warn("Failed to fetch entitlements: {}", error), true);
