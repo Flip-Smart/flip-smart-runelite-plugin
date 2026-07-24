@@ -11,12 +11,12 @@ public enum FavoritesSort
 		f -> f.getItemName() == null ? "" : f.getItemName(), String.CASE_INSENSITIVE_ORDER));
 
 	private final String label;
-	private final Comparator<FavoriteItem> comparator;
+	private final Comparator<FavoriteItem> itemComparator;
 
-	FavoritesSort(String label, Comparator<FavoriteItem> comparator)
+	FavoritesSort(String label, Comparator<FavoriteItem> itemComparator)
 	{
 		this.label = label;
-		this.comparator = comparator;
+		this.itemComparator = itemComparator;
 	}
 
 	public String getLabel()
@@ -26,6 +26,6 @@ public enum FavoritesSort
 
 	public Comparator<FavoriteItem> comparator()
 	{
-		return comparator;
+		return itemComparator;
 	}
 }
