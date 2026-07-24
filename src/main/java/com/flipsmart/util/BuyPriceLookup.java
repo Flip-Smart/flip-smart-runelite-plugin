@@ -82,6 +82,6 @@ public final class BuyPriceLookup
 				filled += r.getFilledQuantity();
 			}
 		}
-		return filled > 0 ? (int) (spent / filled) : null;
+		return filled > 0 ? (int) Math.round(spent / (double) filled) : null;
 	}
 }
