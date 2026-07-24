@@ -770,6 +770,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			else if (selectedIndex == TAB_FAVORITES)
 			{
+				updateFavoritesStatusLabel();
 				refreshFavoritesTab();
 			}
 		});
@@ -2571,6 +2572,14 @@ public class FlipFinderPanel extends PluginPanel
 		updateFavoritesPaginationControls(pages);
 		favoritesListContainer.revalidate();
 		favoritesListContainer.repaint();
+		updateFavoritesStatusLabel();
+	}
+
+	/** Update the footer status label with the current favorites count. */
+	private void updateFavoritesStatusLabel()
+	{
+		int count = currentFavorites.size();
+		statusLabel.setText(count == 1 ? "1 favorite" : count + " favorites");
 	}
 
 	/**
