@@ -1,6 +1,8 @@
 package com.flipsmart;
 
 import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.domain.flip.ActiveFlip;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.runelite.client.game.ItemManager;
@@ -118,5 +120,64 @@ public class SellFocusRetryTest
 		when(autoRecommendService.isActive()).thenReturn(true);
 		tracker.retryPendingSellFocusTick();
 		verify(autoRecommendService, times(1)).overrideFocusForSell(anyInt(), anyString());
+	}
+
+	@Test
+	public void manualMode_retriesBackendLookupAcrossTicks_thenStops()
+	{
+		// #1089 D5: with auto-recommend off, opening a sell screen must still retry
+		// the backend active-flip lookup across ticks. Before, manual mode issued a
+		// single one-shot lookup that silently failed when the backend snapshot
+		// lagged the just-opened screen, so the sell target never filled.
+		when(autoRecommendService.isActive()).thenReturn(false);
+
+		tracker.autoFocusOnActiveFlip(ITEM);   // manual path: 1 lookup + arms retry
+		verify(apiClient, times(1)).getActiveFlipsAsync(anyString());
+
+		for (int i = 0; i < RETRY_BUDGET_TICKS; i++)
+		{
+			tracker.retryPendingSellFocusTick();
+		}
+		// 1 (entry) + 6 (ticks) lookups, then the budget clears the pending retry.
+		verify(apiClient, times(1 + RETRY_BUDGET_TICKS)).getActiveFlipsAsync(anyString());
+
+		// Budget exhausted → further ticks are no-ops.
+		tracker.retryPendingSellFocusTick();
+		verify(apiClient, times(1 + RETRY_BUDGET_TICKS)).getActiveFlipsAsync(anyString());
+
+		// Manual mode never touches the auto-recommend local resolver.
+		verify(autoRecommendService, never()).overrideFocusForSell(anyInt(), anyString());
+	}
+
+	@Test
+	public void staleResponseForPreviousItem_doesNotClobberNewlyArmedItem()
+	{
+		// Manual mode re-issues the backend lookup every tick, so an old item's
+		// in-flight request can resolve after the player has already opened a
+		// sell screen for a different item. That stale response must not clear
+		// the newly-armed session's pending retry.
+		when(autoRecommendService.isActive()).thenReturn(false);
+		int otherItem = 995;
+
+		CompletableFuture<ActiveFlipsResponse> firstLookup = new CompletableFuture<>();
+		when(apiClient.getActiveFlipsAsync(anyString())).thenReturn(firstLookup);
+		tracker.autoFocusOnActiveFlip(ITEM);   // arms + fires lookup for ITEM
+
+		CompletableFuture<ActiveFlipsResponse> secondLookup = new CompletableFuture<>();
+		when(apiClient.getActiveFlipsAsync(anyString())).thenReturn(secondLookup);
+		tracker.autoFocusOnActiveFlip(otherItem);   // re-arms + fires lookup for otherItem
+
+		// The stale ITEM lookup resolves after otherItem is already pending.
+		ActiveFlip staleFlip = new ActiveFlip();
+		staleFlip.setItemId(ITEM);
+		staleFlip.setAverageBuyPrice(100);
+		staleFlip.setTotalQuantity(10);
+		ActiveFlipsResponse staleResponse = new ActiveFlipsResponse();
+		staleResponse.setActiveFlips(Collections.singletonList(staleFlip));
+		firstLookup.complete(staleResponse);
+
+		// otherItem's session must still be pending: a retry tick re-issues its lookup.
+		tracker.retryPendingSellFocusTick();
+		verify(apiClient, times(3)).getActiveFlipsAsync(anyString());
 	}
 }

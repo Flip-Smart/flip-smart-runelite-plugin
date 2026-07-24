@@ -140,4 +140,45 @@ public class OfferReconcilerTest
         assertEquals(1, plan.offlineCollected.size());
         assertTrue(plan.staleHistory.isEmpty());
     }
+
+    @Test
+    public void liveSlotMatchesDespiteTotalQuantityAndPriceDrift_reattachesNotMints()
+    {
+        // #1089 D1: the buy order's total_quantity drifted (7500 -> 11584) and its
+        // price nudged between persistence and the live read. The old exact-match
+        // on total+price then failed to reattach, so a fresh baseline-0 record
+        // re-posted the whole cumulative on top of fills already recorded — a ~40%
+        // over-count seen across 1,061 prod users. Identity is the live slot's
+        // (slot, item, direction), not its mutable total/price.
+        OfferRecord persisted = OfferRecord.newOffer(7L, 0, 536, "Dragon bones", true, 7500, 3284, NOW - 1000)
+            .withFill(3027, 3027L * 3284, OfferState.PARTIAL_FILL, NOW - 500);
+        OfferSignal drifted = new OfferSignal(
+            0, GrandExchangeOfferState.BUYING, 536, "Dragon bones", 11584, 3290, 4279, 4279L * 3284);
+
+        OfferReconciler.Plan plan = OfferReconciler.reconcile(
+            Collections.singletonList(persisted), Collections.singletonList(drifted), NOW);
+
+        assertEquals("must reattach despite total/price drift", 1, plan.reattached.size());
+        assertEquals(7L, plan.reattached.get(0).getOfferId());
+        assertEquals("recorded baseline preserved so the next fill logs only the delta",
+            3027, plan.reattached.get(0).getFilledQuantity());
+        assertTrue("no fresh baseline-0 record minted", plan.minted.isEmpty());
+    }
+
+    @Test
+    public void terminalRecordSameSlotAndItem_isNotReattached_mintsFresh()
+    {
+        // Loosening the match must not grab a COLLECTED leftover occupying the same
+        // slot+item: that is a reused slot holding a genuinely new offer, so it must
+        // mint fresh rather than resurrect finished history.
+        OfferRecord collected = OfferRecord.newOffer(9L, 0, 536, "Dragon bones", true, 7500, 3284, NOW - 3000)
+            .withFill(7500, 7500L * 3284, OfferState.FILLED, NOW - 2500)
+            .withState(OfferState.COLLECTED, NOW - 2000);
+
+        OfferReconciler.Plan plan = OfferReconciler.reconcile(
+            Collections.singletonList(collected), Collections.singletonList(live(0, 536, 100, 7500)), NOW);
+
+        assertTrue("terminal record must not reattach to a live slot", plan.reattached.isEmpty());
+        assertEquals(1, plan.minted.size());
+    }
 }
