@@ -64,6 +64,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
 	private static final String CONFIG_KEY_FAVORITES_SORT = "favoritesSort";
+	private static final String CONFIG_KEY_FLIP_ONLY_FAVORITES = "flipOnlyFavorites";
 	private static final int FAVORITES_PAGE_SIZE = 10;
 	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
 	private static final String CONFIG_KEY_MIN_VOLUME = "minVolume";
@@ -208,6 +209,10 @@ public class FlipFinderPanel extends PluginPanel
 	private JLabel favoritesNextPageLabel;
 	private JPanel favoritesPaginationRow;
 
+	// Premium-gated "flip only from favorites" toggle
+	private boolean flipOnlyFavorites;
+	private JCheckBox flipOnlyFavoritesCheck;
+
 	// Login / auth subsystem (UI construction, credential + device-auth flow)
 	private transient LoginPanel loginPanel;
 	private JPanel mainPanel;
@@ -269,6 +274,9 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Restore the persisted Favorites-tab sort (defaults to Profit)
 		this.favoritesSort = loadFavoritesSort();
+
+		// Restore the persisted "flip only from favorites" toggle
+		this.flipOnlyFavorites = loadFlipOnlyFavorites();
 
 		// Initialize flip style dropdown so it's available for both panels
 		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
@@ -688,10 +696,17 @@ public class FlipFinderPanel extends PluginPanel
 		
 		tabbedPane.addTab("Recommended", recommendedScrollPane);
 
-		// BorderLayout leaves room for a sort row (NORTH) and pagination (SOUTH) around the list
+		// BorderLayout leaves room for a header (sort row + flip-only-favorites toggle, NORTH)
+		// and pagination (SOUTH) around the list
+		JPanel favoritesHeaderPanel = new JPanel();
+		favoritesHeaderPanel.setLayout(new BoxLayout(favoritesHeaderPanel, BoxLayout.Y_AXIS));
+		favoritesHeaderPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesHeaderPanel.add(buildFavoritesSortRow());
+		favoritesHeaderPanel.add(buildFlipOnlyFavoritesRow());
+
 		JPanel favoritesTabPanel = new JPanel(new BorderLayout());
 		favoritesTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		favoritesTabPanel.add(buildFavoritesSortRow(), BorderLayout.NORTH);
+		favoritesTabPanel.add(favoritesHeaderPanel, BorderLayout.NORTH);
 		favoritesTabPanel.add(favoritesScrollPane, BorderLayout.CENTER);
 		favoritesTabPanel.add(buildFavoritesPaginationRow(), BorderLayout.SOUTH);
 		tabbedPane.addTab("Favorites", favoritesTabPanel);
@@ -1207,6 +1222,15 @@ public class FlipFinderPanel extends PluginPanel
 			subscribeLabel.setText(SUBSCRIBE_MESSAGE);
 			subscribeLabel.setVisible(!apiClient.isPremium());
 		}
+
+		// A lapsed subscription should drop the checkbox back to unselected (and persist that)
+		// rather than leaving it checked while the resolved flag silently stops applying.
+		if (flipOnlyFavoritesCheck != null && flipOnlyFavoritesCheck.isSelected() && !apiClient.isPremium())
+		{
+			flipOnlyFavoritesCheck.setSelected(false);
+			flipOnlyFavorites = false;
+			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_ONLY_FAVORITES, flipOnlyFavorites);
+		}
 	}
 
 	/**
@@ -1278,8 +1302,9 @@ public class FlipFinderPanel extends PluginPanel
 		Integer filledSlots = getFilledSlots();
 
 		final boolean applyRecs = applyRecommendations;
+		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
 		apiClient.getPluginSyncAsync(cashStack, getInventoryGp(), flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, plugin.isMembersWorld(), false).thenAccept(sync ->
+			filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(sync ->
 		{
 			if (sync == null)
 			{
@@ -1553,7 +1578,8 @@ public class FlipFinderPanel extends PluginPanel
 		Integer filledSlots = getFilledSlots();
 
 		// Use unified /flip-finder endpoint with all parameters
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld(), false).thenAccept(response ->
+		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(response ->
 		{
 			handleRecommendationsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
@@ -2630,6 +2656,60 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		}
 		return FavoritesSort.PROFIT;
+	}
+
+	/**
+	 * Whether the recommendation feed should be restricted to favorited items. Free tier
+	 * never sends {@code favorites_only=true} to the API regardless of the local toggle state.
+	 */
+	public static boolean resolveFavoritesOnly(boolean toggleOn, boolean premium)
+	{
+		return toggleOn && premium;
+	}
+
+	/** Read the persisted "flip only from favorites" toggle, defaulting to off. */
+	private boolean loadFlipOnlyFavorites()
+	{
+		return Boolean.parseBoolean(configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_ONLY_FAVORITES));
+	}
+
+	/** Build the row holding the premium-gated "Flip only from favorites" checkbox. */
+	private JPanel buildFlipOnlyFavoritesRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(0, 4, 4, 0));
+		row.add(buildFlipOnlyFavoritesCheck());
+		return row;
+	}
+
+	/** Build the "Flip only from favorites" checkbox, enforcing the premium gate (AC11). */
+	private JCheckBox buildFlipOnlyFavoritesCheck()
+	{
+		flipOnlyFavoritesCheck = new JCheckBox("Flip only from favorites");
+		flipOnlyFavoritesCheck.setSelected(flipOnlyFavorites);
+		flipOnlyFavoritesCheck.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		flipOnlyFavoritesCheck.setForeground(Color.LIGHT_GRAY);
+		flipOnlyFavoritesCheck.addActionListener(e ->
+		{
+			if (flipOnlyFavoritesCheck.isSelected() && !plugin.isPremium())
+			{
+				flipOnlyFavoritesCheck.setSelected(false);
+				showPremiumRequiredForFavoritesOnly();
+				return;
+			}
+			flipOnlyFavorites = flipOnlyFavoritesCheck.isSelected();
+			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_ONLY_FAVORITES, flipOnlyFavorites);
+			refresh(false);
+		});
+		return flipOnlyFavoritesCheck;
+	}
+
+	/** Short transient premium nudge for a blocked flip-only-favorites toggle attempt. */
+	private void showPremiumRequiredForFavoritesOnly()
+	{
+		subscribeLabel.setText("Flip only from favorites is a Premium feature.");
+		subscribeLabel.setVisible(true);
 	}
 
 	/** Build the prev/page-label/next pagination row shown below the Favorites list. */
