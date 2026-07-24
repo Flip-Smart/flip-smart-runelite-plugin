@@ -1120,6 +1120,9 @@ public class FlipSmartPlugin extends Plugin
 		// Must be after syncRSN() so we have the correct RSN for the config key
 		offlineSyncService.restoreCollectedItems();
 
+		// Restore the Flip Finder-sourced set so the free-tier cap survives a restart.
+		offlineSyncService.restoreFlipFinderSourcedItems();
+
 		// Preload persisted offers into the session BEFORE login burst fires.
 		// This ensures createWithPreservedTimestamps() finds the existing offer
 		// with its original timestamp, giving us accurate timers from the start.

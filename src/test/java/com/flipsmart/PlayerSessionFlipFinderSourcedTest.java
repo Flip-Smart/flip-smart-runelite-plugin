@@ -79,4 +79,14 @@ public class PlayerSessionFlipFinderSourcedTest
 		session.clear();
 		assertEquals(0, session.retainAndCountFlipFinderActive(active(100)));
 	}
+
+	@Test
+	public void restoreReplacesSourcedItems()
+	{
+		PlayerSession session = new PlayerSession();
+		session.markFlipFinderSourced(999); // stale in-memory value
+		session.restoreFlipFinderSourced(active(100, 200));
+		assertFalse(session.getFlipFinderSourcedItems().contains(999));
+		assertEquals(2, session.retainAndCountFlipFinderActive(active(100, 200)));
+	}
 }

@@ -192,6 +192,16 @@ public class PlayerSession
 		return Collections.unmodifiableSet(flipFinderSourcedItems);
 	}
 
+	/** Restore the Flip Finder-sourced set from persistence (survives a client restart). */
+	public void restoreFlipFinderSourced(Set<Integer> items)
+	{
+		flipFinderSourcedItems.clear();
+		if (items != null)
+		{
+			flipFinderSourcedItems.addAll(items);
+		}
+	}
+
 	/**
 	 * Drop any sourced item that is no longer an active flip, and return how many
 	 * remain — the count of in-flight Flip Finder flips. {@code activeFlipItemIds}

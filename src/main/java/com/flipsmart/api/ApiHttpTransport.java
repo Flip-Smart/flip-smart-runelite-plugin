@@ -40,7 +40,6 @@ public class ApiHttpTransport
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	private static final String ACCESS_TOKEN_KEY = "access_token";
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
-	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	private static final String HEADER_AUTHORIZATION = "Authorization";
@@ -540,10 +539,11 @@ public class ApiHttpTransport
 				refreshToken = newRefreshToken;
 			}
 
-			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
-			{
-				setPremium(tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean());
-			}
+			// Premium is intentionally NOT sourced from the token here. The token's is_premium
+			// is USER-level (true if the user holds premium on ANY rsn or web), but plugin
+			// gating — slots, focus, Auto, the free cap — is PER-RSN. Sourcing it from the token
+			// wrongly treats a user with web/other-rsn premium as premium on a free rsn. Premium
+			// is sourced solely from the flip-finder payload (subscription.tier), which is per-rsn.
 		}
 
 		// Notify outside of lock to avoid potential deadlocks
