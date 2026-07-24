@@ -82,11 +82,18 @@ public final class OfferReconciler
 
     private static boolean matches(OfferRecord p, OfferSignal live)
     {
-        return p.getSlot() != null
+        // Identity is the live slot's (slot, item, direction) — NOT its mutable
+        // totalQuantity/price. The order's total and price legitimately drift
+        // (partial buys re-read a different total, a relist changes price), and
+        // requiring them to be equal made a still-live record fail to reattach:
+        // a fresh baseline-0 record then re-posted the whole cumulative on top of
+        // fills already recorded, a ~40% buy over-count (#1089 D1). Terminal
+        // records are finished history — a live slot showing their item is a
+        // reused slot holding a new offer, so they never reattach.
+        return !p.getState().isTerminal()
+            && p.getSlot() != null
             && p.getSlot() == live.slot
             && p.getItemId() == live.itemId
-            && p.isBuy() == live.isBuy()
-            && p.getTotalQuantity() == live.totalQuantity
-            && p.getPrice() == live.price;
+            && p.isBuy() == live.isBuy();
     }
 }
