@@ -1,6 +1,8 @@
 package com.flipsmart;
 
 import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.domain.flip.ActiveFlip;
+import java.util.Collections;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import net.runelite.client.game.ItemManager;
@@ -145,5 +147,37 @@ public class SellFocusRetryTest
 
 		// Manual mode never touches the auto-recommend local resolver.
 		verify(autoRecommendService, never()).overrideFocusForSell(anyInt(), anyString());
+	}
+
+	@Test
+	public void staleResponseForPreviousItem_doesNotClobberNewlyArmedItem()
+	{
+		// Manual mode re-issues the backend lookup every tick, so an old item's
+		// in-flight request can resolve after the player has already opened a
+		// sell screen for a different item. That stale response must not clear
+		// the newly-armed session's pending retry.
+		when(autoRecommendService.isActive()).thenReturn(false);
+		int otherItem = 995;
+
+		CompletableFuture<ActiveFlipsResponse> firstLookup = new CompletableFuture<>();
+		when(apiClient.getActiveFlipsAsync(anyString())).thenReturn(firstLookup);
+		tracker.autoFocusOnActiveFlip(ITEM);   // arms + fires lookup for ITEM
+
+		CompletableFuture<ActiveFlipsResponse> secondLookup = new CompletableFuture<>();
+		when(apiClient.getActiveFlipsAsync(anyString())).thenReturn(secondLookup);
+		tracker.autoFocusOnActiveFlip(otherItem);   // re-arms + fires lookup for otherItem
+
+		// The stale ITEM lookup resolves after otherItem is already pending.
+		ActiveFlip staleFlip = new ActiveFlip();
+		staleFlip.setItemId(ITEM);
+		staleFlip.setAverageBuyPrice(100);
+		staleFlip.setTotalQuantity(10);
+		ActiveFlipsResponse staleResponse = new ActiveFlipsResponse();
+		staleResponse.setActiveFlips(Collections.singletonList(staleFlip));
+		firstLookup.complete(staleResponse);
+
+		// otherItem's session must still be pending: a retry tick re-issues its lookup.
+		tracker.retryPendingSellFocusTick();
+		verify(apiClient, times(3)).getActiveFlipsAsync(anyString());
 	}
 }

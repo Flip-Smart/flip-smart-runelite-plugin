@@ -80,7 +80,7 @@ public class GrandExchangeTracker
 	// Retry mode is fixed when armed, not read from the live auto state.
 	// A manual-armed retry re-issues the backend lookup each tick; an auto-armed
 	// one re-runs the local resolver and drops if auto-recommend is turned off.
-	private boolean pendingSellFocusManual;
+	private volatile boolean pendingSellFocusManual;
 
 	/**
 	 * Bundles GE offer data passed from the plugin event handler.
@@ -902,6 +902,17 @@ public class GrandExchangeTracker
 	{
 		if (response == null || response.getActiveFlips() == null)
 		{
+			return;
+		}
+
+		// A newer sell-focus session may have armed for a different item while
+		// this lookup was in flight (manual mode re-issues every tick). A stale
+		// response for the old item must not override or clear that session.
+		int currentPendingItemId = pendingSellFocusItemId;
+		if (currentPendingItemId >= 0 && currentPendingItemId != itemId)
+		{
+			log.debug("Dropping stale active-flip response for {} - pending item is now {}",
+				itemId, currentPendingItemId);
 			return;
 		}
 
