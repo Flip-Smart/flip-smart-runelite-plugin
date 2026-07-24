@@ -40,7 +40,6 @@ public class ApiHttpTransport
 	private static final String PRODUCTION_API_URL = "https://api.flipsm.art";
 	private static final String ACCESS_TOKEN_KEY = "access_token";
 	private static final String REFRESH_TOKEN_KEY = "refresh_token";
-	private static final String JSON_KEY_IS_PREMIUM = "is_premium";
 	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	private static final String HEADER_AUTHORIZATION = "Authorization";
@@ -540,10 +539,11 @@ public class ApiHttpTransport
 				refreshToken = newRefreshToken;
 			}
 
-			if (tokenResponse.has(JSON_KEY_IS_PREMIUM))
-			{
-				setPremium(tokenResponse.get(JSON_KEY_IS_PREMIUM).getAsBoolean());
-			}
+			// Premium is intentionally NOT sourced from the token here. The token's is_premium
+			// is USER-level (true if the user holds premium on ANY rsn or web), but plugin
+			// gating — slots, focus, Auto, the free cap — is PER-RSN. Sourcing it from the token
+			// wrongly treats a user with web/other-rsn premium as premium on a free rsn. Premium
+			// is sourced solely from the flip-finder payload (subscription.tier), which is per-rsn.
 		}
 
 		// Notify outside of lock to avoid potential deadlocks
@@ -902,25 +902,38 @@ public class ApiHttpTransport
 		return executeAsync(request, responseBody -> {
 			try
 			{
-				EntitlementsResponse entitlements = EntitlementsResponse.fromJson(gson, responseBody);
-				boolean premium = entitlements.isPremium();
-				boolean rsnBlocked = entitlements.isRsnBlocked();
-
-				synchronized (authLock)
-				{
-					isPremium = premium;
-					isRsnBlocked = rsnBlocked;
-				}
-
-				log.debug("Fetched entitlements - premium: {}, rsnBlocked: {}", premium, rsnBlocked);
-				return premium;
+				applyEntitlements(EntitlementsResponse.fromJson(gson, responseBody));
+				return isPremium();
 			}
 			catch (Exception e)
 			{
-				log.error("Error parsing entitlements response: {}", e.getMessage());
-				return false;
+				log.error("Error parsing entitlements response", e);
+				return isPremium();
 			}
 		}, error -> log.warn("Failed to fetch entitlements: {}", error), true);
+	}
+
+	/**
+	 * Apply an entitlements snapshot to local state. Only RSN-blocked status is
+	 * taken from here — premium is sourced exclusively from the flip-finder
+	 * payload ({@code subscription.tier}). The snapshot carries premium nested
+	 * under {@code rsn_entitlement}, and re-sourcing it here historically
+	 * downgraded premium players to the free slot tier (see
+	 * {@code EntitlementsResponseTest}).
+	 */
+	void applyEntitlements(EntitlementsResponse entitlements)
+	{
+		if (entitlements == null)
+		{
+			return;
+		}
+
+		boolean rsnBlocked = entitlements.isRsnBlocked();
+		synchronized (authLock)
+		{
+			isRsnBlocked = rsnBlocked;
+		}
+		log.debug("Fetched entitlements - rsnBlocked: {}", rsnBlocked);
 	}
 
 	// ============================================================================

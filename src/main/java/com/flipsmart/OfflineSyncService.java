@@ -41,6 +41,7 @@ public class OfflineSyncService
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String PERSISTED_OFFERS_FALLBACK_KEY = "persistedOffers_lastSession";
 	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
+	private static final String FLIP_FINDER_SOURCED_KEY_PREFIX = "flipFinderSourced_";
 	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
 	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
 	private static final String ROUND_TRIP_LEDGER_KEY_PREFIX = "roundTripLedger_";
@@ -127,6 +128,45 @@ public class OfflineSyncService
 			session.clearCollectedItems();
 		}
 
+	}
+
+	/**
+	 * Restore the Flip Finder-sourced set for the current RSN on login, so the free-tier cap
+	 * counts flips that were in progress before a client restart. Stale entries (items no
+	 * longer an active flip) are pruned by {@code retainAndCountFlipFinderActive} on the first
+	 * count, so no separate staleness handling is needed here.
+	 */
+	public void restoreFlipFinderSourcedItems()
+	{
+		Set<Integer> persisted = loadPersistedFlipFinderSourced();
+		session.restoreFlipFinderSourced(persisted, System.currentTimeMillis());
+		if (!persisted.isEmpty())
+		{
+			log.debug("Restored {} Flip Finder-sourced items for {}", persisted.size(), session.getRsn());
+		}
+	}
+
+	private Set<Integer> loadPersistedFlipFinderSourced()
+	{
+		String key = session.getRsn() == null || session.getRsn().isEmpty()
+			? FLIP_FINDER_SOURCED_KEY_PREFIX + UNKNOWN_RSN_FALLBACK
+			: FLIP_FINDER_SOURCED_KEY_PREFIX + session.getRsn();
+		try
+		{
+			String json = configManager.getConfiguration(CONFIG_GROUP, key);
+			if (json == null || json.isEmpty())
+			{
+				return new HashSet<>();
+			}
+			Type type = new TypeToken<java.util.List<Integer>>(){}.getType();
+			java.util.List<Integer> items = gson.fromJson(json, type);
+			return items != null ? new HashSet<>(items) : new HashSet<>();
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to load Flip Finder-sourced set for {}: {}", session.getRsn(), e.getMessage());
+			return new HashSet<>();
+		}
 	}
 
 	/** Missing timestamps (legacy data) are treated as stale. */
@@ -239,6 +279,27 @@ public class OfflineSyncService
 			catch (Exception e)
 			{
 				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
+			}
+		}
+
+		// Persist the Flip Finder-sourced set so the free-tier cap survives a client restart.
+		Set<Integer> sourced = session.getFlipFinderSourcedItems();
+		if (sourced.isEmpty())
+		{
+			// Same don't-destroy-on-empty guard as collected items: a transient empty set
+			// during the logout/hop window must not wipe the saved data.
+			log.debug("Flip Finder-sourced set empty — preserving persisted set for {}", rsn);
+		}
+		else
+		{
+			try
+			{
+				configManager.setConfiguration(CONFIG_GROUP, FLIP_FINDER_SOURCED_KEY_PREFIX + rsn,
+					gson.toJson(new java.util.ArrayList<>(sourced)));
+			}
+			catch (Exception e)
+			{
+				log.error("Failed to persist Flip Finder-sourced set for {}: {}", rsn, e.getMessage());
 			}
 		}
 

@@ -392,6 +392,26 @@ public class FlipSmartPlugin extends Plugin
 		return offerStore.liveOffers().size() < slotLimit;
 	}
 
+	/**
+	 * Count of in-flight flips started from a Flip Finder recommendation. Items listed
+	 * manually (outside Flip Finder) are excluded, so they do not consume the free cap.
+	 * Prunes resolved flips as a side effect (an item releases once it leaves the
+	 * active-flip set — live offer or collected inventory).
+	 */
+	public int getFlipFinderActiveCount()
+	{
+		return session.retainAndCountFlipFinderActive(getActiveFlipItemIds(), System.currentTimeMillis());
+	}
+
+	/**
+	 * Whether a free-tier user has reached their Flip Finder item cap. Premium is never
+	 * limited; for free users only Flip Finder-sourced flips count, not manual listings.
+	 */
+	public boolean isFlipFinderLimitReached()
+	{
+		return !isPremium() && getFlipFinderActiveCount() >= getFlipSlotLimit();
+	}
+
 	public List<ActiveFlip> getCurrentActiveFlips()
 	{
 		return flipFinderPanel != null ? flipFinderPanel.getCurrentActiveFlips() : null;
@@ -815,6 +835,25 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
+	/**
+	 * Mark a buy as Flip Finder-sourced when an order is submitted for the focused item.
+	 * Fired for BOTH manual and Auto placements (via onOrderSubmitted, which is not skipped
+	 * during Auto), so the free-tier cap counts Auto-placed buys too. Manual GE listings of a
+	 * non-focused item never match, so they never count.
+	 */
+	public void handleOrderSubmittedForSourcing(int itemId, boolean isBuy)
+	{
+		if (!isBuy)
+		{
+			return;
+		}
+		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
+		if (focusedFlip != null && focusedFlip.getItemId() == itemId && focusedFlip.isBuying())
+		{
+			session.markFlipFinderSourced(itemId, System.currentTimeMillis());
+		}
+	}
+
 	public void handleGETrackerFocusClear(int itemId, boolean isBuy)
 	{
 		FocusedFlip focusedFlip = flipAssistOverlay.getFocusedFlip();
@@ -1093,6 +1132,9 @@ public class FlipSmartPlugin extends Plugin
 		// Restore collected items from config (items bought but not yet sold)
 		// Must be after syncRSN() so we have the correct RSN for the config key
 		offlineSyncService.restoreCollectedItems();
+
+		// Restore the Flip Finder-sourced set so the free-tier cap survives a restart.
+		offlineSyncService.restoreFlipFinderSourcedItems();
 
 		// Preload persisted offers into the session BEFORE login burst fires.
 		// This ensures createWithPreservedTimestamps() finds the existing offer

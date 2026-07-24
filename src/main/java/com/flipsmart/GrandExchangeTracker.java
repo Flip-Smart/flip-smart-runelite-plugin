@@ -62,6 +62,9 @@ public class GrandExchangeTracker
 	private Consumer<List<PendingOrder>> onPendingOrdersUpdate;
 	private Consumer<FocusedFlip> onFocusChanged;
 	private BiConsumer<Integer, Boolean> onFocusClear;
+	// Fires on every order submission (buy or sell), for BOTH manual and Auto, unlike
+	// onFocusClear which is skipped during Auto. Used to mark Flip Finder-sourced buys.
+	private BiConsumer<Integer, Boolean> onOrderSubmitted;
 	private IntFunction<Integer> displayedSellPriceProvider;
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 
@@ -173,6 +176,11 @@ public class GrandExchangeTracker
 	public void setOnFocusClear(BiConsumer<Integer, Boolean> callback)
 	{
 		this.onFocusClear = callback;
+	}
+
+	public void setOnOrderSubmitted(BiConsumer<Integer, Boolean> callback)
+	{
+		this.onOrderSubmitted = callback;
 	}
 
 	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
@@ -983,6 +991,15 @@ public class GrandExchangeTracker
 	 */
 	public void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
+		// Always notify order-submitted (both manual and Auto) so a Flip Finder-sourced buy
+		// is marked. This must run BEFORE the Auto short-circuit below, which otherwise skips
+		// the focus-clear path entirely and never marked Auto-placed buys.
+		if (onOrderSubmitted != null)
+		{
+			onOrderSubmitted.accept(itemId, isBuy);
+		}
+
+		// The focus-clear itself is Auto's job to manage while Auto is active.
 		if (isAutoRecommendActive())
 		{
 			return;

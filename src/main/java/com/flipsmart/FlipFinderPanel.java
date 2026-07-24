@@ -1022,7 +1022,9 @@ public class FlipFinderPanel extends PluginPanel
 
 		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_MIN_PROFIT, minProfit);
 		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_MIN_VOLUME, minVolume);
-		populateRecommendations(new ArrayList<>(currentRecommendations));
+		// Re-apply filters through the slot-limit gate so the cogwheel "Update" can't render
+		// the full list past a free user's filled slots (the auto-load path already gates).
+		reevaluateSlotLimitDisplay();
 	}
 
 	private void cancelFilterDebounce(String key)
@@ -1557,11 +1559,10 @@ public class FlipFinderPanel extends PluginPanel
 			// Update premium status from flip-finder response and show/hide subscribe message
 			apiClient.setPremium(response.isPremium());
 
-			// If free user has hit their slot limit, show upgrade message over recommendations
-			// but keep currentRecommendations populated so auto-flip can still use them
+			// If free user has hit their Flip Finder item cap, show the limit message over
+			// recommendations but keep currentRecommendations populated so auto-flip can still use them
 			PlayerSession session = plugin.getSession();
-			if (session != null && !response.isPremium()
-				&& !plugin.hasAvailableGESlots(plugin.getFlipSlotLimit()))
+			if (session != null && plugin.isFlipFinderLimitReached())
 			{
 				showSlotLimitMessage();
 			}
@@ -2247,7 +2248,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void showSlotLimitMessage()
 	{
-		showErrorInRecommended("Upgrade to Premium for more flip slots");
+		showErrorInRecommended("Free users are limited to flipping only two items at a time from Flip Finder");
 		subscribeLabel.setText(SUBSCRIBE_MESSAGE);
 		subscribeLabel.setVisible(true);
 		refreshButton.setEnabled(true);
@@ -2267,7 +2268,7 @@ public class FlipFinderPanel extends PluginPanel
 				return;
 			}
 
-			boolean atLimit = !plugin.isPremium() && !plugin.hasAvailableGESlots(plugin.getFlipSlotLimit());
+			boolean atLimit = plugin.isFlipFinderLimitReached();
 
 			if (atLimit)
 			{
@@ -3159,10 +3160,9 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 
-		// Block new buy-side flips when free user has hit their slot limit
+		// Block new buy-side flips when a free user has hit their Flip Finder item cap
 		PlayerSession session = plugin.getSession();
-		if (session != null && !plugin.isPremium()
-			&& !plugin.hasAvailableGESlots(plugin.getFlipSlotLimit()))
+		if (session != null && plugin.isFlipFinderLimitReached())
 		{
 			return;
 		}
