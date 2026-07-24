@@ -2537,6 +2537,8 @@ public class FlipFinderPanel extends PluginPanel
 		})).exceptionally(ex ->
 		{
 			log.warn("Failed to load favorites", ex);
+			SwingUtilities.invokeLater(() ->
+				showErrorInContainer(favoritesListContainer, "Favorites", "Failed to load favorites. Please try again."));
 			return null;
 		});
 	}
