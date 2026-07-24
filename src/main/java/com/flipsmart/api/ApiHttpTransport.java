@@ -902,25 +902,33 @@ public class ApiHttpTransport
 		return executeAsync(request, responseBody -> {
 			try
 			{
-				EntitlementsResponse entitlements = EntitlementsResponse.fromJson(gson, responseBody);
-				boolean premium = entitlements.isPremium();
-				boolean rsnBlocked = entitlements.isRsnBlocked();
-
-				synchronized (authLock)
-				{
-					isPremium = premium;
-					isRsnBlocked = rsnBlocked;
-				}
-
-				log.debug("Fetched entitlements - premium: {}, rsnBlocked: {}", premium, rsnBlocked);
-				return premium;
+				applyEntitlements(EntitlementsResponse.fromJson(gson, responseBody));
+				return isPremium();
 			}
 			catch (Exception e)
 			{
 				log.error("Error parsing entitlements response: {}", e.getMessage());
-				return false;
+				return isPremium();
 			}
 		}, error -> log.warn("Failed to fetch entitlements: {}", error), true);
+	}
+
+	/**
+	 * Apply an entitlements snapshot to local state. Only RSN-blocked status is
+	 * taken from here — premium is sourced exclusively from the flip-finder
+	 * payload ({@code subscription.tier}). The snapshot carries premium nested
+	 * under {@code rsn_entitlement}, and re-sourcing it here historically
+	 * downgraded premium players to the free slot tier (see
+	 * {@code EntitlementsResponseTest}).
+	 */
+	void applyEntitlements(EntitlementsResponse entitlements)
+	{
+		boolean rsnBlocked = entitlements.isRsnBlocked();
+		synchronized (authLock)
+		{
+			isRsnBlocked = rsnBlocked;
+		}
+		log.debug("Fetched entitlements - rsnBlocked: {}", rsnBlocked);
 	}
 
 	// ============================================================================

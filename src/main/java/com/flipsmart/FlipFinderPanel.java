@@ -1022,7 +1022,9 @@ public class FlipFinderPanel extends PluginPanel
 
 		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_MIN_PROFIT, minProfit);
 		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_MIN_VOLUME, minVolume);
-		populateRecommendations(new ArrayList<>(currentRecommendations));
+		// Re-apply filters through the slot-limit gate so the cogwheel "Update" can't render
+		// the full list past a free user's filled slots (the auto-load path already gates).
+		reevaluateSlotLimitDisplay();
 	}
 
 	private void cancelFilterDebounce(String key)
