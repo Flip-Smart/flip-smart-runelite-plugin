@@ -77,7 +77,7 @@ public class GrandExchangeTracker
 	private static final int SELL_FOCUS_RETRY_TICKS = 6;
 	private volatile int pendingSellFocusItemId = -1;
 	private int pendingSellFocusTicksLeft;
-	// #1089 D5: retry mode is fixed when armed, not read from the live auto state.
+	// Retry mode is fixed when armed, not read from the live auto state.
 	// A manual-armed retry re-issues the backend lookup each tick; an auto-armed
 	// one re-runs the local resolver and drops if auto-recommend is turned off.
 	private boolean pendingSellFocusManual;
@@ -809,7 +809,7 @@ public class GrandExchangeTracker
 			return;
 		}
 
-		// Manual mode (#1089 D5): the backend active-flip snapshot lags the
+		// Manual mode: the backend active-flip snapshot lags the
 		// just-opened sell screen, so a single one-shot lookup returned no match
 		// and the sell target silently never filled. Arm the same bounded tick-
 		// retry auto mode gets, re-issuing the backend lookup until it resolves.
@@ -853,7 +853,7 @@ public class GrandExchangeTracker
 
 		if (pendingSellFocusManual)
 		{
-			// Manual retry (#1089 D5): no local resolver, so re-issue the backend
+			// Manual retry: no local resolver, so re-issue the backend
 			// lookup each tick until it resolves (handleActiveFlipResponse clears
 			// pending on success) or the budget runs out.
 			pendingSellFocusTicksLeft--;
@@ -922,7 +922,7 @@ public class GrandExchangeTracker
 		}
 
 		setFocusForSell(matchingFlip, inventoryCount);
-		// The flip resolved — stop any manual tick-retry re-issuing the lookup (#1089 D5).
+		// The flip resolved — stop any manual tick-retry re-issuing the lookup.
 		clearPendingSellFocus();
 
 		// Sync inventory-corrected quantity to API if inventory has more

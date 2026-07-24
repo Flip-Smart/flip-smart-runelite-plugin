@@ -42,7 +42,7 @@ public final class BuyPriceLookup
 	/**
 	 * Resolve the recorded average buy price from the active-flips snapshot, and
 	 * when that is absent, fall back to the local {@link OfferRecord} store
-	 * (#1089 D4). The active-flips list is backend-sourced and can be empty for
+	 * The active-flips list is backend-sourced and can be empty for
 	 * reasons unrelated to whether the player holds the item — a refresh race,
 	 * the free-tier slot trim, or a plain gap — and when it is, breakeven/margin/
 	 * profit rendered "?" despite the buy sitting in the OfferStore. The offer

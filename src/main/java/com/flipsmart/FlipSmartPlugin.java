@@ -419,7 +419,7 @@ public class FlipSmartPlugin extends Plugin
 
 	/**
 	 * Local OfferStore records for an item — the fallback source for the recorded
-	 * buy price when the backend-sourced active-flips snapshot is empty (#1089 D4).
+	 * buy price when the backend-sourced active-flips snapshot is empty.
 	 */
 	public java.util.List<com.flipsmart.domain.offer.OfferRecord> getOfferRecordsForItem(int itemId)
 	{

@@ -87,7 +87,7 @@ public final class OfferReconciler
         // (partial buys re-read a different total, a relist changes price), and
         // requiring them to be equal made a still-live record fail to reattach:
         // a fresh baseline-0 record then re-posted the whole cumulative on top of
-        // fills already recorded, a ~40% buy over-count (#1089 D1). Terminal
+        // fills already recorded, a ~40% buy over-count. Terminal
         // records are finished history — a live slot showing their item is a
         // reused slot holding a new offer, so they never reattach.
         return !p.getState().isTerminal()
