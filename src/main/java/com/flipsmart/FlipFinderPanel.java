@@ -3,6 +3,8 @@ import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.FavoriteItem;
+import com.flipsmart.api.dto.FavoritesResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.PluginSyncResponse;
@@ -155,13 +157,17 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Font FONT_BOLD_16 = new Font(FONT_ARIAL, Font.BOLD, 16);
 
 	private static final int ACTIVE_FLIPS_PRICE_REFRESH_MS = 60_000;
-	private static final int TAB_ACTIVE_FLIPS = 1;
+	static final int TAB_RECOMMENDED = 0;
+	static final int TAB_FAVORITES = 1;
+	static final int TAB_ACTIVE_FLIPS = 2;
+	static final int TAB_COMPLETED = 3;
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
 	private final transient ItemManager itemManager;
 	private final transient ConfigManager configManager;
 	private final JPanel recommendedListContainer = new JPanel();
+	private final JPanel favoritesListContainer = new JPanel();
 	private final JPanel activeFlipsListContainer = new JPanel();
 	private final JPanel completedFlipsListContainer = new JPanel();
 	private final JLabel statusLabel = new JLabel("Loading...");
@@ -169,6 +175,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final JComboBox<FlipSmartConfig.FlipStyle> flipStyleDropdown;
 	private final JComboBox<FlipSmartConfig.FlipTimeframe> flipTimeframeDropdown;
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
+	private final List<FavoriteItem> currentFavorites = new ArrayList<>();
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
@@ -180,6 +187,7 @@ public class FlipFinderPanel extends PluginPanel
 	
 	// Scroll panes for preserving scroll position during refresh
 	private JScrollPane recommendedScrollPane;
+	private JScrollPane favoritesScrollPane;
 	private JScrollPane activeFlipsScrollPane;
 	private JScrollPane completedFlipsScrollPane;
 
@@ -584,6 +592,18 @@ public class FlipFinderPanel extends PluginPanel
 		// Always show scrollbar so layout always accounts for it
 		recommendedScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
 
+		// Favorites list container
+		favoritesListContainer.setLayout(new BoxLayout(favoritesListContainer, BoxLayout.Y_AXIS));
+		favoritesListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		favoritesScrollPane = new JScrollPane(favoritesListContainer);
+		favoritesScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
+		favoritesScrollPane.setBorder(BorderFactory.createEmptyBorder());
+		favoritesScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		// Always show scrollbar so layout always accounts for it
+		favoritesScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+
 		// Active flips list container
 		activeFlipsListContainer.setLayout(new BoxLayout(activeFlipsListContainer, BoxLayout.Y_AXIS));
 		activeFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -651,6 +671,13 @@ public class FlipFinderPanel extends PluginPanel
 		});
 		
 		tabbedPane.addTab("Recommended", recommendedScrollPane);
+
+		// BorderLayout leaves room for a sort row (NORTH) and pagination (SOUTH) around the list
+		JPanel favoritesTabPanel = new JPanel(new BorderLayout());
+		favoritesTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesTabPanel.add(favoritesScrollPane, BorderLayout.CENTER);
+		tabbedPane.addTab("Favorites", favoritesTabPanel);
+
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
 
 		// Completed tab carries a secondary sort row (Profit / Recency) above its list
@@ -684,7 +711,7 @@ public class FlipFinderPanel extends PluginPanel
 					itemCount == 1 ? "flip" : "flips",
 					PanelFormat.formatGP(invested)));
 			}
-			else if (selectedIndex == 2)
+			else if (selectedIndex == TAB_COMPLETED)
 			{
 				// Switched to Completed Flips tab — fetch 30-day aggregate stats
 				String rsn = plugin.getCurrentRsnSafe().orElse(null);
@@ -701,12 +728,16 @@ public class FlipFinderPanel extends PluginPanel
 					});
 				});
 			}
-			else if (selectedIndex == 0 && !currentRecommendations.isEmpty())
+			else if (selectedIndex == TAB_RECOMMENDED && !currentRecommendations.isEmpty())
 			{
 				// Switched back to Recommended tab, restore original status
 				FlipFinderResponse response = new FlipFinderResponse();
 				response.setRecommendations(currentRecommendations);
 				updateStatusLabel(response);
+			}
+			else if (selectedIndex == TAB_FAVORITES)
+			{
+				refreshFavoritesTab();
 			}
 		});
 
@@ -1790,7 +1821,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
-			if (stats != null && tabbedPane.getSelectedIndex() == 2)
+			if (stats != null && tabbedPane.getSelectedIndex() == TAB_COMPLETED)
 			{
 				statusLabel.setText(String.format("%d flips (30d) | %s profit",
 					stats.getTotalFlips(),
@@ -2447,6 +2478,61 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedListContainer.repaint();
 	}
 
+	/** Fetch the enriched favorites list and repaint the Favorites tab. */
+	void refreshFavoritesTab()
+	{
+		apiClient.getFavoritesAsync().thenAccept(resp -> SwingUtilities.invokeLater(() ->
+		{
+			currentFavorites.clear();
+			if (resp != null && resp.getItems() != null)
+			{
+				currentFavorites.addAll(resp.getItems());
+			}
+			populateFavorites();
+		})).exceptionally(ex ->
+		{
+			log.warn("Failed to load favorites", ex);
+			return null;
+		});
+	}
+
+	private void populateFavorites()
+	{
+		favoritesListContainer.removeAll();
+		if (currentFavorites.isEmpty())
+		{
+			favoritesListContainer.add(CardWidgets.createStyledLabel("No favorites yet. Tap the star on any item.",
+				ColorScheme.LIGHT_GRAY_COLOR));
+		}
+		else
+		{
+			for (FavoriteItem item : currentFavorites)
+			{
+				favoritesListContainer.add(createFavoriteCard(item));
+				favoritesListContainer.add(Box.createRigidArea(new Dimension(0, 4)));
+			}
+		}
+		favoritesListContainer.revalidate();
+		favoritesListContainer.repaint();
+	}
+
+	private JPanel createFavoriteCard(FavoriteItem item)
+	{
+		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, Integer.MAX_VALUE, false);
+		HeaderPanels header = createItemHeaderPanels(item.getItemId(), item.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
+		JPanel details = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
+		JLabel marginLabel = CardWidgets.createStyledLabel("Margin: " + PanelFormat.formatGP(item.getMargin()), Color.WHITE);
+		JLabel profitLabel = CardWidgets.createStyledLabel("Profit: " + PanelFormat.formatGP(item.getProfit()), Color.WHITE);
+		JLabel volumeLabel = CardWidgets.createStyledLabel(PanelFormat.formatVolumeText(item.getVolume()), Color.WHITE);
+		JLabel riskLabel = CardWidgets.createStyledLabel(
+			PanelFormat.formatRiskText((double) item.getRiskScore(), item.getRiskRating()),
+			PanelFormat.getRiskColor(item.getRiskScore()));
+		CardWidgets.addLabelsWithSpacing(details, marginLabel, profitLabel, volumeLabel, riskLabel);
+		panel.add(header.topPanel, BorderLayout.NORTH);
+		panel.add(details, BorderLayout.CENTER);
+		return panel;
+	}
+
 	/**
 	 * Create a panel for a single recommendation
 	 */
@@ -2922,8 +3008,10 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				updateStarLabel(starLabel, itemId);
 			}
-			// Task 4 adds an else-branch here to refresh the Favorites tab when it is
-			// the selected tab; TAB_FAVORITES / refreshFavoritesTab() do not exist yet.
+			else if (tabbedPane.getSelectedIndex() == TAB_FAVORITES)
+			{
+				refreshFavoritesTab();
+			}
 		})).exceptionally(ex ->
 		{
 			log.warn("Favorite toggle failed for item {}", itemId, ex);
@@ -4424,7 +4512,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 
 			// Switch to Recommended tab
-			tabbedPane.setSelectedIndex(0);
+			tabbedPane.setSelectedIndex(TAB_RECOMMENDED);
 
 			// Start the 2-minute refresh timer
 			plugin.startAutoRecommendRefreshTimer();
