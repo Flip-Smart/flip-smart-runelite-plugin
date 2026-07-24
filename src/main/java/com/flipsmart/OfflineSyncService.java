@@ -139,7 +139,7 @@ public class OfflineSyncService
 	public void restoreFlipFinderSourcedItems()
 	{
 		Set<Integer> persisted = loadPersistedFlipFinderSourced();
-		session.restoreFlipFinderSourced(persisted);
+		session.restoreFlipFinderSourced(persisted, System.currentTimeMillis());
 		if (!persisted.isEmpty())
 		{
 			log.debug("Restored {} Flip Finder-sourced items for {}", persisted.size(), session.getRsn());

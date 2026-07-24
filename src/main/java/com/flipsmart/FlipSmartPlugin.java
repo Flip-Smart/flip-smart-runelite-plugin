@@ -400,7 +400,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public int getFlipFinderActiveCount()
 	{
-		return session.retainAndCountFlipFinderActive(getActiveFlipItemIds());
+		return session.retainAndCountFlipFinderActive(getActiveFlipItemIds(), System.currentTimeMillis());
 	}
 
 	/**
@@ -849,7 +849,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				// A buy was submitted for a focused Flip Finder item (manual focus or Auto) —
 				// mark it so it counts toward the free-tier Flip Finder cap for its whole flip.
-				session.markFlipFinderSourced(itemId);
+				session.markFlipFinderSourced(itemId, System.currentTimeMillis());
 			}
 			log.debug("Clearing Flip Assist focus - order submitted for {} ({})",
 				focusedFlip.getItemName(), isBuy ? "BUY" : "SELL");

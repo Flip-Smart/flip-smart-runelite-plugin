@@ -47,6 +47,11 @@ public class PlayerSession
 	// Items whose flip was started from a Flip Finder recommendation (focused buy).
 	// Only these count toward the free-tier Flip Finder cap; manual listings never do.
 	private final Set<Integer> flipFinderSourcedItems = ConcurrentHashMap.newKeySet();
+	// When each sourced item was marked. A just-marked item is protected from pruning for a
+	// short grace window so a still-propagating GE offer (not yet in the offer store) isn't
+	// dropped before it lands — otherwise Auto's immediate re-resolve under-counts the cap.
+	private final Map<Integer, Long> flipFinderSourcedAtMs = new ConcurrentHashMap<>();
+	private static final long FLIP_FINDER_SOURCED_GRACE_MS = 8000;
 
 	// =====================
 	// GE State
@@ -182,9 +187,10 @@ public class PlayerSession
 	}
 
 	/** Mark an item as sourced from a Flip Finder recommendation (a focused buy was placed). */
-	public void markFlipFinderSourced(int itemId)
+	public void markFlipFinderSourced(int itemId, long nowMs)
 	{
 		flipFinderSourcedItems.add(itemId);
+		flipFinderSourcedAtMs.put(itemId, nowMs);
 	}
 
 	public Set<Integer> getFlipFinderSourcedItems()
@@ -192,26 +198,52 @@ public class PlayerSession
 		return Collections.unmodifiableSet(flipFinderSourcedItems);
 	}
 
-	/** Restore the Flip Finder-sourced set from persistence (survives a client restart). */
-	public void restoreFlipFinderSourced(Set<Integer> items)
+	/**
+	 * Restore the Flip Finder-sourced set from persistence (survives a client restart).
+	 * Restored items get a fresh grace stamp so they are counted while the persisted offers
+	 * reload into the store, rather than being pruned before they reappear as active flips.
+	 */
+	public void restoreFlipFinderSourced(Set<Integer> items, long nowMs)
 	{
 		flipFinderSourcedItems.clear();
+		flipFinderSourcedAtMs.clear();
 		if (items != null)
 		{
-			flipFinderSourcedItems.addAll(items);
+			for (Integer item : items)
+			{
+				flipFinderSourcedItems.add(item);
+				flipFinderSourcedAtMs.put(item, nowMs);
+			}
 		}
 	}
 
 	/**
-	 * Drop any sourced item that is no longer an active flip, and return how many
-	 * remain — the count of in-flight Flip Finder flips. {@code activeFlipItemIds}
-	 * is the caller's live-offer ∪ collected-item set, so an item is retained for
-	 * its whole buy→sell lifecycle and released once the flip resolves.
+	 * Count the in-flight Flip Finder flips and prune resolved ones. An item counts if it is
+	 * an active flip ({@code activeFlipItemIds} = live-offer ∪ collected) OR was marked within
+	 * the grace window (its GE offer may still be propagating into the store). Items that are
+	 * neither active nor within grace are dropped — the flip has resolved. The grace prevents
+	 * Auto's immediate re-resolve from under-counting a buy it just placed.
 	 */
-	public int retainAndCountFlipFinderActive(Set<Integer> activeFlipItemIds)
+	public int retainAndCountFlipFinderActive(Set<Integer> activeFlipItemIds, long nowMs)
 	{
-		flipFinderSourcedItems.retainAll(activeFlipItemIds);
-		return flipFinderSourcedItems.size();
+		int count = 0;
+		java.util.Iterator<Integer> it = flipFinderSourcedItems.iterator();
+		while (it.hasNext())
+		{
+			int item = it.next();
+			Long markedAt = flipFinderSourcedAtMs.get(item);
+			boolean withinGrace = markedAt != null && nowMs - markedAt < FLIP_FINDER_SOURCED_GRACE_MS;
+			if (activeFlipItemIds.contains(item) || withinGrace)
+			{
+				count++;
+			}
+			else
+			{
+				it.remove();
+				flipFinderSourcedAtMs.remove(item);
+			}
+		}
+		return count;
 	}
 
 	public void restoreCollectedItems(Set<Integer> items)
@@ -374,6 +406,7 @@ public class PlayerSession
 		recommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 		flipFinderSourcedItems.clear();
+		flipFinderSourcedAtMs.clear();
 	}
 
 	// =====================

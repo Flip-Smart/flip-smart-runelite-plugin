@@ -3291,6 +3291,8 @@ public class AutoRecommendService
 				filledSlots, slotLimit, hasSurfaceable, surfaceableItemId, idx,
 				view.size(), plugin.getActiveFlipItemIds().size(), collected.size(),
 				staleSnapshot.size(), completed.size(), blockBuyForPendingSell ? pendingSellItemId : -1);
+			log.debug("Auto-recommend: free-cap premium={} flipFinderActive={} capReached={}",
+				plugin.isPremium(), plugin.getFlipFinderActiveCount(), plugin.isFlipFinderLimitReached());
 		}
 
 		return ResolverInput.builder()

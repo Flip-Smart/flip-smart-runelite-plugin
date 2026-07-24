@@ -112,7 +112,7 @@ public class OfflineSyncPersistenceTest
 		// A restart: restore reads the persisted set back into the session.
 		service.restoreFlipFinderSourcedItems();
 		verify(session).restoreFlipFinderSourced(
-			new java.util.HashSet<>(java.util.Arrays.asList(100, 200)));
+			eq(new java.util.HashSet<>(java.util.Arrays.asList(100, 200))), org.mockito.ArgumentMatchers.anyLong());
 	}
 
 	@Test
