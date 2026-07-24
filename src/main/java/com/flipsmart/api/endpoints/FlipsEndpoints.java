@@ -91,7 +91,7 @@ public class FlipsEndpoints
 	 */
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
 		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume)
+		Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume, boolean favoritesOnly)
 	{
 		String apiUrl = transport.getApiUrl();
 
@@ -100,6 +100,7 @@ public class FlipsEndpoints
 		urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
 		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 		appendFilterParams(urlBuilder, minProfit, minVolume);
+		appendFavoritesOnly(urlBuilder, favoritesOnly);
 
 		String url = urlBuilder.toString();
 		Request.Builder requestBuilder = new Request.Builder()
@@ -166,6 +167,14 @@ public class FlipsEndpoints
 		}
 	}
 
+	static void appendFavoritesOnly(StringBuilder urlBuilder, boolean favoritesOnly)
+	{
+		if (favoritesOnly)
+		{
+			urlBuilder.append("&favorites_only=true");
+		}
+	}
+
 	/**
 	 * Append the player's real inventory coins for the web "Capital Active" card.
 	 * Unlike the filter params above, zero is sent rather than omitted: a player with
@@ -189,7 +198,7 @@ public class FlipsEndpoints
 	 */
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
 		Integer cashStack, Integer inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
-		String rsn, Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume)
+		String rsn, Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume, boolean favoritesOnly)
 	{
 		String apiUrl = transport.getApiUrl();
 
@@ -198,6 +207,7 @@ public class FlipsEndpoints
 		appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 		appendFilterParams(urlBuilder, minProfit, minVolume);
 		appendInventoryGp(urlBuilder, inventoryGp);
+		appendFavoritesOnly(urlBuilder, favoritesOnly);
 
 		Request.Builder requestBuilder = new Request.Builder()
 			.url(urlBuilder.toString())

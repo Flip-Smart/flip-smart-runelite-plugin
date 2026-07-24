@@ -1223,7 +1223,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		final boolean applyRecs = applyRecommendations;
 		apiClient.getPluginSyncAsync(cashStack, getInventoryGp(), flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, plugin.isMembersWorld()).thenAccept(sync ->
+			filledSlots, plugin.isMembersWorld(), false).thenAccept(sync ->
 		{
 			if (sync == null)
 			{
@@ -1496,7 +1496,7 @@ public class FlipFinderPanel extends PluginPanel
 		Integer filledSlots = getFilledSlots();
 
 		// Use unified /flip-finder endpoint with all parameters
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld()).thenAccept(response ->
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld(), false).thenAccept(response ->
 		{
 			handleRecommendationsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
