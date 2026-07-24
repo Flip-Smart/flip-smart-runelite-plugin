@@ -120,6 +120,9 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
 	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
 
+	private static final Color STAR_ON_COLOR = new Color(255, 175, 45);
+	private static final Color STAR_OFF_COLOR = new Color(120, 120, 120);
+
 	// Yellow used for the completed-flip anomaly badge (HTML label markup).
 	private static final String COLOR_ANOMALY_HEX = "#FFCC33";
 	private static final int BADGE_SECOND_LINE_HEIGHT = 18;
@@ -226,6 +229,10 @@ public class FlipFinderPanel extends PluginPanel
 	private final java.util.concurrent.CopyOnWriteArrayList<BlocklistSummary> cachedBlocklists = new java.util.concurrent.CopyOnWriteArrayList<>();
 	private volatile long blocklistCacheTimestamp = 0;
 	private static final long BLOCKLIST_CACHE_TTL_MS = 5L * 60 * 1000; // 5 minutes
+
+	// Favorited item ids, hydrated from the sync payload. Card rebuilds are full removeAll(),
+	// so star fill is read from here at build time rather than stored on the widget.
+	private final java.util.Set<Integer> favoriteItemIds = new java.util.concurrent.CopyOnWriteArraySet<>();
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -1230,6 +1237,7 @@ public class FlipFinderPanel extends PluginPanel
 				showBundleError(applyRecs, recScrollPos, activeScrollPos, completedScrollPos, null);
 				return;
 			}
+			applyFavoriteItemIds(sync.getFavoriteItemIds());
 			// Each apply method hops to the EDT internally and null-skips a missing
 			// sub-payload, leaving that section's prior state untouched.
 			if (applyRecs)
@@ -2709,6 +2717,7 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 1, 0));
 		iconsPanel.setOpaque(false);
 
+		iconsPanel.add(createStarIconLabel(itemId));
 		iconsPanel.add(createBlockIconLabel(itemId, itemName));
 		iconsPanel.add(createChartIconLabel(itemId));
 
@@ -2843,6 +2852,105 @@ public class FlipFinderPanel extends PluginPanel
 	 * Create a clickable block icon label that adds the item to a blocklist.
 	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
 	 */
+	public static boolean isFavorite(java.util.Set<Integer> favorites, int itemId)
+	{
+		return favorites != null && favorites.contains(itemId);
+	}
+
+	private void applyFavoriteItemIds(java.util.List<Integer> ids)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			favoriteItemIds.clear();
+			if (ids != null)
+			{
+				favoriteItemIds.addAll(ids);
+			}
+		});
+	}
+
+	private JLabel createStarIconLabel(int itemId)
+	{
+		boolean filled = isFavorite(favoriteItemIds, itemId);
+		JLabel star = new JLabel(new ImageIcon(
+			PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR)));
+		star.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		star.setToolTipText(filled ? "Remove from favorites" : "Add to favorites");
+		star.setOpaque(false);
+		star.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				e.consume();
+				handleStarClick(itemId, star);
+			}
+		});
+		return star;
+	}
+
+	private void handleStarClick(int itemId, JLabel starLabel)
+	{
+		boolean wasFavorite = isFavorite(favoriteItemIds, itemId);
+		// Optimistic flip of local state + icon.
+		if (wasFavorite)
+		{
+			favoriteItemIds.remove(itemId);
+		}
+		else
+		{
+			favoriteItemIds.add(itemId);
+		}
+		updateStarLabel(starLabel, itemId);
+
+		java.util.concurrent.CompletableFuture<Boolean> call = wasFavorite
+			? apiClient.removeFavoriteAsync(itemId)
+			: apiClient.addFavoriteAsync(itemId);
+
+		call.thenAccept(success -> SwingUtilities.invokeLater(() ->
+		{
+			if (!Boolean.TRUE.equals(success))
+			{
+				// Roll back the optimistic change on failure.
+				if (wasFavorite)
+				{
+					favoriteItemIds.add(itemId);
+				}
+				else
+				{
+					favoriteItemIds.remove(itemId);
+				}
+				updateStarLabel(starLabel, itemId);
+			}
+			// Task 4 adds an else-branch here to refresh the Favorites tab when it is
+			// the selected tab; TAB_FAVORITES / refreshFavoritesTab() do not exist yet.
+		})).exceptionally(ex ->
+		{
+			log.warn("Favorite toggle failed for item {}", itemId, ex);
+			SwingUtilities.invokeLater(() ->
+			{
+				if (wasFavorite)
+				{
+					favoriteItemIds.add(itemId);
+				}
+				else
+				{
+					favoriteItemIds.remove(itemId);
+				}
+				updateStarLabel(starLabel, itemId);
+			});
+			return null;
+		});
+	}
+
+	private void updateStarLabel(JLabel starLabel, int itemId)
+	{
+		boolean filled = isFavorite(favoriteItemIds, itemId);
+		starLabel.setIcon(new ImageIcon(
+			PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR)));
+		starLabel.setToolTipText(filled ? "Remove from favorites" : "Add to favorites");
+	}
+
 	private JLabel createBlockIconLabel(int itemId, String itemName)
 	{
 		java.awt.image.BufferedImage blockIcon = PanelFormat.drawBlockIcon(new Color(180, 100, 100));
