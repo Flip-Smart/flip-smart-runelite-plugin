@@ -3268,16 +3268,7 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			if (!Boolean.TRUE.equals(success))
 			{
-				// Roll back the optimistic change on failure.
-				if (wasFavorite)
-				{
-					favoriteItemIds.add(itemId);
-				}
-				else
-				{
-					favoriteItemIds.remove(itemId);
-				}
-				updateStarLabel(starLabel, itemId);
+				rollbackFavoriteToggle(wasFavorite, itemId, starLabel);
 			}
 			else if (tabbedPane.getSelectedIndex() == TAB_FAVORITES)
 			{
@@ -3286,20 +3277,23 @@ public class FlipFinderPanel extends PluginPanel
 		})).exceptionally(ex ->
 		{
 			log.warn("Favorite toggle failed for item {}", itemId, ex);
-			SwingUtilities.invokeLater(() ->
-			{
-				if (wasFavorite)
-				{
-					favoriteItemIds.add(itemId);
-				}
-				else
-				{
-					favoriteItemIds.remove(itemId);
-				}
-				updateStarLabel(starLabel, itemId);
-			});
+			SwingUtilities.invokeLater(() -> rollbackFavoriteToggle(wasFavorite, itemId, starLabel));
 			return null;
 		});
+	}
+
+	/** Undo the optimistic favorite-toggle flip after a failed add/remove call. */
+	private void rollbackFavoriteToggle(boolean wasFavorite, int itemId, JLabel starLabel)
+	{
+		if (wasFavorite)
+		{
+			favoriteItemIds.add(itemId);
+		}
+		else
+		{
+			favoriteItemIds.remove(itemId);
+		}
+		updateStarLabel(starLabel, itemId);
 	}
 
 	private void updateStarLabel(JLabel starLabel, int itemId)
