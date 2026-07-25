@@ -720,7 +720,6 @@ public class FlipFinderPanel extends PluginPanel
 		favoritesControlsPanel.setLayout(new BoxLayout(favoritesControlsPanel, BoxLayout.Y_AXIS));
 		favoritesControlsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		favoritesControlsPanel.add(buildFavoritesSortRow());
-		favoritesControlsPanel.add(buildFlipOnlyFavoritesRow());
 		favoritesControlsPanel.setVisible(false);
 
 		JPanel recommendedControls = new JPanel();
@@ -906,6 +905,7 @@ public class FlipFinderPanel extends PluginPanel
 				activeSettingsPopup = null;
 				minProfitSpinner = null;
 				minVolumeSpinner = null;
+				flipOnlyFavoritesCheck = null;
 			}
 
 			@Override
@@ -922,6 +922,8 @@ public class FlipFinderPanel extends PluginPanel
 		body.add(buildMinProfitRow());
 		body.add(Box.createVerticalStrut(6));
 		body.add(buildMinVolumeRow());
+		body.add(Box.createVerticalStrut(6));
+		body.add(buildFlipOnlyFavoritesRow());
 		body.add(Box.createVerticalStrut(6));
 		body.add(buildUpdateButtonRow());
 		body.add(Box.createVerticalStrut(6));
@@ -2847,21 +2849,32 @@ public class FlipFinderPanel extends PluginPanel
 		favoritesPaginationRow.setVisible(pages > 1);
 	}
 
+	/**
+	 * Render a favorite with the same card as a recommendation — a favorite is the same kind
+	 * of item, so it gets the identical layout, colours, and click-to-focus behaviour. The
+	 * favorite's server-sent buy limit is the quantity its profit is sized to (one full cycle).
+	 */
 	private JPanel createFavoriteCard(FavoriteItem item)
 	{
-		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, Integer.MAX_VALUE, false);
-		HeaderPanels header = createItemHeaderPanels(item.getItemId(), item.getItemName(), ColorScheme.DARKER_GRAY_COLOR);
-		JPanel details = CardWidgets.createDetailsPanel(ColorScheme.DARKER_GRAY_COLOR);
-		JLabel marginLabel = CardWidgets.createStyledLabel("Margin: " + PanelFormat.formatGP(item.getMargin()), Color.WHITE);
-		JLabel profitLabel = CardWidgets.createStyledLabel("Profit: " + PanelFormat.formatGP(item.getProfit()), Color.WHITE);
-		JLabel volumeLabel = CardWidgets.createStyledLabel(PanelFormat.formatVolumeText(item.getVolume()), Color.WHITE);
-		JLabel riskLabel = CardWidgets.createStyledLabel(
-			PanelFormat.formatRiskText((double) item.getRiskScore(), item.getRiskRating()),
-			PanelFormat.getRiskColor(item.getRiskScore()));
-		CardWidgets.addLabelsWithSpacing(details, marginLabel, profitLabel, volumeLabel, riskLabel);
-		panel.add(header.topPanel, BorderLayout.NORTH);
-		panel.add(details, BorderLayout.CENTER);
-		return panel;
+		return createRecommendationPanel(favoriteAsRecommendation(item));
+	}
+
+	/** Map a favorite onto a {@link FlipRecommendation} so the recommendation renderer can draw it. */
+	private static FlipRecommendation favoriteAsRecommendation(FavoriteItem item)
+	{
+		int buy = item.getBuyPrice() != null ? item.getBuyPrice() : 0;
+		int quantity = item.getBuyLimit() != null && item.getBuyLimit() > 0 ? item.getBuyLimit() : 1;
+		FlipRecommendation rec = new FlipRecommendation();
+		rec.setItemId(item.getItemId());
+		rec.setItemName(item.getItemName());
+		rec.setRecommendedBuyPrice(buy);
+		rec.setRecommendedSellPrice(item.getSellPrice() != null ? item.getSellPrice() : 0);
+		rec.setRecommendedQuantity(quantity);
+		rec.setBuyLimit(quantity);
+		rec.setDailyVolume(item.getVolume());
+		rec.setRiskScore(item.getRiskScore());
+		rec.setRiskRating(item.getRiskRating());
+		return rec;
 	}
 
 	/**
@@ -2904,9 +2917,10 @@ public class FlipFinderPanel extends PluginPanel
 		int displayCost = displayBuyPrice * rec.getRecommendedQuantity();
 		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
 
-		// Recommended Buy/Sell prices
-		JLabel priceLabel = new JLabel(PanelFormat.formatBuySellText(displayBuyPrice, displaySellPrice));
-		priceLabel.setForeground(Color.LIGHT_GRAY);
+		// Recommended Buy/Sell prices — buy blue, sell orange, bold (matches the Active-tab live-price row).
+		// White base foreground keeps the "Buy:"/"Sell:" label text (outside the coloured spans) legible.
+		JLabel priceLabel = new JLabel(PanelFormat.buySellHtml(displayBuyPrice, displaySellPrice));
+		priceLabel.setForeground(Color.WHITE);
 		priceLabel.setFont(FONT_PLAIN_12);
 
 		// Quantity

@@ -21,6 +21,9 @@ public class FavoriteItem
 	@SerializedName("sell_price")
 	private Integer sellPrice;
 
+	@SerializedName("buy_limit")
+	private Integer buyLimit;
+
 	private int margin;
 
 	private int profit;

@@ -18,7 +18,7 @@ public class FavoritesDtoParsingTest
 	public void parsesFavoritesResponse()
 	{
 		String json = "{\"items\":[{\"item_id\":4151,\"item_name\":\"Abyssal whip\",\"icon_url\":\"http://x/w.png\","
-			+ "\"buy_price\":1900000,\"sell_price\":2000000,\"margin\":80000,\"profit\":5600000,"
+			+ "\"buy_price\":1900000,\"sell_price\":2000000,\"buy_limit\":70,\"margin\":80000,\"profit\":5600000,"
 			+ "\"volume\":5000000,\"risk_score\":20,\"risk_rating\":\"Very Low\"}],\"count\":1}";
 		FavoritesResponse r = gson.fromJson(json, FavoritesResponse.class);
 		assertEquals(1, r.getCount());
@@ -31,6 +31,7 @@ public class FavoritesDtoParsingTest
 		assertEquals("Very Low", item.getRiskRating());
 		assertEquals(2000000, item.getSellPrice().intValue());
 		assertEquals(1900000, item.getBuyPrice().intValue());
+		assertEquals(70, item.getBuyLimit().intValue());
 	}
 
 	@Test
