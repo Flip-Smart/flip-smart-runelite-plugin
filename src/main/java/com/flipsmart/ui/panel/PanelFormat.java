@@ -5,6 +5,7 @@ import java.awt.AlphaComposite;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
+import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import javax.swing.JPanel;
@@ -20,7 +21,6 @@ public final class PanelFormat
 	private static final Color COLOR_YELLOW = new Color(255, 255, 100);
 	private static final Color COLOR_LOSS_RED = new Color(255, 100, 100);
 
-	private static final String FORMAT_BUY_SELL = "Buy: %s | Sell: %s";
 	private static final String FORMAT_PROFIT_COST = "Profit: %s | Cost: %s";
 	private static final String FORMAT_MARGIN_ROI = "Margin: %s (%.1f%% ROI)";
 	private static final String FORMAT_MARGIN_ROI_LOSS = "Margin: %s (%.1f%% ROI) - Loss";
@@ -177,22 +177,21 @@ public final class PanelFormat
 		return String.format(FORMAT_PROFIT_COST, profitText, formatGP(totalCost));
 	}
 
-	/**
-	 * Format buy/sell prices text for display
-	 */
-	public static String formatBuySellText(int buyPrice, Integer sellPrice)
-	{
-		String sellText = sellPrice != null && sellPrice > 0
-			? formatGPExact(sellPrice)
-			: "N/A";
-		return String.format(FORMAT_BUY_SELL, formatGPExact(buyPrice), sellText);
-	}
-
 	/** Top "live" price row: market low (blue) | market high (orange), both bold; label stays plain. */
 	public static String livePriceHtml(int low, int high)
 	{
 		return htmlRow("Live Price: " + bold(coloured(HEX_PRICE_LOW, formatGPExact(low)))
 			+ " | " + bold(coloured(HEX_PRICE_HIGH, formatGPExact(high))));
+	}
+
+	/** Buy/Sell row styled like the live-price row: buy price blue, sell price orange, both bold. */
+	public static String buySellHtml(int buyPrice, Integer sellPrice)
+	{
+		String sellSpan = sellPrice != null && sellPrice > 0
+			? bold(coloured(HEX_PRICE_HIGH, formatGPExact(sellPrice)))
+			: "N/A";
+		return htmlRow("Buy: " + bold(coloured(HEX_PRICE_LOW, formatGPExact(buyPrice)))
+			+ " | Sell: " + sellSpan);
 	}
 
 	/** Live Margin: gross market spread coloured green (profit) / red (loss), with ROI. No "+" prefix. */
@@ -357,6 +356,41 @@ public final class PanelFormat
 
 		g.dispose();
 		return icon;
+	}
+
+	/**
+	 * Draw a five-point star onto a 16x16 image. Filled paints the favorite state;
+	 * an unfilled star strokes the outline only for the not-favorited state.
+	 */
+	public static BufferedImage drawStarIcon(boolean filled, Color color)
+	{
+		BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+		Graphics2D g = createTransparentIconGraphics(image);
+		int[] xs = new int[10];
+		int[] ys = new int[10];
+		double cx = 8;
+		double cy = 8;
+		double outer = 7;
+		double inner = 2.9;
+		for (int i = 0; i < 10; i++)
+		{
+			double r = (i % 2 == 0) ? outer : inner;
+			double a = Math.toRadians(-90 + i * 36);
+			xs[i] = (int) Math.round(cx + r * Math.cos(a));
+			ys[i] = (int) Math.round(cy + r * Math.sin(a));
+		}
+		Polygon star = new Polygon(xs, ys, 10);
+		g.setColor(color);
+		if (filled)
+		{
+			g.fillPolygon(star);
+		}
+		else
+		{
+			g.drawPolygon(star);
+		}
+		g.dispose();
+		return image;
 	}
 
 	/**

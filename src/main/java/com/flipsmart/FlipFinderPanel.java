@@ -3,6 +3,8 @@ import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.FavoriteItem;
+import com.flipsmart.api.dto.FavoritesResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.PluginSyncResponse;
@@ -18,9 +20,11 @@ import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
+import com.flipsmart.ui.panel.FavoritesSort;
 import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
+import com.flipsmart.ui.panel.Paginator;
 import com.flipsmart.session.SessionClock;
 import com.flipsmart.session.SessionStats;
 import com.flipsmart.session.SessionStatsView;
@@ -59,6 +63,9 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
+	private static final String CONFIG_KEY_FAVORITES_SORT = "favoritesSort";
+	private static final String CONFIG_KEY_FLIP_ONLY_FAVORITES = "flipOnlyFavorites";
+	private static final int FAVORITES_PAGE_SIZE = 10;
 	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
 	private static final String CONFIG_KEY_MIN_VOLUME = "minVolume";
 	private static final String CONFIG_KEY_ENABLE_FLIP_ASSISTANT = "enableFlipAssistant";
@@ -120,6 +127,9 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_AUTO_RECOMMEND_BG = new Color(70, 55, 20);
 	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
 
+	private static final Color STAR_ON_COLOR = new Color(255, 175, 45);
+	private static final Color STAR_OFF_COLOR = new Color(120, 120, 120);
+
 	// Yellow used for the completed-flip anomaly badge (HTML label markup).
 	private static final String COLOR_ANOMALY_HEX = "#FFCC33";
 	private static final int BADGE_SECOND_LINE_HEIGHT = 18;
@@ -152,13 +162,16 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Font FONT_BOLD_16 = new Font(FONT_ARIAL, Font.BOLD, 16);
 
 	private static final int ACTIVE_FLIPS_PRICE_REFRESH_MS = 60_000;
-	private static final int TAB_ACTIVE_FLIPS = 1;
+	static final int TAB_RECOMMENDED = 0;
+	static final int TAB_ACTIVE_FLIPS = 1;
+	static final int TAB_COMPLETED = 2;
 
 	private final transient FlipSmartConfig config;
 	private final transient FlipSmartApiClient apiClient;
 	private final transient ItemManager itemManager;
 	private final transient ConfigManager configManager;
 	private final JPanel recommendedListContainer = new JPanel();
+	private final JPanel favoritesListContainer = new JPanel();
 	private final JPanel activeFlipsListContainer = new JPanel();
 	private final JPanel completedFlipsListContainer = new JPanel();
 	private final JLabel statusLabel = new JLabel("Loading...");
@@ -166,6 +179,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final JComboBox<FlipSmartConfig.FlipStyle> flipStyleDropdown;
 	private final JComboBox<FlipSmartConfig.FlipTimeframe> flipTimeframeDropdown;
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
+	private final List<FavoriteItem> currentFavorites = new ArrayList<>();
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
@@ -177,12 +191,35 @@ public class FlipFinderPanel extends PluginPanel
 	
 	// Scroll panes for preserving scroll position during refresh
 	private JScrollPane recommendedScrollPane;
+	private JScrollPane favoritesScrollPane;
 	private JScrollPane activeFlipsScrollPane;
 	private JScrollPane completedFlipsScrollPane;
 
 	// Completed tab sort controls
 	private CompletedSort completedSort = CompletedSort.RECENCY;
 	private final java.util.Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
+
+	// Favorites tab sort + pagination controls
+	private FavoritesSort favoritesSort = FavoritesSort.PROFIT;
+	private int favoritesPage = 0;
+	private final java.util.Map<FavoritesSort, JLabel> favoritesSortTabs = new java.util.EnumMap<>(FavoritesSort.class);
+	private JLabel favoritesPageLabel;
+	private JLabel favoritesPrevPageLabel;
+	private JLabel favoritesNextPageLabel;
+	private JPanel favoritesPaginationRow;
+
+	// In-tab favorites view (toggled from within the Recommended tab, no separate tab)
+	private boolean favoritesViewActive;
+	private JButton favoritesToggleButton;
+	private JPanel favoritesControlsPanel;
+	private JPanel recommendedCardPanel;
+	private final CardLayout recommendedCardLayout = new CardLayout();
+	private static final String CARD_ALGORITHM = "algorithm";
+	private static final String CARD_FAVORITES = "favorites";
+
+	// Premium-gated "flip only from favorites" toggle
+	private boolean flipOnlyFavorites;
+	private JCheckBox flipOnlyFavoritesCheck;
 
 	// Login / auth subsystem (UI construction, credential + device-auth flow)
 	private transient LoginPanel loginPanel;
@@ -227,6 +264,10 @@ public class FlipFinderPanel extends PluginPanel
 	private volatile long blocklistCacheTimestamp = 0;
 	private static final long BLOCKLIST_CACHE_TTL_MS = 5L * 60 * 1000; // 5 minutes
 
+	// Favorited item ids, hydrated from the sync payload. Card rebuilds are full removeAll(),
+	// so star fill is read from here at build time rather than stored on the widget.
+	private final java.util.Set<Integer> favoriteItemIds = new java.util.concurrent.CopyOnWriteArraySet<>();
+
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
 		super(false);
@@ -238,6 +279,12 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Restore the persisted Completed-tab sort (defaults to Recency)
 		this.completedSort = loadCompletedSort();
+
+		// Restore the persisted Favorites-tab sort (defaults to Profit)
+		this.favoritesSort = loadFavoritesSort();
+
+		// Restore the persisted "flip only from favorites" toggle
+		this.flipOnlyFavorites = loadFlipOnlyFavorites();
 
 		// Initialize flip style dropdown so it's available for both panels
 		flipStyleDropdown = new JComboBox<>(FlipSmartConfig.FlipStyle.values());
@@ -577,6 +624,18 @@ public class FlipFinderPanel extends PluginPanel
 		// Always show scrollbar so layout always accounts for it
 		recommendedScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
 
+		// Favorites list container
+		favoritesListContainer.setLayout(new BoxLayout(favoritesListContainer, BoxLayout.Y_AXIS));
+		favoritesListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		favoritesScrollPane = new JScrollPane(favoritesListContainer);
+		favoritesScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
+		favoritesScrollPane.setBorder(BorderFactory.createEmptyBorder());
+		favoritesScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		// Always show scrollbar so layout always accounts for it
+		favoritesScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+
 		// Active flips list container
 		activeFlipsListContainer.setLayout(new BoxLayout(activeFlipsListContainer, BoxLayout.Y_AXIS));
 		activeFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -643,7 +702,44 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 		
-		tabbedPane.addTab("Recommended", recommendedScrollPane);
+		// The Recommended tab swaps between the algorithm list and the favorites list via a
+		// centered toggle button, so the favorites view no longer needs its own tab.
+		JPanel toggleBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 4));
+		toggleBar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		favoritesToggleButton = new JButton("★ Favorites");
+		favoritesToggleButton.setFocusable(false);
+		favoritesToggleButton.setFont(FONT_PLAIN_11);
+		favoritesToggleButton.setMargin(new Insets(2, 10, 2, 10));
+		favoritesToggleButton.setForeground(STAR_ON_COLOR);
+		favoritesToggleButton.setToolTipText("Toggle between algorithm recommendations and your favorites");
+		favoritesToggleButton.addActionListener(e -> toggleFavoritesView());
+		toggleBar.add(favoritesToggleButton);
+
+		// Favorites controls (sort row + flip-only checkbox), shown only in favorites view
+		favoritesControlsPanel = new JPanel();
+		favoritesControlsPanel.setLayout(new BoxLayout(favoritesControlsPanel, BoxLayout.Y_AXIS));
+		favoritesControlsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		favoritesControlsPanel.add(buildFavoritesSortRow());
+		favoritesControlsPanel.setVisible(false);
+
+		JPanel recommendedControls = new JPanel();
+		recommendedControls.setLayout(new BoxLayout(recommendedControls, BoxLayout.Y_AXIS));
+		recommendedControls.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		recommendedControls.add(toggleBar);
+		recommendedControls.add(favoritesControlsPanel);
+
+		recommendedCardPanel = new JPanel(recommendedCardLayout);
+		recommendedCardPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		recommendedCardPanel.add(recommendedScrollPane, CARD_ALGORITHM);
+		recommendedCardPanel.add(favoritesScrollPane, CARD_FAVORITES);
+
+		JPanel recommendedTabPanel = new JPanel(new BorderLayout());
+		recommendedTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		recommendedTabPanel.add(recommendedControls, BorderLayout.NORTH);
+		recommendedTabPanel.add(recommendedCardPanel, BorderLayout.CENTER);
+		recommendedTabPanel.add(buildFavoritesPaginationRow(), BorderLayout.SOUTH);
+		tabbedPane.addTab("Recommended", recommendedTabPanel);
+
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
 
 		// Completed tab carries a secondary sort row (Profit / Recency) above its list
@@ -677,7 +773,7 @@ public class FlipFinderPanel extends PluginPanel
 					itemCount == 1 ? "flip" : "flips",
 					PanelFormat.formatGP(invested)));
 			}
-			else if (selectedIndex == 2)
+			else if (selectedIndex == TAB_COMPLETED)
 			{
 				// Switched to Completed Flips tab — fetch 30-day aggregate stats
 				String rsn = plugin.getCurrentRsnSafe().orElse(null);
@@ -694,7 +790,7 @@ public class FlipFinderPanel extends PluginPanel
 					});
 				});
 			}
-			else if (selectedIndex == 0 && !currentRecommendations.isEmpty())
+			else if (selectedIndex == TAB_RECOMMENDED && !currentRecommendations.isEmpty())
 			{
 				// Switched back to Recommended tab, restore original status
 				FlipFinderResponse response = new FlipFinderResponse();
@@ -809,6 +905,7 @@ public class FlipFinderPanel extends PluginPanel
 				activeSettingsPopup = null;
 				minProfitSpinner = null;
 				minVolumeSpinner = null;
+				flipOnlyFavoritesCheck = null;
 			}
 
 			@Override
@@ -825,6 +922,8 @@ public class FlipFinderPanel extends PluginPanel
 		body.add(buildMinProfitRow());
 		body.add(Box.createVerticalStrut(6));
 		body.add(buildMinVolumeRow());
+		body.add(Box.createVerticalStrut(6));
+		body.add(buildFlipOnlyFavoritesRow());
 		body.add(Box.createVerticalStrut(6));
 		body.add(buildUpdateButtonRow());
 		body.add(Box.createVerticalStrut(6));
@@ -1153,6 +1252,15 @@ public class FlipFinderPanel extends PluginPanel
 			subscribeLabel.setText(SUBSCRIBE_MESSAGE);
 			subscribeLabel.setVisible(!apiClient.isPremium());
 		}
+
+		// A lapsed subscription should drop the checkbox back to unselected (and persist that)
+		// rather than leaving it checked while the resolved flag silently stops applying.
+		if (flipOnlyFavoritesCheck != null && flipOnlyFavoritesCheck.isSelected() && !apiClient.isPremium())
+		{
+			flipOnlyFavoritesCheck.setSelected(false);
+			flipOnlyFavorites = false;
+			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_ONLY_FAVORITES, flipOnlyFavorites);
+		}
 	}
 
 	/**
@@ -1224,14 +1332,16 @@ public class FlipFinderPanel extends PluginPanel
 		Integer filledSlots = getFilledSlots();
 
 		final boolean applyRecs = applyRecommendations;
+		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
 		apiClient.getPluginSyncAsync(cashStack, getInventoryGp(), flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, plugin.isMembersWorld()).thenAccept(sync ->
+			filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(sync ->
 		{
 			if (sync == null)
 			{
 				showBundleError(applyRecs, recScrollPos, activeScrollPos, completedScrollPos, null);
 				return;
 			}
+			applyFavoriteItemIds(sync.getFavoriteItemIds());
 			// Each apply method hops to the EDT internally and null-skips a missing
 			// sub-payload, leaving that section's prior state untouched.
 			if (applyRecs)
@@ -1498,7 +1608,8 @@ public class FlipFinderPanel extends PluginPanel
 		Integer filledSlots = getFilledSlots();
 
 		// Use unified /flip-finder endpoint with all parameters
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld()).thenAccept(response ->
+		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
+		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(response ->
 		{
 			handleRecommendationsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
@@ -1783,7 +1894,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() ->
 		{
-			if (stats != null && tabbedPane.getSelectedIndex() == 2)
+			if (stats != null && tabbedPane.getSelectedIndex() == TAB_COMPLETED)
 			{
 				statusLabel.setText(String.format("%d flips (30d) | %s profit",
 					stats.getTotalFlips(),
@@ -2440,6 +2551,333 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedListContainer.repaint();
 	}
 
+	/** Flip between the algorithm recommendations and the in-tab favorites view. */
+	private void toggleFavoritesView()
+	{
+		favoritesViewActive = !favoritesViewActive;
+		applyFavoritesViewState();
+		if (favoritesViewActive)
+		{
+			updateFavoritesStatusLabel();
+			refreshFavoritesTab();
+		}
+	}
+
+	/** Show/hide the favorites list, controls, pagination and update the toggle button for the current view. */
+	private void applyFavoritesViewState()
+	{
+		favoritesControlsPanel.setVisible(favoritesViewActive);
+		if (favoritesViewActive)
+		{
+			favoritesToggleButton.setText("Algorithm");
+			favoritesToggleButton.setForeground(Color.LIGHT_GRAY);
+			recommendedCardLayout.show(recommendedCardPanel, CARD_FAVORITES);
+		}
+		else
+		{
+			favoritesToggleButton.setText("★ Favorites");
+			favoritesToggleButton.setForeground(STAR_ON_COLOR);
+			recommendedCardLayout.show(recommendedCardPanel, CARD_ALGORITHM);
+			favoritesPaginationRow.setVisible(false);
+		}
+		recommendedCardPanel.revalidate();
+		recommendedCardPanel.repaint();
+	}
+
+	/** Fetch the enriched favorites list and repaint the Favorites tab. */
+	void refreshFavoritesTab()
+	{
+		apiClient.getFavoritesAsync().thenAccept(resp -> SwingUtilities.invokeLater(() ->
+		{
+			currentFavorites.clear();
+			if (resp != null && resp.getItems() != null)
+			{
+				currentFavorites.addAll(resp.getItems());
+			}
+			populateFavorites();
+		})).exceptionally(ex ->
+		{
+			log.warn("Failed to load favorites", ex);
+			SwingUtilities.invokeLater(() ->
+				showErrorInContainer(favoritesListContainer, "Favorites", "Failed to load favorites. Please try again."));
+			return null;
+		});
+	}
+
+	private void populateFavorites()
+	{
+		favoritesListContainer.removeAll();
+		List<FavoriteItem> sorted = new ArrayList<>(currentFavorites);
+		sorted.sort(favoritesSort.comparator());
+		int pages = Paginator.pageCount(sorted.size(), FAVORITES_PAGE_SIZE);
+		if (favoritesPage > pages - 1)
+		{
+			favoritesPage = pages - 1;
+		}
+		if (favoritesPage < 0)
+		{
+			favoritesPage = 0;
+		}
+		List<FavoriteItem> visible = Paginator.page(sorted, favoritesPage, FAVORITES_PAGE_SIZE);
+		if (visible.isEmpty())
+		{
+			favoritesListContainer.add(createEmptyStatePanel(
+				"No favorites yet",
+				"<html><center>Tap the star on any item<br>to add it here</center></html>",
+				60));
+		}
+		else
+		{
+			for (FavoriteItem item : visible)
+			{
+				favoritesListContainer.add(createFavoriteCard(item));
+				favoritesListContainer.add(Box.createRigidArea(new Dimension(0, 4)));
+			}
+		}
+		updateFavoritesPaginationControls(pages);
+		favoritesListContainer.revalidate();
+		favoritesListContainer.repaint();
+		updateFavoritesStatusLabel();
+	}
+
+	/** Update the footer status label with the current favorites count. */
+	private void updateFavoritesStatusLabel()
+	{
+		int count = currentFavorites.size();
+		statusLabel.setText(count == 1 ? "1 favorite" : count + " favorites");
+	}
+
+	/**
+	 * Build the sort row shown above the Favorites list, mirroring the Completed-tab
+	 * sort idiom: tab-style labels, one per {@link FavoritesSort}.
+	 */
+	private JPanel buildFavoritesSortRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(0, 4, 0, 0));
+
+		JLabel sortByLabel = new JLabel("Sort:");
+		sortByLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+		sortByLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+		row.add(sortByLabel);
+
+		Font tabFont = new Font(FONT_ARIAL, Font.BOLD, 11);
+		EmptyBorder tabBorder = new EmptyBorder(2, 7, 2, 7);
+		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+		for (FavoritesSort sort : FavoritesSort.values())
+		{
+			JLabel tab = new JLabel(sort.getLabel());
+			tab.setFont(tabFont);
+			tab.setBorder(tabBorder);
+			tab.setCursor(handCursor);
+			tab.setOpaque(true);
+			tab.addMouseListener(new MouseAdapter()
+			{
+				@Override
+				public void mouseClicked(MouseEvent e)
+				{
+					selectFavoritesSort(sort);
+				}
+			});
+			favoritesSortTabs.put(sort, tab);
+			row.add(tab);
+		}
+
+		applyFavoritesSortTabStyles();
+		return row;
+	}
+
+	/** Persist the chosen sort, reset to page 0, restyle the tabs, and re-render the list. */
+	private void selectFavoritesSort(FavoritesSort sort)
+	{
+		if (sort == favoritesSort)
+		{
+			return;
+		}
+		favoritesSort = sort;
+		favoritesPage = 0;
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FAVORITES_SORT, sort.name());
+		applyFavoritesSortTabStyles();
+		populateFavorites();
+	}
+
+	/** Highlight the active sort tab (orange) and dim the others. */
+	private void applyFavoritesSortTabStyles()
+	{
+		for (java.util.Map.Entry<FavoritesSort, JLabel> entry : favoritesSortTabs.entrySet())
+		{
+			boolean selected = entry.getKey() == favoritesSort;
+			JLabel tab = entry.getValue();
+			tab.setForeground(selected ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+			tab.setBackground(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARK_GRAY_COLOR);
+		}
+	}
+
+	/** Read the persisted Favorites-tab sort, defaulting to Profit. */
+	private FavoritesSort loadFavoritesSort()
+	{
+		String saved = configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_FAVORITES_SORT);
+		if (saved != null)
+		{
+			try
+			{
+				return FavoritesSort.valueOf(saved);
+			}
+			catch (IllegalArgumentException ignored)
+			{
+				// Unknown/legacy value — fall through to the default.
+			}
+		}
+		return FavoritesSort.PROFIT;
+	}
+
+	/**
+	 * Whether the recommendation feed should be restricted to favorited items. Free tier
+	 * never sends {@code favorites_only=true} to the API regardless of the local toggle state.
+	 */
+	public static boolean resolveFavoritesOnly(boolean toggleOn, boolean premium)
+	{
+		return toggleOn && premium;
+	}
+
+	/** Read the persisted "flip only from favorites" toggle, defaulting to off. */
+	private boolean loadFlipOnlyFavorites()
+	{
+		return Boolean.parseBoolean(configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_ONLY_FAVORITES));
+	}
+
+	/** Build the row holding the premium-gated "Flip only from favorites" checkbox. */
+	private JPanel buildFlipOnlyFavoritesRow()
+	{
+		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		row.setBorder(new EmptyBorder(0, 4, 4, 0));
+		row.add(buildFlipOnlyFavoritesCheck());
+		return row;
+	}
+
+	/** Build the "Flip only from favorites" checkbox, enforcing the premium gate (AC11). */
+	private JCheckBox buildFlipOnlyFavoritesCheck()
+	{
+		flipOnlyFavoritesCheck = new JCheckBox("Flip only from favorites");
+		flipOnlyFavoritesCheck.setSelected(flipOnlyFavorites);
+		flipOnlyFavoritesCheck.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		flipOnlyFavoritesCheck.setForeground(Color.LIGHT_GRAY);
+		flipOnlyFavoritesCheck.addActionListener(e ->
+		{
+			if (flipOnlyFavoritesCheck.isSelected() && !plugin.isPremium())
+			{
+				flipOnlyFavoritesCheck.setSelected(false);
+				showPremiumRequiredForFavoritesOnly();
+				return;
+			}
+			flipOnlyFavorites = flipOnlyFavoritesCheck.isSelected();
+			configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FLIP_ONLY_FAVORITES, flipOnlyFavorites);
+			refresh(false);
+		});
+		return flipOnlyFavoritesCheck;
+	}
+
+	/** Short transient premium nudge for a blocked flip-only-favorites toggle attempt. */
+	private void showPremiumRequiredForFavoritesOnly()
+	{
+		subscribeLabel.setText("Flip only from favorites is a Premium feature.");
+		subscribeLabel.setVisible(true);
+	}
+
+	/** Build the prev/page-label/next pagination row shown below the Favorites list. */
+	private JPanel buildFavoritesPaginationRow()
+	{
+		favoritesPaginationRow = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
+		favoritesPaginationRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		Font navFont = new Font(FONT_ARIAL, Font.BOLD, 12);
+		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
+
+		favoritesPrevPageLabel = new JLabel("<");
+		favoritesPrevPageLabel.setFont(navFont);
+		favoritesPrevPageLabel.setForeground(Color.WHITE);
+		favoritesPrevPageLabel.setCursor(handCursor);
+		favoritesPrevPageLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				if (favoritesPage > 0)
+				{
+					favoritesPage--;
+					populateFavorites();
+				}
+			}
+		});
+
+		favoritesPageLabel = new JLabel("Page 1/1");
+		favoritesPageLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 11));
+		favoritesPageLabel.setForeground(COLOR_TEXT_DIM_GRAY);
+
+		favoritesNextPageLabel = new JLabel(">");
+		favoritesNextPageLabel.setFont(navFont);
+		favoritesNextPageLabel.setForeground(Color.WHITE);
+		favoritesNextPageLabel.setCursor(handCursor);
+		favoritesNextPageLabel.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				int pages = Paginator.pageCount(currentFavorites.size(), FAVORITES_PAGE_SIZE);
+				if (favoritesPage < pages - 1)
+				{
+					favoritesPage++;
+					populateFavorites();
+				}
+			}
+		});
+
+		favoritesPaginationRow.add(favoritesPrevPageLabel);
+		favoritesPaginationRow.add(favoritesPageLabel);
+		favoritesPaginationRow.add(favoritesNextPageLabel);
+		favoritesPaginationRow.setVisible(false);
+		return favoritesPaginationRow;
+	}
+
+	/** Update the "Page x/y" text, enable/disable prev/next, and hide the row for a single page. */
+	private void updateFavoritesPaginationControls(int pages)
+	{
+		favoritesPageLabel.setText("Page " + (favoritesPage + 1) + "/" + pages);
+		favoritesPrevPageLabel.setForeground(favoritesPage > 0 ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+		favoritesNextPageLabel.setForeground(favoritesPage < pages - 1 ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+		favoritesPaginationRow.setVisible(pages > 1);
+	}
+
+	/**
+	 * Render a favorite with the same card as a recommendation — a favorite is the same kind
+	 * of item, so it gets the identical layout, colours, and click-to-focus behaviour. The
+	 * favorite's server-sent buy limit is the quantity its profit is sized to (one full cycle).
+	 */
+	private JPanel createFavoriteCard(FavoriteItem item)
+	{
+		return createRecommendationPanel(favoriteAsRecommendation(item));
+	}
+
+	/** Map a favorite onto a {@link FlipRecommendation} so the recommendation renderer can draw it. */
+	private static FlipRecommendation favoriteAsRecommendation(FavoriteItem item)
+	{
+		int buy = item.getBuyPrice() != null ? item.getBuyPrice() : 0;
+		int quantity = item.getBuyLimit() != null && item.getBuyLimit() > 0 ? item.getBuyLimit() : 1;
+		FlipRecommendation rec = new FlipRecommendation();
+		rec.setItemId(item.getItemId());
+		rec.setItemName(item.getItemName());
+		rec.setRecommendedBuyPrice(buy);
+		rec.setRecommendedSellPrice(item.getSellPrice() != null ? item.getSellPrice() : 0);
+		rec.setRecommendedQuantity(quantity);
+		rec.setBuyLimit(quantity);
+		rec.setDailyVolume(item.getVolume());
+		rec.setRiskScore(item.getRiskScore());
+		rec.setRiskRating(item.getRiskRating());
+		return rec;
+	}
+
 	/**
 	 * Create a panel for a single recommendation
 	 */
@@ -2480,9 +2918,10 @@ public class FlipFinderPanel extends PluginPanel
 		int displayCost = displayBuyPrice * rec.getRecommendedQuantity();
 		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
 
-		// Recommended Buy/Sell prices
-		JLabel priceLabel = new JLabel(PanelFormat.formatBuySellText(displayBuyPrice, displaySellPrice));
-		priceLabel.setForeground(Color.LIGHT_GRAY);
+		// Recommended Buy/Sell prices — buy blue, sell orange, bold (matches the Active-tab live-price row).
+		// White base foreground keeps the "Buy:"/"Sell:" label text (outside the coloured spans) legible.
+		JLabel priceLabel = new JLabel(PanelFormat.buySellHtml(displayBuyPrice, displaySellPrice));
+		priceLabel.setForeground(Color.WHITE);
 		priceLabel.setFont(FONT_PLAIN_12);
 
 		// Quantity
@@ -2710,6 +3149,7 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 1, 0));
 		iconsPanel.setOpaque(false);
 
+		iconsPanel.add(createStarIconLabel(itemId));
 		iconsPanel.add(createBlockIconLabel(itemId, itemName));
 		iconsPanel.add(createChartIconLabel(itemId));
 
@@ -2844,6 +3284,101 @@ public class FlipFinderPanel extends PluginPanel
 	 * Create a clickable block icon label that adds the item to a blocklist.
 	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
 	 */
+	public static boolean isFavorite(java.util.Set<Integer> favorites, int itemId)
+	{
+		return favorites != null && favorites.contains(itemId);
+	}
+
+	private void applyFavoriteItemIds(java.util.List<Integer> ids)
+	{
+		SwingUtilities.invokeLater(() ->
+		{
+			favoriteItemIds.clear();
+			if (ids != null)
+			{
+				favoriteItemIds.addAll(ids);
+			}
+		});
+	}
+
+	private JLabel createStarIconLabel(int itemId)
+	{
+		boolean filled = isFavorite(favoriteItemIds, itemId);
+		JLabel star = new JLabel(new ImageIcon(
+			PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR)));
+		star.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		star.setToolTipText(filled ? "Remove from favorites" : "Add to favorites");
+		star.setOpaque(false);
+		star.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				e.consume();
+				handleStarClick(itemId, star);
+			}
+		});
+		return star;
+	}
+
+	private void handleStarClick(int itemId, JLabel starLabel)
+	{
+		boolean wasFavorite = isFavorite(favoriteItemIds, itemId);
+		// Optimistic flip of local state + icon.
+		if (wasFavorite)
+		{
+			favoriteItemIds.remove(itemId);
+		}
+		else
+		{
+			favoriteItemIds.add(itemId);
+		}
+		updateStarLabel(starLabel, itemId);
+
+		java.util.concurrent.CompletableFuture<Boolean> call = wasFavorite
+			? apiClient.removeFavoriteAsync(itemId)
+			: apiClient.addFavoriteAsync(itemId);
+
+		call.thenAccept(success -> SwingUtilities.invokeLater(() ->
+		{
+			if (!Boolean.TRUE.equals(success))
+			{
+				rollbackFavoriteToggle(wasFavorite, itemId, starLabel);
+			}
+			else if (tabbedPane.getSelectedIndex() == TAB_RECOMMENDED && favoritesViewActive)
+			{
+				refreshFavoritesTab();
+			}
+		})).exceptionally(ex ->
+		{
+			log.warn("Favorite toggle failed for item {}", itemId, ex);
+			SwingUtilities.invokeLater(() -> rollbackFavoriteToggle(wasFavorite, itemId, starLabel));
+			return null;
+		});
+	}
+
+	/** Undo the optimistic favorite-toggle flip after a failed add/remove call. */
+	private void rollbackFavoriteToggle(boolean wasFavorite, int itemId, JLabel starLabel)
+	{
+		if (wasFavorite)
+		{
+			favoriteItemIds.add(itemId);
+		}
+		else
+		{
+			favoriteItemIds.remove(itemId);
+		}
+		updateStarLabel(starLabel, itemId);
+	}
+
+	private void updateStarLabel(JLabel starLabel, int itemId)
+	{
+		boolean filled = isFavorite(favoriteItemIds, itemId);
+		starLabel.setIcon(new ImageIcon(
+			PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR)));
+		starLabel.setToolTipText(filled ? "Remove from favorites" : "Add to favorites");
+	}
+
 	private JLabel createBlockIconLabel(int itemId, String itemName)
 	{
 		java.awt.image.BufferedImage blockIcon = PanelFormat.drawBlockIcon(new Color(180, 100, 100));
@@ -4316,7 +4851,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 
 			// Switch to Recommended tab
-			tabbedPane.setSelectedIndex(0);
+			tabbedPane.setSelectedIndex(TAB_RECOMMENDED);
 
 			// Start the 2-minute refresh timer
 			plugin.startAutoRecommendRefreshTimer();

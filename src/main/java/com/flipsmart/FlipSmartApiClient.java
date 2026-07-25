@@ -3,6 +3,7 @@ import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.endpoints.ActiveFlipEndpoints;
 import com.flipsmart.api.endpoints.BankSnapshotEndpoints;
 import com.flipsmart.api.endpoints.BlocklistEndpoints;
+import com.flipsmart.api.endpoints.FavoritesEndpoints;
 import com.flipsmart.api.endpoints.FlipsEndpoints;
 import com.flipsmart.api.endpoints.MarketDataEndpoints;
 import com.flipsmart.api.endpoints.MotdEndpoints;
@@ -12,6 +13,7 @@ import com.flipsmart.api.endpoints.TransactionEndpoints;
 import com.flipsmart.api.endpoints.WebhookEndpoints;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.FavoritesResponse;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.BankSnapshotResult;
@@ -73,6 +75,7 @@ public class FlipSmartApiClient
 	private final WebhookEndpoints webhooks;
 	private final MotdEndpoints motd;
 	private final TradeStationEndpoints tradeStation;
+	private final FavoritesEndpoints favorites;
 
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
@@ -97,6 +100,7 @@ public class FlipSmartApiClient
 		this.webhooks = new WebhookEndpoints(transport);
 		this.motd = new MotdEndpoints(transport);
 		this.tradeStation = new TradeStationEndpoints(transport);
+		this.favorites = new FavoritesEndpoints(transport);
 	}
 
 	// ============================================================================
@@ -209,23 +213,38 @@ public class FlipSmartApiClient
 
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
 		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
-		Integer filledSlots, boolean isMembersWorld)
+		Integer filledSlots, boolean isMembersWorld, boolean favoritesOnly)
 	{
 		return flips.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume());
+			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume(), favoritesOnly);
 	}
 
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
 		Integer cashStack, Integer inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
-		String rsn, Integer filledSlots, boolean isMembersWorld)
+		String rsn, Integer filledSlots, boolean isMembersWorld, boolean favoritesOnly)
 	{
 		return flips.getPluginSyncAsync(cashStack, inventoryGp, flipStyle, limit, randomSeed, timeframe, rsn,
-			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume());
+			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume(), favoritesOnly);
 	}
 
 	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Integer inventoryGp)
 	{
 		return flips.pushRsnCapitalAsync(rsn, inventoryGp);
+	}
+
+	public CompletableFuture<FavoritesResponse> getFavoritesAsync()
+	{
+		return favorites.getFavoritesAsync();
+	}
+
+	public CompletableFuture<Boolean> addFavoriteAsync(int itemId)
+	{
+		return favorites.addFavoriteAsync(itemId);
+	}
+
+	public CompletableFuture<Boolean> removeFavoriteAsync(int itemId)
+	{
+		return favorites.removeFavoriteAsync(itemId);
 	}
 
 	@Deprecated(since = "1.5.0", forRemoval = true)
