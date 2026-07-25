@@ -97,4 +97,32 @@ public class ActiveFlipDisplayFilterTest
 
 		assertTrue(result.isEmpty());
 	}
+
+	// A selling lot and a pending re-buy of the same item are distinct positions — the sell must
+	// never be hidden by the pending buy, or the 8th active flip is lost.
+
+	@Test
+	public void sellingFlipIsShownEvenWithAPendingBuyOfTheSameItem()
+	{
+		ActiveFlip selling = flip(1, "Dharok's greataxe");
+		selling.setPhase("sell");
+		assertTrue("a sell-phase flip is a distinct live position, shown alongside a pending re-buy",
+			ActiveFlipDisplayFilter.showAlongsidePendingBuy(selling, true));
+
+		ActiveFlip sellPlaced = flip(1, "Dharok's greataxe");
+		sellPlaced.setSellPlacedTime("2026-07-24T23:00:00Z");
+		assertTrue("a flip with a sell already placed is shown alongside a pending re-buy",
+			ActiveFlipDisplayFilter.showAlongsidePendingBuy(sellPlaced, true));
+	}
+
+	@Test
+	public void buyPhaseFlipIsHiddenWhenItsItemHasAPendingBuy()
+	{
+		ActiveFlip buying = flip(2, "Blue moon tassets");
+		buying.setPhase("buy");
+		assertTrue("a buy-phase flip with no pending buy is shown",
+			ActiveFlipDisplayFilter.showAlongsidePendingBuy(buying, false));
+		assertTrue("a buy-phase flip whose item is already a pending buy row is hidden as a duplicate",
+			!ActiveFlipDisplayFilter.showAlongsidePendingBuy(buying, true));
+	}
 }

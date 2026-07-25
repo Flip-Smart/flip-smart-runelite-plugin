@@ -2026,28 +2026,28 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Determine if an active flip should be shown (not duplicated by pending orders)
-	 * 
-	 * Logic: If an item has ANY pending buy order in the GE, skip the active flip.
-	 * The pending order is the source of truth for items currently in buy slots.
-	 * Active flips should only show for COLLECTED items (no longer in GE, waiting to sell).
+	 * Determine if an active flip should be shown (not duplicated by pending orders).
+	 *
+	 * A pending BUY order for an item is already rendered in the pending-orders section above, so a
+	 * matching BUY-phase active flip would duplicate it and is skipped. But a SELLING flip (a lot the
+	 * player already bought and is now selling) is a distinct live position — the pending buy is a
+	 * separate re-buy of the same item started while the earlier lot is still selling. Hiding it lost
+	 * the sell-side tracking (only 7 of 8 flips ever showed). A selling flip is always shown.
 	 */
-	private boolean shouldShowActiveFlip(ActiveFlip flip, 
+	private boolean shouldShowActiveFlip(ActiveFlip flip,
 			java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId)
 	{
 		java.util.List<PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
-		
-		if (matchingPending == null || matchingPending.isEmpty())
+		boolean hasPendingBuy = matchingPending != null && !matchingPending.isEmpty();
+		boolean show = ActiveFlipDisplayFilter.showAlongsidePendingBuy(flip, hasPendingBuy);
+		if (!show)
 		{
-			// No pending buy orders for this item - show the active flip
-			return true;
+			// A buy-phase flip whose item is already in a GE buy slot: the pending-order row above is
+			// the source of truth, so skip the duplicate.
+			log.debug("Skipping buy-phase active flip {} - already shown as {} pending buy order(s) in GE",
+				flip.getItemName(), matchingPending.size());
 		}
-		
-		// There's a pending buy order for this item in the GE.
-		// Skip the active flip to avoid duplicates - the pending order panel shows the current state.
-		log.debug("Skipping active flip {} - has {} pending buy order(s) in GE",
-			flip.getItemName(), matchingPending.size());
-		return false;
+		return show;
 	}
 
 	/**

@@ -52,4 +52,24 @@ public final class ActiveFlipDisplayFilter
 		return (activeItemIds != null && activeItemIds.contains(itemId))
 			|| (inventoryItemIds != null && inventoryItemIds.contains(itemId));
 	}
+
+	/**
+	 * Whether an active flip should still be shown when its item also has a pending BUY order that is
+	 * already rendered in the pending-orders section.
+	 *
+	 * A SELLING flip (a lot already bought and now being sold — {@code sellPlacedTime} set, or the
+	 * backend marks it {@code phase == "sell"}) is a distinct live position: the pending buy is a
+	 * separate re-buy of the same item started while the earlier lot is still selling, so the sell
+	 * must always be shown. Only a buy-phase flip duplicates the pending-order row and is hidden when
+	 * its item has a pending buy. Hiding selling flips is what dropped the 8th active flip.
+	 */
+	public static boolean showAlongsidePendingBuy(ActiveFlip flip, boolean itemHasPendingBuy)
+	{
+		if (flip == null)
+		{
+			return false;
+		}
+		boolean selling = flip.getSellPlacedTime() != null || "sell".equalsIgnoreCase(flip.getPhase());
+		return selling || !itemHasPendingBuy;
+	}
 }
