@@ -895,24 +895,25 @@ public class FlipFinderPanel extends PluginPanel
 		menu.addSeparator();
 
 		boolean favorited = isFavorite(favoriteItemIds, itemId);
-		JMenuItem favoriteItem = new JMenuItem(favoriteMenuLabel(favorited));
-		favoriteItem.addActionListener(e -> handleStarClick(itemId, starLabel));
-		menu.add(favoriteItem);
+		boolean appendDismiss = includeDismiss && onDismiss != null;
+		List<String> labels = itemContextMenuLabels(favorited, appendDismiss);
+		// Actions align positionally with the core three labels itemContextMenuLabels always returns;
+		// dismiss (when present) is always the fourth/last entry.
+		List<Runnable> actions = List.of(
+			() -> handleStarClick(itemId, starLabel),
+			() -> handleBlockItemClick(itemId, itemName),
+			() -> LinkBrowser.browse(WEBSITE_ITEM_URL + itemId));
 
-		JMenuItem blockItem = new JMenuItem("Block this item");
-		blockItem.addActionListener(e -> handleBlockItemClick(itemId, itemName));
-		menu.add(blockItem);
-
-		JMenuItem graphItem = new JMenuItem("View Item Graph");
-		graphItem.addActionListener(e -> LinkBrowser.browse(WEBSITE_ITEM_URL + itemId));
-		menu.add(graphItem);
-
-		if (includeDismiss && onDismiss != null)
+		for (int i = 0; i < labels.size(); i++)
 		{
-			menu.addSeparator();
-			JMenuItem dismissItem = new JMenuItem("Dismiss from Active Flips");
-			dismissItem.addActionListener(e -> onDismiss.run());
-			menu.add(dismissItem);
+			if (appendDismiss && i == labels.size() - 1)
+			{
+				menu.addSeparator();
+			}
+			JMenuItem menuItem = new JMenuItem(labels.get(i));
+			Runnable action = i < actions.size() ? actions.get(i) : onDismiss;
+			menuItem.addActionListener(e -> action.run());
+			menu.add(menuItem);
 		}
 
 		menu.show(invoker, x, y);
