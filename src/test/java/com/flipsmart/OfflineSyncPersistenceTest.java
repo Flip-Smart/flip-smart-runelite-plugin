@@ -99,6 +99,35 @@ public class OfflineSyncPersistenceTest
 	}
 
 	@Test
+	public void flipFinderSourced_persistsAndRestoresAcrossRestart()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.getFlipFinderSourcedItems())
+			.thenReturn(new java.util.HashSet<>(java.util.Arrays.asList(100, 200)));
+
+		service.persistOfferState();
+		assertTrue("Flip Finder-sourced set key written",
+			configStore.containsKey("flipFinderSourced_Zezima"));
+
+		// A restart: restore reads the persisted set back into the session.
+		service.restoreFlipFinderSourcedItems();
+		verify(session).restoreFlipFinderSourced(
+			eq(new java.util.HashSet<>(java.util.Arrays.asList(100, 200))), org.mockito.ArgumentMatchers.anyLong());
+	}
+
+	@Test
+	public void flipFinderSourced_emptySetDoesNotWipePersistedData()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		configStore.put("flipFinderSourced_Zezima", "[100,200]");
+		when(session.getFlipFinderSourcedItems()).thenReturn(Collections.emptySet());
+
+		// A transient empty set during logout must not erase the saved data.
+		service.persistOfferState();
+		assertEquals("[100,200]", configStore.get("flipFinderSourced_Zezima"));
+	}
+
+	@Test
 	public void persistThenLoad_roundTripsOfferRecordsByOfferId()
 	{
 		when(session.getRsn()).thenReturn("Zezima");

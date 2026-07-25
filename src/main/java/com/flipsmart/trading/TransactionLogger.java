@@ -115,8 +115,14 @@ public final class TransactionLogger
             return;
         }
         int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
+        // The offer is done filling (so its slot's cumulative baseline may reset) once it is no longer
+        // NEW or PARTIAL_FILL — i.e. FILLED, collected, or cancelled. A still-filling offer keeps its
+        // baseline so a sibling slot of the same item is never double-counted on a mid-fill close.
+        com.flipsmart.domain.offer.OfferState state = r.getState();
+        boolean offerComplete = state != com.flipsmart.domain.offer.OfferState.NEW
+            && state != com.flipsmart.domain.offer.OfferState.PARTIAL_FILL;
         RoundTripLedger.FillResult fill = roundTripLedger.recordFillGuarded(
-            rsn, r.getItemId(), r.getSlot(), r.isBuy(), newlyFilled, r.getFilledQuantity());
+            rsn, r.getItemId(), r.getSlot(), r.isBuy(), newlyFilled, r.getFilledQuantity(), offerComplete);
         if (fill.duplicateSuppressed)
         {
             // A duplicate/phantom closing fill (Collect re-detection under a churned offer_id) that

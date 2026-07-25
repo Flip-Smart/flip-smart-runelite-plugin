@@ -59,13 +59,13 @@ public class EntitlementsResponseTest
 	}
 
 	@Test
-	public void premiumFalseForRealSnapshotShapeWithoutTopLevelIsPremium()
+	public void premiumFalseForNestedOnlySnapshotShape()
 	{
-		// The real GET /auth/entitlements (and the /plugin/sync entitlements sub-payload)
-		// carries premium under rsn_entitlement, NOT a top-level is_premium. This DTO reads
-		// only the top-level field, so isPremium() is false here even though the RSN is
-		// premium. Guards against re-sourcing premium from this payload (it downgrades a
-		// premium player to the free slot tier — see the /plugin/sync regression).
+		// The entitlements snapshot carries premium nested under rsn_entitlement. This DTO
+		// reads ONLY a top-level is_premium, so a nested-only payload reads false. Premium is
+		// sourced from the flip-finder payload, and ApiHttpTransport.applyEntitlements no longer
+		// writes premium from this payload at all (#1087) — re-sourcing it here previously
+		// downgraded premium players to the free slot tier (see the /plugin/sync regression).
 		String snapshot = "{\"user_id\":1,\"has_any_premium\":true,"
 			+ "\"rsn_entitlement\":{\"is_premium\":true,\"status\":\"active\"}}";
 		assertFalse(parse(snapshot).isPremium());

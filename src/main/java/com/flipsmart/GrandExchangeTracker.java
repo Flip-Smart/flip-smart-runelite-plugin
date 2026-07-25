@@ -62,6 +62,9 @@ public class GrandExchangeTracker
 	private Consumer<List<PendingOrder>> onPendingOrdersUpdate;
 	private Consumer<FocusedFlip> onFocusChanged;
 	private BiConsumer<Integer, Boolean> onFocusClear;
+	// Fires on every order submission (buy or sell), for BOTH manual and Auto, unlike
+	// onFocusClear which is skipped during Auto. Used to mark Flip Finder-sourced buys.
+	private BiConsumer<Integer, Boolean> onOrderSubmitted;
 	private IntFunction<Integer> displayedSellPriceProvider;
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 
@@ -74,6 +77,10 @@ public class GrandExchangeTracker
 	private static final int SELL_FOCUS_RETRY_TICKS = 6;
 	private volatile int pendingSellFocusItemId = -1;
 	private int pendingSellFocusTicksLeft;
+	// Retry mode is fixed when armed, not read from the live auto state.
+	// A manual-armed retry re-issues the backend lookup each tick; an auto-armed
+	// one re-runs the local resolver and drops if auto-recommend is turned off.
+	private volatile boolean pendingSellFocusManual;
 
 	/**
 	 * Bundles GE offer data passed from the plugin event handler.
@@ -173,6 +180,11 @@ public class GrandExchangeTracker
 	public void setOnFocusClear(BiConsumer<Integer, Boolean> callback)
 	{
 		this.onFocusClear = callback;
+	}
+
+	public void setOnOrderSubmitted(BiConsumer<Integer, Boolean> callback)
+	{
+		this.onOrderSubmitted = callback;
 	}
 
 	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
@@ -793,9 +805,17 @@ public class GrandExchangeTracker
 			// arrive late or not show at all.
 			pendingSellFocusItemId = itemId;
 			pendingSellFocusTicksLeft = SELL_FOCUS_RETRY_TICKS;
+			pendingSellFocusManual = false;
 			return;
 		}
 
+		// Manual mode: the backend active-flip snapshot lags the
+		// just-opened sell screen, so a single one-shot lookup returned no match
+		// and the sell target silently never filled. Arm the same bounded tick-
+		// retry auto mode gets, re-issuing the backend lookup until it resolves.
+		pendingSellFocusItemId = itemId;
+		pendingSellFocusTicksLeft = SELL_FOCUS_RETRY_TICKS;
+		pendingSellFocusManual = true;
 		tryAsyncSellFocus(itemId);
 	}
 
@@ -829,12 +849,27 @@ public class GrandExchangeTracker
 		{
 			return;
 		}
+		int itemId = pendingSellFocusItemId;
+
+		if (pendingSellFocusManual)
+		{
+			// Manual retry: no local resolver, so re-issue the backend
+			// lookup each tick until it resolves (handleActiveFlipResponse clears
+			// pending on success) or the budget runs out.
+			pendingSellFocusTicksLeft--;
+			if (pendingSellFocusTicksLeft <= 0)
+			{
+				clearPendingSellFocus();
+			}
+			tryAsyncSellFocus(itemId);
+			return;
+		}
+
 		if (!isAutoRecommendActive())
 		{
 			clearPendingSellFocus();
 			return;
 		}
-		int itemId = pendingSellFocusItemId;
 		String itemName = ItemUtils.getItemName(itemManager, itemId);
 		AutoRecommendService.SellFocusResult result =
 			autoRecommendService.overrideFocusForSell(itemId, itemName);
@@ -859,6 +894,7 @@ public class GrandExchangeTracker
 	{
 		pendingSellFocusItemId = -1;
 		pendingSellFocusTicksLeft = 0;
+		pendingSellFocusManual = false;
 	}
 
 	private void handleActiveFlipResponse(
@@ -866,6 +902,17 @@ public class GrandExchangeTracker
 	{
 		if (response == null || response.getActiveFlips() == null)
 		{
+			return;
+		}
+
+		// A newer sell-focus session may have armed for a different item while
+		// this lookup was in flight (manual mode re-issues every tick). A stale
+		// response for the old item must not override or clear that session.
+		int currentPendingItemId = pendingSellFocusItemId;
+		if (currentPendingItemId >= 0 && currentPendingItemId != itemId)
+		{
+			log.debug("Dropping stale active-flip response for {} - pending item is now {}",
+				itemId, currentPendingItemId);
 			return;
 		}
 
@@ -881,10 +928,13 @@ public class GrandExchangeTracker
 		if (offerStore.hasActiveSellOfferForItem(itemId))
 		{
 			log.debug("Sell already placed for {} - not overriding focus", matchingFlip.getItemName());
+			clearPendingSellFocus();
 			return;
 		}
 
 		setFocusForSell(matchingFlip, inventoryCount);
+		// The flip resolved — stop any manual tick-retry re-issuing the lookup.
+		clearPendingSellFocus();
 
 		// Sync inventory-corrected quantity to API if inventory has more
 		if (inventoryCount > matchingFlip.getTotalQuantity() && inventoryCount > 0 && rsn != null)
@@ -983,6 +1033,15 @@ public class GrandExchangeTracker
 	 */
 	public void clearFlipAssistFocusIfMatches(int itemId, boolean isBuy)
 	{
+		// Always notify order-submitted (both manual and Auto) so a Flip Finder-sourced buy
+		// is marked. This must run BEFORE the Auto short-circuit below, which otherwise skips
+		// the focus-clear path entirely and never marked Auto-placed buys.
+		if (onOrderSubmitted != null)
+		{
+			onOrderSubmitted.accept(itemId, isBuy);
+		}
+
+		// The focus-clear itself is Auto's job to manage while Auto is active.
 		if (isAutoRecommendActive())
 		{
 			return;

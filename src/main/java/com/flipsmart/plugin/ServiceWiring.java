@@ -212,6 +212,7 @@ public class ServiceWiring
 		grandExchangeTracker.setOnPendingOrdersUpdate(orders -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().updatePendingOrders(plugin.getPendingBuyOrders()); });
 		grandExchangeTracker.setOnFocusChanged(plugin::handleGETrackerFocusChanged);
 		grandExchangeTracker.setOnFocusClear(plugin::handleGETrackerFocusClear);
+		grandExchangeTracker.setOnOrderSubmitted(plugin::handleOrderSubmittedForSourcing);
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(plugin::scheduleOneShot);
 
