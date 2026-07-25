@@ -4665,6 +4665,7 @@ public class FlipFinderPanel extends PluginPanel
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
 		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
+		final JLabel completedStarLabel = header.starLabel;
 
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
 		JPanel detailsPanel = new JPanel(new GridBagLayout());
@@ -4745,6 +4746,11 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
+				// Right-click opens the context menu (handled in mousePressed/mouseReleased); left-click expands.
+				if (e.getButton() != MouseEvent.BUTTON1 || e.isPopupTrigger())
+				{
+					return;
+				}
 				if (!expanded)
 				{
 					// Add extra details
@@ -4788,6 +4794,27 @@ public class FlipFinderPanel extends PluginPanel
 
 				panel.revalidate();
 				panel.repaint();
+			}
+
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				maybeShowCompletedMenu(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				maybeShowCompletedMenu(e);
+			}
+
+			private void maybeShowCompletedMenu(MouseEvent e)
+			{
+				if (e.isPopupTrigger())
+				{
+					showItemContextMenu(flip.getItemId(), flip.getItemName(), completedStarLabel,
+						e.getComponent(), e.getX(), e.getY());
+				}
 			}
 		});
 
