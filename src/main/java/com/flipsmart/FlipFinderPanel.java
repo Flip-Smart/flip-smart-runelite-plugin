@@ -2040,7 +2040,7 @@ public class FlipFinderPanel extends PluginPanel
 		java.util.List<PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
 		boolean hasPendingBuy = matchingPending != null && !matchingPending.isEmpty();
 		boolean show = ActiveFlipDisplayFilter.showAlongsidePendingBuy(flip, hasPendingBuy);
-		if (!show)
+		if (!show && log.isDebugEnabled())
 		{
 			// A buy-phase flip whose item is already in a GE buy slot: the pending-order row above is
 			// the source of truth, so skip the duplicate.
