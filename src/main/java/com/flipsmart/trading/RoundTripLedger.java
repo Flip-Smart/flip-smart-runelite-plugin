@@ -52,9 +52,9 @@ public final class RoundTripLedger
         /**
          * Fingerprint (slot:isBuy:cumulative) of the fill that most recently closed a cycle, or null
          * when the current position is open. Session-local ({@code transient}): it catches a
-         * re-delivery of the closing fill even after {@link #absorbedBySlotDir} was cleared on close —
-         * a Collect re-detect. Direction keeps a genuine new lot, which opens the next cycle in the
-         * opposite direction, from being falsely suppressed.
+         * re-delivery of the closing fill even after that slot's {@link #absorbedBySlotDir} baseline
+         * was reset on offer completion — a Collect re-detect. Direction keeps a genuine new lot, which
+         * opens the next cycle in the opposite direction, from being falsely suppressed.
          */
         public transient String lastClosingFingerprint;
 
@@ -173,12 +173,20 @@ public final class RoundTripLedger
                 e.absorbedBySlotDir.put(key, cumulativeQuantity);
             }
 
+            int heldBefore = e.heldQuantity;
             e.heldQuantity += isBuy ? effectiveDelta : -effectiveDelta;
             int roundTripId = e.cycleId;
+            // Advance the cycle only on a genuine positive->zero crossing. If held was already zero — a
+            // fully-liquidated position still receiving sell fills (overselling externally-sourced stock,
+            // or a ledger drifted low) — don't re-close on every fill and run the cycle away.
+            boolean closed = heldBefore > 0 && e.heldQuantity <= 0;
             if (e.heldQuantity <= 0)
             {
-                e.cycleId++;
                 e.heldQuantity = 0;
+            }
+            if (closed)
+            {
+                e.cycleId++;
                 e.lastClosingFingerprint = fingerprint;
             }
             else

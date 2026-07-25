@@ -70,6 +70,24 @@ public class RoundTripLedgerTest
     }
 
     @Test
+    public void oversellPastZeroDoesNotRepeatedlyReclose()
+    {
+        // A fully-liquidated position (held at zero) that keeps receiving sell fills — overselling
+        // externally-sourced stock, or a ledger drifted low — must not re-close the cycle on every
+        // fill and run the round-trip id away.
+        ledger.recordFill(RSN, ITEM, 0, true, 5, 5, true);
+        int sell = ledger.recordFill(RSN, ITEM, 0, false, 5, 5, true);   // held 5 -> 0: one genuine close
+        int afterFirstClose = ledger.peekRoundTripId(RSN, ITEM);
+        assertNotEquals("the genuine liquidation closes the cycle once", sell, afterFirstClose);
+
+        // Extra sell fills arriving while held is already zero must NOT advance the cycle again.
+        ledger.recordFill(RSN, ITEM, 1, false, 100, 100, false);
+        ledger.recordFill(RSN, ITEM, 1, false, 100, 200, false);
+        assertEquals("overselling past zero does not repeatedly re-close the cycle",
+            afterFirstClose, (int) ledger.peekRoundTripId(RSN, ITEM));
+    }
+
+    @Test
     public void duplicateSellFill_cannotPrematurelyAdvanceCycle()
     {
         // One clean lot on slot 0: buy 10, sell 10 — held returns to zero, cycle closes.
