@@ -43,16 +43,18 @@ public final class RoundTripLedger
          * and apply a zero delta instead of double-counting. Deliberately offer-id-AGNOSTIC — a relog
          * mints a fresh offer_id for the same slot, so keying on offer_id would miss the re-feed.
          * Direction is part of the key because a buy and a sell reuse the same slot with independent
-         * cumulatives. Cleared when the cycle closes. Lazily created so old persisted blobs deserialize.
+         * cumulatives. A slot's entry is reset when that slot's own offer completes (not on cycle
+         * close), so a still-filling sibling slot keeps its baseline. Lazily created so old persisted
+         * blobs deserialize.
          */
         public Map<Integer, Integer> absorbedBySlotDir;
 
         /**
          * Fingerprint (slot:isBuy:cumulative) of the fill that most recently closed a cycle, or null
          * when the current position is open. Session-local ({@code transient}): it catches a
-         * re-delivery of the closing fill even after {@link #absorbedBySlotDir} was cleared on close —
-         * a Collect re-detect. Direction keeps a genuine new lot, which opens the next cycle in the
-         * opposite direction, from being falsely suppressed.
+         * re-delivery of the closing fill even after that slot's {@link #absorbedBySlotDir} baseline
+         * was reset on offer completion — a Collect re-detect. Direction keeps a genuine new lot, which
+         * opens the next cycle in the opposite direction, from being falsely suppressed.
          */
         public transient String lastClosingFingerprint;
 
@@ -90,7 +92,7 @@ public final class RoundTripLedger
      */
     public Integer recordFill(String rsn, int itemId, boolean isBuy, int deltaQuantity)
     {
-        return recordFill(rsn, itemId, null, isBuy, deltaQuantity, 0);
+        return recordFill(rsn, itemId, null, isBuy, deltaQuantity, 0, false);
     }
 
     /**
@@ -104,13 +106,13 @@ public final class RoundTripLedger
      * {@link #recordFillGuarded}). Passing a null {@code slot} keeps the legacy delta-based path.
      */
     public Integer recordFill(String rsn, int itemId, Integer slot, boolean isBuy,
-                              int deltaQuantity, int cumulativeQuantity)
+                              int deltaQuantity, int cumulativeQuantity, boolean offerComplete)
     {
-        return recordFillGuarded(rsn, itemId, slot, isBuy, deltaQuantity, cumulativeQuantity).roundTripId;
+        return recordFillGuarded(rsn, itemId, slot, isBuy, deltaQuantity, cumulativeQuantity, offerComplete).roundTripId;
     }
 
     /**
-     * As {@link #recordFill(String, int, Integer, boolean, int, int)} but also reports whether the
+     * As {@link #recordFill(String, int, Integer, boolean, int, int, boolean)} but also reports whether the
      * fill was recognised as an already-absorbed re-delivery and suppressed.
      *
      * <p>For a slot-keyed fill the delta folded into {@code heldQuantity} is derived from the offer's
@@ -127,7 +129,7 @@ public final class RoundTripLedger
      * round-trip accounting that has no GE slot to key on and for tests exercising pure zero-crossing.
      */
     public FillResult recordFillGuarded(String rsn, int itemId, Integer slot, boolean isBuy,
-                                        int deltaQuantity, int cumulativeQuantity)
+                                        int deltaQuantity, int cumulativeQuantity, boolean offerComplete)
     {
         synchronized (lock)
         {
@@ -171,23 +173,37 @@ public final class RoundTripLedger
                 e.absorbedBySlotDir.put(key, cumulativeQuantity);
             }
 
+            int heldBefore = e.heldQuantity;
             e.heldQuantity += isBuy ? effectiveDelta : -effectiveDelta;
             int roundTripId = e.cycleId;
+            // Advance the cycle only on a genuine positive->zero crossing. If held was already zero — a
+            // fully-liquidated position still receiving sell fills (overselling externally-sourced stock,
+            // or a ledger drifted low) — don't re-close on every fill and run the cycle away.
+            boolean closed = heldBefore > 0 && e.heldQuantity <= 0;
             if (e.heldQuantity <= 0)
             {
-                e.cycleId++;
                 e.heldQuantity = 0;
+            }
+            if (closed)
+            {
+                e.cycleId++;
                 e.lastClosingFingerprint = fingerprint;
-                // Position fully liquidated: drop per-slot cumulative baselines so the next round trip
-                // starts fresh even when a new offer reuses a slot at a coincidentally-equal cumulative.
-                if (e.absorbedBySlotDir != null)
-                {
-                    e.absorbedBySlotDir.clear();
-                }
             }
             else
             {
                 e.lastClosingFingerprint = null;
+            }
+            // Reset THIS slot's baselines once its own offer is done filling (COMPLETED / CANCELLED),
+            // so the next offer reusing the slot rebaselines from zero even at a coincidentally-equal
+            // cumulative. Sibling slots are deliberately left intact: a same-item offer still filling in
+            // another slot must keep its baseline, or its next fill would re-count its whole cumulative
+            // instead of just the increment when held momentarily crosses zero. Resetting on offer
+            // completion rather than on cycle close is what distinguishes a finished slot from a
+            // still-open sibling — the ledger has no per-slot open/closed view otherwise.
+            if (offerComplete && slot != null && e.absorbedBySlotDir != null)
+            {
+                e.absorbedBySlotDir.remove(slot * 2);
+                e.absorbedBySlotDir.remove(slot * 2 + 1);
             }
             return new FillResult(roundTripId, false);
         }

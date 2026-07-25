@@ -70,11 +70,29 @@ public class RoundTripLedgerTest
     }
 
     @Test
+    public void oversellPastZeroDoesNotRepeatedlyReclose()
+    {
+        // A fully-liquidated position (held at zero) that keeps receiving sell fills — overselling
+        // externally-sourced stock, or a ledger drifted low — must not re-close the cycle on every
+        // fill and run the round-trip id away.
+        ledger.recordFill(RSN, ITEM, 0, true, 5, 5, true);
+        int sell = ledger.recordFill(RSN, ITEM, 0, false, 5, 5, true);   // held 5 -> 0: one genuine close
+        int afterFirstClose = ledger.peekRoundTripId(RSN, ITEM);
+        assertNotEquals("the genuine liquidation closes the cycle once", sell, afterFirstClose);
+
+        // Extra sell fills arriving while held is already zero must NOT advance the cycle again.
+        ledger.recordFill(RSN, ITEM, 1, false, 100, 100, false);
+        ledger.recordFill(RSN, ITEM, 1, false, 100, 200, false);
+        assertEquals("overselling past zero does not repeatedly re-close the cycle",
+            afterFirstClose, (int) ledger.peekRoundTripId(RSN, ITEM));
+    }
+
+    @Test
     public void duplicateSellFill_cannotPrematurelyAdvanceCycle()
     {
         // One clean lot on slot 0: buy 10, sell 10 — held returns to zero, cycle closes.
-        int buy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
-        int sell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
+        int buy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10, true);
+        int sell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10, true);
         assertEquals("buy and sell of one lot share the round trip", buy, sell);
 
         int afterLiquidation = ledger.peekRoundTripId(RSN, ITEM);
@@ -83,14 +101,14 @@ public class RoundTripLedgerTest
         // A phantom re-delivery of the exact closing sell (same slot + direction + cumulative) reaches
         // the ledger before client-side suppression catches it. It must NOT drive held negative and
         // advance the cycle a second time.
-        int phantom = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
+        int phantom = ledger.recordFill(RSN, ITEM, 0, false, 10, 10, true);
         assertEquals("the duplicate is ignored and returns the still-open cycle id",
             afterLiquidation, phantom);
         assertEquals("the duplicate did not advance the cycle",
             afterLiquidation, (int) ledger.peekRoundTripId(RSN, ITEM));
 
         // The next genuine buy opens the un-poisoned cycle the phantom tried to skip past.
-        int nextBuy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
+        int nextBuy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10, true);
         assertEquals("the round trip after a phantom is the one the phantom tried to skip",
             afterLiquidation, nextBuy);
     }
@@ -98,15 +116,15 @@ public class RoundTripLedgerTest
     @Test
     public void concurrentSameItemInTwoSlots_shareCycleAndAreNotFalselyDeduped()
     {
-        int buyA = ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
-        int buyB = ledger.recordFill(RSN, ITEM, 1, true, 5, 5);
+        int buyA = ledger.recordFill(RSN, ITEM, 0, true, 10, 10, true);
+        int buyB = ledger.recordFill(RSN, ITEM, 1, true, 5, 5, true);
         assertEquals("two open buys of the same item are one round trip", buyA, buyB);
 
-        int sellA = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
+        int sellA = ledger.recordFill(RSN, ITEM, 0, false, 10, 10, true);
         assertEquals("selling one slot while the other is still open stays in the cycle",
             buyA, sellA);
 
-        int sellB = ledger.recordFill(RSN, ITEM, 1, false, 5, 5);
+        int sellB = ledger.recordFill(RSN, ITEM, 1, false, 5, 5, true);
         assertEquals("only the final zero-cross closes it — still the same round trip",
             buyA, sellB);
 
@@ -117,16 +135,17 @@ public class RoundTripLedgerTest
     @Test
     public void identicalFillInASubsequentCycle_isNotFalselySuppressed()
     {
-        ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
-        int firstSell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
+        ledger.recordFill(RSN, ITEM, 0, true, 10, 10, true);
+        int firstSell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10, true);
 
-        // A genuine new position reusing the same slot and quantity builds held again: the close
-        // cleared the absorbed baselines, so the new cycle's fills are absorbed from zero — suppression
-        // only ever catches a re-delivery of an already-absorbed cumulative within the open cycle.
-        int secondBuy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10);
+        // A genuine new position reusing the same slot and quantity builds held again: completing the
+        // first lot reset slot 0's baselines, so the new cycle's fills are absorbed from zero —
+        // suppression only ever catches a re-delivery of an already-absorbed cumulative within an
+        // open offer.
+        int secondBuy = ledger.recordFill(RSN, ITEM, 0, true, 10, 10, true);
         assertNotEquals("the new cycle is distinct from the closed one", firstSell, secondBuy);
 
-        int secondSell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10);
+        int secondSell = ledger.recordFill(RSN, ITEM, 0, false, 10, 10, true);
         assertEquals("the genuine repeat sell is applied within its own cycle",
             secondBuy, secondSell);
 
@@ -135,10 +154,35 @@ public class RoundTripLedgerTest
     }
 
     @Test
+    public void closingOneSlotDoesNotWipeAStillFillingSiblingSlot()
+    {
+        // Same item in two slots: slot 0 buys 100 (offer complete), slot 1 buys 100 but is STILL
+        // FILLING (offer not complete), so slot 1's baseline must be retained.
+        ledger.recordFill(RSN, ITEM, 0, true, 100, 100, true);
+        ledger.recordFill(RSN, ITEM, 1, true, 100, 100, false);
+
+        // A 200-unit sell on slot 0 liquidates the position: held hits zero and the cycle closes while
+        // slot 1's buy is still open. Resetting every slot on close (rather than only completed offers'
+        // slots) would wipe slot 1's baseline, so its next fill would re-count its whole cumulative.
+        ledger.recordFill(RSN, ITEM, 0, false, 200, 200, true);
+
+        // slot 1's buy fills 50 more (cumulative 100 -> 150): only 50 new units should enter held.
+        ledger.recordFill(RSN, ITEM, 1, true, 50, 150, true);
+
+        // If the sibling baseline survived, held is exactly 50, so selling 50 closes the next cycle.
+        // If it was wiped, held would be 150 and this sell would leave 100 open — no close.
+        int sellRt = ledger.recordFill(RSN, ITEM, 1, false, 50, 50, true);
+        int after = ledger.peekRoundTripId(RSN, ITEM);
+        assertNotEquals("a still-filling sibling slot keeps its baseline through another slot's close",
+            sellRt, after);
+    }
+
+    @Test
     public void relogDoesNotDoubleCountAnOpenBuy()
     {
-        // Session 1: a buy fills to cumulative 1324 on slot 4 — held becomes 1324.
-        ledger.recordFill(RSN, ITEM, 4, true, 1324, 1324);
+        // Session 1: a still-open buy fills to cumulative 1324 on slot 4 — held becomes 1324. Not
+        // complete, so its baseline is retained for the re-feed to match against.
+        ledger.recordFill(RSN, ITEM, 4, true, 1324, 1324, false);
 
         // Persist + restart (relog / rebuild): held, cycle, and per-slot absorbed cumulative restore.
         Map<Integer, RoundTripLedger.Entry> exported = ledger.export(RSN);
@@ -149,11 +193,11 @@ public class RoundTripLedgerTest
         // rebuilt OfferStore has no baseline yet and the GE signal looks like a fresh 1324 fill. A
         // relog mints a fresh offer_id for the slot, so the guard must match on (slot, cumulative)
         // alone — never offer_id — or this is added on top of the restored held (the double-count).
-        restarted.recordFill(RSN, ITEM, 4, true, 1324, 1324);
+        restarted.recordFill(RSN, ITEM, 4, true, 1324, 1324, false);
 
-        // Proof the true held is still 1324, not 2648: selling exactly 1324 must close the cycle.
+        // Proof the true held is still 1324, not 2648: selling exactly 1324 (completing) closes the cycle.
         int cycleBefore = restarted.peekRoundTripId(RSN, ITEM);
-        restarted.recordFill(RSN, ITEM, 4, false, 1324, 1324);
+        restarted.recordFill(RSN, ITEM, 4, false, 1324, 1324, true);
         int cycleAfter = restarted.peekRoundTripId(RSN, ITEM);
         assertNotEquals("selling the true held must close the round trip — no relog double-count",
             cycleBefore, cycleAfter);
