@@ -2955,7 +2955,7 @@ public class FlipFinderPanel extends PluginPanel
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
 		// Add mouse listener for interactions
-		addRecommendationPanelListeners(panel, rec);
+		addRecommendationPanelListeners(panel, rec, header.starLabel);
 
 		return panel;
 	}
@@ -3019,7 +3019,7 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Add mouse listeners for recommendation panel (focus, expand, hover)
 	 */
-	private void addRecommendationPanelListeners(JPanel panel, FlipRecommendation rec)
+	private void addRecommendationPanelListeners(JPanel panel, FlipRecommendation rec, JLabel starLabel)
 	{
 		panel.addMouseListener(new MouseAdapter()
 		{
@@ -3028,27 +3028,39 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				handleRecommendationClick(e, panel, rec);
-			}
-
-			private void handleRecommendationClick(MouseEvent e, JPanel panel, FlipRecommendation rec)
-			{
 				// Left click: set as Flip Assist focus
-				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1)
+				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1 && !e.isPopupTrigger())
 				{
 					setFocus(rec, panel);
 					return;
 				}
-				
-				// Right click or double click: toggle focus hint
-				if (e.getButton() != MouseEvent.BUTTON3 && e.getClickCount() != 2)
+				// Double-click: toggle the focus/expand hint (right-click now opens the context menu)
+				if (e.getClickCount() == 2)
 				{
-					return;
+					expanded = toggleExpandedState(panel, expanded);
+					panel.revalidate();
+					panel.repaint();
 				}
+			}
 
-				expanded = toggleExpandedState(panel, expanded);
-				panel.revalidate();
-				panel.repaint();
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				maybeShowMenu(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				maybeShowMenu(e);
+			}
+
+			private void maybeShowMenu(MouseEvent e)
+			{
+				if (e.isPopupTrigger())
+				{
+					showItemContextMenu(rec.getItemId(), rec.getItemName(), starLabel, panel, e.getX(), e.getY());
+				}
 			}
 
 			@Override
