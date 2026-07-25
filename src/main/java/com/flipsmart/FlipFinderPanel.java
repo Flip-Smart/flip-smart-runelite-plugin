@@ -3036,7 +3036,7 @@ public class FlipFinderPanel extends PluginPanel
 					return;
 				}
 				// Double-click: toggle the focus/expand hint (right-click now opens the context menu)
-				if (e.getClickCount() == 2)
+				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2)
 				{
 					expanded = toggleExpandedState(panel, expanded);
 					panel.revalidate();
