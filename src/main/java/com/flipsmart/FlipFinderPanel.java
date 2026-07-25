@@ -2789,9 +2789,9 @@ public class FlipFinderPanel extends PluginPanel
 		return isFavorited ? "Remove from favorites" : "Add to favorites";
 	}
 
-	static java.util.List<String> itemContextMenuLabels(boolean isFavorited, boolean includeDismiss)
+	static List<String> itemContextMenuLabels(boolean isFavorited, boolean includeDismiss)
 	{
-		java.util.List<String> labels = new java.util.ArrayList<>(java.util.List.of(
+		List<String> labels = new ArrayList<>(List.of(
 			favoriteMenuLabel(isFavorited), "Block this item", "View Item Graph"));
 		if (includeDismiss)
 		{
