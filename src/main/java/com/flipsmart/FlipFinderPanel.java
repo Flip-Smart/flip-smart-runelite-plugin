@@ -4199,20 +4199,8 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (e.isPopupTrigger())
 				{
-					JPopupMenu contextMenu = new JPopupMenu();
-					
-					// Add focus option
-					JMenuItem focusItem = new JMenuItem("Set as Flip Assist Focus (Sell)");
-					focusItem.addActionListener(ae -> setFocus(flip, panel));
-					contextMenu.add(focusItem);
-					
-					contextMenu.addSeparator();
-					
-					JMenuItem dismissItem = new JMenuItem("Dismiss from Active Flips");
-					dismissItem.addActionListener(ae -> dismissActiveFlip(flip));
-					contextMenu.add(dismissItem);
-					
-					contextMenu.show(e.getComponent(), e.getX(), e.getY());
+					showItemContextMenu(flip.getItemId(), flip.getItemName(), header.starLabel,
+						e.getComponent(), e.getX(), e.getY(), true, () -> dismissActiveFlip(flip));
 				}
 			}
 		});
