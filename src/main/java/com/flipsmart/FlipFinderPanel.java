@@ -875,6 +875,49 @@ public class FlipFinderPanel extends PluginPanel
 	private JSpinner minProfitSpinner;
 	private JSpinner minVolumeSpinner;
 
+	private void showItemContextMenu(int itemId, String itemName, JLabel starLabel,
+		java.awt.Component invoker, int x, int y)
+	{
+		showItemContextMenu(itemId, itemName, starLabel, invoker, x, y, false, null);
+	}
+
+	private void showItemContextMenu(int itemId, String itemName, JLabel starLabel,
+		java.awt.Component invoker, int x, int y, boolean includeDismiss, Runnable onDismiss)
+	{
+		JPopupMenu menu = new JPopupMenu();
+		menu.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel header = new JLabel(itemName);
+		header.setFont(new Font(FONT_ARIAL, Font.BOLD, 12));
+		header.setForeground(Color.WHITE);
+		header.setBorder(new EmptyBorder(2, 6, 2, 6));
+		menu.add(header);
+		menu.addSeparator();
+
+		boolean favorited = isFavorite(favoriteItemIds, itemId);
+		JMenuItem favoriteItem = new JMenuItem(favoriteMenuLabel(favorited));
+		favoriteItem.addActionListener(e -> handleStarClick(itemId, starLabel));
+		menu.add(favoriteItem);
+
+		JMenuItem blockItem = new JMenuItem("Block this item");
+		blockItem.addActionListener(e -> handleBlockItemClick(itemId, itemName));
+		menu.add(blockItem);
+
+		JMenuItem graphItem = new JMenuItem("View Item Graph");
+		graphItem.addActionListener(e -> LinkBrowser.browse(WEBSITE_ITEM_URL + itemId));
+		menu.add(graphItem);
+
+		if (includeDismiss && onDismiss != null)
+		{
+			menu.addSeparator();
+			JMenuItem dismissItem = new JMenuItem("Dismiss from Active Flips");
+			dismissItem.addActionListener(e -> onDismiss.run());
+			menu.add(dismissItem);
+		}
+
+		menu.show(invoker, x, y);
+	}
+
 	private void showSettingsPopout(JComponent anchor)
 	{
 		// A click on the gear while the pop-out is open first dismisses it
@@ -3092,12 +3135,14 @@ public class FlipFinderPanel extends PluginPanel
 		final JPanel namePanel;
 		/** Pixels a wrapped name adds beyond one line; 0 when the name fits on one. */
 		final int extraNameHeight;
+		final JLabel starLabel;
 
-		HeaderPanels(JPanel topPanel, JPanel namePanel, int extraNameHeight)
+		HeaderPanels(JPanel topPanel, JPanel namePanel, int extraNameHeight, JLabel starLabel)
 		{
 			this.topPanel = topPanel;
 			this.namePanel = namePanel;
 			this.extraNameHeight = extraNameHeight;
+			this.starLabel = starLabel;
 		}
 	}
 
@@ -3165,7 +3210,8 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 1, 0));
 		iconsPanel.setOpaque(false);
 
-		iconsPanel.add(createStarIconLabel(itemId));
+		JLabel starLabel = createStarIconLabel(itemId);
+		iconsPanel.add(starLabel);
 		iconsPanel.add(createBlockIconLabel(itemId, itemName));
 		iconsPanel.add(createChartIconLabel(itemId));
 
@@ -3199,7 +3245,7 @@ public class FlipFinderPanel extends PluginPanel
 			topPanel.add(iconsPanel, BorderLayout.EAST);
 		}
 
-		return new HeaderPanels(topPanel, namePanel, extraNameHeight);
+		return new HeaderPanels(topPanel, namePanel, extraNameHeight, starLabel);
 	}
 	
 	/**
