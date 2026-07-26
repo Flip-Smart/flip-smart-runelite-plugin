@@ -875,6 +875,50 @@ public class FlipFinderPanel extends PluginPanel
 	private JSpinner minProfitSpinner;
 	private JSpinner minVolumeSpinner;
 
+	private void showItemContextMenu(int itemId, String itemName, JLabel starLabel,
+		java.awt.Component invoker, int x, int y)
+	{
+		showItemContextMenu(itemId, itemName, starLabel, invoker, x, y, false, null);
+	}
+
+	private void showItemContextMenu(int itemId, String itemName, JLabel starLabel,
+		java.awt.Component invoker, int x, int y, boolean includeDismiss, Runnable onDismiss)
+	{
+		JPopupMenu menu = new JPopupMenu();
+		menu.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+
+		JLabel header = new JLabel(itemName);
+		header.setFont(new Font(FONT_ARIAL, Font.BOLD, 12));
+		header.setForeground(Color.WHITE);
+		header.setBorder(new EmptyBorder(2, 6, 2, 6));
+		menu.add(header);
+		menu.addSeparator();
+
+		boolean favorited = isFavorite(favoriteItemIds, itemId);
+		boolean appendDismiss = includeDismiss && onDismiss != null;
+		List<String> labels = itemContextMenuLabels(favorited, appendDismiss);
+		// Actions align positionally with the core three labels itemContextMenuLabels always returns;
+		// dismiss (when present) is always the fourth/last entry.
+		List<Runnable> actions = List.of(
+			() -> handleStarClick(itemId, starLabel),
+			() -> handleBlockItemClick(itemId, itemName),
+			() -> LinkBrowser.browse(WEBSITE_ITEM_URL + itemId));
+
+		for (int i = 0; i < labels.size(); i++)
+		{
+			if (appendDismiss && i == labels.size() - 1)
+			{
+				menu.addSeparator();
+			}
+			JMenuItem menuItem = new JMenuItem(labels.get(i));
+			Runnable action = i < actions.size() ? actions.get(i) : onDismiss;
+			menuItem.addActionListener(e -> action.run());
+			menu.add(menuItem);
+		}
+
+		menu.show(invoker, x, y);
+	}
+
 	private void showSettingsPopout(JComponent anchor)
 	{
 		// A click on the gear while the pop-out is open first dismisses it
@@ -2741,6 +2785,22 @@ public class FlipFinderPanel extends PluginPanel
 		return toggleOn && premium;
 	}
 
+	static String favoriteMenuLabel(boolean isFavorited)
+	{
+		return isFavorited ? "Remove from favorites" : "Add to favorites";
+	}
+
+	static List<String> itemContextMenuLabels(boolean isFavorited, boolean includeDismiss)
+	{
+		List<String> labels = new ArrayList<>(List.of(
+			favoriteMenuLabel(isFavorited), "Block this item", "View Item Graph"));
+		if (includeDismiss)
+		{
+			labels.add("Dismiss from Active Flips");
+		}
+		return labels;
+	}
+
 	/** Read the persisted "flip only from favorites" toggle, defaulting to off. */
 	private boolean loadFlipOnlyFavorites()
 	{
@@ -2896,7 +2956,7 @@ public class FlipFinderPanel extends PluginPanel
 		panel.add(detailsPanel, BorderLayout.CENTER);
 
 		// Add mouse listener for interactions
-		addRecommendationPanelListeners(panel, rec);
+		addRecommendationPanelListeners(panel, rec, header.starLabel);
 
 		return panel;
 	}
@@ -2960,7 +3020,7 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Add mouse listeners for recommendation panel (focus, expand, hover)
 	 */
-	private void addRecommendationPanelListeners(JPanel panel, FlipRecommendation rec)
+	private void addRecommendationPanelListeners(JPanel panel, FlipRecommendation rec, JLabel starLabel)
 	{
 		panel.addMouseListener(new MouseAdapter()
 		{
@@ -2969,27 +3029,39 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				handleRecommendationClick(e, panel, rec);
-			}
-
-			private void handleRecommendationClick(MouseEvent e, JPanel panel, FlipRecommendation rec)
-			{
 				// Left click: set as Flip Assist focus
-				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1)
+				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1 && !e.isPopupTrigger())
 				{
 					setFocus(rec, panel);
 					return;
 				}
-				
-				// Right click or double click: toggle focus hint
-				if (e.getButton() != MouseEvent.BUTTON3 && e.getClickCount() != 2)
+				// Double-click: toggle the focus/expand hint (right-click now opens the context menu)
+				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2)
 				{
-					return;
+					expanded = toggleExpandedState(panel, expanded);
+					panel.revalidate();
+					panel.repaint();
 				}
+			}
 
-				expanded = toggleExpandedState(panel, expanded);
-				panel.revalidate();
-				panel.repaint();
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				maybeShowMenu(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				maybeShowMenu(e);
+			}
+
+			private void maybeShowMenu(MouseEvent e)
+			{
+				if (e.isPopupTrigger())
+				{
+					showItemContextMenu(rec.getItemId(), rec.getItemName(), starLabel, panel, e.getX(), e.getY());
+				}
 			}
 
 			@Override
@@ -3076,12 +3148,14 @@ public class FlipFinderPanel extends PluginPanel
 		final JPanel namePanel;
 		/** Pixels a wrapped name adds beyond one line; 0 when the name fits on one. */
 		final int extraNameHeight;
+		final JLabel starLabel;
 
-		HeaderPanels(JPanel topPanel, JPanel namePanel, int extraNameHeight)
+		HeaderPanels(JPanel topPanel, JPanel namePanel, int extraNameHeight, JLabel starLabel)
 		{
 			this.topPanel = topPanel;
 			this.namePanel = namePanel;
 			this.extraNameHeight = extraNameHeight;
+			this.starLabel = starLabel;
 		}
 	}
 
@@ -3149,7 +3223,8 @@ public class FlipFinderPanel extends PluginPanel
 		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 1, 0));
 		iconsPanel.setOpaque(false);
 
-		iconsPanel.add(createStarIconLabel(itemId));
+		JLabel starLabel = createStarIconLabel(itemId);
+		iconsPanel.add(starLabel);
 		iconsPanel.add(createBlockIconLabel(itemId, itemName));
 		iconsPanel.add(createChartIconLabel(itemId));
 
@@ -3183,7 +3258,7 @@ public class FlipFinderPanel extends PluginPanel
 			topPanel.add(iconsPanel, BorderLayout.EAST);
 		}
 
-		return new HeaderPanels(topPanel, namePanel, extraNameHeight);
+		return new HeaderPanels(topPanel, namePanel, extraNameHeight, starLabel);
 	}
 	
 	/**
@@ -4125,20 +4200,8 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				if (e.isPopupTrigger())
 				{
-					JPopupMenu contextMenu = new JPopupMenu();
-					
-					// Add focus option
-					JMenuItem focusItem = new JMenuItem("Set as Flip Assist Focus (Sell)");
-					focusItem.addActionListener(ae -> setFocus(flip, panel));
-					contextMenu.add(focusItem);
-					
-					contextMenu.addSeparator();
-					
-					JMenuItem dismissItem = new JMenuItem("Dismiss from Active Flips");
-					dismissItem.addActionListener(ae -> dismissActiveFlip(flip));
-					contextMenu.add(dismissItem);
-					
-					contextMenu.show(e.getComponent(), e.getX(), e.getY());
+					showItemContextMenu(flip.getItemId(), flip.getItemName(), header.starLabel,
+						e.getComponent(), e.getX(), e.getY(), true, () -> dismissActiveFlip(flip));
 				}
 			}
 		});
@@ -4603,6 +4666,7 @@ public class FlipFinderPanel extends PluginPanel
 		HeaderPanels header = createItemHeaderPanels(flip.getItemId(), flip.getItemName(), backgroundColor);
 		allowForWrappedName(panel, header.extraNameHeight);
 		JPanel topPanel = header.topPanel;
+		final JLabel completedStarLabel = header.starLabel;
 
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
 		JPanel detailsPanel = new JPanel(new GridBagLayout());
@@ -4683,6 +4747,11 @@ public class FlipFinderPanel extends PluginPanel
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
+				// Right-click opens the context menu (handled in mousePressed/mouseReleased); left-click expands.
+				if (e.getButton() != MouseEvent.BUTTON1 || e.isPopupTrigger())
+				{
+					return;
+				}
 				if (!expanded)
 				{
 					// Add extra details
@@ -4726,6 +4795,27 @@ public class FlipFinderPanel extends PluginPanel
 
 				panel.revalidate();
 				panel.repaint();
+			}
+
+			@Override
+			public void mousePressed(MouseEvent e)
+			{
+				maybeShowCompletedMenu(e);
+			}
+
+			@Override
+			public void mouseReleased(MouseEvent e)
+			{
+				maybeShowCompletedMenu(e);
+			}
+
+			private void maybeShowCompletedMenu(MouseEvent e)
+			{
+				if (e.isPopupTrigger())
+				{
+					showItemContextMenu(flip.getItemId(), flip.getItemName(), completedStarLabel,
+						e.getComponent(), e.getX(), e.getY());
+				}
 			}
 		});
 
