@@ -409,16 +409,18 @@ public class OfflineSyncService
 	 */
 	private void reconcilePersistedIntoStore(List<OfferRecord> persistedRecords)
 	{
-		// An unreadable GE snapshot (offers not loaded yet, e.g. the LOGGED_IN tick after a
-		// world hop) must not drive a destructive import — that would wipe still-live offers
-		// and no later step re-seeds the store's slot map. Preserve what we have; a later
-		// readable pass or the login GE burst reconciles correctly.
-		if (client.getGrandExchangeOffers() == null)
+		long now = System.currentTimeMillis();
+		List<OfferSignal> liveSlots = buildLiveSlotSignals();
+
+		// The GE snapshot is not loaded yet (null, or present but every slot still EMPTY — e.g. the
+		// LOGGED_IN tick after a world hop) while the store already holds live offers. A destructive
+		// import would wipe them and no later step re-seeds the slot map, so preserve and let the
+		// login GE burst (or the next readable pass) reconcile. On a genuine cold login the store is
+		// empty, so this does not skip and the burst seeds it.
+		if (liveSlots.isEmpty() && !offerStore.liveOffers().isEmpty())
 		{
 			return;
 		}
-		long now = System.currentTimeMillis();
-		List<OfferSignal> liveSlots = buildLiveSlotSignals();
 		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now);
 
 		List<OfferRecord> toImport = new ArrayList<>();
