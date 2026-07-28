@@ -181,6 +181,11 @@ public class FlipFinderPanel extends PluginPanel
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
 	private final List<FavoriteItem> currentFavorites = new ArrayList<>();
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
+	private static final long LOCAL_ADD_GRACE_MS = 15_000L;
+	// itemId -> a locally-added collected flip awaiting backend confirmation; guarded by
+	// the currentActiveFlips monitor.
+	private final java.util.Map<Integer, com.flipsmart.domain.flip.ActiveFlipReconcileMerge.Pending> pendingLocalAdds =
+		new java.util.HashMap<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
 	private final SessionClock sessionClock = new SessionClock(System.currentTimeMillis());
@@ -1800,8 +1805,14 @@ public class FlipFinderPanel extends PluginPanel
 
 			synchronized (currentActiveFlips)
 			{
+				java.util.Set<Integer> liveIds = new java.util.HashSet<>(plugin.getActiveFlipItemIds());
+				liveIds.addAll(plugin.getInventoryFlipItemIds());
+				com.flipsmart.domain.flip.ActiveFlipReconcileMerge.Result r =
+					com.flipsmart.domain.flip.ActiveFlipReconcileMerge.merge(
+						filtered, pendingLocalAdds.values(), liveIds, System.currentTimeMillis(), LOCAL_ADD_GRACE_MS);
+				pendingLocalAdds.keySet().removeAll(r.evict);
 				currentActiveFlips.clear();
-				currentActiveFlips.addAll(filtered);
+				currentActiveFlips.addAll(r.merged);
 			}
 			recomputeSessionProfitBase();
 			if (flipsFromBackend != null)
@@ -1908,7 +1919,22 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			synchronized (currentActiveFlips)
 			{
-				ActiveFlipLocalUpdater.applyCollect(currentActiveFlips, event.record, java.time.Instant.now().toString());
+				boolean changed = ActiveFlipLocalUpdater.applyCollect(
+					currentActiveFlips, event.record, java.time.Instant.now().toString());
+				if (changed && event.record.isBuy())
+				{
+					int itemId = event.record.getItemId();
+					for (ActiveFlip added : currentActiveFlips)
+					{
+						if (added.getItemId() == itemId)
+						{
+							pendingLocalAdds.put(itemId,
+								new com.flipsmart.domain.flip.ActiveFlipReconcileMerge.Pending(
+									itemId, System.currentTimeMillis(), added));
+							break;
+						}
+					}
+				}
 			}
 		}
 		redisplayActiveFlipsLocally();
