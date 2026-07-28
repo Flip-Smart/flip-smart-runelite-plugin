@@ -320,4 +320,30 @@ public class OfferStoreTest
         assertEquals("no record changed for unknown id", before,
             store.bySlot(2).getEffectiveLastActivityAtMillis());
     }
+
+    @Test
+    public void seedIfAbsent_mapsUnmappedSlot_andIsIdempotent()
+    {
+        OfferStore store = new OfferStore();
+
+        boolean first = store.seedIfAbsent(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        assertTrue(first);
+        assertEquals(1234, store.bySlot(0).getItemId());
+
+        // Second call for the same, now-mapped slot is a no-op.
+        boolean second = store.seedIfAbsent(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        assertFalse(second);
+    }
+
+    @Test
+    public void seedIfAbsent_doesNotNotifyListeners()
+    {
+        OfferStore store = new OfferStore();
+        java.util.concurrent.atomic.AtomicInteger notified = new java.util.concurrent.atomic.AtomicInteger();
+        store.addListener(e -> notified.incrementAndGet());
+
+        store.seedIfAbsent(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+
+        assertEquals(0, notified.get());
+    }
 }
