@@ -19,7 +19,6 @@ public class LiveStatePushServiceTest
 	private static final long HEARTBEAT_STALE_AFTER_MS = 600_000L;
 
 	private FlipSmartApiClient apiClient;
-	private PlayerSession session;
 	private LiveStatePushService service;
 	private final AtomicInteger pushes = new AtomicInteger();
 	private final AtomicLong clockMillis = new AtomicLong(0L);
@@ -36,7 +35,7 @@ public class LiveStatePushServiceTest
 	public void setUp()
 	{
 		apiClient = Mockito.mock(FlipSmartApiClient.class);
-		session = Mockito.mock(PlayerSession.class);
+		PlayerSession session = Mockito.mock(PlayerSession.class);
 		Mockito.when(session.getRsnSafe()).thenReturn(Optional.of("dumbridge3"));
 		Mockito.when(apiClient.pushLiveStateAsync(Mockito.anyString(), Mockito.anyString(), Mockito.any()))
 			.thenAnswer(inv ->
