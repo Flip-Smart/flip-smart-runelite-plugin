@@ -1,5 +1,6 @@
 package com.flipsmart.api.dto;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -64,7 +65,7 @@ public final class LiveStateSnapshot
 
 	public LiveStateSnapshot(List<SlotState> slots, Set<Integer> inventoryItemIds, Set<Integer> collectedItemIds)
 	{
-		this.slots = Collections.unmodifiableList(slots);
+		this.slots = Collections.unmodifiableList(new ArrayList<>(slots));
 		this.inventoryItemIds = Collections.unmodifiableSet(new LinkedHashSet<>(inventoryItemIds));
 		this.collectedItemIds = Collections.unmodifiableSet(new LinkedHashSet<>(collectedItemIds));
 	}
