@@ -58,7 +58,10 @@ public class LiveStateEndpoints
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 			.exceptionally(e ->
 			{
-				log.debug("pushLiveStateAsync failed: {}", e.getMessage());
+				if (log.isDebugEnabled())
+				{
+					log.debug("pushLiveStateAsync failed: {}", e.getMessage());
+				}
 				return false;
 			});
 	}
