@@ -64,12 +64,12 @@ public class LiveStatePushService
 
 	public void schedulePush(LiveStateSnapshot snapshot)
 	{
-		ScheduledFuture<?> existing = pending.get();
-		if (existing != null)
+		ScheduledFuture<?> next = scheduler.schedule(() -> doPush(snapshot), DEBOUNCE_MS, TimeUnit.MILLISECONDS);
+		ScheduledFuture<?> previous = pending.getAndSet(next);
+		if (previous != null)
 		{
-			existing.cancel(false);
+			previous.cancel(false);
 		}
-		pending.set(scheduler.schedule(() -> doPush(snapshot), DEBOUNCE_MS, TimeUnit.MILLISECONDS));
 	}
 
 	public void pushNow(LiveStateSnapshot snapshot)
@@ -110,12 +110,17 @@ public class LiveStatePushService
 		try
 		{
 			apiClient.pushLiveStateAsync(rsn, Instant.now().toString(), snapshot)
-				.exceptionally(e ->
+				.whenComplete((ok, err) ->
 				{
-					log.debug("Live-state push failed: {}", e.getMessage());
-					return false;
+					if (err == null && Boolean.TRUE.equals(ok))
+					{
+						lastPushed.set(snapshot);
+					}
+					else
+					{
+						log.debug("Live-state push failed: {}", err != null ? err.getMessage() : ok);
+					}
 				});
-			lastPushed.set(snapshot);
 		}
 		catch (RuntimeException e)
 		{

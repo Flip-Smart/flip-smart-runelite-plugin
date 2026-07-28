@@ -84,4 +84,22 @@ public class LiveStatePushServiceTest
 		service.pushNow(snapshot(555));
 		assertEquals(1, pushes.get());
 	}
+
+	@Test
+	public void failedPushDoesNotSuppressRetry()
+	{
+		Mockito.doAnswer(inv ->
+			{
+				pushes.incrementAndGet();
+				CompletableFuture<Boolean> failed = new CompletableFuture<>();
+				failed.completeExceptionally(new RuntimeException("boom"));
+				return failed;
+			})
+			.when(apiClient)
+			.pushLiveStateAsync(Mockito.anyString(), Mockito.anyString(), Mockito.any());
+		service.markReady();
+		service.pushNow(snapshot(4151));
+		service.pushNow(snapshot(4151));
+		assertEquals(2, pushes.get());
+	}
 }
