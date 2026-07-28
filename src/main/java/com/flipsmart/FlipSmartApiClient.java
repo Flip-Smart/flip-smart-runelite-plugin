@@ -5,6 +5,7 @@ import com.flipsmart.api.endpoints.BankSnapshotEndpoints;
 import com.flipsmart.api.endpoints.BlocklistEndpoints;
 import com.flipsmart.api.endpoints.FavoritesEndpoints;
 import com.flipsmart.api.endpoints.FlipsEndpoints;
+import com.flipsmart.api.endpoints.LiveStateEndpoints;
 import com.flipsmart.api.endpoints.MarketDataEndpoints;
 import com.flipsmart.api.endpoints.MotdEndpoints;
 import com.flipsmart.api.endpoints.OfferActionEndpoints;
@@ -15,6 +16,7 @@ import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
 import com.flipsmart.api.dto.FavoritesResponse;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.LiveStateSnapshot;
 import com.flipsmart.api.dto.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.BankSnapshotResult;
 import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
@@ -76,6 +78,7 @@ public class FlipSmartApiClient
 	private final MotdEndpoints motd;
 	private final TradeStationEndpoints tradeStation;
 	private final FavoritesEndpoints favorites;
+	private final LiveStateEndpoints liveState;
 
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
@@ -101,6 +104,7 @@ public class FlipSmartApiClient
 		this.motd = new MotdEndpoints(transport);
 		this.tradeStation = new TradeStationEndpoints(transport);
 		this.favorites = new FavoritesEndpoints(transport);
+		this.liveState = new LiveStateEndpoints(transport);
 	}
 
 	// ============================================================================
@@ -483,6 +487,15 @@ public class FlipSmartApiClient
 	public CompletableFuture<Boolean> pushTradeStationSlotsAsync(String rsn, java.util.List<Integer> itemIds)
 	{
 		return tradeStation.pushTradeStationSlotsAsync(rsn, itemIds);
+	}
+
+	// ============================================================================
+	// Live state
+	// ============================================================================
+
+	public CompletableFuture<Boolean> pushLiveStateAsync(String rsn, String capturedAtIso, LiveStateSnapshot snapshot)
+	{
+		return liveState.pushLiveStateAsync(rsn, capturedAtIso, snapshot);
 	}
 
 	// ============================================================================
