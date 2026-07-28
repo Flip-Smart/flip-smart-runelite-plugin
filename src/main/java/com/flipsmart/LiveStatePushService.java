@@ -19,11 +19,8 @@ import lombok.extern.slf4j.Slf4j;
  * so the web dashboard can tell an open position from a finished one.
  *
  * Debounced because a single fill produces a burst of offer events. The payload
- * is absolute, so a dropped push costs freshness, never correctness.
- *
- * A periodic heartbeat pushes on a bounded clock even when nothing changes, so
- * "as of" freshness on the dashboard keeps advancing for an online player sitting
- * on unchanged offers, and a failed push gets a bounded retry.
+ * is absolute, so a dropped push costs freshness, never correctness. Also heartbeats
+ * on a bounded clock — see {@link #startHeartbeat}.
  */
 @Slf4j
 @Singleton

@@ -771,8 +771,6 @@ public class FlipSmartPlugin extends Plugin
 		// Sync webhook config to backend if configured
 		webhookSyncService.syncIfChanged();
 
-		// Keeps the dashboard's "as of" freshness advancing while online with
-		// unchanged GE state, and gives a failed push a bounded retry.
 		liveStatePushService.startHeartbeat(this::buildLiveStateSnapshot);
 
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
