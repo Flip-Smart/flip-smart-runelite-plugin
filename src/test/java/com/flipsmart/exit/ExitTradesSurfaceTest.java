@@ -3,6 +3,7 @@ package com.flipsmart.exit;
 import com.flipsmart.FocusedFlip;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
 import org.junit.Before;
 import org.junit.Test;
@@ -109,6 +110,30 @@ public class ExitTradesSurfaceTest
 		seed(0, 561, false, 1000);
 		controller.start(ExitTradesMode.INSTANT);
 		assertFalse(controller.onSellScreenOpened(12345));
+	}
+
+	@Test
+	public void cancelledSellReListsEvenWhenInventoryLagsToZero()
+	{
+		// Regression for the early-completion bug: cancelling a live sell to re-list must not be
+		// dropped when the inventory container lags the cancel by a tick (reads 0).
+		seed(0, 561, false, 1000);
+		controller.start(ExitTradesMode.INSTANT);
+
+		OfferRecord cancelled = OfferRecord.newOffer(4000L, 0, 561, "Item", false, 1000, 100, 1L)
+			.withFill(0, 0L, OfferState.CANCELLED_EMPTY, 2L);
+		clearStore();  // offer cancelled — slot is now empty
+		inventory = 0; // inventory container hasn't caught up yet (one-tick lag)
+
+		controller.onOfferChanged(cancelled);
+		controller.surfaceCurrent();
+
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+		FocusedFlip f = lastFocus.get();
+		assertNotNull("cancelled sell must still surface a re-list prompt", f);
+		assertTrue(f.isSelling());
+		assertEquals(561, f.getItemId());
+		assertEquals(1000, f.getCurrentStepQuantity()); // remembered held qty, not the lagging 0
 	}
 
 	@Test

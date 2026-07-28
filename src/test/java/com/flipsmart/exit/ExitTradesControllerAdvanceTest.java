@@ -6,6 +6,7 @@ import com.flipsmart.trading.OfferStore;
 import org.junit.Before;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class ExitTradesControllerAdvanceTest
 {
@@ -82,6 +83,31 @@ public class ExitTradesControllerAdvanceTest
 		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
 		controller.onOfferChanged(rec(0, 561, false, 10, OfferState.COLLECTED)); // profit collected
 		assertEquals(ExitPhase.DONE, controller.getTargets().get(0).getPhase());
+	}
+
+	@Test
+	public void sellCancelledToRelistBecomesHoldingNotSkipped()
+	{
+		// Live sell the player cancels to re-list at the exit price: the unsold stock returns to
+		// inventory. The target must become CANCELLED_HOLDING (remembering the returned quantity)
+		// so surfaceCurrent re-lists it via the lag-tolerant held path — never skipped as DONE.
+		seed(3, 561, false);
+		controller.start(ExitTradesMode.INSTANT);
+		boolean advanced = controller.onOfferChanged(rec(3, 561, false, 0, OfferState.CANCELLED_EMPTY));
+		assertTrue(advanced);
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+		assertEquals(10, controller.getTargets().get(0).getHeldQuantity()); // total 10 - filled 0
+	}
+
+	@Test
+	public void partiallySoldSellCancelledHoldsRemainingQuantity()
+	{
+		seed(4, 561, false);
+		controller.start(ExitTradesMode.INSTANT);
+		// 4 of 10 sold before the player cancelled; 6 return to inventory to re-list.
+		controller.onOfferChanged(rec(4, 561, false, 4, OfferState.CANCELLED_PARTIAL));
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+		assertEquals(6, controller.getTargets().get(0).getHeldQuantity());
 	}
 
 	@Test

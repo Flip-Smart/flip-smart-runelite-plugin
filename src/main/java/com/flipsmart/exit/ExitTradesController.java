@@ -9,13 +9,17 @@ import com.flipsmart.trading.OfferStore;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
+import java.util.function.Supplier;
 
 /**
  * Owns an in-progress Exit Trades run: a mode plus an ordered per-slot queue the player
@@ -26,11 +30,16 @@ public final class ExitTradesController
 {
 	private static final int GE_SLOTS = 8;
 
+	/** Sentinel slot for a target seeded from inventory-held stock that occupies no live GE slot. */
+	static final int NO_SLOT = -1;
+
 	private final OfferStore offerStore;
 	private IntUnaryOperator buyBasisSupplier = itemId -> 0;
 	private IntUnaryOperator backendSellPriceSupplier = itemId -> 0;
 	private IntFunction<WikiPrice> wikiPriceSupplier = itemId -> null;
 	private IntUnaryOperator inventoryQtySupplier = itemId -> 0;
+	private IntFunction<String> itemNameSupplier = itemId -> "";
+	private Supplier<Collection<Integer>> heldSellItemIdsSupplier = Collections::emptyList;
 	private Consumer<FocusedFlip> onFocusTarget = f -> { };
 	private BiConsumer<String, Integer> onStatusMessage = (m, id) -> { };
 	private IntConsumer onHighlightSlotForItem = itemId -> { };
@@ -71,6 +80,21 @@ public final class ExitTradesController
 		this.inventoryQtySupplier = supplier;
 	}
 
+	/** Resolves a display name for an inventory-seeded target (no OfferRecord to read it from). */
+	public void setItemNameSupplier(IntFunction<String> supplier)
+	{
+		this.itemNameSupplier = supplier;
+	}
+
+	/**
+	 * Item ids the player has bought/collected this session and still holds in inventory (open flips
+	 * with no live GE offer). Seeds sell targets so exit unwinds inventory stock, not just live slots.
+	 */
+	public void setHeldSellItemIdsSupplier(Supplier<Collection<Integer>> supplier)
+	{
+		this.heldSellItemIdsSupplier = supplier;
+	}
+
 	public void setOnFocusTarget(Consumer<FocusedFlip> cb)
 	{
 		this.onFocusTarget = cb;
@@ -109,6 +133,7 @@ public final class ExitTradesController
 			log.debug("Exit Trades started: mode=REGULAR (buys suppressed, normal sell flow)");
 			return;
 		}
+		Set<Integer> seededItems = new HashSet<>();
 		for (int slot = 0; slot < GE_SLOTS; slot++)
 		{
 			OfferRecord r = offerStore.bySlot(slot);
@@ -120,9 +145,46 @@ public final class ExitTradesController
 			targets.add(r.isBuy()
 				? ExitSlotTarget.forBuy(slot, r.getItemId(), r.getItemName(), basis)
 				: ExitSlotTarget.sell(slot, r.getItemId(), r.getItemName(), basis));
+			seededItems.add(r.getItemId());
 		}
+		seedInventoryHeldTargets(seededItems);
 		active = !targets.isEmpty();
-		log.debug("Exit Trades started: mode={} occupiedSlots={}", mode, targets.size());
+		log.debug("Exit Trades started: mode={} slots+inventory={}", mode, targets.size());
+	}
+
+	/**
+	 * Seed sell targets for stock the player already holds in inventory with no live GE offer.
+	 * A buy that filled and was collected before Exit Trades was triggered occupies no slot, so the
+	 * slot scan alone misses it and the queue would be empty. Each held item becomes a slot-less
+	 * CANCELLED_HOLDING sell target — the same phase a collected buy reaches — so it reuses the
+	 * existing held-stock surfacing (surfaceCurrent) and advance (onOfferChanged) paths unchanged.
+	 * Items already covered by a live slot target are skipped so nothing is queued twice.
+	 */
+	private void seedInventoryHeldTargets(Set<Integer> alreadySeeded)
+	{
+		Collection<Integer> held = heldSellItemIdsSupplier.get();
+		if (held == null)
+		{
+			return;
+		}
+		for (Integer itemId : held)
+		{
+			if (itemId == null || !alreadySeeded.add(itemId))
+			{
+				continue; // null, or already queued from a live slot
+			}
+			int qty = inventoryQtySupplier.applyAsInt(itemId);
+			if (qty <= 0)
+			{
+				continue; // nothing actually in the inventory to sell
+			}
+			ExitSlotTarget t = ExitSlotTarget.sell(NO_SLOT, itemId,
+				itemNameSupplier.apply(itemId), buyBasisSupplier.applyAsInt(itemId));
+			t.setPhase(ExitPhase.CANCELLED_HOLDING);
+			t.setHeldQuantity(qty);
+			targets.add(t);
+			log.debug("Exit Trades: seeded inventory-held sell target item {} qty {}", itemId, qty);
+		}
 	}
 
 	public boolean isActive()
@@ -256,10 +318,19 @@ public final class ExitTradesController
 				if (record.getState() == OfferState.CANCELLED_EMPTY
 					|| record.getState() == OfferState.CANCELLED_PARTIAL)
 				{
-					// Player cancelled the sell to modify it; stock is now in inventory. Re-surface so
-					// the prompt stays locked to re-listing this item (never falls back to a buy).
-					log.debug("Exit Trades: slot {} item {} sell cancelled — re-surfacing sell prompt",
-						t.getSlot(), t.getItemId());
+					// Player cancelled the sell to re-list it at the exit price; the unsold stock
+					// returns to inventory. Switch to CANCELLED_HOLDING (like collected buy stock) and
+					// remember the returned quantity so surfaceCurrent re-lists it via the lag-tolerant
+					// held path. Otherwise the inventory container's one-tick lag reads held==0 and the
+					// item is wrongly skipped, ending the whole exit run early.
+					int returned = Math.max(0, record.getTotalQuantity() - record.getFilledQuantity());
+					if (returned > 0)
+					{
+						t.setHeldQuantity(returned);
+					}
+					t.setPhase(ExitPhase.CANCELLED_HOLDING);
+					log.debug("Exit Trades: slot {} item {} sell cancelled — holding {} for re-list",
+						t.getSlot(), t.getItemId(), returned);
 					return true;
 				}
 			}

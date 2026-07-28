@@ -748,7 +748,7 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore, notifier, clientUI);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
-		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, geSlotOverlay, offerStore);
+		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, geSlotOverlay, offerStore, autoRecommendService);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
@@ -2214,6 +2214,19 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Item ids the player collected this session and may still hold (open flips with no live offer).
+	 * Exit Trades seeds sell targets from these so inventory stock is unwound, not just live slots
+	 *. The controller filters each against the live inventory count, so already-sold items
+	 * with zero held quantity are ignored.
+	 */
+	public java.util.Collection<Integer> getExitHeldSellItemIds()
+	{
+		return session != null
+			? new java.util.ArrayList<>(session.getCollectedItemIds())
+			: java.util.Collections.emptyList();
+	}
+
+	/**
 	 * Backend-computed exit sell price for {@code itemId} (the advisor's exit-at-breakeven,
 	 * stored in the session), used as the source of truth for breakeven mode. 0 when unknown.
 	 */
@@ -2247,6 +2260,15 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 			exitTradesController.surfaceCurrent();
+			// When Exit Trades does NOT own the overlay (REGULAR, or nothing to unwind), the sell must
+			// come from the normal flow. Clearing the buy focus above left AutoRecommendService's focus
+			// gate stale, so re-resolve now to surface the first prompt on click instead of on the next
+			// GE event. Owned modes (INSTANT/BREAKEVEN with a queue) keep the gate as-is so the auto
+			// tick-heal stays silent while surfaceCurrent drives the exit prompt.
+			if (autoRecommendService != null && !exitTradesController.ownsOverlay())
+			{
+				autoRecommendService.resyncAfterExternalOverlay();
+			}
 		});
 	}
 
@@ -2267,6 +2289,12 @@ public class FlipSmartPlugin extends Plugin
 			if (geSlotOverlay != null)
 			{
 				geSlotOverlay.clearAllAdjustmentHighlights();
+			}
+			// Clear the stale focus gate and re-resolve so focus mode and auto prompting resume
+			// immediately instead of staying frozen until a manual auto toggle.
+			if (autoRecommendService != null)
+			{
+				autoRecommendService.resyncAfterExternalOverlay();
 			}
 		});
 	}

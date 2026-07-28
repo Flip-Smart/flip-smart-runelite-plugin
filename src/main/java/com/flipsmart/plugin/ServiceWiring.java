@@ -98,18 +98,26 @@ public class ServiceWiring
 	 * @return the constructed ExitTradesController
 	 */
 	public ExitTradesController initializeExitTradesController(FlipSmartPlugin plugin,
-		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore)
+		FlipAssistOverlay flipAssistOverlay, GrandExchangeSlotOverlay geSlotOverlay, OfferStore offerStore,
+		AutoRecommendService autoRecommendService)
 	{
 		ExitTradesController controller = new ExitTradesController(offerStore);
 		controller.setBuyBasisSupplier(plugin::getExitBuyBasis);
 		controller.setBackendSellPriceSupplier(plugin::getExitBackendSellPrice);
 		controller.setWikiPriceSupplier(plugin::getWikiPrice);
 		controller.setInventoryQtySupplier(plugin::getExitInventoryQty);
+		controller.setItemNameSupplier(plugin::getItemName);
+		controller.setHeldSellItemIdsSupplier(plugin::getExitHeldSellItemIds);
 		controller.setOnFocusTarget(flipAssistOverlay::setFocusedFlip);
 		controller.setOnStatusMessage(flipAssistOverlay::setAutoStatusMessage);
 		controller.setOnHighlightSlotForItem(plugin::highlightSlotForItem);
 		controller.setOnClearHighlights(geSlotOverlay::clearAllAdjustmentHighlights);
-		controller.setOnComplete(() -> flipAssistOverlay.setAutoStatusMessage("Exit Trades complete", 0));
+		controller.setOnComplete(() -> {
+			flipAssistOverlay.setAutoStatusMessage("Exit Trades complete", 0);
+			// Hand the overlay back cleanly: clear the stale focus gate and re-resolve so focus
+			// mode and auto prompting resume without a manual auto toggle.
+			autoRecommendService.resyncAfterExternalOverlay();
+		});
 		offerStore.addListener(event -> {
 			if (controller.onOfferChanged(event.record))
 			{

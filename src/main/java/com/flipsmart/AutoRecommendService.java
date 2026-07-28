@@ -3143,6 +3143,23 @@ public class AutoRecommendService
 		focusNextAvailableAction();
 	}
 
+	/**
+	 * Resync after Exit Trades hands the overlay back. While Exit Trades owned the overlay,
+	 * {@code invokeFocusCallback} short-circuited, so {@code overlayFocusShown} kept its pre-exit
+	 * value and the per-tick heal ({@code onGameTickReresolve}) stayed gated on it — leaving focus
+	 * mode and auto prompting frozen until the player toggled auto off/on. Clearing the flag and
+	 * re-resolving mirrors what {@code stop()} did, but without turning auto-mode off. No-op when
+	 * auto-mode is inactive, so it never surfaces a buy the player didn't ask for.
+	 */
+	public synchronized void resyncAfterExternalOverlay()
+	{
+		overlayFocusShown = false;
+		if (active)
+		{
+			focusNextAvailableAction();
+		}
+	}
+
 	private void invokeQueueAdvancedCallback()
 	{
 		Runnable callback = onQueueAdvanced;
