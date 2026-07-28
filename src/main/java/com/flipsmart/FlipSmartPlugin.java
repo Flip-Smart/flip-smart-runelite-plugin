@@ -1,5 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.LiveStateSnapshot;
 import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
@@ -172,6 +173,9 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private TradeStationSlotPushService tradeStationSlotPushService;
+
+	@Inject
+	private LiveStatePushService liveStatePushService;
 
 	@Inject
 	private Gson gson;
@@ -970,6 +974,10 @@ public class FlipSmartPlugin extends Plugin
 
 		// Shut down the trade-station snapshot pusher's executor.
 		tradeStationSlotPushService.shutdown();
+
+		// Final absolute snapshot so the dashboard doesn't sit on a stale mid-session state.
+		liveStatePushService.pushNow(buildLiveStateSnapshot());
+		liveStatePushService.shutdown();
 	}
 
 	@Subscribe
@@ -1186,6 +1194,14 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		scheduleOneShot(PluginScheduler.STALE_FLIP_CLEANUP_DELAY_MS, this::performStaleFlipCleanup);
+
+		// Post-login settle point: GE state is trustworthy now, and a player who
+		// changes nothing this session still needs a fresh push.
+		scheduleOneShot(PluginScheduler.STALE_FLIP_CLEANUP_DELAY_MS, () ->
+		{
+			liveStatePushService.markReady();
+			liveStatePushService.pushNow(buildLiveStateSnapshot());
+		});
 
 		if (autoRecommendService != null && autoRecommendService.isActive())
 		{
@@ -1443,6 +1459,34 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Build the live GE slot / inventory / collected-item snapshot pushed to the
+	 * backend. Reads only thread-safe collaborators (synchronized OfferStore,
+	 * a concurrent collected-items set, and a volatile inventory-id snapshot),
+	 * so it is safe to call from any thread.
+	 */
+	private LiveStateSnapshot buildLiveStateSnapshot()
+	{
+		java.util.List<LiveStateSnapshot.SlotState> slots = new java.util.ArrayList<>();
+		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		{
+			if (offer.getSlot() == null)
+			{
+				continue;
+			}
+			slots.add(new LiveStateSnapshot.SlotState(
+				offer.getSlot(),
+				offer.getItemId(),
+				offer.getItemName(),
+				offer.isBuy(),
+				String.valueOf(offer.getState()),
+				offer.getTotalQuantity(),
+				offer.getFilledQuantity(),
+				offer.getPrice()));
+		}
+		return new LiveStateSnapshot(slots, getInventoryFlipItemIds(), session.getCollectedItemIds());
+	}
+
+	/**
 	 * GE offer-changed handler body. Kept on the plugin because it builds
 	 * {@link GrandExchangeTracker.OfferContext}, a package-private type. The router
 	 * delegates straight here.
@@ -1486,6 +1530,9 @@ public class FlipSmartPlugin extends Plugin
 				System.currentTimeMillis());
 			return;
 		}
+
+		// Past the burst window, this event reflects real GE state — push it.
+		liveStatePushService.schedulePush(buildLiveStateSnapshot());
 
 		grandExchangeTracker.handleOfferChanged(GrandExchangeTracker.OfferContext.builder()
 			.slot(slot)
@@ -1701,6 +1748,7 @@ public class FlipSmartPlugin extends Plugin
 			session.setCashStack(0);
 			inventoryFlipItemIds = java.util.Collections.emptySet();
 			inventoryFlipItemCounts = java.util.Collections.emptyMap();
+			liveStatePushService.markNotReady();
 			return;
 		}
 
@@ -1724,6 +1772,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
 		inventoryFlipItemCounts = java.util.Collections.unmodifiableMap(currentInventoryCounts);
+		liveStatePushService.schedulePush(buildLiveStateSnapshot());
 
 		if (totalCash != session.getCurrentCashStack())
 		{
