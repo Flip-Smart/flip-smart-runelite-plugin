@@ -30,6 +30,7 @@ public class LiveStatePushService
 
 	private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
 	private final AtomicReference<LiveStateSnapshot> lastPushed = new AtomicReference<>();
+	private final AtomicReference<LiveStateSnapshot> lastSent = new AtomicReference<>();
 	private volatile boolean ready;
 
 	@Inject
@@ -109,14 +110,16 @@ public class LiveStatePushService
 		}
 		try
 		{
+			lastSent.set(snapshot);
 			apiClient.pushLiveStateAsync(rsn, Instant.now().toString(), snapshot)
 				.whenComplete((ok, err) ->
 				{
-					if (err == null && Boolean.TRUE.equals(ok))
+					boolean succeeded = err == null && Boolean.TRUE.equals(ok);
+					if (succeeded && snapshot == lastSent.get())
 					{
 						lastPushed.set(snapshot);
 					}
-					else
+					else if (!succeeded)
 					{
 						log.debug("Live-state push failed: {}", err != null ? err.getMessage() : ok);
 					}

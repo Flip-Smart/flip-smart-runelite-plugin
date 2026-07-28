@@ -1,7 +1,9 @@
 package com.flipsmart;
 
 import com.flipsmart.api.dto.LiveStateSnapshot;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -101,5 +103,32 @@ public class LiveStatePushServiceTest
 		service.pushNow(snapshot(4151));
 		service.pushNow(snapshot(4151));
 		assertEquals(2, pushes.get());
+	}
+
+	@Test
+	public void outOfOrderCompletionDoesNotRevertToStaleSnapshot()
+	{
+		List<CompletableFuture<Boolean>> futures = new ArrayList<>();
+		Mockito.doAnswer(inv ->
+			{
+				pushes.incrementAndGet();
+				CompletableFuture<Boolean> future = new CompletableFuture<>();
+				futures.add(future);
+				return future;
+			})
+			.when(apiClient)
+			.pushLiveStateAsync(Mockito.anyString(), Mockito.anyString(), Mockito.any());
+		service.markReady();
+
+		service.pushNow(snapshot(4151));
+		service.pushNow(snapshot(555));
+
+		// Newer push (555) resolves first, older push (4151) resolves after it —
+		// the older completion must not overwrite the dedup baseline it lost the race to.
+		futures.get(1).complete(true);
+		futures.get(0).complete(true);
+
+		service.pushNow(snapshot(4151));
+		assertEquals(3, pushes.get());
 	}
 }
