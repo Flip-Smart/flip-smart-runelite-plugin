@@ -46,10 +46,19 @@ public final class LiveStateSnapshot
 				return false;
 			}
 			SlotState other = (SlotState) o;
+			return sameNumericFields(other) && sameNamedFields(other);
+		}
+
+		private boolean sameNumericFields(SlotState other)
+		{
 			return slot == other.slot && itemId == other.itemId && isBuy == other.isBuy
 				&& totalQuantity == other.totalQuantity && filledQuantity == other.filledQuantity
-				&& price == other.price && Objects.equals(itemName, other.itemName)
-				&& Objects.equals(state, other.state);
+				&& price == other.price;
+		}
+
+		private boolean sameNamedFields(SlotState other)
+		{
+			return Objects.equals(itemName, other.itemName) && Objects.equals(state, other.state);
 		}
 
 		@Override
