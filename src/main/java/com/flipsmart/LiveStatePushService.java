@@ -117,7 +117,10 @@ public class LiveStatePushService
 			}
 			catch (RuntimeException e)
 			{
-				log.debug("Live-state heartbeat threw: {}", e.getMessage());
+				if (log.isDebugEnabled())
+				{
+					log.debug("Live-state heartbeat threw: {}", e.getMessage());
+				}
 			}
 		}, HEARTBEAT_INTERVAL_MS, HEARTBEAT_INTERVAL_MS, TimeUnit.MILLISECONDS);
 		ScheduledFuture<?> previous = heartbeat.getAndSet(next);
@@ -183,7 +186,10 @@ public class LiveStatePushService
 		}
 		catch (RuntimeException e)
 		{
-			log.debug("Live-state push threw: {}", e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Live-state push threw: {}", e.getMessage());
+			}
 		}
 	}
 
