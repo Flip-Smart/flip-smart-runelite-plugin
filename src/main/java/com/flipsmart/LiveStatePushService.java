@@ -179,23 +179,25 @@ public class LiveStatePushService
 		{
 			lastSent.set(snapshot);
 			apiClient.pushLiveStateAsync(rsn, Instant.now().toString(), snapshot)
-				.whenComplete((ok, err) ->
-				{
-					boolean succeeded = err == null && Boolean.TRUE.equals(ok);
-					if (succeeded && snapshot == lastSent.get())
-					{
-						lastPushed.set(snapshot);
-						lastSuccessfulPushAt.set(clock.getAsLong());
-					}
-					else if (!succeeded)
-					{
-						log.debug("Live-state push failed: {}", err != null ? err.getMessage() : ok);
-					}
-				});
+				.whenComplete((ok, err) -> handlePushOutcome(snapshot, ok, err));
 		}
 		catch (RuntimeException e)
 		{
 			log.debug("Live-state push threw: {}", e.getMessage());
+		}
+	}
+
+	private void handlePushOutcome(LiveStateSnapshot snapshot, Boolean ok, Throwable err)
+	{
+		boolean succeeded = err == null && Boolean.TRUE.equals(ok);
+		if (succeeded && snapshot == lastSent.get())
+		{
+			lastPushed.set(snapshot);
+			lastSuccessfulPushAt.set(clock.getAsLong());
+		}
+		else if (!succeeded)
+		{
+			log.debug("Live-state push failed: {}", err != null ? err.getMessage() : ok);
 		}
 	}
 }
