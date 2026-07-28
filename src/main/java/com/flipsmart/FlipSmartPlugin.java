@@ -1058,6 +1058,7 @@ public class FlipSmartPlugin extends Plugin
 	public void handleLogoutState()
 	{
 		pushFinalCapitalSnapshot();
+		liveStatePushService.markNotReady();
 		session.onLogout();
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
@@ -1531,9 +1532,6 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
-		// Past the burst window, this event reflects real GE state — push it.
-		liveStatePushService.schedulePush(buildLiveStateSnapshot());
-
 		grandExchangeTracker.handleOfferChanged(GrandExchangeTracker.OfferContext.builder()
 			.slot(slot)
 			.itemId(itemId)
@@ -1545,6 +1543,10 @@ public class FlipSmartPlugin extends Plugin
 			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
+
+		// Snapshot after handleOfferChanged, not before: it is what applies this
+		// event to offerStore, so pushing earlier would publish the pre-event state.
+		liveStatePushService.schedulePush(buildLiveStateSnapshot());
 	}
 
 	@Subscribe
