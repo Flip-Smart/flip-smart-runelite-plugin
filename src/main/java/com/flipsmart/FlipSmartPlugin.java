@@ -488,7 +488,7 @@ public class FlipSmartPlugin extends Plugin
 		Map<Integer, Integer> inventoryCounts = new java.util.HashMap<>();
 		for (int itemId : getInventoryFlipItemIds())
 		{
-			int count = activeFlipTracker.getInventoryCountForItem(itemId);
+			int count = getInventoryCountSnapshot(itemId);
 			if (count > 0)
 			{
 				inventoryCounts.put(itemId, count);
