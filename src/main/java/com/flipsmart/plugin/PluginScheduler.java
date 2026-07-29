@@ -27,6 +27,9 @@ public class PluginScheduler
 	public static final long ACTIVE_OFFER_ADVISOR_INTERVAL_MS = 30_000L;
 	public static final long ACTIVE_OFFER_ADVISOR_EVENT_DEBOUNCE_MS = 3_000L;
 
+	/** Active Flips snapshot heartbeat interval (5 minutes), deliberately not user-configurable */
+	public static final long ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1000L;
+
 	/** Delay before syncing offline fills after login */
 	public static final int OFFLINE_SYNC_DELAY_MS = 2000;
 	/** Delay before refreshing panel after sync */
@@ -41,6 +44,7 @@ public class PluginScheduler
 	private Timer flipFinderRefreshTimer;
 	private Timer autoRecommendRefreshTimer;
 	private Timer activeOfferAdvisorTimer;
+	private Timer activeFlipsSnapshotTimer;
 
 	/**
 	 * Wall-clock instant at which the flip-finder auto-refresh timer will next fire.
@@ -201,6 +205,44 @@ public class PluginScheduler
 		{
 			activeOfferAdvisorTimer.cancel();
 			activeOfferAdvisorTimer = null;
+		}
+	}
+
+	/**
+	 * Start the Active Flips snapshot heartbeat (5-minute interval). Deliberately its
+	 * own timer rather than riding the user-configurable flip-finder refresh, which can
+	 * be set up to 60 minutes and would let a player leave the web dashboard that stale.
+	 *
+	 * @param loggedInCheck supplies whether the player is logged into RuneScape
+	 * @param body          the heartbeat body to run on each interval when logged in
+	 */
+	public void startActiveFlipsSnapshotTimer(BooleanSupplier loggedInCheck, Runnable body)
+	{
+		if (activeFlipsSnapshotTimer != null)
+		{
+			activeFlipsSnapshotTimer.cancel();
+		}
+
+		activeFlipsSnapshotTimer = new Timer("ActiveFlipsSnapshotTimer", true);
+		activeFlipsSnapshotTimer.scheduleAtFixedRate(new TimerTask()
+		{
+			@Override
+			public void run()
+			{
+				if (loggedInCheck.getAsBoolean())
+				{
+					body.run();
+				}
+			}
+		}, ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS, ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS);
+	}
+
+	public void stopActiveFlipsSnapshotTimer()
+	{
+		if (activeFlipsSnapshotTimer != null)
+		{
+			activeFlipsSnapshotTimer.cancel();
+			activeFlipsSnapshotTimer = null;
 		}
 	}
 

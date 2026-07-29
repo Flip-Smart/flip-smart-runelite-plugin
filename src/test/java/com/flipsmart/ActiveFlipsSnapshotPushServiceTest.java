@@ -43,18 +43,16 @@ public class ActiveFlipsSnapshotPushServiceTest
 	public void pushesTheProjection() throws Exception
 	{
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
-		verify(apiClient, times(1)).pushActiveFlipsSnapshotAsync(eq(RSN), any());
+		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(eq(RSN), any());
 	}
 
 	@Test
 	public void identicalProjectionIsNotPushedTwice() throws Exception
 	{
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
+		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
-		verify(apiClient, times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		verify(apiClient, after(200).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -63,20 +61,18 @@ public class ActiveFlipsSnapshotPushServiceTest
 		// Same set of flips, more filled. Fill ticks fire constantly; if they
 		// each pushed, an actively-filling order would spam the API.
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
+		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 		service.pushNow(List.of(flip(4151, 70)));
-		Thread.sleep(50);
-		verify(apiClient, times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		verify(apiClient, after(200).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
 	public void aNewItemTriggersAPush() throws Exception
 	{
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
+		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 		service.pushNow(List.of(flip(4151, 0), flip(561, 0)));
-		Thread.sleep(50);
-		verify(apiClient, times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+		verify(apiClient, timeout(500).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -84,10 +80,9 @@ public class ActiveFlipsSnapshotPushServiceTest
 	{
 		// "No active flips" must reach the server — it is what clears the dashboard.
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
+		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 		service.pushNow(List.of());
-		Thread.sleep(50);
-		verify(apiClient, times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+		verify(apiClient, timeout(500).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -98,14 +93,12 @@ public class ActiveFlipsSnapshotPushServiceTest
 		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
 			.thenReturn(CompletableFuture.completedFuture(false));
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
+		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 
 		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
 			.thenReturn(CompletableFuture.completedFuture(true));
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
-
-		verify(apiClient, times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+		verify(apiClient, timeout(500).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -113,7 +106,6 @@ public class ActiveFlipsSnapshotPushServiceTest
 	{
 		when(session.getRsnSafe()).thenReturn(Optional.empty());
 		service.pushNow(List.of(flip(4151, 0)));
-		Thread.sleep(50);
-		verify(apiClient, never()).pushActiveFlipsSnapshotAsync(any(), any());
+		verify(apiClient, after(200).never()).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 }

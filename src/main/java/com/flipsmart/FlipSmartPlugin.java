@@ -177,6 +177,9 @@ public class FlipSmartPlugin extends Plugin
 	private TradeStationSlotPushService tradeStationSlotPushService;
 
 	@Inject
+	private ActiveFlipsSnapshotPushService activeFlipsSnapshotPushService;
+
+	@Inject
 	private Gson gson;
 
 	// Flip Finder panel
@@ -538,6 +541,24 @@ public class FlipSmartPlugin extends Plugin
 			enrichmentByItemId == null ? java.util.Collections.emptyMap() : enrichmentByItemId);
 	}
 
+	/**
+	 * Serialise the current projection to the backend so the website mirrors the Active
+	 * Flips tab. Enrichment is intentionally empty: the server only needs which flips
+	 * exist, and an empty map avoids taking the panel's lock from the event thread.
+	 */
+	private void pushActiveFlipsSnapshot(boolean immediate)
+	{
+		java.util.List<ActiveFlip> projection = getProjectedActiveFlips(java.util.Collections.emptyMap());
+		if (immediate)
+		{
+			activeFlipsSnapshotPushService.pushNow(projection);
+		}
+		else
+		{
+			activeFlipsSnapshotPushService.scheduleSnapshotPush(projection);
+		}
+	}
+
 	public boolean isAutoRecommendActive()
 	{
 		return autoRecommendService != null && autoRecommendService.isActive();
@@ -860,6 +881,14 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore, notifier, clientUI);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
+		scheduler.startActiveFlipsSnapshotTimer(session::isLoggedIntoRunescape, () ->
+		{
+			// Periodic safety net: repairs drift from any dropped event push and
+			// refreshes the server-side TTL. Dedup means an idle account with an
+			// unchanged board sends nothing, so this costs no traffic when quiet.
+			activeFlipsSnapshotPushService.invalidateDedup();
+			pushActiveFlipsSnapshot(false);
+		});
 		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, geSlotOverlay, offerStore);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
@@ -1082,6 +1111,10 @@ public class FlipSmartPlugin extends Plugin
 
 		// Shut down the trade-station snapshot pusher's executor.
 		tradeStationSlotPushService.shutdown();
+
+		// Flush and stop the Active Flips snapshot pusher and its heartbeat.
+		activeFlipsSnapshotPushService.shutdown();
+		scheduler.stopActiveFlipsSnapshotTimer();
 	}
 
 	@Subscribe
@@ -1596,6 +1629,7 @@ public class FlipSmartPlugin extends Plugin
 				com.flipsmart.trading.OfferEventMapper.toSignal(
 					slot, state, itemId, itemName, totalQuantity, price, quantitySold, spent),
 				System.currentTimeMillis());
+			pushActiveFlipsSnapshot(false);
 			return;
 		}
 
@@ -1610,6 +1644,7 @@ public class FlipSmartPlugin extends Plugin
 			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
+		pushActiveFlipsSnapshot(false);
 	}
 
 	@Subscribe

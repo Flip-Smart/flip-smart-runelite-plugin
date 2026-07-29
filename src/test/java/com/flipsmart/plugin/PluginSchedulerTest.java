@@ -32,6 +32,7 @@ public class PluginSchedulerTest
 	public void tearDown()
 	{
 		scheduler.stopFlipFinderRefreshTimer();
+		scheduler.stopActiveFlipsSnapshotTimer();
 	}
 
 	/** AC5(b): starting the timer aligns the next refresh to a full interval from now. */
@@ -79,5 +80,29 @@ public class PluginSchedulerTest
 		scheduler.startFlipFinderRefreshTimer(0, () -> true, () -> { });
 
 		assertEquals(60_000L, scheduler.getNextFlipFinderRefreshAtMillis());
+	}
+
+	/** The Active Flips heartbeat is a fixed 5 minutes, independent of the flip-finder setting. */
+	@Test
+	public void activeFlipsSnapshotIntervalIsFiveMinutes()
+	{
+		assertEquals(5 * 60 * 1000L, PluginScheduler.ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS);
+	}
+
+	/** Starting the heartbeat twice must cancel the prior timer rather than leaking it. */
+	@Test
+	public void activeFlipsSnapshotTimerStartAndStopIsIdempotent()
+	{
+		scheduler.startActiveFlipsSnapshotTimer(() -> true, () -> { });
+		scheduler.startActiveFlipsSnapshotTimer(() -> true, () -> { });
+		scheduler.stopActiveFlipsSnapshotTimer();
+		scheduler.stopActiveFlipsSnapshotTimer();
+	}
+
+	/** Stopping a timer that was never started must be a no-op, not a NullPointerException. */
+	@Test
+	public void stoppingActiveFlipsSnapshotTimerBeforeStartIsSafe()
+	{
+		scheduler.stopActiveFlipsSnapshotTimer();
 	}
 }

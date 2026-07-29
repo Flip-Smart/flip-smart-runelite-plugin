@@ -51,11 +51,13 @@ public class ActiveFlipsSnapshotPushService
 	 * Identity of a projection for dedup purposes: which flips exist and on which
 	 * side, deliberately EXCLUDING fill progress. Fill ticks fire constantly; if
 	 * they counted as changes, one slowly-filling order would push dozens of times.
+	 * This is also exactly what the server consumes, so the payload's other fields
+	 * are only ever as fresh as the last identity change.
 	 */
 	private static String identity(List<ActiveFlip> flips)
 	{
 		return flips.stream()
-			.map(f -> f.getItemId() + ":" + f.getPhase() + ":" + f.getOrderQuantity())
+			.map(f -> f.getItemId() + ":" + f.getPhase())
 			.sorted()
 			.collect(Collectors.joining(","));
 	}
