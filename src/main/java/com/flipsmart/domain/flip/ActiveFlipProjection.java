@@ -67,10 +67,21 @@ public final class ActiveFlipProjection
         {
             return;
         }
+        mergeRecommendedSellPrice(f, e);
+        mergeBuyBasis(f, e);
+    }
+
+    private static void mergeRecommendedSellPrice(ActiveFlip f, ActiveFlip e)
+    {
         if (e.getRecommendedSellPrice() != null)
         {
             f.setRecommendedSellPrice(e.getRecommendedSellPrice());
         }
+    }
+
+    /** Backfills local buy-basis fields from enrichment only where the local projection is empty. */
+    private static void mergeBuyBasis(ActiveFlip f, ActiveFlip e)
+    {
         if (f.getAverageBuyPrice() == 0 && e.getAverageBuyPrice() != 0)
         {
             f.setAverageBuyPrice(e.getAverageBuyPrice());
