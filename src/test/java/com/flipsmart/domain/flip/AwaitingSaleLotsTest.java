@@ -7,6 +7,7 @@ import static org.junit.Assert.*;
 public class AwaitingSaleLotsTest
 {
     private static final String FIRST_BUY_TIME = "2026-07-28T00:00:00Z";
+    private static final String ITEM_42_NAME = "item42";
 
     private static java.util.function.IntFunction<AwaitingSaleLots.BuyBasis> basis(Map<Integer, AwaitingSaleLots.BuyBasis> m)
     {
@@ -18,14 +19,14 @@ public class AwaitingSaleLotsTest
     {
         Map<Integer,Integer> inv = new HashMap<>(); inv.put(42, 5);
         Map<Integer, AwaitingSaleLots.BuyBasis> b = new HashMap<>();
-        b.put(42, new AwaitingSaleLots.BuyBasis("item42", 1000, FIRST_BUY_TIME));
+        b.put(42, new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, FIRST_BUY_TIME));
 
         List<AwaitingSaleLot> lots = AwaitingSaleLots.derive(inv, basis(b), Collections.emptySet());
 
         assertEquals(1, lots.size());
         AwaitingSaleLot lot = lots.get(0);
         assertEquals(42, lot.itemId);
-        assertEquals("item42", lot.itemName);
+        assertEquals(ITEM_42_NAME, lot.itemName);
         assertEquals(5, lot.quantity);
         assertEquals(1000, lot.avgBuyPrice);
         assertEquals(5000L, lot.totalInvested);
@@ -37,7 +38,7 @@ public class AwaitingSaleLotsTest
     {
         Map<Integer,Integer> inv = new HashMap<>(); inv.put(42, 5);
         Map<Integer, AwaitingSaleLots.BuyBasis> b = new HashMap<>();
-        b.put(42, new AwaitingSaleLots.BuyBasis("item42", 1000, FIRST_BUY_TIME));
+        b.put(42, new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, FIRST_BUY_TIME));
 
         List<AwaitingSaleLot> lots = AwaitingSaleLots.derive(inv, basis(b),
             new HashSet<>(Collections.singletonList(42)));
@@ -57,7 +58,7 @@ public class AwaitingSaleLotsTest
     public void notInInventoryIsNotAwaitingSale()
     {
         Map<Integer, AwaitingSaleLots.BuyBasis> b = new HashMap<>();
-        b.put(42, new AwaitingSaleLots.BuyBasis("item42", 1000, FIRST_BUY_TIME));
+        b.put(42, new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, FIRST_BUY_TIME));
         List<AwaitingSaleLot> lots = AwaitingSaleLots.derive(Collections.emptyMap(), basis(b), Collections.emptySet());
         assertTrue(lots.isEmpty());
     }
@@ -67,7 +68,7 @@ public class AwaitingSaleLotsTest
     {
         Map<Integer,Integer> inv = new HashMap<>(); inv.put(42, 5);
         Map<Integer, AwaitingSaleLots.BuyBasis> b = new HashMap<>();
-        b.put(42, new AwaitingSaleLots.BuyBasis("item42", 1000, null));
+        b.put(42, new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, null));
 
         List<AwaitingSaleLot> lots = AwaitingSaleLots.derive(inv, basis(b), Collections.emptySet());
 
