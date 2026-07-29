@@ -89,24 +89,27 @@ public final class OfferStore
      * transient store gap in place rather than waiting for the next fill event. Returns
      * true when a record was seeded.
      */
-    public synchronized boolean seedIfAbsent(OfferSignal signal, long now)
+    public boolean seedIfAbsent(OfferSignal signal, long now)
     {
-        if (slotToOfferId.containsKey(signal.slot))
+        synchronized (this)
         {
-            return false;
+            if (slotToOfferId.containsKey(signal.slot))
+            {
+                return false;
+            }
+            OfferTransition t = OfferStateMachine.decide(null, signal, nextOfferId, now);
+            if (t.record == null)
+            {
+                return false;
+            }
+            nextOfferId = Math.max(nextOfferId, t.record.getOfferId() + 1);
+            byOfferId.put(t.record.getOfferId(), t.record);
+            if (t.record.getSlot() != null)
+            {
+                slotToOfferId.put(signal.slot, t.record.getOfferId());
+            }
+            return true;
         }
-        OfferTransition t = OfferStateMachine.decide(null, signal, nextOfferId, now);
-        if (t.record == null)
-        {
-            return false;
-        }
-        nextOfferId = Math.max(nextOfferId, t.record.getOfferId() + 1);
-        byOfferId.put(t.record.getOfferId(), t.record);
-        if (t.record.getSlot() != null)
-        {
-            slotToOfferId.put(signal.slot, t.record.getOfferId());
-        }
-        return true;
     }
 
     /** Live offer currently occupying {@code slot} (0–7), or {@code null} if the slot is empty. */
