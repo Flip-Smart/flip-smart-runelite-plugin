@@ -2249,6 +2249,12 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void updateStatusLabel(FlipFinderResponse response)
 	{
+		// The status label is shared across tabs; only write the Recommended header while that tab is
+		// selected so a background recommendation refresh can't overwrite the Active Flips header.
+		if (tabbedPane.getSelectedIndex() != TAB_RECOMMENDED)
+		{
+			return;
+		}
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 		String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
 		int count = countDisplayed(response.getRecommendations());
@@ -2369,12 +2375,16 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			else if (!currentRecommendations.isEmpty())
 			{
-				// Refresh recommendation display and status when a slot frees up
-				int count = countDisplayed(currentRecommendations);
-				String itemWord = count == 1 ? "suggestion" : "suggestions";
-				FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
-				String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
-				statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
+				// Only touch the shared status label while the Recommended tab is selected, so a
+				// slot-change during Auto doesn't overwrite the Active Flips header.
+				if (tabbedPane.getSelectedIndex() == TAB_RECOMMENDED)
+				{
+					int count = countDisplayed(currentRecommendations);
+					String itemWord = count == 1 ? "suggestion" : "suggestions";
+					FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+					String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
+					statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
+				}
 
 				populateRecommendations(new ArrayList<>(currentRecommendations));
 				subscribeLabel.setVisible(!plugin.isPremium());
