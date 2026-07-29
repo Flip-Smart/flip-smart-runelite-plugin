@@ -436,40 +436,70 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
 	{
-		com.flipsmart.domain.offer.OfferRecord bestFilled = null;
-		com.flipsmart.domain.offer.OfferRecord bestAny = null;
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys = new java.util.ArrayList<>();
 		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
 		{
-			if (!r.isBuy())
+			if (r.isBuy())
 			{
-				continue;
-			}
-			if (bestAny == null || r.getEffectiveLastActivityAtMillis() > bestAny.getEffectiveLastActivityAtMillis())
-			{
-				bestAny = r;
-			}
-			if (r.getFilledQuantity() > 0
-				&& (bestFilled == null
-					|| r.getEffectiveLastActivityAtMillis() > bestFilled.getEffectiveLastActivityAtMillis()))
-			{
-				bestFilled = r;
+				buys.add(r);
 			}
 		}
-		com.flipsmart.domain.offer.OfferRecord best = bestFilled != null ? bestFilled : bestAny;
+		com.flipsmart.domain.offer.OfferRecord bestFilled = mostRecentFilledBuy(buys);
+		com.flipsmart.domain.offer.OfferRecord best = bestFilled != null ? bestFilled : mostRecentBuy(buys);
 		if (best == null)
 		{
 			return null;
 		}
-		int avgBuyPrice = best.getSpent() > 0 && best.getFilledQuantity() > 0
+		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice(best), firstBuyTimeIso(best));
+	}
+
+	/** Most recently active buy record in {@code buys}, or {@code null} when the list is empty. */
+	private static com.flipsmart.domain.offer.OfferRecord mostRecentBuy(
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys)
+	{
+		com.flipsmart.domain.offer.OfferRecord best = null;
+		for (com.flipsmart.domain.offer.OfferRecord r : buys)
+		{
+			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
+			{
+				best = r;
+			}
+		}
+		return best;
+	}
+
+	/** Most recently active buy record in {@code buys} that has at least one filled unit. */
+	private static com.flipsmart.domain.offer.OfferRecord mostRecentFilledBuy(
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys)
+	{
+		com.flipsmart.domain.offer.OfferRecord best = null;
+		for (com.flipsmart.domain.offer.OfferRecord r : buys)
+		{
+			if (r.getFilledQuantity() <= 0)
+			{
+				continue;
+			}
+			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
+			{
+				best = r;
+			}
+		}
+		return best;
+	}
+
+	private static int avgBuyPrice(com.flipsmart.domain.offer.OfferRecord best)
+	{
+		return best.getSpent() > 0 && best.getFilledQuantity() > 0
 			? (int) (best.getSpent() / best.getFilledQuantity())
 			: best.getPrice();
+	}
+
+	private static String firstBuyTimeIso(com.flipsmart.domain.offer.OfferRecord best)
+	{
 		long firstBuyMillis = best.getCreatedAtMillis() > 0
 			? best.getCreatedAtMillis()
 			: best.getEffectiveLastActivityAtMillis();
-		String firstBuyTimeIso = firstBuyMillis > 0
-			? java.time.Instant.ofEpochMilli(firstBuyMillis).toString()
-			: null;
-		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice, firstBuyTimeIso);
+		return firstBuyMillis > 0 ? java.time.Instant.ofEpochMilli(firstBuyMillis).toString() : null;
 	}
 
 	/**
