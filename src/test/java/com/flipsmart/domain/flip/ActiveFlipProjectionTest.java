@@ -10,6 +10,8 @@ import static org.junit.Assert.*;
 public class ActiveFlipProjectionTest
 {
     private static final IntFunction<AwaitingSaleLots.BuyBasis> NO_BASIS = id -> null;
+    private static final String ITEM_42_NAME = "item42";
+    private static final String FIRST_BUY_TIME = "2026-07-28T00:00:00Z";
 
     private static OfferRecord liveSell(int itemId, int total, int price, int filled, long spent)
     {
@@ -28,14 +30,14 @@ public class ActiveFlipProjectionTest
         ActiveFlip f = out.get(0);
         assertEquals(42, f.getItemId());
         assertEquals("sell", f.getPhase());
-        assertEquals("item42", f.getItemName());
+        assertEquals(ITEM_42_NAME, f.getItemName());
     }
 
     @Test
     public void awaitingSaleLotBecomesActiveFlip()
     {
         List<AwaitingSaleLot> lots = Collections.singletonList(
-            new AwaitingSaleLot(42, "item42", 5, 1000, 5000L, "2026-07-28T00:00:00Z"));
+            new AwaitingSaleLot(42, ITEM_42_NAME, 5, 1000, 5000L, FIRST_BUY_TIME));
 
         List<ActiveFlip> out = ActiveFlipProjection.project(
             Collections.emptyList(), NO_BASIS, lots, Collections.emptyMap());
@@ -46,14 +48,14 @@ public class ActiveFlipProjectionTest
         assertEquals(5, f.getTotalQuantity());
         assertEquals(1000, f.getAverageBuyPrice());
         assertEquals(5000L, f.getTotalInvested());
-        assertEquals("2026-07-28T00:00:00Z", f.getFirstBuyTime());
+        assertEquals(FIRST_BUY_TIME, f.getFirstBuyTime());
     }
 
     @Test
     public void sellingPositionGetsCostBasisAndFirstBuyTimeFromLookup()
     {
         IntFunction<AwaitingSaleLots.BuyBasis> basis = id ->
-            id == 42 ? new AwaitingSaleLots.BuyBasis("item42", 1000, "2026-07-28T00:00:00Z") : null;
+            id == 42 ? new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, FIRST_BUY_TIME) : null;
 
         List<ActiveFlip> out = ActiveFlipProjection.project(
             Collections.singletonList(liveSell(42, 10, 1200, 3, 3600L)),
@@ -62,7 +64,7 @@ public class ActiveFlipProjectionTest
         ActiveFlip f = out.get(0);
         assertEquals(1000, f.getAverageBuyPrice());
         assertEquals(10000L, f.getTotalInvested());
-        assertEquals("2026-07-28T00:00:00Z", f.getFirstBuyTime());
+        assertEquals(FIRST_BUY_TIME, f.getFirstBuyTime());
     }
 
     @Test
@@ -120,7 +122,7 @@ public class ActiveFlipProjectionTest
         byId.put(42, enrich);
 
         IntFunction<AwaitingSaleLots.BuyBasis> basis = id ->
-            new AwaitingSaleLots.BuyBasis("item42", 1000, "2026-07-28T12:00:00Z");
+            new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, "2026-07-28T12:00:00Z");
 
         List<ActiveFlip> out = ActiveFlipProjection.project(
             Collections.singletonList(liveSell(42, 10, 1200, 3, 3600L)),
