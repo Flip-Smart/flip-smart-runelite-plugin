@@ -21,11 +21,14 @@ public final class AwaitingSaleLots
     {
         public final String itemName;
         public final int avgBuyPrice;
+        /** ISO-8601 time of that buy; null when unknown. Time-scopes the card's realized P&L. */
+        public final String firstBuyTimeIso;
 
-        public BuyBasis(String itemName, int avgBuyPrice)
+        public BuyBasis(String itemName, int avgBuyPrice, String firstBuyTimeIso)
         {
             this.itemName = itemName;
             this.avgBuyPrice = avgBuyPrice;
+            this.firstBuyTimeIso = firstBuyTimeIso;
         }
     }
 
@@ -47,7 +50,7 @@ public final class AwaitingSaleLots
                 continue;
             }
             lots.add(new AwaitingSaleLot(itemId, basis.itemName, qty, basis.avgBuyPrice,
-                (long) basis.avgBuyPrice * qty));
+                (long) basis.avgBuyPrice * qty, basis.firstBuyTimeIso));
         }
         return lots;
     }

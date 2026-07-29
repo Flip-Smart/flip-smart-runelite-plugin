@@ -5,6 +5,7 @@ import com.flipsmart.domain.offer.OfferRecord;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.IntFunction;
 
 /**
  * Projects the offer store's live sell offers and derived awaiting-sale lots into the display list
@@ -17,6 +18,7 @@ public final class ActiveFlipProjection
     private ActiveFlipProjection() {}
 
     public static List<ActiveFlip> project(List<OfferRecord> liveSellOffers,
+        IntFunction<AwaitingSaleLots.BuyBasis> sellBasisForItem,
         List<AwaitingSaleLot> awaitingSaleLots, Map<Integer, ActiveFlip> enrichmentByItemId)
     {
         List<ActiveFlip> out = new ArrayList<>();
@@ -28,6 +30,16 @@ public final class ActiveFlipProjection
             f.setTotalQuantity(sell.getTotalQuantity());
             f.setOriginalQuantity(sell.getTotalQuantity());
             f.setPhase("sell");
+            // Local cost basis so profit/margin/ROI and time-scoping are correct before the backend
+            // catches up; absent basis falls through to enrichment below.
+            AwaitingSaleLots.BuyBasis basis = sellBasisForItem == null
+                ? null : sellBasisForItem.apply(sell.getItemId());
+            if (basis != null)
+            {
+                f.setAverageBuyPrice(basis.avgBuyPrice);
+                f.setTotalInvested((long) basis.avgBuyPrice * sell.getTotalQuantity());
+                f.setFirstBuyTime(basis.firstBuyTimeIso);
+            }
             mergeEnrichment(f, enrichmentByItemId);
             out.add(f);
         }
@@ -40,6 +52,7 @@ public final class ActiveFlipProjection
             f.setOriginalQuantity(lot.quantity);
             f.setAverageBuyPrice(lot.avgBuyPrice);
             f.setTotalInvested(lot.totalInvested);
+            f.setFirstBuyTime(lot.firstBuyTime);
             f.setPhase("sell");
             mergeEnrichment(f, enrichmentByItemId);
             out.add(f);
@@ -65,6 +78,10 @@ public final class ActiveFlipProjection
         if (f.getTotalInvested() == 0 && e.getTotalInvested() != 0)
         {
             f.setTotalInvested(e.getTotalInvested());
+        }
+        if (f.getFirstBuyTime() == null && e.getFirstBuyTime() != null)
+        {
+            f.setFirstBuyTime(e.getFirstBuyTime());
         }
     }
 }

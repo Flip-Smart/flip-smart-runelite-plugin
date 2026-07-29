@@ -2482,7 +2482,10 @@ public class FlipFinderPanel extends PluginPanel
 			"<html><center>Buy items from the Recommended<br>tab to start tracking your flips</center></html>",
 			60
 		));
-		statusLabel.setText("0 active flips");
+		if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
+		{
+			statusLabel.setText("0 active flips");
+		}
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
 	}

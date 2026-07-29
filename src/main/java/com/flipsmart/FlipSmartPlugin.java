@@ -463,7 +463,13 @@ public class FlipSmartPlugin extends Plugin
 		int avgBuyPrice = best.getSpent() > 0 && best.getFilledQuantity() > 0
 			? (int) (best.getSpent() / best.getFilledQuantity())
 			: best.getPrice();
-		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice);
+		long firstBuyMillis = best.getCreatedAtMillis() > 0
+			? best.getCreatedAtMillis()
+			: best.getEffectiveLastActivityAtMillis();
+		String firstBuyTimeIso = firstBuyMillis > 0
+			? java.time.Instant.ofEpochMilli(firstBuyMillis).toString()
+			: null;
+		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice, firstBuyTimeIso);
 	}
 
 	/**
@@ -498,7 +504,7 @@ public class FlipSmartPlugin extends Plugin
 		java.util.List<AwaitingSaleLot> awaitingSaleLots =
 			AwaitingSaleLots.derive(inventoryCounts, this::buyBasisForItem, liveSellItemIds);
 
-		return ActiveFlipProjection.project(liveSellOffers, awaitingSaleLots,
+		return ActiveFlipProjection.project(liveSellOffers, this::buyBasisForItem, awaitingSaleLots,
 			enrichmentByItemId == null ? java.util.Collections.emptyMap() : enrichmentByItemId);
 	}
 
