@@ -346,4 +346,19 @@ public class OfferStoreTest
 
         assertEquals(0, notified.get());
     }
+
+    @Test
+    public void seedIfAbsent_doesNotSeedFromCancelledSlot()
+    {
+        // A cancelled-but-uncollected slot (CANCELLED_BUY still reported until GP is collected) must
+        // not be reseeded into a live phantom offer — that phantom would linger in liveOffers()
+        // forever and keep re-surfacing stale prompts.
+        OfferStore store = new OfferStore();
+
+        boolean seeded = store.seedIfAbsent(sig(4, GrandExchangeOfferState.CANCELLED_BUY, 1234, 0, 10), NOW);
+
+        assertFalse(seeded);
+        assertNull(store.bySlot(4));
+        assertTrue(store.liveOffers().isEmpty());
+    }
 }

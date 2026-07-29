@@ -23,7 +23,14 @@ public final class OfferStateMachine
 
         if (current == null)
         {
-            if (ge == GrandExchangeOfferState.EMPTY)
+            // With no tracked offer for this slot, only a genuinely-live GE state may mint a record.
+            // EMPTY or a cancelled slot (CANCELLED_BUY/CANCELLED_SELL, still reported until the GP or
+            // items are collected) is a finished offer — minting a live record from it (e.g. a
+            // render-tick reseed observing a cancelled-but-uncollected slot) would fabricate a
+            // phantom that can never be terminalized and lingers in the live set.
+            if (ge == GrandExchangeOfferState.EMPTY
+                || ge == GrandExchangeOfferState.CANCELLED_BUY
+                || ge == GrandExchangeOfferState.CANCELLED_SELL)
             {
                 return OfferTransition.of(OfferTransition.Kind.NONE, null, 0);
             }

@@ -153,6 +153,22 @@ public class OfferStateMachineTest
     }
 
     @Test
+    public void reseed_fromNull_onCancelledSlot_mintsNothing()
+    {
+        // A render-tick reseed can observe a cancelled-but-uncollected slot (OSRS reports
+        // CANCELLED_BUY/CANCELLED_SELL until the GP/items are collected). With no tracked record,
+        // that must NOT fabricate a live phantom offer — the offer is already finished, and a
+        // fabricated NEW record could never be terminalized.
+        OfferTransition tBuy = OfferStateMachine.decide(null, buy(GrandExchangeOfferState.CANCELLED_BUY, 0, 10), ID, NOW);
+        assertEquals(OfferTransition.Kind.NONE, tBuy.kind);
+        assertNull(tBuy.record);
+
+        OfferTransition tSell = OfferStateMachine.decide(null, buy(GrandExchangeOfferState.CANCELLED_SELL, 0, 10), ID, NOW);
+        assertEquals(OfferTransition.Kind.NONE, tSell.kind);
+        assertNull(tSell.record);
+    }
+
+    @Test
     public void emptyOnNewOffer_withNoFills_isRejected()
     {
         // A slot cleared before any fill (place-then-instant-cancel-collect in one tick)
