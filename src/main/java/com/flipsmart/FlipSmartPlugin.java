@@ -1798,8 +1798,17 @@ public class FlipSmartPlugin extends Plugin
 				currentInventoryCounts.merge(canonicalId, item.getQuantity(), Integer::sum);
 			}
 		}
+		java.util.Map<Integer, Integer> previousInventoryCounts = inventoryFlipItemCounts;
 		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
 		inventoryFlipItemCounts = java.util.Collections.unmodifiableMap(currentInventoryCounts);
+
+		// An inventory change adds or removes an awaiting-sale lot, so re-derive the
+		// Active Flips projection whenever the held-item composition changes. Coins are
+		// ignored: they move on every trade but never form an awaiting-sale card.
+		if (flipFinderPanel != null && heldItemsChanged(previousInventoryCounts, currentInventoryCounts))
+		{
+			flipFinderPanel.onInventoryChanged();
+		}
 
 		if (totalCash != session.getCurrentCashStack())
 		{
@@ -1818,6 +1827,20 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 		}
+	}
+
+	/**
+	 * True when the non-coin inventory composition differs between two snapshots.
+	 * Awaiting-sale derivation ignores coins, so cash-only movement must not force
+	 * a projection re-render.
+	 */
+	private boolean heldItemsChanged(java.util.Map<Integer, Integer> before, java.util.Map<Integer, Integer> after)
+	{
+		java.util.Map<Integer, Integer> a = new java.util.HashMap<>(before);
+		java.util.Map<Integer, Integer> b = new java.util.HashMap<>(after);
+		a.remove(COINS_ITEM_ID);
+		b.remove(COINS_ITEM_ID);
+		return !a.equals(b);
 	}
 
 	/**

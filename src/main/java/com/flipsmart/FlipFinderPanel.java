@@ -1969,6 +1969,17 @@ public class FlipFinderPanel extends PluginPanel
 		renderActiveFlips();
 	}
 
+	/**
+	 * Inventory-change render trigger. A bought lot becomes an awaiting-sale card
+	 * once it lands in the inventory and drops off when it is sold, so a change to
+	 * the held-item snapshot must re-derive the projected list independently of any
+	 * offer event. Self-hops to the EDT.
+	 */
+	public void onInventoryChanged()
+	{
+		renderActiveFlips();
+	}
+
 	/** Update the 30-day profit summary label from a stats payload. Null-safe; hops to the EDT. */
 	private void applyStatisticsResponse(FlipStatisticsResponse stats)
 	{
