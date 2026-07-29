@@ -181,6 +181,10 @@ public class FlipFinderPanel extends PluginPanel
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
 	private final List<FavoriteItem> currentFavorites = new ArrayList<>();
 	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
+	// Backend active-flips list keyed by itemId: an enrichment lookup for the
+	// store-derived projection, not the render source. Guarded by the
+	// currentActiveFlips monitor.
+	private final Map<Integer, ActiveFlip> enrichmentByItemId = new java.util.HashMap<>();
 	private static final long LOCAL_ADD_GRACE_MS = 15_000L;
 	// itemId -> a locally-added collected flip awaiting backend confirmation; guarded by
 	// the currentActiveFlips monitor.
@@ -766,17 +770,10 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				stopActiveFlipsPriceTimer();
 			}
-			if (selectedIndex == TAB_ACTIVE_FLIPS && !currentActiveFlips.isEmpty())
+			if (selectedIndex == TAB_ACTIVE_FLIPS)
 			{
-				// Switched to Active Flips tab, update status
-				int itemCount = currentActiveFlips.size();
-				long invested = currentActiveFlips.stream()
-					.mapToLong(ActiveFlip::getTotalInvested)
-					.sum();
-				statusLabel.setText(String.format("%d active %s | %s invested",
-					itemCount,
-					itemCount == 1 ? "flip" : "flips",
-					PanelFormat.formatGP(invested)));
+				// Tab selection is a render trigger: re-derive from the store projection.
+				renderActiveFlips();
 			}
 			else if (selectedIndex == TAB_COMPLETED)
 			{
@@ -1813,6 +1810,17 @@ public class FlipFinderPanel extends PluginPanel
 				pendingLocalAdds.keySet().removeAll(r.evict);
 				currentActiveFlips.clear();
 				currentActiveFlips.addAll(r.merged);
+
+				// Demote the backend list to an enrichment lookup keyed by itemId; the
+				// store projection decides which cards exist, this only fills numbers.
+				enrichmentByItemId.clear();
+				if (flipsFromBackend != null)
+				{
+					for (ActiveFlip f : flipsFromBackend)
+					{
+						enrichmentByItemId.put(f.getItemId(), f);
+					}
+				}
 			}
 			recomputeSessionProfitBase();
 			if (flipsFromBackend != null)
@@ -1821,21 +1829,9 @@ public class FlipFinderPanel extends PluginPanel
 					currentActiveFlips.size(), flipsFromBackend.size(), flipsFromBackend.size() - filtered.size());
 			}
 
-			// Get pending orders from plugin
-			java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
-
-			if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
-			{
-				showNoActiveFlips();
-				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
-				return;
-			}
-
-			updateActiveFlipsStatusLabel(pendingOrders);
-
-			// Display both active flips and pending orders
-			displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
-			restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+			// Derive and render from the store projection; the backend list is now
+			// only the enrichment lookup rebuilt above.
+			renderActiveFlips();
 
 			// Validate focus after refresh in case focused item is no longer active
 			validateFocus();
@@ -1867,29 +1863,56 @@ public class FlipFinderPanel extends PluginPanel
 		return filtered;
 	}
 
-	/** Reflect the current active-flip/pending-order counts in the tab's status label. */
-	private void updateActiveFlipsStatusLabel(java.util.List<PendingOrder> pendingOrders)
+	/**
+	 * Reflect the projected active/pending counts in the tab's status label.
+	 * Counts derive from the same lists that were just rendered — every
+	 * projected flip counts as active, plus the store-derived pending buys.
+	 * Only writes the header while the Active Flips tab is selected.
+	 */
+	private void updateActiveFlipsStatusLabel(java.util.List<ActiveFlip> active, java.util.List<PendingOrder> pending)
 	{
-		if (!currentActiveFlips.isEmpty())
+		if (tabbedPane.getSelectedIndex() != TAB_ACTIVE_FLIPS)
 		{
-			int itemCount = currentActiveFlips.size();
-			long invested = currentActiveFlips.stream()
-				.mapToLong(ActiveFlip::getTotalInvested)
-				.sum();
-			if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
-			{
-				statusLabel.setText(String.format("%d active %s | %s invested",
-					itemCount,
-					itemCount == 1 ? "flip" : "flips",
-					PanelFormat.formatGP(invested)));
-			}
+			return;
 		}
-		else if (!pendingOrders.isEmpty())
+		long invested = active.stream()
+			.mapToLong(ActiveFlip::getTotalInvested)
+			.sum();
+		statusLabel.setText(String.format("%d active · %d pending | %s invested",
+			active.size(),
+			pending.size(),
+			PanelFormat.formatGP(invested)));
+	}
+
+	/**
+	 * The one derive+render path for the Active Flips tab. Computes the card
+	 * list from the offer-store projection (live sells + awaiting-sale lots,
+	 * enriched by itemId) plus the store-derived pending buys, renders both,
+	 * and updates the header. Runs on the EDT.
+	 */
+	private void renderActiveFlips()
+	{
+		if (!SwingUtilities.isEventDispatchThread())
 		{
-			statusLabel.setText(String.format("%d pending %s",
-				pendingOrders.size(),
-				pendingOrders.size() == 1 ? "order" : "orders"));
+			SwingUtilities.invokeLater(this::renderActiveFlips);
+			return;
 		}
+		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
+		Map<Integer, ActiveFlip> enrichment;
+		synchronized (currentActiveFlips)
+		{
+			enrichment = new java.util.HashMap<>(enrichmentByItemId);
+		}
+		java.util.List<ActiveFlip> active = plugin.getProjectedActiveFlips(enrichment);
+		java.util.List<PendingOrder> pending = plugin.getPendingBuyOrders();
+		if (active.isEmpty() && pending.isEmpty())
+		{
+			showNoActiveFlips();
+			return;
+		}
+		displayActiveFlipsAndPending(active, pending);
+		restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+		updateActiveFlipsStatusLabel(active, pending);
 	}
 	
 	/**
@@ -1940,23 +1963,10 @@ public class FlipFinderPanel extends PluginPanel
 		redisplayActiveFlipsLocally();
 	}
 
-	/** Rebuild the Active Flips tab from cached flips and local pending orders — no list/aggregate API calls. */
+	/** Rebuild the Active Flips tab from the store projection — no list/aggregate API calls. */
 	private void redisplayActiveFlipsLocally()
 	{
-		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
-		java.util.List<ActiveFlip> flips;
-		synchronized (currentActiveFlips)
-		{
-			flips = new ArrayList<>(currentActiveFlips);
-		}
-		java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
-		if (flips.isEmpty() && pendingOrders.isEmpty())
-		{
-			showNoActiveFlips();
-			return;
-		}
-		displayActiveFlipsAndPending(flips, pendingOrders);
-		restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+		renderActiveFlips();
 	}
 
 	/** Update the 30-day profit summary label from a stats payload. Null-safe; hops to the EDT. */
