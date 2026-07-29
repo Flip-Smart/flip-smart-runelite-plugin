@@ -4,6 +4,9 @@ import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.flip.ActiveFlipProjection;
+import com.flipsmart.domain.flip.AwaitingSaleLot;
+import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.api.dto.OfferAdviceResult;
 import com.flipsmart.api.dto.OfferAdviceRequest;
@@ -424,6 +427,115 @@ public class FlipSmartPlugin extends Plugin
 	public java.util.List<com.flipsmart.domain.offer.OfferRecord> getOfferRecordsForItem(int itemId)
 	{
 		return offerStore.forItem(itemId);
+	}
+
+	/**
+	 * Buy cost basis for {@code itemId} derived from the offer store: the most-recent buy
+	 * record with a fill, falling back to any buy record when nothing has filled yet.
+	 * Null when the store holds no buy record for the item.
+	 */
+	private AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
+	{
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys = new java.util.ArrayList<>();
+		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
+		{
+			if (r.isBuy())
+			{
+				buys.add(r);
+			}
+		}
+		com.flipsmart.domain.offer.OfferRecord bestFilled = mostRecentFilledBuy(buys);
+		com.flipsmart.domain.offer.OfferRecord best = bestFilled != null ? bestFilled : mostRecentBuy(buys);
+		if (best == null)
+		{
+			return null;
+		}
+		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice(best), firstBuyTimeIso(best));
+	}
+
+	/** Most recently active buy record in {@code buys}, or {@code null} when the list is empty. */
+	private static com.flipsmart.domain.offer.OfferRecord mostRecentBuy(
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys)
+	{
+		com.flipsmart.domain.offer.OfferRecord best = null;
+		for (com.flipsmart.domain.offer.OfferRecord r : buys)
+		{
+			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
+			{
+				best = r;
+			}
+		}
+		return best;
+	}
+
+	/** Most recently active buy record in {@code buys} that has at least one filled unit. */
+	private static com.flipsmart.domain.offer.OfferRecord mostRecentFilledBuy(
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys)
+	{
+		com.flipsmart.domain.offer.OfferRecord best = null;
+		for (com.flipsmart.domain.offer.OfferRecord r : buys)
+		{
+			if (r.getFilledQuantity() <= 0)
+			{
+				continue;
+			}
+			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
+			{
+				best = r;
+			}
+		}
+		return best;
+	}
+
+	private static int avgBuyPrice(com.flipsmart.domain.offer.OfferRecord best)
+	{
+		return best.getSpent() > 0 && best.getFilledQuantity() > 0
+			? (int) (best.getSpent() / best.getFilledQuantity())
+			: best.getPrice();
+	}
+
+	private static String firstBuyTimeIso(com.flipsmart.domain.offer.OfferRecord best)
+	{
+		long firstBuyMillis = best.getCreatedAtMillis() > 0
+			? best.getCreatedAtMillis()
+			: best.getEffectiveLastActivityAtMillis();
+		return firstBuyMillis > 0 ? java.time.Instant.ofEpochMilli(firstBuyMillis).toString() : null;
+	}
+
+	/**
+	 * Store-derived projection of the Active Flips tab: live sell offers plus awaiting-sale
+	 * inventory lots, both sourced from the offer store so the panel has no maintained cache
+	 * of its own. {@code enrichmentByItemId} layers in the last backend snapshot (recommended
+	 * sell price, P&L) without it ever being the source of truth for what's actually live.
+	 */
+	public List<ActiveFlip> getProjectedActiveFlips(Map<Integer, ActiveFlip> enrichmentByItemId)
+	{
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveSellOffers = new java.util.ArrayList<>();
+		java.util.Set<Integer> liveSellItemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.liveOffers())
+		{
+			if (!r.isBuy() && r.getSlot() != null)
+			{
+				liveSellOffers.add(r);
+				liveSellItemIds.add(r.getItemId());
+			}
+		}
+
+		Map<Integer, Integer> inventoryCounts = new java.util.HashMap<>();
+		for (int itemId : getInventoryFlipItemIds())
+		{
+			int count = getInventoryCountSnapshot(itemId);
+			if (count > 0)
+			{
+				inventoryCounts.put(itemId, count);
+			}
+		}
+
+		java.util.List<AwaitingSaleLot> awaitingSaleLots =
+			AwaitingSaleLots.derive(inventoryCounts, this::buyBasisForItem, liveSellItemIds);
+
+		return ActiveFlipProjection.project(liveSellOffers, this::buyBasisForItem, awaitingSaleLots,
+			enrichmentByItemId == null ? java.util.Collections.emptyMap() : enrichmentByItemId);
 	}
 
 	public boolean isAutoRecommendActive()
@@ -1722,8 +1834,17 @@ public class FlipSmartPlugin extends Plugin
 				currentInventoryCounts.merge(canonicalId, item.getQuantity(), Integer::sum);
 			}
 		}
+		java.util.Map<Integer, Integer> previousInventoryCounts = inventoryFlipItemCounts;
 		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
 		inventoryFlipItemCounts = java.util.Collections.unmodifiableMap(currentInventoryCounts);
+
+		// An inventory change adds or removes an awaiting-sale lot, so re-derive the
+		// Active Flips projection whenever the held-item composition changes. Coins are
+		// ignored: they move on every trade but never form an awaiting-sale card.
+		if (flipFinderPanel != null && heldItemsChanged(previousInventoryCounts, currentInventoryCounts))
+		{
+			flipFinderPanel.onInventoryChanged();
+		}
 
 		if (totalCash != session.getCurrentCashStack())
 		{
@@ -1742,6 +1863,20 @@ public class FlipSmartPlugin extends Plugin
 				}
 			}
 		}
+	}
+
+	/**
+	 * True when the non-coin inventory composition differs between two snapshots.
+	 * Awaiting-sale derivation ignores coins, so cash-only movement must not force
+	 * a projection re-render.
+	 */
+	private boolean heldItemsChanged(java.util.Map<Integer, Integer> before, java.util.Map<Integer, Integer> after)
+	{
+		java.util.Map<Integer, Integer> a = new java.util.HashMap<>(before);
+		java.util.Map<Integer, Integer> b = new java.util.HashMap<>(after);
+		a.remove(COINS_ITEM_ID);
+		b.remove(COINS_ITEM_ID);
+		return !a.equals(b);
 	}
 
 	/**

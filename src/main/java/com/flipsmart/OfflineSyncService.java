@@ -411,6 +411,16 @@ public class OfflineSyncService
 	{
 		long now = System.currentTimeMillis();
 		List<OfferSignal> liveSlots = buildLiveSlotSignals();
+
+		// The GE snapshot is not loaded yet (null, or present but every slot still EMPTY — e.g. the
+		// LOGGED_IN tick after a world hop) while the store already holds live offers. A destructive
+		// import would wipe them and no later step re-seeds the slot map, so preserve and let the
+		// login GE burst (or the next readable pass) reconcile. On a genuine cold login the store is
+		// empty, so this does not skip and the burst seeds it.
+		if (liveSlots.isEmpty() && !offerStore.liveOffers().isEmpty())
+		{
+			return;
+		}
 		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now);
 
 		List<OfferRecord> toImport = new ArrayList<>();

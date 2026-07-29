@@ -117,6 +117,12 @@ public class ActiveFlipTracker
 		{
 			return;
 		}
+		// The store can be transiently empty; read the client GE state directly so we never
+		// delete a flip whose offer is still live in a slot.
+		if (hasLiveGeOfferForItem(itemId))
+		{
+			return;
+		}
 
 		log.debug("Inventory empty and no active sell slot for item {}, auto-closing active flip", itemId);
 		apiClient.dismissActiveFlipAsync(itemId, getRsnSafe().orElse(null)).thenAccept(success ->
@@ -130,6 +136,24 @@ public class ActiveFlipTracker
 				}
 			}
 		});
+	}
+
+	private boolean hasLiveGeOfferForItem(int itemId)
+	{
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return false;
+		}
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY
+				&& offer.getItemId() == itemId)
+			{
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**

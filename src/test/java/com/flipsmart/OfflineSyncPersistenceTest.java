@@ -444,6 +444,44 @@ public class OfflineSyncPersistenceTest
 	}
 
 	@Test
+	public void preload_withUnreadableGeSnapshot_preservesLiveOffers()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		// A live buy sits in slot 0 and is persisted.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		service.persistOfferState();
+		org.junit.Assert.assertNotNull("sanity: live offer present before preload", store.bySlot(0));
+
+		// Simulate a world hop: the GE offers array is not loaded yet.
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+		service.preloadPersistedOffers();
+
+		org.junit.Assert.assertNotNull("live offer must survive an unreadable-snapshot preload", store.bySlot(0));
+		assertEquals(1234, store.bySlot(0).getItemId());
+	}
+
+	@Test
+	public void preload_withNonNullButEmptyGeSnapshot_preservesLiveOffers()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		// A live buy sits in slot 0 and is persisted.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		service.persistOfferState();
+		org.junit.Assert.assertNotNull("sanity: live offer present before preload", store.bySlot(0));
+
+		// World hop: the GE offers array is present but not yet populated — every slot reads EMPTY.
+		GrandExchangeOffer empty = mock(GrandExchangeOffer.class);
+		when(empty.getState()).thenReturn(GrandExchangeOfferState.EMPTY);
+		when(client.getGrandExchangeOffers())
+			.thenReturn(new GrandExchangeOffer[] { empty, empty, empty, empty, empty, empty, empty, empty });
+		service.preloadPersistedOffers();
+
+		org.junit.Assert.assertNotNull("live offer must survive a non-null-but-empty snapshot preload",
+			store.bySlot(0));
+		assertEquals(1234, store.bySlot(0).getItemId());
+	}
+
+	@Test
 	public void relog_restoresOfferAge_forStillLiveOffer()
 	{
 		when(session.getRsn()).thenReturn("Zezima");

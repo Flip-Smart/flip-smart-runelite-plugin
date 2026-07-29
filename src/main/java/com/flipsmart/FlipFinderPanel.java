@@ -10,8 +10,6 @@ import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.domain.flip.ActiveFlip;
-import com.flipsmart.domain.flip.ActiveFlipDisplayFilter;
-import com.flipsmart.domain.flip.ActiveFlipLocalUpdater;
 import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
@@ -180,7 +178,9 @@ public class FlipFinderPanel extends PluginPanel
 	private final JComboBox<FlipSmartConfig.FlipTimeframe> flipTimeframeDropdown;
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
 	private final List<FavoriteItem> currentFavorites = new ArrayList<>();
-	private final List<ActiveFlip> currentActiveFlips = new ArrayList<>();
+	// Backend active-flips list keyed by itemId: an enrichment lookup for the
+	// store-derived projection, not the render source. Guarded by its own monitor.
+	private final Map<Integer, ActiveFlip> enrichmentByItemId = new java.util.HashMap<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
 	private final SessionClock sessionClock = new SessionClock(System.currentTimeMillis());
@@ -761,17 +761,10 @@ public class FlipFinderPanel extends PluginPanel
 			{
 				stopActiveFlipsPriceTimer();
 			}
-			if (selectedIndex == TAB_ACTIVE_FLIPS && !currentActiveFlips.isEmpty())
+			if (selectedIndex == TAB_ACTIVE_FLIPS)
 			{
-				// Switched to Active Flips tab, update status
-				int itemCount = currentActiveFlips.size();
-				long invested = currentActiveFlips.stream()
-					.mapToLong(ActiveFlip::getTotalInvested)
-					.sum();
-				statusLabel.setText(String.format("%d active %s | %s invested",
-					itemCount,
-					itemCount == 1 ? "flip" : "flips",
-					PanelFormat.formatGP(invested)));
+				// Tab selection is a render trigger: re-derive from the store projection.
+				renderActiveFlips();
 			}
 			else if (selectedIndex == TAB_COMPLETED)
 			{
@@ -1479,10 +1472,26 @@ public class FlipFinderPanel extends PluginPanel
 			sessionProfitBase, sessionClock.activeMs(System.currentTimeMillis())));
 	}
 
+	/**
+	 * The one derive path for the active-flip card list: the offer-store projection
+	 * (live sells + awaiting-sale lots) enriched by the last backend snapshot. All
+	 * consumers — render, session P&L, cross-thread overlay reads — go through here so
+	 * there is a single source of truth and no maintained cache.
+	 */
+	private java.util.List<ActiveFlip> projectedActiveFlips()
+	{
+		Map<Integer, ActiveFlip> enrichment;
+		synchronized (enrichmentByItemId)
+		{
+			enrichment = new java.util.HashMap<>(enrichmentByItemId);
+		}
+		return plugin.getProjectedActiveFlips(enrichment);
+	}
+
 	private void recomputeSessionProfitBase()
 	{
 		sessionProfitBase = SessionStats.computeBase(
-			currentCompletedFlips, currentActiveFlips, sessionClock.startMs());
+			currentCompletedFlips, projectedActiveFlips(), sessionClock.startMs());
 		renderSessionStats();
 	}
 
@@ -1789,42 +1798,29 @@ public class FlipFinderPanel extends PluginPanel
 			// Clear cached sell prices - they'll be recalculated when panels are created
 			displayedSellPrices.clear();
 
-			// Build the filtered list locally first, then swap atomically into
-			// currentActiveFlips so cross-thread readers (the GE slot-hover
-			// overlay) never observe an empty/half-populated intermediate
-			// state. Previously the clear+add loop ran inline, allowing the
-			// overlay's render thread to snapshot a transient empty list and
-			// silently hide the profit line.
+			// Demote the backend list to an enrichment lookup keyed by itemId; the store
+			// projection decides which cards exist, this only fills in numbers.
 			List<ActiveFlip> flipsFromBackend = response.getActiveFlips();
-			List<ActiveFlip> filtered = filterActiveFlips(flipsFromBackend);
-
-			synchronized (currentActiveFlips)
+			synchronized (enrichmentByItemId)
 			{
-				currentActiveFlips.clear();
-				currentActiveFlips.addAll(filtered);
+				enrichmentByItemId.clear();
+				if (flipsFromBackend != null)
+				{
+					for (ActiveFlip f : flipsFromBackend)
+					{
+						enrichmentByItemId.put(f.getItemId(), f);
+					}
+				}
 			}
 			recomputeSessionProfitBase();
 			if (flipsFromBackend != null)
 			{
-				log.debug("Loaded {} active flips ({} from backend, {} filtered)",
-					currentActiveFlips.size(), flipsFromBackend.size(), flipsFromBackend.size() - filtered.size());
+				log.debug("Loaded enrichment for {} backend active flips", flipsFromBackend.size());
 			}
 
-			// Get pending orders from plugin
-			java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
-
-			if (currentActiveFlips.isEmpty() && pendingOrders.isEmpty())
-			{
-				showNoActiveFlips();
-				restoreScrollPosition(activeFlipsScrollPane, scrollPos);
-				return;
-			}
-
-			updateActiveFlipsStatusLabel(pendingOrders);
-
-			// Display both active flips and pending orders
-			displayActiveFlipsAndPending(currentActiveFlips, pendingOrders);
-			restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+			// Derive and render from the store projection; the backend list is now
+			// only the enrichment lookup rebuilt above.
+			renderActiveFlips();
 
 			// Validate focus after refresh in case focused item is no longer active
 			validateFocus();
@@ -1832,53 +1828,50 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Keep only flips backed by live player state — an open GE offer, an item
-	 * collected this session, or an item held in the inventory — so completed,
-	 * cancelled, and collected trades drop off the tab immediately.
-	 * Null-safe: returns an empty list.
+	 * Reflect the projected active/pending counts in the tab's status label.
+	 * Counts derive from the same lists that were just rendered — every
+	 * projected flip counts as active, plus the store-derived pending buys.
+	 * Only writes the header while the Active Flips tab is selected.
 	 */
-	private List<ActiveFlip> filterActiveFlips(List<ActiveFlip> activeFlips)
+	private void updateActiveFlipsStatusLabel(java.util.List<ActiveFlip> active, java.util.List<PendingOrder> pending)
 	{
-		List<ActiveFlip> filtered = ActiveFlipDisplayFilter.retain(
-			activeFlips, plugin.getActiveFlipItemIds(), plugin.getInventoryFlipItemIds());
-
-		if (activeFlips != null)
+		if (tabbedPane.getSelectedIndex() != TAB_ACTIVE_FLIPS)
 		{
-			for (ActiveFlip flip : activeFlips)
-			{
-				if (!filtered.contains(flip) && log.isDebugEnabled())
-				{
-					log.debug("Filtering stale flip: {} (not in GE, not collected, not in inventory)",
-						flip.getItemName());
-				}
-			}
+			return;
 		}
-		return filtered;
+		long invested = active.stream()
+			.mapToLong(ActiveFlip::getTotalInvested)
+			.sum();
+		statusLabel.setText(String.format("%d active · %d pending | %s invested",
+			active.size(),
+			pending.size(),
+			PanelFormat.formatGP(invested)));
 	}
 
-	/** Reflect the current active-flip/pending-order counts in the tab's status label. */
-	private void updateActiveFlipsStatusLabel(java.util.List<PendingOrder> pendingOrders)
+	/**
+	 * The one derive+render path for the Active Flips tab. Computes the card
+	 * list from the offer-store projection (live sells + awaiting-sale lots,
+	 * enriched by itemId) plus the store-derived pending buys, renders both,
+	 * and updates the header. Runs on the EDT.
+	 */
+	private void renderActiveFlips()
 	{
-		if (!currentActiveFlips.isEmpty())
+		if (!SwingUtilities.isEventDispatchThread())
 		{
-			int itemCount = currentActiveFlips.size();
-			long invested = currentActiveFlips.stream()
-				.mapToLong(ActiveFlip::getTotalInvested)
-				.sum();
-			if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
-			{
-				statusLabel.setText(String.format("%d active %s | %s invested",
-					itemCount,
-					itemCount == 1 ? "flip" : "flips",
-					PanelFormat.formatGP(invested)));
-			}
+			SwingUtilities.invokeLater(this::renderActiveFlips);
+			return;
 		}
-		else if (!pendingOrders.isEmpty())
+		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
+		java.util.List<ActiveFlip> active = projectedActiveFlips();
+		java.util.List<PendingOrder> pending = plugin.getPendingBuyOrders();
+		if (active.isEmpty() && pending.isEmpty())
 		{
-			statusLabel.setText(String.format("%d pending %s",
-				pendingOrders.size(),
-				pendingOrders.size() == 1 ? "order" : "orders"));
+			showNoActiveFlips();
+			return;
 		}
+		displayActiveFlipsAndPending(active, pending);
+		restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+		updateActiveFlipsStatusLabel(active, pending);
 	}
 	
 	/**
@@ -1892,11 +1885,10 @@ public class FlipFinderPanel extends PluginPanel
 	}
 
 	/**
-	 * Reflect a GE offer state change in the Active Flips tab immediately, using
-	 * only data the plugin already holds. Pending-order rows re-derive from the
-	 * offer store; collected offers add/remove cached active-flip entries via
-	 * {@link ActiveFlipLocalUpdater}. The coalesced API refresh reconciles the
-	 * numbers afterwards. Must be called on the EDT.
+	 * Reflect a GE offer state change in the Active Flips tab immediately, using only
+	 * data the plugin already holds. Every non-terminal event re-derives the whole tab
+	 * from the offer-store projection — the store already carries the collected/live
+	 * facts, so there is nothing to patch into a cache first. Must be called on the EDT.
 	 */
 	public void applyLocalOfferEvent(com.flipsmart.trading.OfferEvent event)
 	{
@@ -1904,33 +1896,24 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			return;
 		}
-		if (event.kind == OfferTransition.Kind.COLLECTED && event.record != null)
-		{
-			synchronized (currentActiveFlips)
-			{
-				ActiveFlipLocalUpdater.applyCollect(currentActiveFlips, event.record, java.time.Instant.now().toString());
-			}
-		}
 		redisplayActiveFlipsLocally();
 	}
 
-	/** Rebuild the Active Flips tab from cached flips and local pending orders — no list/aggregate API calls. */
+	/** Rebuild the Active Flips tab from the store projection — no list/aggregate API calls. */
 	private void redisplayActiveFlipsLocally()
 	{
-		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
-		java.util.List<ActiveFlip> flips;
-		synchronized (currentActiveFlips)
-		{
-			flips = new ArrayList<>(currentActiveFlips);
-		}
-		java.util.List<PendingOrder> pendingOrders = plugin.getPendingBuyOrders();
-		if (flips.isEmpty() && pendingOrders.isEmpty())
-		{
-			showNoActiveFlips();
-			return;
-		}
-		displayActiveFlipsAndPending(flips, pendingOrders);
-		restoreScrollPosition(activeFlipsScrollPane, scrollPos);
+		renderActiveFlips();
+	}
+
+	/**
+	 * Inventory-change render trigger. A bought lot becomes an awaiting-sale card
+	 * once it lands in the inventory and drops off when it is sold, so a change to
+	 * the held-item snapshot must re-derive the projected list independently of any
+	 * offer event. Self-hops to the EDT.
+	 */
+	public void onInventoryChanged()
+	{
+		renderActiveFlips();
 	}
 
 	/** Update the 30-day profit summary label from a stats payload. Null-safe; hops to the EDT. */
@@ -2132,77 +2115,32 @@ public class FlipFinderPanel extends PluginPanel
 	}
 	
 	/**
-	 * Display both active flips and pending orders.
-	 * Pending orders (items still in GE buy slots) take priority over active flips
-	 * to avoid showing duplicates when an item is partially filled.
+	 * Display both active flips and pending orders. The projection is non-overlapping by
+	 * construction — a pending buy row is a live BUY offer, a projected active flip is a
+	 * live SELL offer or an awaiting-sale inventory lot — so every projected flip renders
+	 * with no dedup against the pending rows.
 	 */
 	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<PendingOrder> pendingOrders)
 	{
 		activeFlipsListContainer.removeAll();
 		activeFlipCardRefreshers.clear();
 
-		// Build a map of pending orders by itemId for smart deduplication
-		java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId = buildPendingOrdersMap(pendingOrders);
-		
 		// First show pending orders (items currently in GE buy slots)
 		for (PendingOrder pending : pendingOrders)
 		{
 			activeFlipsListContainer.add(createPendingOrderPanel(pending));
 			activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
 		}
-		
+
 		// Then show active flips (items collected, waiting to sell)
-		// Skip active flips if pending orders already account for those items
 		for (ActiveFlip flip : activeFlips)
 		{
-			if (shouldShowActiveFlip(flip, pendingByItemId))
-			{
-				activeFlipsListContainer.add(createActiveFlipPanel(flip));
-				activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
-			}
+			activeFlipsListContainer.add(createActiveFlipPanel(flip));
+			activeFlipsListContainer.add(Box.createRigidArea(new Dimension(0, 5)));
 		}
 
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
-	}
-
-	/**
-	 * Build a map of pending orders grouped by item ID
-	 */
-	private java.util.Map<Integer, java.util.List<PendingOrder>> buildPendingOrdersMap(
-			java.util.List<PendingOrder> pendingOrders)
-	{
-		java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId = new java.util.HashMap<>();
-		for (PendingOrder pending : pendingOrders)
-		{
-			pendingByItemId.computeIfAbsent(pending.itemId, k -> new java.util.ArrayList<>()).add(pending);
-		}
-		return pendingByItemId;
-	}
-
-	/**
-	 * Determine if an active flip should be shown (not duplicated by pending orders).
-	 *
-	 * A pending BUY order for an item is already rendered in the pending-orders section above, so a
-	 * matching BUY-phase active flip would duplicate it and is skipped. But a SELLING flip (a lot the
-	 * player already bought and is now selling) is a distinct live position — the pending buy is a
-	 * separate re-buy of the same item started while the earlier lot is still selling. Hiding it lost
-	 * the sell-side tracking (only 7 of 8 flips ever showed). A selling flip is always shown.
-	 */
-	private boolean shouldShowActiveFlip(ActiveFlip flip,
-			java.util.Map<Integer, java.util.List<PendingOrder>> pendingByItemId)
-	{
-		java.util.List<PendingOrder> matchingPending = pendingByItemId.get(flip.getItemId());
-		boolean hasPendingBuy = matchingPending != null && !matchingPending.isEmpty();
-		boolean show = ActiveFlipDisplayFilter.showAlongsidePendingBuy(flip, hasPendingBuy);
-		if (!show && log.isDebugEnabled())
-		{
-			// A buy-phase flip whose item is already in a GE buy slot: the pending-order row above is
-			// the source of truth, so skip the duplicate.
-			log.debug("Skipping buy-phase active flip {} - already shown as {} pending buy order(s) in GE",
-				flip.getItemName(), matchingPending.size());
-		}
-		return show;
 	}
 
 	/**
@@ -2311,6 +2249,12 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void updateStatusLabel(FlipFinderResponse response)
 	{
+		// The status label is shared across tabs; only write the Recommended header while that tab is
+		// selected so a background recommendation refresh can't overwrite the Active Flips header.
+		if (tabbedPane.getSelectedIndex() != TAB_RECOMMENDED)
+		{
+			return;
+		}
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 		String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
 		int count = countDisplayed(response.getRecommendations());
@@ -2431,12 +2375,16 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			else if (!currentRecommendations.isEmpty())
 			{
-				// Refresh recommendation display and status when a slot frees up
-				int count = countDisplayed(currentRecommendations);
-				String itemWord = count == 1 ? "suggestion" : "suggestions";
-				FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
-				String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
-				statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
+				// Only touch the shared status label while the Recommended tab is selected, so a
+				// slot-change during Auto doesn't overwrite the Active Flips header.
+				if (tabbedPane.getSelectedIndex() == TAB_RECOMMENDED)
+				{
+					int count = countDisplayed(currentRecommendations);
+					String itemWord = count == 1 ? "suggestion" : "suggestions";
+					FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
+					String flipStyleText = selectedStyle != null ? selectedStyle.toString() : "Balanced";
+					statusLabel.setText(String.format("%s | %d %s", flipStyleText, count, itemWord));
+				}
 
 				populateRecommendations(new ArrayList<>(currentRecommendations));
 				subscribeLabel.setVisible(!plugin.isPremium());
@@ -2544,7 +2492,10 @@ public class FlipFinderPanel extends PluginPanel
 			"<html><center>Buy items from the Recommended<br>tab to start tracking your flips</center></html>",
 			60
 		));
-		statusLabel.setText("0 active flips");
+		if (tabbedPane.getSelectedIndex() == TAB_ACTIVE_FLIPS)
+		{
+			statusLabel.setText("0 active flips");
+		}
 		activeFlipsListContainer.revalidate();
 		activeFlipsListContainer.repaint();
 	}
@@ -3673,21 +3624,15 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Get the current active flips.
 	 *
-	 * Returns a synchronized snapshot. The list is mutated on the EDT by
-	 * refreshActiveFlips, but cross-thread callers (e.g. the GE slot-hover
-	 * overlay, which runs on the render thread and reads via
-	 * BuyPriceLookup.findAverageBuyPrice) need to see either the old
-	 * complete list or the new complete list — never a half-populated
-	 * intermediate state. Without this lock the overlay can intermittently
-	 * see an empty list during the clear+addAll swap and silently hide the
-	 * hover-state profit line. See issue #685 Bug 2.
+	 * Derives a fresh snapshot from the offer-store projection each call. Cross-thread
+	 * callers (e.g. the GE slot-hover overlay, which runs on the render thread and reads
+	 * via BuyPriceLookup.findAverageBuyPrice) always get a complete, internally-consistent
+	 * list — the projection reads only thread-safe sources (the offer store and the
+	 * volatile inventory snapshot), so there is no half-populated intermediate state.
 	 */
 	public List<ActiveFlip> getCurrentActiveFlips()
 	{
-		synchronized (currentActiveFlips)
-		{
-			return new ArrayList<>(currentActiveFlips);
-		}
+		return projectedActiveFlips();
 	}
 
 	/**
@@ -3703,15 +3648,12 @@ public class FlipFinderPanel extends PluginPanel
 				return true;
 			}
 		}
-		// Check active flips
-		synchronized (currentActiveFlips)
+		// Check active flips (derived from the store projection)
+		for (ActiveFlip flip : projectedActiveFlips())
 		{
-			for (ActiveFlip flip : currentActiveFlips)
+			if (flip.getItemId() == itemId)
 			{
-				if (flip.getItemId() == itemId)
-				{
-					return true;
-				}
+				return true;
 			}
 		}
 		return false;
