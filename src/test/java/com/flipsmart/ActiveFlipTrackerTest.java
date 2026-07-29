@@ -22,21 +22,19 @@ import static org.mockito.Mockito.when;
 
 public class ActiveFlipTrackerTest
 {
-	private PlayerSession session;
 	private FlipSmartApiClient apiClient;
 	private Client client;
-	private OfferStore offerStore;
 	private ActiveFlipTracker tracker;
 
 	@Before
 	public void setUp()
 	{
-		session = mock(PlayerSession.class);
+		PlayerSession session = mock(PlayerSession.class);
 		apiClient = mock(FlipSmartApiClient.class);
 		client = mock(Client.class);
 		ClientThread clientThread = mock(ClientThread.class);
 		ItemManager itemManager = mock(ItemManager.class);
-		offerStore = new OfferStore();
+		OfferStore offerStore = new OfferStore();
 
 		when(session.getRsn()).thenReturn("Zezima");
 		when(itemManager.canonicalize(anyInt())).thenAnswer(inv -> inv.getArgument(0));
