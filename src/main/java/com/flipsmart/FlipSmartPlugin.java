@@ -4,6 +4,9 @@ import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.flip.ActiveFlipProjection;
+import com.flipsmart.domain.flip.AwaitingSaleLot;
+import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.api.dto.OfferAdviceResult;
 import com.flipsmart.api.dto.OfferAdviceRequest;
@@ -424,6 +427,79 @@ public class FlipSmartPlugin extends Plugin
 	public java.util.List<com.flipsmart.domain.offer.OfferRecord> getOfferRecordsForItem(int itemId)
 	{
 		return offerStore.forItem(itemId);
+	}
+
+	/**
+	 * Buy cost basis for {@code itemId} derived from the offer store: the most-recent buy
+	 * record with a fill, falling back to any buy record when nothing has filled yet.
+	 * Null when the store holds no buy record for the item.
+	 */
+	private AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
+	{
+		com.flipsmart.domain.offer.OfferRecord bestFilled = null;
+		com.flipsmart.domain.offer.OfferRecord bestAny = null;
+		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
+		{
+			if (!r.isBuy())
+			{
+				continue;
+			}
+			if (bestAny == null || r.getEffectiveLastActivityAtMillis() > bestAny.getEffectiveLastActivityAtMillis())
+			{
+				bestAny = r;
+			}
+			if (r.getFilledQuantity() > 0
+				&& (bestFilled == null
+					|| r.getEffectiveLastActivityAtMillis() > bestFilled.getEffectiveLastActivityAtMillis()))
+			{
+				bestFilled = r;
+			}
+		}
+		com.flipsmart.domain.offer.OfferRecord best = bestFilled != null ? bestFilled : bestAny;
+		if (best == null)
+		{
+			return null;
+		}
+		int avgBuyPrice = best.getSpent() > 0 && best.getFilledQuantity() > 0
+			? (int) (best.getSpent() / best.getFilledQuantity())
+			: best.getPrice();
+		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice);
+	}
+
+	/**
+	 * Store-derived projection of the Active Flips tab: live sell offers plus awaiting-sale
+	 * inventory lots, both sourced from the offer store so the panel has no maintained cache
+	 * of its own. {@code enrichmentByItemId} layers in the last backend snapshot (recommended
+	 * sell price, P&L) without it ever being the source of truth for what's actually live.
+	 */
+	public List<ActiveFlip> getProjectedActiveFlips(Map<Integer, ActiveFlip> enrichmentByItemId)
+	{
+		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveSellOffers = new java.util.ArrayList<>();
+		java.util.Set<Integer> liveSellItemIds = new java.util.HashSet<>();
+		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.liveOffers())
+		{
+			if (!r.isBuy() && r.getSlot() != null)
+			{
+				liveSellOffers.add(r);
+				liveSellItemIds.add(r.getItemId());
+			}
+		}
+
+		Map<Integer, Integer> inventoryCounts = new java.util.HashMap<>();
+		for (int itemId : getInventoryFlipItemIds())
+		{
+			int count = activeFlipTracker.getInventoryCountForItem(itemId);
+			if (count > 0)
+			{
+				inventoryCounts.put(itemId, count);
+			}
+		}
+
+		java.util.List<AwaitingSaleLot> awaitingSaleLots =
+			AwaitingSaleLots.derive(inventoryCounts, this::buyBasisForItem, liveSellItemIds);
+
+		return ActiveFlipProjection.project(liveSellOffers, awaitingSaleLots,
+			enrichmentByItemId == null ? java.util.Collections.emptyMap() : enrichmentByItemId);
 	}
 
 	public boolean isAutoRecommendActive()
