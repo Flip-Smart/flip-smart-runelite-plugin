@@ -1,0 +1,119 @@
+package com.flipsmart;
+
+import com.flipsmart.domain.flip.ActiveFlip;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+import org.junit.Before;
+import org.junit.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.*;
+
+public class ActiveFlipsSnapshotPushServiceTest
+{
+	private static final String RSN = "zezima";
+
+	private FlipSmartApiClient apiClient;
+	private PlayerSession session;
+	private ActiveFlipsSnapshotPushService service;
+
+	private static ActiveFlip flip(int itemId, int filledSoFar)
+	{
+		ActiveFlip f = new ActiveFlip();
+		f.setItemId(itemId);
+		f.setPhase("sell");
+		f.setOrderQuantity(100);
+		f.setTotalQuantity(filledSoFar);
+		return f;
+	}
+
+	@Before
+	public void setUp()
+	{
+		apiClient = mock(FlipSmartApiClient.class);
+		session = mock(PlayerSession.class);
+		when(session.getRsnSafe()).thenReturn(Optional.of(RSN));
+		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
+			.thenReturn(CompletableFuture.completedFuture(true));
+		service = new ActiveFlipsSnapshotPushService(apiClient, session);
+	}
+
+	@Test
+	public void pushesTheProjection() throws Exception
+	{
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		verify(apiClient, times(1)).pushActiveFlipsSnapshotAsync(eq(RSN), any());
+	}
+
+	@Test
+	public void identicalProjectionIsNotPushedTwice() throws Exception
+	{
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		verify(apiClient, times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+	}
+
+	@Test
+	public void fillProgressAloneDoesNotTriggerAPush() throws Exception
+	{
+		// Same set of flips, more filled. Fill ticks fire constantly; if they
+		// each pushed, an actively-filling order would spam the API.
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		service.pushNow(List.of(flip(4151, 70)));
+		Thread.sleep(50);
+		verify(apiClient, times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+	}
+
+	@Test
+	public void aNewItemTriggersAPush() throws Exception
+	{
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		service.pushNow(List.of(flip(4151, 0), flip(561, 0)));
+		Thread.sleep(50);
+		verify(apiClient, times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+	}
+
+	@Test
+	public void emptyProjectionIsPushed() throws Exception
+	{
+		// "No active flips" must reach the server — it is what clears the dashboard.
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		service.pushNow(List.of());
+		Thread.sleep(50);
+		verify(apiClient, times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+	}
+
+	@Test
+	public void failedPushDoesNotAdvanceTheDedupBaseline() throws Exception
+	{
+		// v1 bug: baseline recorded what was ATTEMPTED. A dropped push then
+		// suppressed the retry, and AC2 (cancel disappears) silently failed.
+		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
+			.thenReturn(CompletableFuture.completedFuture(false));
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+
+		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
+			.thenReturn(CompletableFuture.completedFuture(true));
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+
+		verify(apiClient, times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+	}
+
+	@Test
+	public void noRsnMeansNoPush() throws Exception
+	{
+		when(session.getRsnSafe()).thenReturn(Optional.empty());
+		service.pushNow(List.of(flip(4151, 0)));
+		Thread.sleep(50);
+		verify(apiClient, never()).pushActiveFlipsSnapshotAsync(any(), any());
+	}
+}
