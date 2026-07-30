@@ -250,7 +250,7 @@ public class FlipSmartPlugin extends Plugin
 	// preloadPersistedOffers), set only on the client thread. Lets the snapshot-push
 	// executor (background thread) know whether emptiness is observed or just startup
 	// default, without itself calling the client-thread-only GE offers API.
-	private volatile boolean offerStoreSeeded = false;
+	private volatile boolean offerStoreSeeded;
 
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
