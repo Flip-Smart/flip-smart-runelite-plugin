@@ -225,17 +225,20 @@ public final class OfferStore
      * Lets a consumer value only the unsold remainder of a partially-filled sell; terminal
      * records are excluded because their fills have left the open position entirely.
      */
-    public synchronized int liveSellFilledQuantity(int itemId)
+    public int liveSellFilledQuantity(int itemId)
     {
-        int sum = 0;
-        for (OfferRecord r : byOfferId.values())
+        synchronized (this)
         {
-            if (r.getItemId() == itemId && !r.isBuy() && !r.getState().isTerminal())
+            int sum = 0;
+            for (OfferRecord r : byOfferId.values())
             {
-                sum += r.getFilledQuantity();
+                if (r.getItemId() == itemId && !r.isBuy() && !r.getState().isTerminal())
+                {
+                    sum += r.getFilledQuantity();
+                }
             }
+            return sum;
         }
-        return sum;
     }
 
     /**
