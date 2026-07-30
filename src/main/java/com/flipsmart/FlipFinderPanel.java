@@ -1115,7 +1115,7 @@ public class FlipFinderPanel extends PluginPanel
 	private void applyFilterSetting(String key, int value)
 	{
 		configManager.setConfiguration(CONFIG_GROUP, key, value);
-		populateRecommendations(new ArrayList<>(currentRecommendations));
+		repopulateRecommendationsGated();
 	}
 
 	/**
@@ -2369,6 +2369,21 @@ public class FlipFinderPanel extends PluginPanel
 		subscribeLabel.setText(SUBSCRIBE_MESSAGE);
 		subscribeLabel.setVisible(true);
 		refreshButton.setEnabled(true);
+	}
+
+	/**
+	 * Repaint the recommendation list through the free-tier slot gate. Repaints that bypass
+	 * this gate paint the full list back over the limit message once a free user is capped,
+	 * handing them recommendations they cannot act on. Caller must already be on the EDT.
+	 */
+	private void repopulateRecommendationsGated()
+	{
+		if (plugin.getSession() != null && plugin.isFlipFinderLimitReached())
+		{
+			showSlotLimitMessage();
+			return;
+		}
+		populateRecommendations(new ArrayList<>(currentRecommendations));
 	}
 
 	/**
@@ -4885,8 +4900,7 @@ public class FlipFinderPanel extends PluginPanel
 			}));
 
 			// Wire queue advanced callback to repaint panel highlight
-			service.setOnQueueAdvanced(() ->
-				populateRecommendations(new ArrayList<>(currentRecommendations)));
+			service.setOnQueueAdvanced(this::repopulateRecommendationsGated);
 
 			// Wire skip-exhausted callback to fetch fresh recommendations
 			service.setOnQueueExhausted(() -> refreshRecommendations(true));
@@ -4925,7 +4939,7 @@ public class FlipFinderPanel extends PluginPanel
 			autoRecommendStatusLabel.setVisible(false);
 
 			// Repaint recommendations to remove highlight
-			populateRecommendations(new ArrayList<>(currentRecommendations));
+			repopulateRecommendationsGated();
 
 			log.debug("Auto-recommend disabled");
 		}
