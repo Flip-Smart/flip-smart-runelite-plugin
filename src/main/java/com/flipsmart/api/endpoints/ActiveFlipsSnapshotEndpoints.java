@@ -15,13 +15,13 @@ import static com.flipsmart.api.ApiHttpTransport.JSON;
 @Slf4j
 public class ActiveFlipsSnapshotEndpoints
 {
-	private static final Gson GSON = new Gson();
-
 	private final ApiHttpTransport transport;
+	private final Gson gson;
 
 	public ActiveFlipsSnapshotEndpoints(ApiHttpTransport transport)
 	{
 		this.transport = transport;
+		this.gson = transport.getGson();
 	}
 
 	public CompletableFuture<Boolean> pushActiveFlipsSnapshotAsync(String rsn, List<ActiveFlip> flips)
@@ -33,7 +33,7 @@ public class ActiveFlipsSnapshotEndpoints
 		body.addProperty("captured_at", Instant.now().toString());
 		// ActiveFlip carries @SerializedName on every field, so it serialises
 		// straight into the snake_case shape the backend expects.
-		body.add("flips", GSON.toJsonTree(flips));
+		body.add("flips", gson.toJsonTree(flips));
 
 		RequestBody rb = RequestBody.create(JSON, body.toString());
 		Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
@@ -41,7 +41,10 @@ public class ActiveFlipsSnapshotEndpoints
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 			.exceptionally(e ->
 			{
-				log.debug("pushActiveFlipsSnapshotAsync failed: {}", e.getMessage());
+				if (log.isDebugEnabled())
+				{
+					log.debug("pushActiveFlipsSnapshotAsync failed: {}", e.getMessage());
+				}
 				return false;
 			});
 	}
