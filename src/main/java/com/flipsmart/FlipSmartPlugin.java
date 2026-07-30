@@ -518,6 +518,12 @@ public class FlipSmartPlugin extends Plugin
 	 * of its own. {@code enrichmentByItemId} layers in the last backend snapshot (recommended
 	 * sell price, P&L) without it ever being the source of truth for what's actually live.
 	 */
+	/** Quantity already sold on live sell offers for {@code itemId} (see OfferStore). */
+	public int getLiveSellFilledQuantity(int itemId)
+	{
+		return offerStore.liveSellFilledQuantity(itemId);
+	}
+
 	public List<ActiveFlip> getProjectedActiveFlips(Map<Integer, ActiveFlip> enrichmentByItemId)
 	{
 		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveSellOffers = new java.util.ArrayList<>();
