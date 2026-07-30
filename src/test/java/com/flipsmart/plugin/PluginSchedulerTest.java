@@ -5,6 +5,7 @@ import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.fail;
 
 /**
  * Regression coverage for issue #917: a manual refresh must reset BOTH the visual
@@ -93,16 +94,30 @@ public class PluginSchedulerTest
 	@Test
 	public void activeFlipsSnapshotTimerStartAndStopIsIdempotent()
 	{
-		scheduler.startActiveFlipsSnapshotTimer(() -> true, () -> { });
-		scheduler.startActiveFlipsSnapshotTimer(() -> true, () -> { });
-		scheduler.stopActiveFlipsSnapshotTimer();
-		scheduler.stopActiveFlipsSnapshotTimer();
+		try
+		{
+			scheduler.startActiveFlipsSnapshotTimer(() -> true, () -> { });
+			scheduler.startActiveFlipsSnapshotTimer(() -> true, () -> { });
+			scheduler.stopActiveFlipsSnapshotTimer();
+			scheduler.stopActiveFlipsSnapshotTimer();
+		}
+		catch (RuntimeException e)
+		{
+			fail("double start/stop must not throw: " + e.getMessage());
+		}
 	}
 
 	/** Stopping a timer that was never started must be a no-op, not a NullPointerException. */
 	@Test
 	public void stoppingActiveFlipsSnapshotTimerBeforeStartIsSafe()
 	{
-		scheduler.stopActiveFlipsSnapshotTimer();
+		try
+		{
+			scheduler.stopActiveFlipsSnapshotTimer();
+		}
+		catch (RuntimeException e)
+		{
+			fail("stopping before start must not throw: " + e.getMessage());
+		}
 	}
 }
