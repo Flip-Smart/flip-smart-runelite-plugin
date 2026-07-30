@@ -42,7 +42,6 @@ public class ManualSellFocusLocalResolutionTest
 	private static final int AVG_BUY_PRICE = 1_000_000;
 	private static final int HELD_QUANTITY = 3;
 
-	private PlayerSession session;
 	private FlipSmartApiClient apiClient;
 	private ActiveFlipTracker activeFlipTracker;
 	private GrandExchangeTracker tracker;
@@ -51,7 +50,7 @@ public class ManualSellFocusLocalResolutionTest
 	@Before
 	public void setUp()
 	{
-		session = new PlayerSession();
+		PlayerSession session = new PlayerSession();
 		session.setRsn("TestPlayer");
 
 		apiClient = mock(FlipSmartApiClient.class);
