@@ -4,9 +4,9 @@ import com.flipsmart.domain.flip.ActiveFlip;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.IntUnaryOperator;
 
 /**
@@ -38,7 +38,7 @@ public final class OpenPositions
 		{
 			return Collections.emptyList();
 		}
-		Map<Integer, Integer> unclaimedFilledByItem = new ConcurrentHashMap<>();
+		Map<Integer, Integer> unclaimedFilledByItem = new HashMap<>();
 		List<OpenPosition> out = new ArrayList<>(projected.size());
 		for (ActiveFlip flip : projected)
 		{
