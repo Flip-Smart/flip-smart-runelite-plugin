@@ -5,6 +5,7 @@ import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.ActiveFlipProjection;
+import com.flipsmart.domain.flip.ActiveFlipsSnapshotPayload;
 import com.flipsmart.domain.flip.AwaitingSaleLot;
 import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.domain.offer.PendingOrder;
@@ -177,6 +178,9 @@ public class FlipSmartPlugin extends Plugin
 	private TradeStationSlotPushService tradeStationSlotPushService;
 
 	@Inject
+	private ActiveFlipsSnapshotPushService activeFlipsSnapshotPushService;
+
+	@Inject
 	private Gson gson;
 
 	// Flip Finder panel
@@ -241,6 +245,12 @@ public class FlipSmartPlugin extends Plugin
 	// inventoryFlipItemIds and published as one volatile swap. Safe to read off the
 	// client thread (e.g. the Swing EDT) where the live client inventory API cannot be.
 	private volatile java.util.Map<Integer, Integer> inventoryFlipItemCounts = java.util.Collections.emptyMap();
+
+	// True once the offer store has been seeded from real GE state (login burst or
+	// preloadPersistedOffers), set only on the client thread. Lets the snapshot-push
+	// executor (background thread) know whether emptiness is observed or just startup
+	// default, without itself calling the client-thread-only GE offers API.
+	private volatile boolean offerStoreSeeded;
 
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
@@ -536,6 +546,39 @@ public class FlipSmartPlugin extends Plugin
 
 		return ActiveFlipProjection.project(liveSellOffers, this::buyBasisForItem, awaitingSaleLots,
 			enrichmentByItemId == null ? java.util.Collections.emptyMap() : enrichmentByItemId);
+	}
+
+	/**
+	 * Serialise the current projection to the backend so the website mirrors the Active
+	 * Flips tab. Enrichment is intentionally empty: the server only needs which flips
+	 * exist, and an empty map avoids taking the panel's lock from the event thread.
+	 * Deferred to send time (inside the supplier) so the pushed payload and the
+	 * timestamp the endpoint stamps around it describe the same instant.
+	 */
+	private void pushActiveFlipsSnapshot()
+	{
+		activeFlipsSnapshotPushService.scheduleSnapshotPush(this::buildActiveFlipsSnapshotPayload);
+	}
+
+	/**
+	 * Combines the sell-phase projection with live pending buy orders, marking the
+	 * latter {@code phase = "buy"} so the backend (and therefore the website) sees
+	 * live buy offers too. Returns {@code null} — meaning "skip this push" — when the
+	 * combined payload is empty AND the offer store hasn't been seeded from real GE
+	 * state yet (e.g. plugin enabled mid-session with no persisted offers, before the
+	 * first live GE event), so an unseeded store never erases a real dashboard.
+	 *
+	 * <p>Runs on the snapshot-push executor, not the client thread, so this reads the
+	 * {@code offerStoreSeeded} field (set on the client thread) instead of calling the
+	 * client API directly.
+	 */
+	private java.util.List<ActiveFlip> buildActiveFlipsSnapshotPayload()
+	{
+		java.util.List<ActiveFlip> projection = getProjectedActiveFlips(java.util.Collections.emptyMap());
+		java.util.List<PendingOrder> pendingBuys = getPendingBuyOrders();
+		java.util.List<ActiveFlip> payload = ActiveFlipsSnapshotPayload.combine(projection, pendingBuys);
+
+		return ActiveFlipsSnapshotPayload.isUnobservedEmpty(payload, !offerStoreSeeded) ? null : payload;
 	}
 
 	public boolean isAutoRecommendActive()
@@ -860,6 +903,14 @@ public class FlipSmartPlugin extends Plugin
 		autoRecommendService = serviceWiring.initializeAutoRecommendService(this, config, flipAssistOverlay, geSlotOverlay, offerStore, notifier, clientUI);
 		activeOfferAdvisorService = serviceWiring.initializeActiveOfferAdvisor(this);
 		scheduler.startActiveOfferAdvisorTimer(session::isLoggedIntoRunescape, this::pollActiveOfferAdvisor);
+		scheduler.startActiveFlipsSnapshotTimer(session::isLoggedIntoRunescape, () ->
+		{
+			// Periodic safety net: repairs drift from any dropped event push and
+			// refreshes the server-side TTL. Dedup means an idle account with an
+			// unchanged board sends nothing, so this costs no traffic when quiet.
+			activeFlipsSnapshotPushService.invalidateDedup();
+			pushActiveFlipsSnapshot();
+		});
 		exitTradesController = serviceWiring.initializeExitTradesController(this, flipAssistOverlay, geSlotOverlay, offerStore);
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
@@ -1082,6 +1133,12 @@ public class FlipSmartPlugin extends Plugin
 
 		// Shut down the trade-station snapshot pusher's executor.
 		tradeStationSlotPushService.shutdown();
+
+		// Stop the heartbeat FIRST: it fires on its own Timer thread, so a tick landing
+		// after the executor below shuts down would throw RejectedExecutionException
+		// out of TimerTask.run() and kill the Timer thread.
+		scheduler.stopActiveFlipsSnapshotTimer();
+		activeFlipsSnapshotPushService.shutdown();
 	}
 
 	@Subscribe
@@ -1261,6 +1318,7 @@ public class FlipSmartPlugin extends Plugin
 		// This ensures createWithPreservedTimestamps() finds the existing offer
 		// with its original timestamp, giving us accurate timers from the start.
 		offlineSyncService.preloadPersistedOffers();
+		offerStoreSeeded = true;
 
 		restoreAutoRecommendState();
 		restoreExitTradesState();
@@ -1596,6 +1654,8 @@ public class FlipSmartPlugin extends Plugin
 				com.flipsmart.trading.OfferEventMapper.toSignal(
 					slot, state, itemId, itemName, totalQuantity, price, quantitySold, spent),
 				System.currentTimeMillis());
+			offerStoreSeeded = true;
+			pushActiveFlipsSnapshot();
 			return;
 		}
 
@@ -1610,6 +1670,7 @@ public class FlipSmartPlugin extends Plugin
 			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
+		pushActiveFlipsSnapshot();
 	}
 
 	@Subscribe
@@ -1841,9 +1902,16 @@ public class FlipSmartPlugin extends Plugin
 		// An inventory change adds or removes an awaiting-sale lot, so re-derive the
 		// Active Flips projection whenever the held-item composition changes. Coins are
 		// ignored: they move on every trade but never form an awaiting-sale card.
-		if (flipFinderPanel != null && heldItemsChanged(previousInventoryCounts, currentInventoryCounts))
+		if (heldItemsChanged(previousInventoryCounts, currentInventoryCounts))
 		{
-			flipFinderPanel.onInventoryChanged();
+			if (flipFinderPanel != null)
+			{
+				flipFinderPanel.onInventoryChanged();
+			}
+			// Collecting a bought lot changes the awaiting-sale set without any GE offer
+			// event, so push here too — otherwise the website can lag up to the 5-minute
+			// heartbeat before the collected item appears.
+			pushActiveFlipsSnapshot();
 		}
 
 		if (totalCash != session.getCurrentCashStack())

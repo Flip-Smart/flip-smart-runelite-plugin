@@ -1,6 +1,7 @@
 package com.flipsmart;
 import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.api.endpoints.ActiveFlipEndpoints;
+import com.flipsmart.api.endpoints.ActiveFlipsSnapshotEndpoints;
 import com.flipsmart.api.endpoints.BankSnapshotEndpoints;
 import com.flipsmart.api.endpoints.BlocklistEndpoints;
 import com.flipsmart.api.endpoints.FavoritesEndpoints;
@@ -76,6 +77,7 @@ public class FlipSmartApiClient
 	private final MotdEndpoints motd;
 	private final TradeStationEndpoints tradeStation;
 	private final FavoritesEndpoints favorites;
+	private final ActiveFlipsSnapshotEndpoints activeFlipsSnapshot;
 
 	@Inject
 	public FlipSmartApiClient(FlipSmartConfig config, Gson gson, OkHttpClient okHttpClient)
@@ -101,6 +103,7 @@ public class FlipSmartApiClient
 		this.motd = new MotdEndpoints(transport);
 		this.tradeStation = new TradeStationEndpoints(transport);
 		this.favorites = new FavoritesEndpoints(transport);
+		this.activeFlipsSnapshot = new ActiveFlipsSnapshotEndpoints(transport);
 	}
 
 	// ============================================================================
@@ -483,6 +486,15 @@ public class FlipSmartApiClient
 	public CompletableFuture<Boolean> pushTradeStationSlotsAsync(String rsn, java.util.List<Integer> itemIds)
 	{
 		return tradeStation.pushTradeStationSlotsAsync(rsn, itemIds);
+	}
+
+	// ============================================================================
+	// Active Flips snapshot mirror
+	// ============================================================================
+
+	public CompletableFuture<Boolean> pushActiveFlipsSnapshotAsync(String rsn, java.util.List<com.flipsmart.domain.flip.ActiveFlip> flips)
+	{
+		return activeFlipsSnapshot.pushActiveFlipsSnapshotAsync(rsn, flips);
 	}
 
 	// ============================================================================
