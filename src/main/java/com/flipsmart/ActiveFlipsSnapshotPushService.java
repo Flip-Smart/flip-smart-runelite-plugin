@@ -82,7 +82,10 @@ public class ActiveFlipsSnapshotPushService
 		}
 		catch (RejectedExecutionException e)
 		{
-			log.debug("active flips snapshot schedule rejected (shutting down): {}", e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("active flips snapshot schedule rejected (shutting down): {}", e.getMessage());
+			}
 		}
 	}
 
@@ -143,13 +146,19 @@ public class ActiveFlipsSnapshotPushService
 				})
 				.exceptionally(e ->
 				{
-					log.debug("active flips snapshot push failed: {}", e.getMessage());
+					if (log.isDebugEnabled())
+					{
+						log.debug("active flips snapshot push failed: {}", e.getMessage());
+					}
 					return null;
 				});
 		}
 		catch (RuntimeException e)
 		{
-			log.debug("active flips snapshot push threw: {}", e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("active flips snapshot push threw: {}", e.getMessage());
+			}
 		}
 	}
 }
