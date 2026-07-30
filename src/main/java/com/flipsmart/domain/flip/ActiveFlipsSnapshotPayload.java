@@ -41,11 +41,14 @@ public final class ActiveFlipsSnapshotPayload
 
     /**
      * True when an empty payload should NOT be pushed because emptiness was defaulted
-     * rather than observed (the GE offers array not yet seeded), e.g. during the login
-     * burst. A non-empty payload is always safe to push.
+     * rather than observed — the offer store has not yet been seeded from real GE state
+     * (login burst or persisted-offer preload), e.g. the plugin was just enabled with no
+     * persisted offer blob while live offers still exist in-game. A genuinely empty
+     * payload from a seeded store is always safe to push (that's what clears a stale
+     * dashboard).
      */
-    public static boolean isUnobservedEmpty(List<ActiveFlip> payload, boolean geOffersUnseeded)
+    public static boolean isUnobservedEmpty(List<ActiveFlip> payload, boolean offerStoreUnseeded)
     {
-        return payload.isEmpty() && geOffersUnseeded;
+        return payload.isEmpty() && offerStoreUnseeded;
     }
 }

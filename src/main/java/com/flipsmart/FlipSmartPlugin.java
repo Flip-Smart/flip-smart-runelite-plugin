@@ -246,6 +246,12 @@ public class FlipSmartPlugin extends Plugin
 	// client thread (e.g. the Swing EDT) where the live client inventory API cannot be.
 	private volatile java.util.Map<Integer, Integer> inventoryFlipItemCounts = java.util.Collections.emptyMap();
 
+	// True once the offer store has been seeded from real GE state (login burst or
+	// preloadPersistedOffers), set only on the client thread. Lets the snapshot-push
+	// executor (background thread) know whether emptiness is observed or just startup
+	// default, without itself calling the client-thread-only GE offers API.
+	private volatile boolean offerStoreSeeded = false;
+
 	// Track login to avoid recording existing offers as new transactions
 	private static final int GE_LOGIN_BURST_WINDOW = 3; // ticks
 
@@ -558,8 +564,13 @@ public class FlipSmartPlugin extends Plugin
 	 * Combines the sell-phase projection with live pending buy orders, marking the
 	 * latter {@code phase = "buy"} so the backend (and therefore the website) sees
 	 * live buy offers too. Returns {@code null} — meaning "skip this push" — when the
-	 * combined payload is empty AND the GE offers array hasn't been observed yet
-	 * (e.g. mid login-burst), so an unseeded client never erases a real dashboard.
+	 * combined payload is empty AND the offer store hasn't been seeded from real GE
+	 * state yet (e.g. plugin enabled mid-session with no persisted offers, before the
+	 * first live GE event), so an unseeded store never erases a real dashboard.
+	 *
+	 * <p>Runs on the snapshot-push executor, not the client thread, so this reads the
+	 * {@code offerStoreSeeded} field (set on the client thread) instead of calling the
+	 * client API directly.
 	 */
 	private java.util.List<ActiveFlip> buildActiveFlipsSnapshotPayload()
 	{
@@ -567,8 +578,7 @@ public class FlipSmartPlugin extends Plugin
 		java.util.List<PendingOrder> pendingBuys = getPendingBuyOrders();
 		java.util.List<ActiveFlip> payload = ActiveFlipsSnapshotPayload.combine(projection, pendingBuys);
 
-		boolean geOffersUnseeded = client.getGrandExchangeOffers() == null;
-		return ActiveFlipsSnapshotPayload.isUnobservedEmpty(payload, geOffersUnseeded) ? null : payload;
+		return ActiveFlipsSnapshotPayload.isUnobservedEmpty(payload, !offerStoreSeeded) ? null : payload;
 	}
 
 	public boolean isAutoRecommendActive()
@@ -1308,6 +1318,7 @@ public class FlipSmartPlugin extends Plugin
 		// This ensures createWithPreservedTimestamps() finds the existing offer
 		// with its original timestamp, giving us accurate timers from the start.
 		offlineSyncService.preloadPersistedOffers();
+		offerStoreSeeded = true;
 
 		restoreAutoRecommendState();
 		restoreExitTradesState();
@@ -1643,6 +1654,7 @@ public class FlipSmartPlugin extends Plugin
 				com.flipsmart.trading.OfferEventMapper.toSignal(
 					slot, state, itemId, itemName, totalQuantity, price, quantitySold, spent),
 				System.currentTimeMillis());
+			offerStoreSeeded = true;
 			pushActiveFlipsSnapshot();
 			return;
 		}

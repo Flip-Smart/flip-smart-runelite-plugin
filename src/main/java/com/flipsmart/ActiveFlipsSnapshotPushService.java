@@ -86,23 +86,6 @@ public class ActiveFlipsSnapshotPushService
 		}
 	}
 
-	public void pushNow(Supplier<List<ActiveFlip>> flipsSupplier)
-	{
-		try
-		{
-			ScheduledFuture<?> previous = pending.getAndSet(null);
-			if (previous != null)
-			{
-				previous.cancel(false);
-			}
-			scheduler.execute(() -> doPush(flipsSupplier)); // NOPMD DoNotUseThreads
-		}
-		catch (RejectedExecutionException e)
-		{
-			log.debug("active flips snapshot push rejected (shutting down): {}", e.getMessage());
-		}
-	}
-
 	/** Force the next push through even if the projection is unchanged (TTL refresh). */
 	public void invalidateDedup()
 	{

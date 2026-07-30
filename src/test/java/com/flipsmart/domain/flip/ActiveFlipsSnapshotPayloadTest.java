@@ -54,13 +54,13 @@ public class ActiveFlipsSnapshotPayloadTest
     }
 
     @Test
-    public void emptyPayloadWithUnseededGeOffersIsSkipped()
+    public void emptyPayloadWithUnseededOfferStoreIsSkipped()
     {
         assertTrue(ActiveFlipsSnapshotPayload.isUnobservedEmpty(Collections.emptyList(), true));
     }
 
     @Test
-    public void emptyPayloadWithSeededGeOffersIsNotSkipped()
+    public void emptyPayloadWithSeededOfferStoreIsNotSkipped()
     {
         assertFalse(ActiveFlipsSnapshotPayload.isUnobservedEmpty(Collections.emptyList(), false));
     }

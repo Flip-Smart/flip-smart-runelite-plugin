@@ -42,17 +42,19 @@ public class ActiveFlipsSnapshotPushServiceTest
 	@Test
 	public void pushesTheProjection() throws Exception
 	{
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(eq(RSN), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(1)).pushActiveFlipsSnapshotAsync(eq(RSN), any());
 	}
 
 	@Test
 	public void identicalProjectionIsNotPushedTwice() throws Exception
 	{
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, after(200).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		// after() blocks the full window so this actually waits out the second
+		// debounced push instead of just sampling a moment right after scheduling.
+		verify(apiClient, after(2500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -60,29 +62,29 @@ public class ActiveFlipsSnapshotPushServiceTest
 	{
 		// Same set of flips, more filled. Fill ticks fire constantly; if they
 		// each pushed, an actively-filling order would spam the API.
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
-		service.pushNow(() -> List.of(flip(4151, 70)));
-		verify(apiClient, after(200).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 70)));
+		verify(apiClient, after(2500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
 	public void aNewItemTriggersAPush() throws Exception
 	{
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
-		service.pushNow(() -> List.of(flip(4151, 0), flip(561, 0)));
-		verify(apiClient, timeout(500).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0), flip(561, 0)));
+		verify(apiClient, timeout(3000).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
 	public void emptyProjectionIsPushed() throws Exception
 	{
 		// "No active flips" must reach the server — it is what clears the dashboard.
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
-		service.pushNow(List::of);
-		verify(apiClient, timeout(500).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(List::of);
+		verify(apiClient, timeout(3000).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -92,21 +94,21 @@ public class ActiveFlipsSnapshotPushServiceTest
 		// suppressed the retry, and AC2 (cancel disappears) silently failed.
 		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
 			.thenReturn(CompletableFuture.completedFuture(false));
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(1)).pushActiveFlipsSnapshotAsync(any(), any());
 
 		when(apiClient.pushActiveFlipsSnapshotAsync(any(), any()))
 			.thenReturn(CompletableFuture.completedFuture(true));
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, timeout(500).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, timeout(3000).times(2)).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
 	public void noRsnMeansNoPush() throws Exception
 	{
 		when(session.getRsnSafe()).thenReturn(Optional.empty());
-		service.pushNow(() -> List.of(flip(4151, 0)));
-		verify(apiClient, after(200).never()).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+		verify(apiClient, after(2500).never()).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 
 	@Test
@@ -131,7 +133,7 @@ public class ActiveFlipsSnapshotPushServiceTest
 	{
 		// A null result signals "emptiness wasn't observed" (e.g. login burst) —
 		// the service must not attempt a push at all, not even an empty one.
-		service.pushNow(() -> null);
-		verify(apiClient, after(200).never()).pushActiveFlipsSnapshotAsync(any(), any());
+		service.scheduleSnapshotPush(() -> null);
+		verify(apiClient, after(2500).never()).pushActiveFlipsSnapshotAsync(any(), any());
 	}
 }
