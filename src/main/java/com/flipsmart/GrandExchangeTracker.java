@@ -462,6 +462,9 @@ public class GrandExchangeTracker
 			log.debug("Sell offer for {} went empty with no items in inventory - dismissing active flip",
 				collectedOffer.getItemName());
 			activeFlipTracker.dismissFlip(collectedOffer.getItemId());
+			// A flip ending frees a slot, so the subscription gate has to be re-applied here
+			// too — otherwise the cap message outlives the cap until the next manual refresh.
+			fireActiveFlipsRefresh();
 		}
 	}
 
