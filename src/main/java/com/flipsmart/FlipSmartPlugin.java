@@ -444,7 +444,7 @@ public class FlipSmartPlugin extends Plugin
 	 * record with a fill, falling back to any buy record when nothing has filled yet.
 	 * Null when the store holds no buy record for the item.
 	 */
-	private AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
+	public AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
 	{
 		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys = new java.util.ArrayList<>();
 		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
