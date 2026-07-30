@@ -215,6 +215,7 @@ public class ServiceWiring
 		grandExchangeTracker.setOnOrderSubmitted(plugin::handleOrderSubmittedForSourcing);
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(plugin::scheduleOneShot);
+		grandExchangeTracker.setBuyBasisProvider(plugin::buyBasisForItem);
 
 		geHistoryService.setOnBackfillComplete(() -> {
 			if (plugin.getFlipFinderPanel() != null)

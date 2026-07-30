@@ -2,8 +2,10 @@ package com.flipsmart;
 import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.recommend.ManualSellFocus;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.domain.offer.OfferTransition;
@@ -67,6 +69,9 @@ public class GrandExchangeTracker
 	private BiConsumer<Integer, Boolean> onOrderSubmitted;
 	private IntFunction<Integer> displayedSellPriceProvider;
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
+	// Cost basis straight from the offer store, so a manual exit can be priced without
+	// the backend's slot-capped active-flips list.
+	private IntFunction<AwaitingSaleLots.BuyBasis> buyBasisProvider;
 
 	// Debounce: prevent duplicate autoFocusOnActiveFlip calls for the same item
 	private volatile int lastAutoFocusItemId;
@@ -195,6 +200,11 @@ public class GrandExchangeTracker
 	public void setOneShotScheduler(BiConsumer<Integer, Runnable> scheduler)
 	{
 		this.oneShotScheduler = scheduler;
+	}
+
+	public void setBuyBasisProvider(IntFunction<AwaitingSaleLots.BuyBasis> provider)
+	{
+		this.buyBasisProvider = provider;
 	}
 
 	// =====================
@@ -452,6 +462,9 @@ public class GrandExchangeTracker
 			log.debug("Sell offer for {} went empty with no items in inventory - dismissing active flip",
 				collectedOffer.getItemName());
 			activeFlipTracker.dismissFlip(collectedOffer.getItemId());
+			// A flip ending frees a slot, so the subscription gate has to be re-applied here
+			// too — otherwise the cap message outlives the cap until the next manual refresh.
+			fireActiveFlipsRefresh();
 		}
 	}
 
@@ -809,7 +822,20 @@ public class GrandExchangeTracker
 			return;
 		}
 
-		// Manual mode: the backend active-flip snapshot lags the
+		// Manual mode: price the exit from local state first, the way auto mode already
+		// does. The backend list this used to depend on is trimmed to the subscription's
+		// display slots, so a held position can be missing from it entirely and no price
+		// ever filled in.
+		if (tryLocalSellFocus(itemId))
+		{
+			clearPendingSellFocus();
+			// The focus no longer waits on this lookup, but it still carries the
+			// under-counted-quantity correction that used to ride along with it.
+			tryAsyncSellFocus(itemId, false);
+			return;
+		}
+
+		// Nothing local to price it with yet: the backend active-flip snapshot lags the
 		// just-opened sell screen, so a single one-shot lookup returned no match
 		// and the sell target silently never filled. Arm the same bounded tick-
 		// retry auto mode gets, re-issuing the backend lookup until it resolves.
@@ -820,12 +846,64 @@ public class GrandExchangeTracker
 	}
 
 	/**
+	 * Focus a manual sell using only local state. Returns false when the item cannot be
+	 * priced or sized locally, leaving the caller to fall back to the backend lookup.
+	 * Runs on the client thread — reads the inventory container.
+	 */
+	private boolean tryLocalSellFocus(int itemId)
+	{
+		// An item already listed keeps whatever focus that offer owns.
+		if (offerStore.hasActiveSellOfferForItem(itemId))
+		{
+			return false;
+		}
+
+		// Inventory is both the quantity and the proof the player holds the position.
+		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
+		if (inventoryCount <= 0)
+		{
+			return false;
+		}
+
+		AwaitingSaleLots.BuyBasis basis = buyBasisProvider != null ? buyBasisProvider.apply(itemId) : null;
+		Integer sellPrice = ManualSellFocus.resolveSellPrice(
+			displayedSellPriceProvider != null ? displayedSellPriceProvider.apply(itemId) : null,
+			session != null ? session.getRecommendedPrice(itemId) : null,
+			basis != null ? basis.avgBuyPrice : 0);
+		if (sellPrice == null)
+		{
+			return false;
+		}
+
+		String itemName = basis != null && basis.itemName != null
+			? basis.itemName : ItemUtils.getItemName(itemManager, itemId);
+		FocusedFlip focus = FocusedFlip.forSell(itemId, itemName, sellPrice, inventoryCount,
+			config != null ? config.priceOffset() : 0);
+		if (onFocusChanged != null)
+		{
+			javax.swing.SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
+		}
+		log.debug("Manual sell focus resolved locally: {} @ {} gp (qty: inv={})",
+			itemName, sellPrice, inventoryCount);
+		return true;
+	}
+
+	/**
 	 * Backend fallback: resolve the item's active flip via the API and focus the
 	 * sell from that. Used for items the local auto-recommend state cannot resolve
 	 * (e.g. not in the queue), and after the local tick-retry budget is exhausted.
 	 * Runs on the client thread (reads the inventory container).
 	 */
 	private void tryAsyncSellFocus(int itemId)
+	{
+		tryAsyncSellFocus(itemId, true);
+	}
+
+	/**
+	 * @param setFocus false when local state already focused the sell, leaving this lookup
+	 *                 to do nothing but reconcile an under-counted quantity with the backend.
+	 */
+	private void tryAsyncSellFocus(int itemId, boolean setFocus)
 	{
 		String rsn = getRsn().orElse(null);
 
@@ -834,7 +912,7 @@ public class GrandExchangeTracker
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
 
 		apiClient.getActiveFlipsAsync(rsn).thenAccept(response ->
-			handleActiveFlipResponse(response, itemId, inventoryCount, rsn));
+			handleActiveFlipResponse(response, itemId, inventoryCount, rsn, setFocus));
 	}
 
 	/**
@@ -853,9 +931,17 @@ public class GrandExchangeTracker
 
 		if (pendingSellFocusManual)
 		{
-			// Manual retry: no local resolver, so re-issue the backend
-			// lookup each tick until it resolves (handleActiveFlipResponse clears
-			// pending on success) or the budget runs out.
+			// A collect lands in inventory a tick or two after the sell screen opens, so
+			// retry the local resolver before falling back to the backend lookup — the
+			// same reason auto mode re-runs its own resolver here.
+			if (tryLocalSellFocus(itemId))
+			{
+				clearPendingSellFocus();
+				tryAsyncSellFocus(itemId, false);
+				return;
+			}
+			// Still nothing local: re-issue the backend lookup each tick until it resolves
+			// (handleActiveFlipResponse clears pending on success) or the budget runs out.
 			pendingSellFocusTicksLeft--;
 			if (pendingSellFocusTicksLeft <= 0)
 			{
@@ -898,7 +984,7 @@ public class GrandExchangeTracker
 	}
 
 	private void handleActiveFlipResponse(
-		ActiveFlipsResponse response, int itemId, int inventoryCount, String rsn)
+		ActiveFlipsResponse response, int itemId, int inventoryCount, String rsn, boolean setFocus)
 	{
 		if (response == null || response.getActiveFlips() == null)
 		{
@@ -932,7 +1018,10 @@ public class GrandExchangeTracker
 			return;
 		}
 
-		setFocusForSell(matchingFlip, inventoryCount);
+		if (setFocus)
+		{
+			setFocusForSell(matchingFlip, inventoryCount);
+		}
 		// The flip resolved — stop any manual tick-retry re-issuing the lookup.
 		clearPendingSellFocus();
 

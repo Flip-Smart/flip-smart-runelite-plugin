@@ -4,6 +4,7 @@ import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.api.dto.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.flip.ActiveFlipItemIds;
 import com.flipsmart.domain.flip.ActiveFlipProjection;
 import com.flipsmart.domain.flip.ActiveFlipsSnapshotPayload;
 import com.flipsmart.domain.flip.AwaitingSaleLot;
@@ -246,6 +247,11 @@ public class FlipSmartPlugin extends Plugin
 	// client thread (e.g. the Swing EDT) where the live client inventory API cannot be.
 	private volatile java.util.Map<Integer, Integer> inventoryFlipItemCounts = java.util.Collections.emptyMap();
 
+	// False until an inventory container has actually been read. Distinguishes "holds
+	// nothing" from "not logged in", so a collected lot is only dropped as sold when the
+	// inventory genuinely says so.
+	private volatile boolean inventorySnapshotKnown;
+
 	// True once the offer store has been seeded from real GE state (login burst or
 	// preloadPersistedOffers), set only on the client thread. Lets the snapshot-push
 	// executor (background thread) know whether emptiness is observed or just startup
@@ -444,7 +450,7 @@ public class FlipSmartPlugin extends Plugin
 	 * record with a fill, falling back to any buy record when nothing has filled yet.
 	 * Null when the store holds no buy record for the item.
 	 */
-	private AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
+	public AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
 	{
 		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys = new java.util.ArrayList<>();
 		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
@@ -822,17 +828,21 @@ public class FlipSmartPlugin extends Plugin
 	 * This includes:
 	 * 1. Items currently in GE buy slots (pending or filled)
 	 * 2. Items currently in GE sell slots (pending sale)
-	 * 3. Items collected from GE in this session (waiting to be sold)
+	 * 3. Items collected from GE and still held (waiting to be sold)
+	 *
+	 * <p>A collected lot the player no longer holds is a finished flip: the collected set is
+	 * restored from disk at login and never cleared while empty, so a sold item would
+	 * otherwise linger there forever and keep consuming a slot.</p>
 	 */
 	public java.util.Set<Integer> getActiveFlipItemIds()
 	{
-		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
+		java.util.Set<Integer> liveOfferItemIds = new java.util.HashSet<>();
 		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
 		{
-			itemIds.add(offer.getItemId());
+			liveOfferItemIds.add(offer.getItemId());
 		}
-		itemIds.addAll(session.getCollectedItemIds());
-		return itemIds;
+		return ActiveFlipItemIds.derive(liveOfferItemIds, session.getCollectedItemIds(),
+			inventoryFlipItemCounts, inventorySnapshotKnown);
 	}
 
 	/**
@@ -1880,6 +1890,7 @@ public class FlipSmartPlugin extends Plugin
 			session.setCashStack(0);
 			inventoryFlipItemIds = java.util.Collections.emptySet();
 			inventoryFlipItemCounts = java.util.Collections.emptyMap();
+			inventorySnapshotKnown = false;
 			return;
 		}
 
@@ -1904,6 +1915,7 @@ public class FlipSmartPlugin extends Plugin
 		java.util.Map<Integer, Integer> previousInventoryCounts = inventoryFlipItemCounts;
 		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
 		inventoryFlipItemCounts = java.util.Collections.unmodifiableMap(currentInventoryCounts);
+		inventorySnapshotKnown = true;
 
 		// An inventory change adds or removes an awaiting-sale lot, so re-derive the
 		// Active Flips projection whenever the held-item composition changes. Coins are
