@@ -1,14 +1,15 @@
 package com.flipsmart;
 
 import com.flipsmart.domain.flip.ActiveFlip;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -30,7 +31,7 @@ public class ActiveFlipsSnapshotPushService
 
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
-	private final ScheduledExecutorService scheduler;
+	private final ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
 	private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
 	private final AtomicReference<String> lastDelivered = new AtomicReference<>();
 
@@ -41,7 +42,7 @@ public class ActiveFlipsSnapshotPushService
 		this.session = session;
 		this.scheduler = Executors.newSingleThreadScheduledExecutor(r ->
 		{
-			Thread t = new Thread(r, "flipsmart-active-flips-push");
+			Thread t = new Thread(r, "flipsmart-active-flips-push"); // NOPMD DoNotUseThreads
 			t.setDaemon(true);
 			return t;
 		});
@@ -62,26 +63,44 @@ public class ActiveFlipsSnapshotPushService
 			.collect(Collectors.joining(","));
 	}
 
-	public void scheduleSnapshotPush(List<ActiveFlip> flips)
+	/**
+	 * Schedule a debounced push. {@code flipsSupplier} is invoked at SEND time (after
+	 * the debounce), not now — so the payload and the {@code captured_at} timestamp
+	 * the endpoint stamps around it describe the same instant, instead of the payload
+	 * being up to {@link #DEBOUNCE_MS} stale relative to its own timestamp.
+	 */
+	public void scheduleSnapshotPush(Supplier<List<ActiveFlip>> flipsSupplier)
 	{
-		List<ActiveFlip> snapshot = new ArrayList<>(flips);
-		ScheduledFuture<?> previous = pending.getAndSet(
-			scheduler.schedule(() -> doPush(snapshot), DEBOUNCE_MS, TimeUnit.MILLISECONDS));
-		if (previous != null)
+		try
 		{
-			previous.cancel(false);
+			ScheduledFuture<?> previous = pending.getAndSet(
+				scheduler.schedule(() -> doPush(flipsSupplier), DEBOUNCE_MS, TimeUnit.MILLISECONDS));
+			if (previous != null)
+			{
+				previous.cancel(false);
+			}
+		}
+		catch (RejectedExecutionException e)
+		{
+			log.debug("active flips snapshot schedule rejected (shutting down): {}", e.getMessage());
 		}
 	}
 
-	public void pushNow(List<ActiveFlip> flips)
+	public void pushNow(Supplier<List<ActiveFlip>> flipsSupplier)
 	{
-		List<ActiveFlip> snapshot = new ArrayList<>(flips);
-		ScheduledFuture<?> previous = pending.getAndSet(null);
-		if (previous != null)
+		try
 		{
-			previous.cancel(false);
+			ScheduledFuture<?> previous = pending.getAndSet(null);
+			if (previous != null)
+			{
+				previous.cancel(false);
+			}
+			scheduler.execute(() -> doPush(flipsSupplier)); // NOPMD DoNotUseThreads
 		}
-		scheduler.execute(() -> doPush(snapshot));
+		catch (RejectedExecutionException e)
+		{
+			log.debug("active flips snapshot push rejected (shutting down): {}", e.getMessage());
+		}
 	}
 
 	/** Force the next push through even if the projection is unchanged (TTL refresh). */
@@ -97,13 +116,25 @@ public class ActiveFlipsSnapshotPushService
 		{
 			previous.cancel(false);
 		}
-		scheduler.shutdownNow();
+		scheduler.shutdownNow(); // NOPMD DoNotUseThreads
 	}
 
-	private void doPush(List<ActiveFlip> flips)
+	/**
+	 * @param flipsSupplier evaluated here, at send time. May return {@code null} to
+	 *                      mean "skip this push" (e.g. an unobserved empty snapshot) —
+	 *                      distinct from an empty list, which is a real "no flips" and
+	 *                      is always delivered.
+	 */
+	private void doPush(Supplier<List<ActiveFlip>> flipsSupplier)
 	{
 		Optional<String> rsn = session.getRsnSafe();
 		if (!rsn.isPresent())
+		{
+			return;
+		}
+
+		List<ActiveFlip> flips = flipsSupplier.get();
+		if (flips == null)
 		{
 			return;
 		}
