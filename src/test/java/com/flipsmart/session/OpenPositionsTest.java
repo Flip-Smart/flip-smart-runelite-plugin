@@ -86,6 +86,21 @@ public class OpenPositionsTest
 	}
 
 	@Test
+	public void multipleLiveSellOffersOfTheSameItem_shareOneFilledPoolInsteadOfDoubleSubtracting()
+	{
+		// Two GE slots both selling item 4151: slot A sold 100/500, slot B sold 200/500 — the
+		// item-level lookup reports the combined fill (300). Applying that whole total to each
+		// flip independently would compute 500-300=200 twice (400 total) instead of the true
+		// 700 remaining across both slots.
+		List<OpenPosition> open = OpenPositions.derive(
+			Arrays.asList(projected(4151, 200, 100, 500), projected(4151, 200, 100, 500)),
+			itemId -> 300);
+
+		int totalUnsold = open.get(0).unsoldQuantity + open.get(1).unsoldQuantity;
+		assertEquals(700, totalUnsold);
+	}
+
+	@Test
 	public void doesNotMutateTheProjectedFlips()
 	{
 		// The same ActiveFlip instances render the Active Flips cards and feed the backend
