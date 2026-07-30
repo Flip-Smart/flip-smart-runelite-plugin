@@ -3,7 +3,6 @@ package com.flipsmart.session;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 
-import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.CompletedFlip;
 
 import java.time.Instant;
@@ -24,14 +23,10 @@ public class SessionStatsTest
 		return f;
 	}
 
-	private static ActiveFlip active(int itemId, Integer recSell, int avgBuy, int qty)
+	/** An unsold position: {@code unsoldQty} is what is still to be sold, never the offer total. */
+	private static OpenPosition open(int itemId, Integer recSell, int avgBuy, int unsoldQty)
 	{
-		ActiveFlip a = new ActiveFlip();
-		a.setItemId(itemId);
-		a.setRecommendedSellPrice(recSell);
-		a.setAverageBuyPrice(avgBuy);
-		a.setTotalQuantity(qty);
-		return a;
+		return new OpenPosition(itemId, unsoldQty, avgBuy, recSell);
 	}
 
 	@Test
@@ -53,20 +48,20 @@ public class SessionStatsTest
 	}
 
 	@Test
-	public void unrealisedProfitValuesHeldQtyAtRecommendedSellMinusTax()
+	public void unrealisedProfitValuesUnsoldQtyAtRecommendedSellMinusTax()
 	{
 		// (200 - 100 - 4 tax) * 10 = 960
 		long unrealised = SessionStats.unrealisedProfit(
-			Collections.singletonList(active(4151, 200, 100, 10)));
+			Collections.singletonList(open(4151, 200, 100, 10)));
 		assertEquals(960L, unrealised);
 	}
 
 	@Test
-	public void unrealisedProfitSkipsNullTargetAndEmptyQty()
+	public void unrealisedProfitSkipsNullTargetAndFullySoldPositions()
 	{
 		long unrealised = SessionStats.unrealisedProfit(Arrays.asList(
-			active(4151, null, 100, 10),
-			active(4151, 200, 100, 0)));
+			open(4151, null, 100, 10),
+			open(4151, 200, 100, 0)));
 		assertEquals(0L, unrealised);
 	}
 
@@ -87,7 +82,7 @@ public class SessionStatsTest
 	{
 		SessionStats.Snapshot snap = SessionStats.compute(
 			Collections.singletonList(completed("2026-07-22T13:00:00Z", 1000)),
-			Collections.singletonList(active(4151, 200, 100, 10)),
+			Collections.singletonList(open(4151, 200, 100, 10)),
 			SESSION_START, 3_600_000L);
 		assertEquals(1000L, snap.realisedProfit);
 		assertEquals(1960L, snap.projectedProfit);   // 1000 + 960
@@ -100,7 +95,7 @@ public class SessionStatsTest
 	{
 		SessionStats.ProfitBase base = SessionStats.computeBase(
 			Collections.singletonList(completed("2026-07-22T13:00:00Z", 1000)),
-			Collections.singletonList(active(4151, 200, 100, 10)),
+			Collections.singletonList(open(4151, 200, 100, 10)),
 			SESSION_START);
 		assertEquals(1000L, base.realisedProfit);
 		assertEquals(960L, base.unrealisedProfit);

@@ -23,6 +23,7 @@ import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.ui.panel.Paginator;
+import com.flipsmart.session.OpenPositions;
 import com.flipsmart.session.SessionClock;
 import com.flipsmart.session.SessionStats;
 import com.flipsmart.session.SessionStatsView;
@@ -1488,10 +1489,21 @@ public class FlipFinderPanel extends PluginPanel
 		return plugin.getProjectedActiveFlips(enrichment);
 	}
 
+	/**
+	 * Recompute the cached profit base and repaint. Self-guards onto the EDT: offer and
+	 * inventory events arrive on the client thread, and this both writes the cached base and
+	 * drives Swing labels through {@link #renderSessionStats()}.
+	 */
 	private void recomputeSessionProfitBase()
 	{
-		sessionProfitBase = SessionStats.computeBase(
-			currentCompletedFlips, projectedActiveFlips(), sessionClock.startMs());
+		if (!SwingUtilities.isEventDispatchThread())
+		{
+			SwingUtilities.invokeLater(this::recomputeSessionProfitBase);
+			return;
+		}
+		sessionProfitBase = SessionStats.computeBase(currentCompletedFlips,
+			OpenPositions.derive(projectedActiveFlips(), plugin::getLiveSellFilledQuantity),
+			sessionClock.startMs());
 		renderSessionStats();
 	}
 
@@ -1897,6 +1909,9 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 		redisplayActiveFlipsLocally();
+		// A fill or lifecycle change moves the unsold quantity, which is derived locally — so
+		// recompute now rather than letting the session figures wait on the next API refresh.
+		recomputeSessionProfitBase();
 	}
 
 	/** Rebuild the Active Flips tab from the store projection — no list/aggregate API calls. */
@@ -1914,6 +1929,9 @@ public class FlipFinderPanel extends PluginPanel
 	public void onInventoryChanged()
 	{
 		renderActiveFlips();
+		// Held-item changes add or remove awaiting-sale lots, so the unrealised half of the
+		// session figures moves with them.
+		recomputeSessionProfitBase();
 	}
 
 	/** Update the 30-day profit summary label from a stats payload. Null-safe; hops to the EDT. */

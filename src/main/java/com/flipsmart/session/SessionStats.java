@@ -25,10 +25,10 @@ public final class SessionStats
 	{
 	}
 
-	public static ProfitBase computeBase(List<CompletedFlip> completed, List<ActiveFlip> active,
+	public static ProfitBase computeBase(List<CompletedFlip> completed, List<OpenPosition> open,
 										 long sessionStartMs)
 	{
-		return new ProfitBase(realisedProfit(completed, sessionStartMs), unrealisedProfit(active));
+		return new ProfitBase(realisedProfit(completed, sessionStartMs), unrealisedProfit(open));
 	}
 
 	public static Snapshot snapshot(ProfitBase base, long activeMs)
@@ -38,10 +38,10 @@ public final class SessionStats
 			gpPerHour(base.realisedProfit, activeMs), gpPerHour(projected, activeMs));
 	}
 
-	public static Snapshot compute(List<CompletedFlip> completed, List<ActiveFlip> active,
+	public static Snapshot compute(List<CompletedFlip> completed, List<OpenPosition> open,
 								   long sessionStartMs, long activeMs)
 	{
-		return snapshot(computeBase(completed, active, sessionStartMs), activeMs);
+		return snapshot(computeBase(completed, open, sessionStartMs), activeMs);
 	}
 
 	static long realisedProfit(List<CompletedFlip> completed, long sessionStartMs)
@@ -57,20 +57,24 @@ public final class SessionStats
 		return sum;
 	}
 
-	static long unrealisedProfit(List<ActiveFlip> active)
+	/**
+	 * Value of the positions still held, at their recommended sell price net of tax. Only the
+	 * unsold quantity counts — units already sold belong to realised profit, so valuing them
+	 * here too would double-count them (see {@link OpenPositions}).
+	 */
+	static long unrealisedProfit(List<OpenPosition> open)
 	{
 		long sum = 0L;
-		for (ActiveFlip flip : active)
+		for (OpenPosition position : open)
 		{
-			Integer recommendedSell = flip.getRecommendedSellPrice();
-			int heldQty = flip.getTotalQuantity();
-			if (recommendedSell == null || heldQty <= 0)
+			Integer recommendedSell = position.recommendedSellPrice;
+			if (recommendedSell == null || position.unsoldQuantity <= 0)
 			{
 				continue;
 			}
-			long tax = GeTax.taxFor(flip.getItemId(), recommendedSell);
-			long perItem = (long) recommendedSell - flip.getAverageBuyPrice() - tax;
-			sum += perItem * heldQty;
+			long tax = GeTax.taxFor(position.itemId, recommendedSell);
+			long perItem = (long) recommendedSell - position.averageBuyPrice - tax;
+			sum += perItem * position.unsoldQuantity;
 		}
 		return sum;
 	}

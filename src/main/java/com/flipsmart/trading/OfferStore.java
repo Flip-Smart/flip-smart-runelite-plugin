@@ -221,6 +221,27 @@ public final class OfferStore
     }
 
     /**
+     * Quantity already sold across live (non-terminal) sell offers for {@code itemId}.
+     * Lets a consumer value only the unsold remainder of a partially-filled sell; terminal
+     * records are excluded because their fills have left the open position entirely.
+     */
+    public int liveSellFilledQuantity(int itemId)
+    {
+        synchronized (this)
+        {
+            int sum = 0;
+            for (OfferRecord r : byOfferId.values())
+            {
+                if (r.getItemId() == itemId && !r.isBuy() && !r.getState().isTerminal())
+                {
+                    sum += r.getFilledQuantity();
+                }
+            }
+            return sum;
+        }
+    }
+
+    /**
      * Replace the createdAt timestamp of the record with {@code offerId}, preserving
      * its slot index. No-op when the offerId is unknown. Used to backfill a missing
      * placement time from an authoritative external source (e.g. backend active flips).
