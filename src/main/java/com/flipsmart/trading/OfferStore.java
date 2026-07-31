@@ -14,6 +14,7 @@ import java.util.function.Consumer;
 
 import javax.inject.Singleton;
 
+
 /**
  * Single source of truth for offer state. Keyed by a monotonic offerId; indexed by slot
  * (event resolution) and item (consumer queries). The sole writer of offer state.
