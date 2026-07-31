@@ -110,34 +110,66 @@ final class SessionCorpusHarness
 		ItemManager itemManager = mock(ItemManager.class);
 		when(itemManager.getItemComposition(anyInt())).thenReturn(anyComposition);
 
-		OfflineSyncService service = new OfflineSyncService(
-			session,
-			configManager,
-			new Gson(),
-			client,
-			clientThread,
-			mock(ActiveFlipTracker.class),
-			mock(GEHistoryService.class),
-			store,
-			itemManager,
-			new RoundTripLedger());
+		// Everything above survives a restart because it stands in for the client and its config
+		// file. Everything below is process state, rebuilt from the config blob alone when the
+		// timeline restarts.
+		Session live = new Session();
+		live.rebuild(session, configManager, client, clientThread, itemManager, fills);
 
 		for (JsonElement element : fixture.getAsJsonArray("timeline"))
 		{
-			applyEvent(element.getAsJsonObject(), base, store, service, client);
+			applyEvent(element.getAsJsonObject(), base, live, client,
+				session, configManager, clientThread, itemManager, fills);
 		}
-		return new Result(store, fills);
+		return new Result(live.store, fills);
 	}
 
-	private static void applyEvent(JsonObject event, long base, OfferStore store,
-		OfflineSyncService service, Client client)
+	/**
+	 * The process-local half of the plugin: the offer store and the service that reconciles into
+	 * it. A restart replaces both, which is what distinguishes it from a relog — a relog keeps the
+	 * running instance and only loses the GE slots, so anything held outside the store (the fill
+	 * watermarks, for one) survives it.
+	 */
+	private static final class Session
+	{
+		private OfferStore store;
+		private OfflineSyncService service;
+
+		void rebuild(PlayerSession session, ConfigManager configManager, Client client,
+			ClientThread clientThread, ItemManager itemManager, List<OfferEvent> fills)
+		{
+			store = new OfferStore();
+			store.addListener(e ->
+			{
+				if (e.newlyFilledQuantity > 0)
+				{
+					fills.add(e);
+				}
+			});
+			service = new OfflineSyncService(
+				session,
+				configManager,
+				new Gson(),
+				client,
+				clientThread,
+				mock(ActiveFlipTracker.class),
+				mock(GEHistoryService.class),
+				store,
+				itemManager,
+				new RoundTripLedger());
+		}
+	}
+
+	private static void applyEvent(JsonObject event, long base, Session live, Client client,
+		PlayerSession session, ConfigManager configManager, ClientThread clientThread,
+		ItemManager itemManager, List<OfferEvent> fills)
 	{
 		long at = base + event.get("at_seconds").getAsLong() * 1000L;
 		String type = event.get("type").getAsString();
 
 		if ("observe".equals(type))
 		{
-			store.apply(toSignal(event), at);
+			live.store.apply(toSignal(event), at);
 			return;
 		}
 
@@ -146,17 +178,22 @@ final class SessionCorpusHarness
 		// store state never reaches disk, so the preload reattaches an older persisted record.
 		if (!event.has("persist") || event.get("persist").getAsBoolean())
 		{
-			service.persistOfferState();
+			live.service.persistOfferState();
 		}
 		if ("relog".equals(type))
 		{
-			store.importRecords(Collections.emptyList());
+			live.store.importRecords(Collections.emptyList());
+		}
+		if ("restart".equals(type))
+		{
+			// Nothing but the config blob crosses a process boundary.
+			live.rebuild(session, configManager, client, clientThread, itemManager, fills);
 		}
 		// Built before the stubbing call: creating mocks inside a when(...) argument throws
 		// UnfinishedStubbingException.
 		GrandExchangeOffer[] snapshot = toSnapshot(event);
 		when(client.getGrandExchangeOffers()).thenReturn(snapshot);
-		service.preloadPersistedOffers();
+		live.service.preloadPersistedOffers();
 	}
 
 	private static OfferSignal toSignal(JsonObject e)
