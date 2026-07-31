@@ -1,0 +1,21 @@
+{
+  "name": "restart-preserves-generation",
+  "description": "A restart keeps only the config blob, so slot generation has to come back from it. If it restarts at the first generation while the marks from the previous session survive, an order matching a slot's earliest prior use adopts that finished order's mark and its fills are silently suppressed — an under-report. Here slot 0 buys the same item twice with a collect and a restart in between; both fills must be reported.",
+  "rsn": "TestPlayer",
+  "timeline": [
+    {"at_seconds": -900, "type": "observe", "slot": 0, "state": "BUYING", "item_id": 4444, "total": 10, "price": 100, "sold": 0,  "spent": 0},
+    {"at_seconds": -800, "type": "observe", "slot": 0, "state": "BOUGHT", "item_id": 4444, "total": 10, "price": 100, "sold": 10, "spent": 1000},
+    {"at_seconds": -700, "type": "observe", "slot": 0, "state": "EMPTY",  "item_id": 4444, "total": 10, "price": 100, "sold": 10, "spent": 1000},
+
+    {"at_seconds": -600, "type": "restart", "ge_readable": true, "live_slots": []},
+
+    {"at_seconds": -500, "type": "observe", "slot": 0, "state": "BUYING", "item_id": 4444, "total": 5, "price": 120, "sold": 0, "spent": 0},
+    {"at_seconds": -400, "type": "observe", "slot": 0, "state": "BOUGHT", "item_id": 4444, "total": 5, "price": 120, "sold": 5, "spent": 600}
+  ],
+  "expect": {
+    "reported_fills": [
+      {"item_id": 4444, "is_buy": true, "quantity": 10},
+      {"item_id": 4444, "is_buy": true, "quantity": 5}
+    ]
+  }
+}

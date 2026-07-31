@@ -40,24 +40,35 @@ public final class BuyPriceLookup
 	}
 
 	/**
-	 * Resolve the recorded average buy price from the active-flips snapshot, and
-	 * when that is absent, fall back to the local {@link OfferRecord} store
-	 * The active-flips list is backend-sourced and can be empty for
-	 * reasons unrelated to whether the player holds the item — a refresh race,
-	 * the free-tier slot trim, or a plain gap — and when it is, breakeven/margin/
-	 * profit rendered "?" despite the buy sitting in the OfferStore. The offer
-	 * records carry the same cost basis, so the derived stats stay populated.
+	 * Resolve the recorded average buy price, in descending order of authority.
 	 *
-	 * @return the average buy price, or {@code null} if neither source knows the
-	 *         item.
+	 * <p>The backend-sourced active-flips snapshot wins when present. It can be empty for reasons
+	 * unrelated to whether the player holds the item — a refresh race, the free-tier trim, or a
+	 * plain gap — and when it is, breakeven and profit used to render "?" despite the buy sitting
+	 * locally.</p>
+	 *
+	 * <p>{@code cycleBasis} is the ledger's average for the currently-open round trip. It comes
+	 * next because it is scoped to the position the player actually holds: a cycle closes when
+	 * holdings return to zero, taking its basis with it.</p>
+	 *
+	 * <p>The offer records are the last resort. They carry the same cost basis but the store
+	 * never evicts, so they outlive the flip they belong to and can average across positions
+	 * already sold — the reason the cycle basis is preferred over them rather than the other way
+	 * round. They still matter for a client whose ledger has not yet observed a fill.</p>
+	 *
+	 * @return the average buy price, or {@code null} if no source knows the item.
 	 */
 	public static Integer findAverageBuyPriceWithFallback(
-		List<ActiveFlip> activeFlips, List<OfferRecord> offerRecords, int itemId)
+		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId)
 	{
 		Integer fromFlips = findAverageBuyPrice(activeFlips, itemId);
 		if (fromFlips != null)
 		{
 			return fromFlips;
+		}
+		if (cycleBasis != null && cycleBasis > 0)
+		{
+			return cycleBasis;
 		}
 		return averageBuyPriceFromOffers(offerRecords, itemId);
 	}

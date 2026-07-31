@@ -46,6 +46,7 @@ public class OfflineSyncPersistenceTest
 	private OfferStore store;
 	private ActiveFlipTracker activeFlipTracker;
 	private OfflineSyncService service;
+	private com.flipsmart.trading.RoundTripLedger ledger;
 	private ItemManager itemManager;
 	private Map<String, String> configStore;
 
@@ -82,6 +83,7 @@ public class OfflineSyncPersistenceTest
 			return null;
 		}).when(clientThread).invokeLater(any(Runnable.class));
 
+		ledger = new com.flipsmart.trading.RoundTripLedger();
 		activeFlipTracker = mock(ActiveFlipTracker.class);
 		itemManager = mock(ItemManager.class);
 
@@ -95,7 +97,7 @@ public class OfflineSyncPersistenceTest
 			geHistoryService,
 			store,
 			itemManager,
-			new com.flipsmart.trading.RoundTripLedger());
+			ledger);
 	}
 
 	@Test
@@ -539,10 +541,75 @@ public class OfflineSyncPersistenceTest
 		store.apply(sig(1, GrandExchangeOfferState.EMPTY, 222, 10, 10), now - 1000L);
 
 		List<OfferRecord> retained =
-			OfflineSyncService.retainRecentTerminalHistory(store.export(), now);
+			service.retainRecentTerminalHistory(store.export(), now);
 
 		assertEquals("only the in-window terminal record is retained", 1, retained.size());
 		assertEquals(222, retained.get(0).getItemId());
+	}
+
+	/**
+	 * Age is the wrong sole criterion. A buy collected two days ago is still the cost basis for
+	 * stock the player is holding right now, and dropping it puts breakeven back to "?" — the same
+	 * defect the retention was added to fix, just on a slower clock.
+	 */
+	@Test
+	public void terminalHistoryRetention_keepsRecordsBackingAnOpenPosition()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		long now = System.currentTimeMillis();
+		long longAgo = now - OfflineSyncService.TERMINAL_HISTORY_RETENTION_MS - 60_000L;
+
+		// Bought and collected well outside the window, but never sold: the position is still open.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 333, 0, 10), longAgo);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 333, 10, 10), longAgo);
+		store.apply(sig(0, GrandExchangeOfferState.EMPTY, 333, 10, 10), longAgo);
+		ledger.recordFill("Zezima", 333, true, 10);
+
+		// Equally old, but fully liquidated — nothing depends on it any more.
+		store.apply(sig(1, GrandExchangeOfferState.BUYING, 444, 0, 10), longAgo);
+		store.apply(sig(1, GrandExchangeOfferState.BOUGHT, 444, 10, 10), longAgo);
+		store.apply(sig(1, GrandExchangeOfferState.EMPTY, 444, 10, 10), longAgo);
+		ledger.recordFill("Zezima", 444, true, 10);
+		ledger.recordFill("Zezima", 444, false, 10);
+
+		List<OfferRecord> retained = service.retainRecentTerminalHistory(store.export(), now);
+
+		java.util.Set<Integer> items = new java.util.HashSet<>();
+		for (OfferRecord r : retained)
+		{
+			items.add(r.getItemId());
+		}
+		assertTrue("a held position keeps its basis however old", items.contains(333));
+		assertFalse("a liquidated position ages out as before", items.contains(444));
+	}
+
+	/**
+	 * The exemption is only as good as the ledger backing it. On a cold start the ledger lives in
+	 * config, not memory, so it has to be restored before retention asks it what is still held —
+	 * otherwise every held position reads as zero and its basis ages out exactly as before.
+	 */
+	@Test
+	public void terminalHistoryRetention_consultsAPersistedLedgerOnAColdStart()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		long longAgo = System.currentTimeMillis()
+			- OfflineSyncService.TERMINAL_HISTORY_RETENTION_MS - 60_000L;
+
+		// An old, collected buy for an item the player still holds.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 333, 0, 10), longAgo);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 333, 10, 10), longAgo);
+		store.apply(sig(0, GrandExchangeOfferState.EMPTY, 333, 10, 10), longAgo);
+		service.persistOfferState();
+
+		// A cold start: the ledger is empty in memory and its state sits in config.
+		configStore.put("roundTripLedger_Zezima", "{\"333\":{\"heldQuantity\":10,\"cycleId\":1}}");
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+
+		service.preloadPersistedOffers();
+
+		assertFalse("the held position's basis must survive a cold start",
+			store.forItem(333).isEmpty());
 	}
 
 	@Test
@@ -559,7 +626,7 @@ public class OfflineSyncPersistenceTest
 		}
 
 		List<OfferRecord> retained =
-			OfflineSyncService.retainRecentTerminalHistory(store.export(), now);
+			service.retainRecentTerminalHistory(store.export(), now);
 
 		assertEquals("retained set is capped", OfflineSyncService.MAX_RETAINED_TERMINAL_RECORDS,
 			retained.size());

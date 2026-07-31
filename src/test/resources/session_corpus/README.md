@@ -40,7 +40,12 @@ small values fall outside every retention window and get silently dropped.
   `GrandExchangeOfferState` name), `item_id`, `total`, `price`, `sold`, `spent`.
   `sold` and `spent` are **cumulative**, exactly as the client reports them.
 - **`hop`** — persist, then preload against the given snapshot. The store is *not* cleared.
-- **`relog`** — the same, but the in-memory store is cleared first, simulating a fresh JVM.
+- **`relog`** — the same, but the in-memory store is cleared first. The running instance survives,
+  so anything held outside the store (the fill watermarks, for one) is retained.
+- **`restart`** — a process boundary. The store *and* the service are rebuilt from nothing, so the
+  config blob is the only thing that crosses. Use this, not `relog`, to test whether state actually
+  round-trips through persistence: a `relog` will happily pass on in-memory state that was never
+  written to disk.
 
 Both `hop` and `relog` take:
 - `ge_readable: false` — `getGrandExchangeOffers()` returns `null` (snapshot not loaded yet)

@@ -49,6 +49,28 @@ public class TransactionLoggerTest
         return new TransactionLogger(apiClient, session, supplier, roundTripLedger);
     }
 
+    /**
+     * End-to-end: a buy filling through the store must leave the open cycle's cost basis
+     * populated. Observed in game with the basis empty across every ledger entry while cycle
+     * ids and held quantities tracked correctly.
+     */
+    @Test
+    public void buyFillThroughTheStore_populatesTheCycleBasis()
+    {
+        OfferStore store = new OfferStore();
+        TransactionLogger logger = newLogger(RSN);
+        store.addListener(logger::onOfferEvent);
+
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, 571,
+            "Water orb", 10, 1736, 0, 0L), 1700000000000L);
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, 571,
+            "Water orb", 10, 1736, 10, 17360L), 1700000001000L);
+
+        assertEquals("held quantity tracks the buy", 10, roundTripLedger.heldQuantity(RSN, 571));
+        assertEquals("the open cycle knows what it paid",
+            Integer.valueOf(1736), roundTripLedger.currentBasis(RSN, 571));
+    }
+
     private TransactionRequest capture()
     {
         ArgumentCaptor<TransactionRequest> cap = ArgumentCaptor.forClass(TransactionRequest.class);

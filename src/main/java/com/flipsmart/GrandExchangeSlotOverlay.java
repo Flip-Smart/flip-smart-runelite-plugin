@@ -342,7 +342,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private Integer getBuyPriceForItem(int itemId)
 	{
 		return BuyPriceLookup.findAverageBuyPriceWithFallback(
-			plugin.getCurrentActiveFlips(), plugin.getOfferRecordsForItem(itemId), itemId);
+			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
+			plugin.getOfferRecordsForItem(itemId), itemId);
 	}
 
 	/**

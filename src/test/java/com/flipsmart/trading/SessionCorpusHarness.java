@@ -110,34 +110,89 @@ final class SessionCorpusHarness
 		ItemManager itemManager = mock(ItemManager.class);
 		when(itemManager.getItemComposition(anyInt())).thenReturn(anyComposition);
 
-		OfflineSyncService service = new OfflineSyncService(
-			session,
-			configManager,
-			new Gson(),
-			client,
-			clientThread,
-			mock(ActiveFlipTracker.class),
-			mock(GEHistoryService.class),
-			store,
-			itemManager,
-			new RoundTripLedger());
+		// Everything in the environment survives a restart because it stands in for the client
+		// and its config file. The Session below is process state, rebuilt from the config blob
+		// alone when the timeline restarts.
+		Environment env = new Environment(session, configManager, client, clientThread,
+			itemManager, fills);
+		Session live = new Session();
+		live.rebuild(env);
 
 		for (JsonElement element : fixture.getAsJsonArray("timeline"))
 		{
-			applyEvent(element.getAsJsonObject(), base, store, service, client);
+			applyEvent(element.getAsJsonObject(), base, live, env);
 		}
-		return new Result(store, fills);
+		return new Result(live.store, fills);
 	}
 
-	private static void applyEvent(JsonObject event, long base, OfferStore store,
-		OfflineSyncService service, Client client)
+	/**
+	 * The client/config/item stand-ins a real restart would rebuild the process against. Grouped
+	 * so the harness can pass "what a restart reads" as a single unit.
+	 */
+	private static final class Environment
+	{
+		final PlayerSession session;
+		final ConfigManager configManager;
+		final Client client;
+		final ClientThread clientThread;
+		final ItemManager itemManager;
+		final List<OfferEvent> fills;
+
+		Environment(PlayerSession session, ConfigManager configManager, Client client,
+			ClientThread clientThread, ItemManager itemManager, List<OfferEvent> fills)
+		{
+			this.session = session;
+			this.configManager = configManager;
+			this.client = client;
+			this.clientThread = clientThread;
+			this.itemManager = itemManager;
+			this.fills = fills;
+		}
+	}
+
+	/**
+	 * The process-local half of the plugin: the offer store and the service that reconciles into
+	 * it. A restart replaces both, which is what distinguishes it from a relog — a relog keeps the
+	 * running instance and only loses the GE slots, so anything held outside the store (the fill
+	 * watermarks, for one) survives it.
+	 */
+	private static final class Session
+	{
+		private OfferStore store;
+		private OfflineSyncService service;
+
+		void rebuild(Environment env)
+		{
+			store = new OfferStore();
+			store.addListener(e ->
+			{
+				if (e.newlyFilledQuantity > 0)
+				{
+					env.fills.add(e);
+				}
+			});
+			service = new OfflineSyncService(
+				env.session,
+				env.configManager,
+				new Gson(),
+				env.client,
+				env.clientThread,
+				mock(ActiveFlipTracker.class),
+				mock(GEHistoryService.class),
+				store,
+				env.itemManager,
+				new RoundTripLedger());
+		}
+	}
+
+	private static void applyEvent(JsonObject event, long base, Session live, Environment env)
 	{
 		long at = base + event.get("at_seconds").getAsLong() * 1000L;
 		String type = event.get("type").getAsString();
 
 		if ("observe".equals(type))
 		{
-			store.apply(toSignal(event), at);
+			live.store.apply(toSignal(event), at);
 			return;
 		}
 
@@ -146,17 +201,22 @@ final class SessionCorpusHarness
 		// store state never reaches disk, so the preload reattaches an older persisted record.
 		if (!event.has("persist") || event.get("persist").getAsBoolean())
 		{
-			service.persistOfferState();
+			live.service.persistOfferState();
 		}
 		if ("relog".equals(type))
 		{
-			store.importRecords(Collections.emptyList());
+			live.store.importRecords(Collections.emptyList());
+		}
+		if ("restart".equals(type))
+		{
+			// Nothing but the config blob crosses a process boundary.
+			live.rebuild(env);
 		}
 		// Built before the stubbing call: creating mocks inside a when(...) argument throws
 		// UnfinishedStubbingException.
 		GrandExchangeOffer[] snapshot = toSnapshot(event);
-		when(client.getGrandExchangeOffers()).thenReturn(snapshot);
-		service.preloadPersistedOffers();
+		when(env.client.getGrandExchangeOffers()).thenReturn(snapshot);
+		live.service.preloadPersistedOffers();
 	}
 
 	private static OfferSignal toSignal(JsonObject e)

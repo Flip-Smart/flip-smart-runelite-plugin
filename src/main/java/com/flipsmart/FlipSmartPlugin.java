@@ -437,6 +437,16 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Average buy price for the round trip currently open on {@code itemId}, or {@code null} when
+	 * no position is open. Scoped to the cycle, so it never reflects stock already sold.
+	 */
+	public Integer getCycleBasisForItem(int itemId)
+	{
+		return roundTripLedger == null
+			? null : roundTripLedger.currentBasis(getCurrentRsnSafe().orElse(null), itemId);
+	}
+
+	/**
 	 * Local OfferStore records for an item — the fallback source for the recorded
 	 * buy price when the backend-sourced active-flips snapshot is empty.
 	 */
@@ -2186,7 +2196,8 @@ public class FlipSmartPlugin extends Plugin
 		if (!offer.isBuy())
 		{
 			return BuyPriceLookup.findAverageBuyPriceWithFallback(
-				getCurrentActiveFlips(), offerStore.forItem(offer.getItemId()), offer.getItemId());
+				getCurrentActiveFlips(), getCycleBasisForItem(offer.getItemId()),
+				offerStore.forItem(offer.getItemId()), offer.getItemId());
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{

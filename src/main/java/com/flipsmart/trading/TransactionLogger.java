@@ -114,7 +114,9 @@ public final class TransactionLogger
         {
             return;
         }
-        int pricePerItem = newlyFilled > 0 ? (int) (newlySpent / newlyFilled) : 0;
+        // Rounded rather than truncated: this now also feeds recordBuyBasis below, and truncation
+        // biased every weighted-average basis down by up to 1gp/item.
+        int pricePerItem = newlyFilled > 0 ? (int) Math.round((double) newlySpent / newlyFilled) : 0;
         // The offer is done filling (so its slot's cumulative baseline may reset) once it is no longer
         // NEW or PARTIAL_FILL — i.e. FILLED, collected, or cancelled. A still-filling offer keeps its
         // baseline so a sibling slot of the same item is never double-counted on a mid-fill close.
@@ -130,7 +132,14 @@ public final class TransactionLogger
             // so this fill's peeked id — and thus its dedup key — differs from the original's. The
             // ledger recognised it as a byte-identical re-delivery and mutated nothing; forwarding
             // it would stamp the backend with the next cycle's id, so drop it here.
+            // Basis is deliberately not folded either — a re-delivery buys nothing.
             return;
+        }
+        if (r.isBuy())
+        {
+            // Folded quantity, not the caller's: the ledger rebaselines a slot-keyed fill against
+            // what that slot already absorbed, and the basis has to describe the same items.
+            roundTripLedger.recordBuyBasis(rsn, r.getItemId(), fill.foldedQuantity, pricePerItem);
         }
         apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).build());
     }
