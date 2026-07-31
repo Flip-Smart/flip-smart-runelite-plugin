@@ -2005,16 +2005,16 @@ public class AutoRecommendService
 		addToStaleQueue(offer);
 	}
 
-	/**
-	 * Add a tracked offer to the stale queue if not already present.
-	 * If the queue was empty, immediately shows the first prompt.
-	 */
 	/** Current stale-queue depth. */
 	int staleOfferCount()
 	{
 		return staleOffers.size();
 	}
 
+	/**
+	 * Add a tracked offer to the stale queue if not already present.
+	 * If the queue was empty, immediately shows the first prompt.
+	 */
 	void addToStaleQueue(OfferRecord offer)
 	{
 		if (offer.getState() == OfferState.CANCELLED_PARTIAL)
