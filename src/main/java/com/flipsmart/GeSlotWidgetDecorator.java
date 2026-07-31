@@ -2,7 +2,6 @@ package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
-import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -189,8 +188,6 @@ public class GeSlotWidgetDecorator
         {
             return;
         }
-        seedStoreFromLiveOffers(offers);
-
         for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
         {
             Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, SLOT_CONTAINER_START + slot);
@@ -219,30 +216,6 @@ public class GeSlotWidgetDecorator
             {
                 revertStateText(slot, slotWidget);
             }
-        }
-    }
-
-    // Re-seed any live slot the store has lost track of, so borders/timers (which read
-    // bySlot) recover on the next render tick instead of waiting for the next fill event.
-    void seedStoreFromLiveOffers(GrandExchangeOffer[] offers)
-    {
-        OfferStore store = plugin.getOfferStore();
-        long now = System.currentTimeMillis();
-        for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
-        {
-            GrandExchangeOffer offer = offers[slot];
-            if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
-            {
-                continue;
-            }
-            if (store.bySlot(slot) != null)
-            {
-                continue;
-            }
-            int itemId = offer.getItemId();
-            String itemName = itemManager != null ? itemManager.getItemComposition(itemId).getName() : "";
-            store.seedIfAbsent(OfferEventMapper.toSignal(slot, offer.getState(), itemId, itemName,
-                offer.getTotalQuantity(), offer.getPrice(), offer.getQuantitySold(), offer.getSpent()), now);
         }
     }
 
