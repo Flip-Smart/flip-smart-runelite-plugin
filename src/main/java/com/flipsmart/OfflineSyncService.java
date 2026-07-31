@@ -528,13 +528,22 @@ public class OfflineSyncService
 	 * {@link #TERMINAL_HISTORY_RETENTION_MS} and {@link #MAX_RETAINED_TERMINAL_RECORDS}.
 	 * Non-terminal records are the reconciler's business and are never returned here.
 	 */
-	static List<OfferRecord> retainRecentTerminalHistory(List<OfferRecord> persisted, long now)
+	List<OfferRecord> retainRecentTerminalHistory(List<OfferRecord> persisted, long now)
 	{
+		String rsn = resolvePersistenceRsn();
 		List<OfferRecord> terminal = new ArrayList<>();
 		for (OfferRecord r : persisted)
 		{
-			if (r != null && r.getState().isTerminal()
-				&& now - r.getEffectiveLastActivityAtMillis() <= TERMINAL_HISTORY_RETENTION_MS)
+			if (r == null || !r.getState().isTerminal())
+			{
+				continue;
+			}
+			boolean withinWindow = now - r.getEffectiveLastActivityAtMillis() <= TERMINAL_HISTORY_RETENTION_MS;
+			// Age alone would drop the basis of a position the player is still holding, which is the
+			// original defect on a slower clock. An item with an open position still depends on its
+			// buy history however old that history is.
+			boolean backsOpenPosition = rsn != null && roundTripLedger.heldQuantity(rsn, r.getItemId()) > 0;
+			if (withinWindow || backsOpenPosition)
 			{
 				terminal.add(r);
 			}

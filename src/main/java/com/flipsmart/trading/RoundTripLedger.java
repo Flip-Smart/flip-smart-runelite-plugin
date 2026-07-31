@@ -255,6 +255,22 @@ public final class RoundTripLedger
     }
 
     /**
+     * Quantity the player is currently observed to hold for (rsn, itemId). Zero when the position
+     * is closed or unknown. Lets callers ask whether anything still depends on an item's history.
+     */
+    public int heldQuantity(String rsn, int itemId)
+    {
+        if (rsn == null || rsn.isEmpty())
+        {
+            return 0;
+        }
+        synchronized (lock)
+        {
+            return entryFor(rsn, itemId).heldQuantity;
+        }
+    }
+
+    /**
      * Quantity-weighted average buy price for the OPEN cycle, or {@code null} when it has taken
      * no priced buys. Because a closed cycle's basis is cleared, this can never average across a
      * position the player has already liquidated.
