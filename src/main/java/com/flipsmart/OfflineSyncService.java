@@ -352,9 +352,31 @@ public class OfflineSyncService
 	 */
 	private void preloadLedgerState(String rsn)
 	{
+		if (importPersistedLedger(rsn))
+		{
+			return;
+		}
 		if (rsn == null || !roundTripLedger.isEmpty(rsn))
 		{
 			return;
+		}
+		roundTripLedger.seedColdStart(rsn, liveUnmatchedBuys());
+	}
+
+	/**
+	 * Restore a saved ledger, reporting whether anything was imported.
+	 *
+	 * <p>Separated from the cold-start seeding around it because the two want opposite orderings:
+	 * seeding reads live buys and so must follow the reconcile, while retention asks the ledger
+	 * which items still back an open position and so must precede it. An empty ledger at that
+	 * point reads every position as closed and ages out the very records the exemption exists to
+	 * keep.</p>
+	 */
+	private boolean importPersistedLedger(String rsn)
+	{
+		if (rsn == null || !roundTripLedger.isEmpty(rsn))
+		{
+			return false;
 		}
 		String json = configManager.getConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn);
 		if (json != null && !json.isEmpty())
@@ -364,14 +386,14 @@ public class OfflineSyncService
 				Type type = new TypeToken<Map<Integer, RoundTripLedger.Entry>>(){}.getType();
 				Map<Integer, RoundTripLedger.Entry> entries = gson.fromJson(json, type);
 				roundTripLedger.importState(rsn, entries);
-				return;
+				return true;
 			}
 			catch (Exception e)
 			{
 				log.debug("Ignoring unreadable persisted round-trip ledger for {} ({})", rsn, e.getMessage());
 			}
 		}
-		roundTripLedger.seedColdStart(rsn, liveUnmatchedBuys());
+		return false;
 	}
 
 	/** Currently-live buy offers with at least one filled unit — a stale unmatched position. */
@@ -411,6 +433,11 @@ public class OfflineSyncService
 		// Raise the marks before the records land. Seeding from the records covers a client that
 		// has never persisted marks; merging the saved blob then adds anything the records no
 		// longer show. Both only ever raise, so a stale blob cannot rewind this session.
+		// Before the reconcile: retention asks the ledger which items still back an open position,
+		// and on a cold start that answer lives in config rather than memory. Cold-start seeding
+		// stays after the reconcile below, because it reads live buys from the reconciled store.
+		importPersistedLedger(resolvePersistenceRsn());
+
 		offerStore.watermarks().seedFrom(persistedRecords);
 		offerStore.watermarks().mergeFrom(loadPersistedWatermarks());
 
