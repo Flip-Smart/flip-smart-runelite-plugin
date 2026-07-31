@@ -1,6 +1,5 @@
 package com.flipsmart.ui.panel;
 
-import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.FlipSmartApiClient;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.api.dto.AuthResult;
@@ -44,8 +43,10 @@ public class LoginPanel
 {
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String CONFIG_KEY_EMAIL = "email";
-	private static final String CONFIG_KEY_PASSWORD = "password";  // Deprecated: kept for migration
 	private static final String CONFIG_KEY_REFRESH_TOKEN = "refreshToken";
+	// Only ever unset now -- the legacy password login path is gone, but old
+	// installs may still carry a stored password that we clear on next login.
+	private static final String CONFIG_KEY_PASSWORD = "password";
 
 	private static final String FONT_ARIAL = "Arial";
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
@@ -310,66 +311,36 @@ public class LoginPanel
 						{
 							log.debug("Refresh token auth failed (transient) - keeping token for next attempt");
 						}
-						tryLegacyPasswordAuth();
+						promptForLogin();
 					}
 				})
 			).exceptionally(e -> {
 				log.debug("Refresh token auth failed: {}", e.getMessage());
-				SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				SwingUtilities.invokeLater(this::promptForLogin);
 				return null;
 			});
 		}
 		else
 		{
-			// No refresh token, try legacy password auth
-			tryLegacyPasswordAuth();
+			// No refresh token at all -- straight to the login form.
+			promptForLogin();
 		}
 	}
 
 	/**
-	 * Try to authenticate with legacy stored password (migration path).
-	 * After successful login, the password will be cleared and replaced with refresh token.
+	 * No usable refresh token, so fall back to the login form. The email is pre-filled
+	 * from config so the user only has to re-enter their password.
 	 */
-	private void tryLegacyPasswordAuth()
+	private void promptForLogin()
 	{
 		String email = config.email();
-		String password = config.password();
-
-		// Always pre-fill email if available (helps users who need to re-login)
 		if (email != null && !email.isEmpty())
 		{
 			emailField.setText(email);
 		}
 
-		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
-		{
-			// Try to authenticate in background
-			CompletableFuture.runAsync(() -> {
-				AuthResult result = apiClient.login(email, password);
-
-				SwingUtilities.invokeLater(() -> {
-					if (result.success)
-					{
-						// Migration: save refresh token and clear password
-						saveRefreshToken(apiClient.getRefreshToken());
-						clearPassword();
-						onAuthenticationSuccess(null, false);
-					}
-					else
-					{
-						// Stay on login panel, show message
-						loginStatusLabel.setText("Please login to continue");
-						loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-					}
-				});
-			});
-		}
-		else
-		{
-			// No stored credentials - show helpful message to user
-			loginStatusLabel.setText("Please login to continue");
-			loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-		}
+		loginStatusLabel.setText("Please login to continue");
+		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 	}
 
 	/**
@@ -463,6 +434,12 @@ public class LoginPanel
 	/**
 	 * Save refresh token for persistent login (replaces password storage)
 	 */
+	/** Wipe any password left over from the pre-refresh-token era. */
+	private void clearPassword()
+	{
+		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD);
+	}
+
 	private void saveRefreshToken(String refreshToken)
 	{
 		if (refreshToken != null && !refreshToken.isEmpty())
@@ -477,24 +454,6 @@ public class LoginPanel
 	public void clearRefreshToken()
 	{
 		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_REFRESH_TOKEN);
-	}
-
-	/**
-	 * Clear legacy password storage (migration cleanup)
-	 */
-	private void clearPassword()
-	{
-		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD);
-	}
-
-	/**
-	 * @deprecated Use saveEmail() and saveRefreshToken() instead
-	 */
-	@Deprecated
-	private void saveCredentials(String email, String password)
-	{
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD, password);
 	}
 
 	/**
