@@ -493,7 +493,7 @@ public class OfflineSyncService
 		}
 		catch (Exception e)
 		{
-			log.error("Failed to persist fill watermarks for {}: {}", rsn, e.getMessage());
+			log.error("Failed to persist fill watermarks for {}", rsn, e);
 		}
 	}
 
