@@ -28,12 +28,12 @@ public final class OfferStore
     private final Map<Integer, Long> slotToOfferId = new HashMap<>();   // 0..7 -> offerId (live only)
     private long nextOfferId = 1;
     private final List<Consumer<OfferEvent>> listeners = new ArrayList<>();
-    private final FillWatermarks watermarks = new FillWatermarks();
+    private final FillWatermarks fillWatermarks = new FillWatermarks();
 
     /** The high-water fill marks backing every reported delta. Persisted alongside the records. */
     public FillWatermarks watermarks()
     {
-        return watermarks;
+        return fillWatermarks;
     }
 
     /** Register a listener to receive an {@link OfferEvent} after each successful state change. */
@@ -85,12 +85,12 @@ public final class OfferStore
             // reconcile against a stale snapshot; the mark cannot. Direction comes from the
             // record because a collect arrives as EMPTY, which reads as neither buy nor sell.
             OfferIdentity identity = OfferIdentity.of(
-                signal.slot, t.record.getItemId(), t.record.isBuy(), watermarks.generationFor(signal.slot));
-            FillWatermarks.Delta delta = watermarks.observe(identity, signal.quantitySold, signal.spent);
+                signal.slot, t.record.getItemId(), t.record.isBuy(), fillWatermarks.generationFor(signal.slot));
+            FillWatermarks.Delta delta = fillWatermarks.observe(identity, signal.quantitySold, signal.spent);
 
             if (t.record.getState().isTerminal())
             {
-                watermarks.advanceGeneration(signal.slot);
+                fillWatermarks.advanceGeneration(signal.slot);
             }
 
             event = new OfferEvent(t.kind, t.record, delta.quantity, delta.spent);
@@ -129,7 +129,7 @@ public final class OfferStore
             {
                 slotToOfferId.put(signal.slot, t.record.getOfferId());
             }
-            watermarks.seedFrom(Collections.singletonList(t.record));
+            fillWatermarks.seedFrom(Collections.singletonList(t.record));
             return true;
         }
     }
@@ -190,7 +190,7 @@ public final class OfferStore
         // A record entering the store carries progress that has already been reported. Raising the
         // marks to match keeps the next observation measuring the increment rather than re-reporting
         // the whole cumulative.
-        watermarks.seedFrom(records);
+        fillWatermarks.seedFrom(records);
     }
 
     /**
