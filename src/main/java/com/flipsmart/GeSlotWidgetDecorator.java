@@ -275,16 +275,8 @@ public class GeSlotWidgetDecorator
 
         boolean complete = offer.getState() == GrandExchangeOfferState.BOUGHT
             || offer.getState() == GrandExchangeOfferState.SOLD;
-        // A finished offer freezes at how long it was open. Measuring from last activity would
-        // always read 0:00, since completing an offer is itself the last activity. Records
-        // persisted before creation time was tracked fall back to that degenerate reading.
-        long openedAt = tracked.getCreatedAtMillis() > 0 ? tracked.getCreatedAtMillis() : lastActivity;
-        String elapsed = complete && tracked.getCompletedAtMillis() > 0
-            ? TimeUtils.formatFrozenElapsedTime(openedAt, tracked.getCompletedAtMillis())
-            : TimeUtils.formatElapsedTime(lastActivity);
-        int color = complete
-            ? (config.colorblindMode() ? TIMER_COLOR_COMPLETE_COLORBLIND : TIMER_COLOR_COMPLETE)
-            : TIMER_COLOR_RUNNING;
+        String elapsed = elapsedLabel(complete, lastActivity, tracked);
+        int color = timerColor(complete);
 
         Widget timer = timerWidget(slot, slotWidget, stateText);
         boolean changed = false;
@@ -307,6 +299,28 @@ public class GeSlotWidgetDecorator
         {
             timer.revalidate();
         }
+    }
+
+    // A finished offer freezes at how long it was open. Measuring from last activity would
+    // always read 0:00, since completing an offer is itself the last activity. Records
+    // persisted before creation time was tracked fall back to that degenerate reading.
+    private static String elapsedLabel(boolean complete, long lastActivity, OfferRecord tracked)
+    {
+        if (!complete || tracked.getCompletedAtMillis() <= 0)
+        {
+            return TimeUtils.formatElapsedTime(lastActivity);
+        }
+        long openedAt = tracked.getCreatedAtMillis() > 0 ? tracked.getCreatedAtMillis() : lastActivity;
+        return TimeUtils.formatFrozenElapsedTime(openedAt, tracked.getCompletedAtMillis());
+    }
+
+    private int timerColor(boolean complete)
+    {
+        if (!complete)
+        {
+            return TIMER_COLOR_RUNNING;
+        }
+        return config.colorblindMode() ? TIMER_COLOR_COMPLETE_COLORBLIND : TIMER_COLOR_COMPLETE;
     }
 
     /**
