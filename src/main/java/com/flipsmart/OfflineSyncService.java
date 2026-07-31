@@ -531,29 +531,39 @@ public class OfflineSyncService
 	List<OfferRecord> retainRecentTerminalHistory(List<OfferRecord> persisted, long now)
 	{
 		String rsn = resolvePersistenceRsn();
-		List<OfferRecord> terminal = new ArrayList<>();
+		// Held-position records are exempt from both caps below, not just the age window: sorting
+		// everything together and count-capping the merged list would still let a record backing an
+		// open position fall past the cutoff behind 300 more-recent, unrelated terminal records.
+		List<OfferRecord> heldPosition = new ArrayList<>();
+		List<OfferRecord> windowed = new ArrayList<>();
 		for (OfferRecord r : persisted)
 		{
 			if (r == null || !r.getState().isTerminal())
 			{
 				continue;
 			}
-			boolean withinWindow = now - r.getEffectiveLastActivityAtMillis() <= TERMINAL_HISTORY_RETENTION_MS;
-			// Age alone would drop the basis of a position the player is still holding, which is the
-			// original defect on a slower clock. An item with an open position still depends on its
-			// buy history however old that history is.
 			boolean backsOpenPosition = rsn != null && roundTripLedger.heldQuantity(rsn, r.getItemId()) > 0;
-			if (withinWindow || backsOpenPosition)
+			if (backsOpenPosition)
 			{
-				terminal.add(r);
+				heldPosition.add(r);
+				continue;
+			}
+			if (now - r.getEffectiveLastActivityAtMillis() <= TERMINAL_HISTORY_RETENTION_MS)
+			{
+				windowed.add(r);
 			}
 		}
+		if (windowed.size() > MAX_RETAINED_TERMINAL_RECORDS)
+		{
+			windowed.sort(java.util.Comparator
+				.comparingLong(OfferRecord::getEffectiveLastActivityAtMillis).reversed());
+			windowed = windowed.subList(0, MAX_RETAINED_TERMINAL_RECORDS);
+		}
+		List<OfferRecord> terminal = new ArrayList<>(heldPosition.size() + windowed.size());
+		terminal.addAll(heldPosition);
+		terminal.addAll(windowed);
 		terminal.sort(java.util.Comparator
 			.comparingLong(OfferRecord::getEffectiveLastActivityAtMillis).reversed());
-		if (terminal.size() > MAX_RETAINED_TERMINAL_RECORDS)
-		{
-			return new ArrayList<>(terminal.subList(0, MAX_RETAINED_TERMINAL_RECORDS));
-		}
 		return terminal;
 	}
 
