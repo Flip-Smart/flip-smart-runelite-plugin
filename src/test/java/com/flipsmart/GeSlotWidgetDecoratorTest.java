@@ -4,7 +4,6 @@ import com.flipsmart.trading.OfferStore;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.api.widgets.Widget;
 import org.junit.Test;
@@ -32,7 +31,7 @@ public class GeSlotWidgetDecoratorTest
 
         FlipSmartConfig config = mock(FlipSmartConfig.class);
         GeSlotWidgetDecorator decorator = new GeSlotWidgetDecorator(
-            mock(Client.class), config, plugin, mock(SpriteManager.class), mock(ItemManager.class));
+            mock(Client.class), config, plugin, mock(SpriteManager.class));
 
         GrandExchangeOffer live = mock(GrandExchangeOffer.class);
         when(live.getState()).thenReturn(GrandExchangeOfferState.BUYING);

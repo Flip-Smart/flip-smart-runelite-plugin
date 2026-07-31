@@ -11,7 +11,6 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
-import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.util.ImageUtil;
 
@@ -64,7 +63,6 @@ public class GeSlotWidgetDecorator
     private final FlipSmartConfig config;
     private final FlipSmartPlugin plugin;
     private final SpriteManager spriteManager;
-    private final ItemManager itemManager;
 
     // (vanillaSpriteId, tint) -> custom sprite id already registered in the override map
     private final Map<Long, Integer> registered = new HashMap<>();
@@ -81,13 +79,12 @@ public class GeSlotWidgetDecorator
 
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin,
-        SpriteManager spriteManager, ItemManager itemManager)
+        SpriteManager spriteManager)
     {
         this.client = client;
         this.config = config;
         this.plugin = plugin;
         this.spriteManager = spriteManager;
-        this.itemManager = itemManager;
     }
 
     // Different border children can share a vanilla sprite id while needing different outline
