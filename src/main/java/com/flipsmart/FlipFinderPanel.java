@@ -961,18 +961,27 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildMinProfitRow()
 	{
+		return buildFilterRow("Min Profit: ", config.minimumProfit(), 1000,
+			CONFIG_KEY_MIN_PROFIT, spinner -> minProfitSpinner = spinner);
+	}
+
+	/**
+	 * One "label + spinner" filter row. The two filters differ only in their label,
+	 * starting value, step, config key, and which field caches the spinner.
+	 */
+	private JPanel buildFilterRow(String labelText, int initial, int step, String configKey,
+		Consumer<JSpinner> capture)
+	{
 		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 
-		JLabel label = CardWidgets.label("Min Profit: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
+		JLabel label = CardWidgets.label(labelText, Color.LIGHT_GRAY, FONT_PLAIN_12);
 		label.setToolTipText(FILTER_TOOLTIP);
 
-		JSpinner spinner = new JSpinner(
-			new SpinnerNumberModel(config.minimumProfit(), 0, Integer.MAX_VALUE, 1000));
+		JSpinner spinner = new JSpinner(new SpinnerNumberModel(initial, 0, Integer.MAX_VALUE, step));
 		spinner.setToolTipText(FILTER_TOOLTIP);
 		commitOnFocusLost(spinner);
-		spinner.addChangeListener(e -> applyFilterSettingDebounced(
-			CONFIG_KEY_MIN_PROFIT, (Integer) spinner.getValue()));
-		minProfitSpinner = spinner;
+		spinner.addChangeListener(e -> applyFilterSettingDebounced(configKey, (Integer) spinner.getValue()));
+		capture.accept(spinner);
 
 		row.add(label);
 		row.add(spinner);
@@ -996,22 +1005,8 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildMinVolumeRow()
 	{
-		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
-
-		JLabel label = CardWidgets.label("Min Volume: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
-		label.setToolTipText(FILTER_TOOLTIP);
-
-		JSpinner spinner = new JSpinner(
-			new SpinnerNumberModel(config.minimumVolume(), 0, Integer.MAX_VALUE, 100));
-		spinner.setToolTipText(FILTER_TOOLTIP);
-		commitOnFocusLost(spinner);
-		spinner.addChangeListener(e -> applyFilterSettingDebounced(
-			CONFIG_KEY_MIN_VOLUME, (Integer) spinner.getValue()));
-		minVolumeSpinner = spinner;
-
-		row.add(label);
-		row.add(spinner);
-		return row;
+		return buildFilterRow("Min Volume: ", config.minimumVolume(), 100,
+			CONFIG_KEY_MIN_VOLUME, spinner -> minVolumeSpinner = spinner);
 	}
 
 	private JPanel buildUpdateButtonRow()

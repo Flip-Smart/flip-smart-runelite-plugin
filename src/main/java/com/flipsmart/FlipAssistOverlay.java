@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.util.GpUtils;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.TimeUtils;
 import java.text.DecimalFormat;
@@ -1164,7 +1165,7 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return 0;
 		}
-		return parseNumericText(text);
+		return GpUtils.parseDigits(text);
 	}
 	
 	private int getCurrentPriceFromGE()
@@ -1221,34 +1222,11 @@ public class FlipAssistOverlay extends Overlay
 	{
 		if (text != null && text.toLowerCase().contains(COINS_TEXT))
 		{
-			return parseNumericText(text);
+			return GpUtils.parseDigits(text);
 		}
 		return 0;
 	}
 	
-	private int parseNumericText(String text)
-	{
-		if (text == null || text.isEmpty())
-		{
-			return 0;
-		}
-		
-		try
-		{
-			// Remove all non-digit characters (commas, spaces, "coins", etc.)
-			String numericOnly = text.replaceAll("\\D", "");
-			if (!numericOnly.isEmpty())
-			{
-				return Integer.parseInt(numericOnly);
-			}
-		}
-		catch (NumberFormatException e)
-		{
-			// Ignore
-		}
-		
-		return 0;
-	}
 	
 	private String truncateString(String str, int maxWidth, FontMetrics fm)
 	{

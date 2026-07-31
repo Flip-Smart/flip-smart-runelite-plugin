@@ -27,6 +27,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -348,45 +349,23 @@ public class LoginPanel
 	 */
 	private void handleLogin()
 	{
-		String email = emailField.getText().trim();
-		String password = new String(passwordField.getPassword());
-
-		if (email.isEmpty() || password.isEmpty())
-		{
-			showLoginStatus("Please enter email and password", false);
-			return;
-		}
-
-		setLoginButtonsEnabled(false);
-		showLoginStatus("Logging in...", true);
-
-		CompletableFuture.runAsync(() -> {
-			AuthResult result = apiClient.login(email, password);
-
-			SwingUtilities.invokeLater(() -> {
-				setLoginButtonsEnabled(true);
-
-				if (result.success)
-				{
-					// Save email and refresh token (NOT password) for next session
-					saveEmail(email);
-					saveRefreshToken(apiClient.getRefreshToken());
-					// Clear any legacy password storage
-					clearPassword();
-					onAuthenticationSuccess(result.message, true);
-				}
-				else
-				{
-					showLoginStatus(result.message, false);
-				}
-			});
-		});
+		submitCredentials("Logging in...", apiClient::login);
 	}
 
 	/**
 	 * Handle signup button click
 	 */
 	private void handleSignup()
+	{
+		submitCredentials("Creating account...", apiClient::signup);
+	}
+
+	/**
+	 * Shared submit path for login and signup, which differ only in the pending
+	 * message and which call they make. Validates, disables the buttons, runs
+	 * {@code auth} off the EDT, then persists the session on success.
+	 */
+	private void submitCredentials(String pendingMessage, BiFunction<String, String, AuthResult> auth)
 	{
 		String email = emailField.getText().trim();
 		String password = new String(passwordField.getPassword());
@@ -398,10 +377,10 @@ public class LoginPanel
 		}
 
 		setLoginButtonsEnabled(false);
-		showLoginStatus("Creating account...", true);
+		showLoginStatus(pendingMessage, true);
 
 		CompletableFuture.runAsync(() -> {
-			AuthResult result = apiClient.signup(email, password);
+			AuthResult result = auth.apply(email, password);
 
 			SwingUtilities.invokeLater(() -> {
 				setLoginButtonsEnabled(true);
@@ -411,7 +390,7 @@ public class LoginPanel
 					// Save email and refresh token (NOT password) for next session
 					saveEmail(email);
 					saveRefreshToken(apiClient.getRefreshToken());
-					// Clear any legacy password storage
+					// Wipe any password left over from the pre-refresh-token era
 					clearPassword();
 					onAuthenticationSuccess(result.message, true);
 				}

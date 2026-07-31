@@ -18,6 +18,28 @@ public final class GpUtils
 	}
 
 	/**
+	 * Digits pulled out of GE interface text, which arrives with commas, spaces and
+	 * trailing words like "coins". Returns 0 for null, empty, digit-free or
+	 * over-long input rather than throwing -- callers treat 0 as "unknown".
+	 */
+	public static int parseDigits(String text)
+	{
+		if (text == null || text.isEmpty())
+		{
+			return 0;
+		}
+		try
+		{
+			String numericOnly = text.replaceAll("\\D", "");
+			return numericOnly.isEmpty() ? 0 : Integer.parseInt(numericOnly);
+		}
+		catch (NumberFormatException e)
+		{
+			return 0;
+		}
+	}
+
+	/**
 	 * Apply a k/m/b suffix multiplier to a base value.
 	 *
 	 * @param base   the numeric base already parsed from user input
