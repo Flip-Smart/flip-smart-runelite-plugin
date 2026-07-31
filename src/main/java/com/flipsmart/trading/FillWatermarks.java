@@ -75,6 +75,32 @@ public final class FillWatermarks
 	}
 
 	/**
+	 * Raise marks to the progress already recorded on {@code records}.
+	 *
+	 * <p>Clients upgrading from a build without marks have none persisted, so the first
+	 * observation of an in-flight order would measure against zero and re-report the whole
+	 * cumulative. The records themselves already carry the correct totals, so seeding from them
+	 * starts the marks in the right place. Terminal records are skipped: they are finished, and
+	 * no further observation of them can arrive.</p>
+	 */
+	public synchronized void seedFrom(java.util.Collection<com.flipsmart.domain.offer.OfferRecord> records)
+	{
+		if (records == null)
+		{
+			return;
+		}
+		for (com.flipsmart.domain.offer.OfferRecord r : records)
+		{
+			if (r == null || r.getSlot() == null || r.getState().isTerminal())
+			{
+				continue;
+			}
+			observe(OfferIdentity.of(r.getSlot(), r.getItemId(), r.isBuy(), generationFor(r.getSlot())),
+				r.getFilledQuantity(), r.getSpent());
+		}
+	}
+
+	/**
 	 * Fold restored marks in, keeping the higher of each pair. Never replaces: a snapshot
 	 * written before the current session's fills would otherwise rewind them, and the next
 	 * observation would re-report fills already sent.

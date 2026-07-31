@@ -21,6 +21,7 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -62,6 +63,9 @@ public class OfflineSyncService
 
 	/** Hard ceiling on retained terminal records so the persisted blob stays bounded. */
 	static final int MAX_RETAINED_TERMINAL_RECORDS = 300;
+
+	/** Per-RSN key holding the high-water fill marks. */
+	private static final String WATERMARKS_KEY_PREFIX = "fillWatermarks_";
 	private final PlayerSession session;
 	private final ConfigManager configManager;
 	private final Gson gson;
@@ -231,6 +235,8 @@ public class OfflineSyncService
 		String offersKey = PERSISTED_OFFERS_KEY_PREFIX + rsn;
 		String collectedKey = COLLECTED_ITEMS_KEY_PREFIX + rsn;
 		String quantitiesKey = COLLECTED_QUANTITIES_KEY_PREFIX + rsn;
+
+		persistWatermarks(rsn);
 
 		List<OfferRecord> offersToSave = offerStore.export();
 		if (offersToSave.isEmpty())
@@ -402,6 +408,12 @@ public class OfflineSyncService
 			return;
 		}
 
+		// Raise the marks before the records land. Seeding from the records covers a client that
+		// has never persisted marks; merging the saved blob then adds anything the records no
+		// longer show. Both only ever raise, so a stale blob cannot rewind this session.
+		offerStore.watermarks().seedFrom(persistedRecords);
+		offerStore.watermarks().mergeFrom(loadPersistedWatermarks());
+
 		reconcilePersistedIntoStore(persistedRecords);
 		// Runs after reconciliation so cold-start seeding (when there is no persisted
 		// ledger at all) sees the just-reattached live buys, not a pre-reconcile snapshot.
@@ -465,6 +477,49 @@ public class OfflineSyncService
 			log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected, {} terminal history retained (slots readable: {})",
 				plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size(),
 				retainedHistory.size(), !liveSlots.isEmpty());
+		}
+	}
+
+	/**
+	 * Save the high-water fill marks. Written unconditionally: unlike the offer records, an empty
+	 * mark set carries no risk of wiping useful state, because a restore only ever raises marks.
+	 */
+	private void persistWatermarks(String rsn)
+	{
+		try
+		{
+			configManager.setConfiguration(CONFIG_GROUP, WATERMARKS_KEY_PREFIX + rsn,
+				gson.toJson(offerStore.watermarks().export()));
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to persist fill watermarks for {}: {}", rsn, e.getMessage());
+		}
+	}
+
+	/** Saved high-water marks for the current RSN, or an empty map when none are stored. */
+	private Map<String, long[]> loadPersistedWatermarks()
+	{
+		String rsn = resolvePersistenceRsn();
+		if (rsn == null)
+		{
+			return Collections.emptyMap();
+		}
+		String json = configManager.getConfiguration(CONFIG_GROUP, WATERMARKS_KEY_PREFIX + rsn);
+		if (json == null || json.isEmpty())
+		{
+			return Collections.emptyMap();
+		}
+		try
+		{
+			Map<String, long[]> restored = gson.fromJson(json,
+				new com.google.gson.reflect.TypeToken<Map<String, long[]>>() { }.getType());
+			return restored == null ? Collections.emptyMap() : restored;
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to read fill watermarks for {}: {}", rsn, e.getMessage());
+			return Collections.emptyMap();
 		}
 	}
 
