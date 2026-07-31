@@ -207,8 +207,10 @@ public class GeSlotWidgetDecorator
                 continue;
             }
 
+            // The record is needed for the timer only — the client cannot say when an offer was
+            // placed — so a missing one degrades to a bare label, not a bare slot.
             OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
-            reconcileBorder(slotWidget, slot, tracked, bordersOn);
+            reconcileBorder(slotWidget, slot, offer, bordersOn);
             if (decorate)
             {
                 applyStateText(slot, slotWidget, offer, tracked, timersOn);
@@ -320,15 +322,19 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    private void reconcileBorder(Widget slotWidget, int slot, OfferRecord tracked, boolean bordersOn)
+    void reconcileBorder(Widget slotWidget, int slot, GrandExchangeOffer offer, boolean bordersOn)
     {
         if (!bordersOn)
         {
             revertBorder(slot, slotWidget);
             return;
         }
-        java.util.Optional<SlotBorderTint> tint =
-            SlotBorderTint.forOffer(plugin.calculateCompetitiveness(tracked), config.colorblindMode());
+        // Tint from the live slot rather than the tracked record: the check needs only item,
+        // price and direction, so a gap in the store costs the timer but never the border.
+        java.util.Optional<SlotBorderTint> tint = SlotBorderTint.forOffer(
+            plugin.calculateCompetitiveness(
+                offer.getItemId(), offer.getPrice(), OfferSignal.isBuyState(offer.getState())),
+            config.colorblindMode());
         if (tint.isPresent())
         {
             applyBorder(slot, slotWidget, tint.get());
