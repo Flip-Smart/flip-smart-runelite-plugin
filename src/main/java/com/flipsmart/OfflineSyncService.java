@@ -52,6 +52,16 @@ public class OfflineSyncService
 
 	/** Persisted collected-item entries older than this are dropped on restore. */
 	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
+
+	/**
+	 * Terminal (already-collected/cancelled) offer records this old are no longer carried across a
+	 * reconcile. They exist to keep the cost basis of a position the player still holds, so the
+	 * window only has to outlive a realistic buy-to-sell gap.
+	 */
+	static final long TERMINAL_HISTORY_RETENTION_MS = 24L * 60 * 60 * 1000;
+
+	/** Hard ceiling on retained terminal records so the persisted blob stays bounded. */
+	static final int MAX_RETAINED_TERMINAL_RECORDS = 300;
 	private final PlayerSession session;
 	private final ConfigManager configManager;
 	private final Gson gson;
@@ -440,13 +450,47 @@ public class OfflineSyncService
 				toImport.add(collected.withState(OfferState.COLLECTED, now));
 			}
 		}
+		// A collected buy is the cost basis for the sell that follows it. The reconcile plan
+		// carries only live and offline-collected records, so importing just those erased every
+		// already-collected buy on each LOGGED_IN — which fires on every world hop, not only
+		// login — leaving breakeven and profit unresolvable for the rest of the session. Carry
+		// the recent terminal history across, bounded by age and count so the persisted blob
+		// cannot grow without limit.
+		List<OfferRecord> retainedHistory = retainRecentTerminalHistory(persistedRecords, now);
+		toImport.addAll(retainedHistory);
 		offerStore.importRecords(toImport);
 
 		if (log.isDebugEnabled())
 		{
-			log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected (slots readable: {})",
-				plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size(), !liveSlots.isEmpty());
+			log.debug("Reconciled persisted offers into store: {} reattached, {} minted, {} offline-collected, {} terminal history retained (slots readable: {})",
+				plan.reattached.size(), plan.minted.size(), plan.offlineCollected.size(),
+				retainedHistory.size(), !liveSlots.isEmpty());
 		}
+	}
+
+	/**
+	 * The most recent already-terminal persisted records, newest first, capped by
+	 * {@link #TERMINAL_HISTORY_RETENTION_MS} and {@link #MAX_RETAINED_TERMINAL_RECORDS}.
+	 * Non-terminal records are the reconciler's business and are never returned here.
+	 */
+	static List<OfferRecord> retainRecentTerminalHistory(List<OfferRecord> persisted, long now)
+	{
+		List<OfferRecord> terminal = new ArrayList<>();
+		for (OfferRecord r : persisted)
+		{
+			if (r != null && r.getState().isTerminal()
+				&& now - r.getEffectiveLastActivityAtMillis() <= TERMINAL_HISTORY_RETENTION_MS)
+			{
+				terminal.add(r);
+			}
+		}
+		terminal.sort(java.util.Comparator
+			.comparingLong(OfferRecord::getEffectiveLastActivityAtMillis).reversed());
+		if (terminal.size() > MAX_RETAINED_TERMINAL_RECORDS)
+		{
+			return new ArrayList<>(terminal.subList(0, MAX_RETAINED_TERMINAL_RECORDS));
+		}
+		return terminal;
 	}
 
 	/** Reduce the live GE slots to {@link OfferSignal}s for reconciliation. */

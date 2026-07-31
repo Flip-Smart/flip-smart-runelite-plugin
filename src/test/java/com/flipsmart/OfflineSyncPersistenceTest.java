@@ -481,6 +481,92 @@ public class OfflineSyncPersistenceTest
 		assertEquals(1234, store.bySlot(0).getItemId());
 	}
 
+	/**
+	 * A collected buy is the cost basis for the sell that follows it, so breakeven and profit go
+	 * unresolvable if a reconcile drops it. LOGGED_IN fires on every world hop, so this ran
+	 * mid-session with no logout, and the following persist wrote the loss through to disk.
+	 */
+	@Test
+	public void preload_withReadableGeSnapshot_preservesCollectedBuyHistory()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// Wall-clock relative: the service reconciles against System.currentTimeMillis().
+		long now = System.currentTimeMillis();
+
+		// Earlier this session: bought 10 of item 4444 and collected them (terminal history).
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4444, 0, 10), now - 300_000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 4444, 10, 10), now - 200_000L);
+		store.apply(sig(0, GrandExchangeOfferState.EMPTY, 4444, 10, 10), now - 100_000L);
+		// A live sell for a different item occupies slot 1.
+		store.apply(sig(1, GrandExchangeOfferState.SELLING, 5555, 0, 10), now - 50_000L);
+		service.persistOfferState();
+
+		assertFalse("sanity: collected buy present before preload", store.forItem(4444).isEmpty());
+
+		// World hop where the GE snapshot IS readable: slot 1 still holds the live sell.
+		ItemComposition comp5555 = itemComp("i5555");
+		when(itemManager.getItemComposition(5555)).thenReturn(comp5555);
+		GrandExchangeOffer liveSell = geOffer(5555, GrandExchangeOfferState.SELLING, 10, 100);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[]{null, liveSell});
+
+		service.preloadPersistedOffers();
+
+		boolean survivedInStore = !store.forItem(4444).isEmpty();
+
+		// The next persist writes the store back over the saved blob, so if the record was
+		// dropped in memory it is also gone from disk — a relog cannot bring it back.
+		store.apply(sig(2, GrandExchangeOfferState.BUYING, 6666, 0, 5), 5000L);
+		service.persistOfferState();
+		boolean survivedInPersistence = configStore.get("persistedOffers_Zezima") != null
+			&& configStore.get("persistedOffers_Zezima").contains("4444");
+
+		assertTrue("collected buy history must survive a readable-snapshot preload", survivedInStore);
+		assertTrue("collected buy history must survive the following persist", survivedInPersistence);
+	}
+
+	@Test
+	public void terminalHistoryRetention_dropsRecordsOlderThanTheWindow()
+	{
+		long now = 10_000_000_000L;
+		// A collect only terminalizes a filled offer, so each record runs BUYING -> BOUGHT -> EMPTY.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 111, 0, 10), now);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 111, 10, 10), now);
+		store.apply(sig(0, GrandExchangeOfferState.EMPTY, 111, 10, 10),
+			now - OfflineSyncService.TERMINAL_HISTORY_RETENTION_MS - 1);
+		store.apply(sig(1, GrandExchangeOfferState.BUYING, 222, 0, 10), now);
+		store.apply(sig(1, GrandExchangeOfferState.BOUGHT, 222, 10, 10), now);
+		store.apply(sig(1, GrandExchangeOfferState.EMPTY, 222, 10, 10), now - 1000L);
+
+		List<OfferRecord> retained =
+			OfflineSyncService.retainRecentTerminalHistory(store.export(), now);
+
+		assertEquals("only the in-window terminal record is retained", 1, retained.size());
+		assertEquals(222, retained.get(0).getItemId());
+	}
+
+	@Test
+	public void terminalHistoryRetention_capsRecordCountKeepingNewest()
+	{
+		long now = 10_000_000_000L;
+		for (int i = 0; i < OfflineSyncService.MAX_RETAINED_TERMINAL_RECORDS + 25; i++)
+		{
+			int itemId = 1000 + i;
+			store.apply(sig(0, GrandExchangeOfferState.BUYING, itemId, 0, 1), now);
+			store.apply(sig(0, GrandExchangeOfferState.BOUGHT, itemId, 1, 1), now);
+			// Newer index == more recent activity.
+			store.apply(sig(0, GrandExchangeOfferState.EMPTY, itemId, 1, 1), now - 100_000L + i);
+		}
+
+		List<OfferRecord> retained =
+			OfflineSyncService.retainRecentTerminalHistory(store.export(), now);
+
+		assertEquals("retained set is capped", OfflineSyncService.MAX_RETAINED_TERMINAL_RECORDS,
+			retained.size());
+		assertEquals("newest record is kept", 1000 + OfflineSyncService.MAX_RETAINED_TERMINAL_RECORDS + 24,
+			retained.get(0).getItemId());
+	}
+
 	@Test
 	public void relog_restoresOfferAge_forStillLiveOffer()
 	{
