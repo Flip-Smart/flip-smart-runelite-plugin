@@ -513,7 +513,7 @@ public class OfflineSyncService
 		try
 		{
 			Map<String, long[]> restored = gson.fromJson(json,
-				new com.google.gson.reflect.TypeToken<Map<String, long[]>>() { }.getType());
+				new TypeToken<Map<String, long[]>>() { }.getType());
 			return restored == null ? Collections.emptyMap() : restored;
 		}
 		catch (Exception e)
