@@ -720,7 +720,11 @@ public class FlipSmartPlugin extends Plugin
 		return calculateCompetitiveness(record.getItemId(), record.getPrice(), record.isBuy());
 	}
 
-	private OfferCompetitiveness calculateCompetitiveness(int itemId, int price, boolean isBuy)
+	/**
+	 * Competitiveness from the three facts a price check actually needs. The GE slot reports all
+	 * of them, so a render pass can decide a border without a tracked record existing.
+	 */
+	public OfferCompetitiveness calculateCompetitiveness(int itemId, int price, boolean isBuy)
 	{
 		// Try to get real-time wiki prices first
 		WikiPrice wikiPrice = apiClient.getWikiPrice(itemId);

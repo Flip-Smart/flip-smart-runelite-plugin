@@ -2,7 +2,6 @@ package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
-import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.TimeUtils;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +11,6 @@ import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.SpritePixels;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
-import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.util.ImageUtil;
 
@@ -65,7 +63,6 @@ public class GeSlotWidgetDecorator
     private final FlipSmartConfig config;
     private final FlipSmartPlugin plugin;
     private final SpriteManager spriteManager;
-    private final ItemManager itemManager;
 
     // (vanillaSpriteId, tint) -> custom sprite id already registered in the override map
     private final Map<Long, Integer> registered = new HashMap<>();
@@ -82,13 +79,12 @@ public class GeSlotWidgetDecorator
 
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin,
-        SpriteManager spriteManager, ItemManager itemManager)
+        SpriteManager spriteManager)
     {
         this.client = client;
         this.config = config;
         this.plugin = plugin;
         this.spriteManager = spriteManager;
-        this.itemManager = itemManager;
     }
 
     // Different border children can share a vanilla sprite id while needing different outline
@@ -189,8 +185,6 @@ public class GeSlotWidgetDecorator
         {
             return;
         }
-        seedStoreFromLiveOffers(offers);
-
         for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
         {
             Widget slotWidget = client.getWidget(GE_INTERFACE_GROUP, SLOT_CONTAINER_START + slot);
@@ -207,8 +201,10 @@ public class GeSlotWidgetDecorator
                 continue;
             }
 
+            // The record is needed for the timer only — the client cannot say when an offer was
+            // placed — so a missing one degrades to a bare label, not a bare slot.
             OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
-            reconcileBorder(slotWidget, slot, tracked, bordersOn);
+            reconcileBorder(slotWidget, slot, offer, bordersOn);
             if (decorate)
             {
                 applyStateText(slot, slotWidget, offer, tracked, timersOn);
@@ -217,30 +213,6 @@ public class GeSlotWidgetDecorator
             {
                 revertStateText(slot, slotWidget);
             }
-        }
-    }
-
-    // Re-seed any live slot the store has lost track of, so borders/timers (which read
-    // bySlot) recover on the next render tick instead of waiting for the next fill event.
-    void seedStoreFromLiveOffers(GrandExchangeOffer[] offers)
-    {
-        OfferStore store = plugin.getOfferStore();
-        long now = System.currentTimeMillis();
-        for (int slot = 0; slot < Math.min(offers.length, GE_MAX_SLOTS); slot++)
-        {
-            GrandExchangeOffer offer = offers[slot];
-            if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
-            {
-                continue;
-            }
-            if (store.bySlot(slot) != null)
-            {
-                continue;
-            }
-            int itemId = offer.getItemId();
-            String itemName = itemManager != null ? itemManager.getItemComposition(itemId).getName() : "";
-            store.seedIfAbsent(OfferEventMapper.toSignal(slot, offer.getState(), itemId, itemName,
-                offer.getTotalQuantity(), offer.getPrice(), offer.getQuantitySold(), offer.getSpent()), now);
         }
     }
 
@@ -320,15 +292,19 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    private void reconcileBorder(Widget slotWidget, int slot, OfferRecord tracked, boolean bordersOn)
+    void reconcileBorder(Widget slotWidget, int slot, GrandExchangeOffer offer, boolean bordersOn)
     {
         if (!bordersOn)
         {
             revertBorder(slot, slotWidget);
             return;
         }
-        java.util.Optional<SlotBorderTint> tint =
-            SlotBorderTint.forOffer(plugin.calculateCompetitiveness(tracked), config.colorblindMode());
+        // Tint from the live slot rather than the tracked record: the check needs only item,
+        // price and direction, so a gap in the store costs the timer but never the border.
+        java.util.Optional<SlotBorderTint> tint = SlotBorderTint.forOffer(
+            plugin.calculateCompetitiveness(
+                offer.getItemId(), offer.getPrice(), OfferSignal.isBuyState(offer.getState())),
+            config.colorblindMode());
         if (tint.isPresent())
         {
             applyBorder(slot, slotWidget, tint.get());

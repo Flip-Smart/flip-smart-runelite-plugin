@@ -321,44 +321,4 @@ public class OfferStoreTest
             store.bySlot(2).getEffectiveLastActivityAtMillis());
     }
 
-    @Test
-    public void seedIfAbsent_mapsUnmappedSlot_andIsIdempotent()
-    {
-        OfferStore store = new OfferStore();
-
-        boolean first = store.seedIfAbsent(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
-        assertTrue(first);
-        assertEquals(1234, store.bySlot(0).getItemId());
-
-        // Second call for the same, now-mapped slot is a no-op.
-        boolean second = store.seedIfAbsent(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
-        assertFalse(second);
-    }
-
-    @Test
-    public void seedIfAbsent_doesNotNotifyListeners()
-    {
-        OfferStore store = new OfferStore();
-        java.util.concurrent.atomic.AtomicInteger notified = new java.util.concurrent.atomic.AtomicInteger();
-        store.addListener(e -> notified.incrementAndGet());
-
-        store.seedIfAbsent(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
-
-        assertEquals(0, notified.get());
-    }
-
-    @Test
-    public void seedIfAbsent_doesNotSeedFromCancelledSlot()
-    {
-        // A cancelled-but-uncollected slot (CANCELLED_BUY still reported until GP is collected) must
-        // not be reseeded into a live phantom offer — that phantom would linger in liveOffers()
-        // forever and keep re-surfacing stale prompts.
-        OfferStore store = new OfferStore();
-
-        boolean seeded = store.seedIfAbsent(sig(4, GrandExchangeOfferState.CANCELLED_BUY, 1234, 0, 10), NOW);
-
-        assertFalse(seeded);
-        assertNull(store.bySlot(4));
-        assertTrue(store.liveOffers().isEmpty());
-    }
 }

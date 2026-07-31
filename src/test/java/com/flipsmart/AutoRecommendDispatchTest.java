@@ -234,6 +234,24 @@ public class AutoRecommendDispatchTest {
         assertEquals(101, capturedId.get());
     }
 
+    /**
+     * A partially-filled buy that was cancelled stays in its slot until the player collects, so it
+     * still reads as live. Prompting to cancel it again is impossible to act on — the collect the
+     * resolver already produces is the only thing left to do.
+     */
+    @Test
+    public void cancelledPartialOfferIsNeverStaleQueued() {
+        OfferRecord cancelledAwaitingCollect = OfferRecord
+            .newOffer(12, 0, 22983, "Hydra leather", true, 3, 13883988, 0L)
+            .withFill(1, 13883988L, OfferState.CANCELLED_PARTIAL, 1L);
+        offerStore.importRecords(Arrays.asList(cancelledAwaitingCollect));
+
+        service.addToStaleQueue(cancelledAwaitingCollect);
+
+        assertEquals("an already-cancelled offer must not queue a cancel prompt",
+            0, service.staleOfferCount());
+    }
+
     @Test
     public void cancelHighlightReAssertsEveryResolveAndApplyCycle() {
         when(plugin.getFilledGESlotCount()).thenReturn(8);
