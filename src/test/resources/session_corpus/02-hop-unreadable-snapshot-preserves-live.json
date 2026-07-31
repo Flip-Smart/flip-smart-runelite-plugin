@@ -1,0 +1,15 @@
+{
+  "name": "hop-unreadable-snapshot-preserves-live",
+  "description": "At the LOGGED_IN tick after a world hop the GE array is typically present but every slot still reads EMPTY. A destructive import against that snapshot wipes live offers and nothing re-seeds the slot map until the next fill, so borders, timers and the active-flips panel all blank together.",
+  "rsn": "TestPlayer",
+  "timeline": [
+    {"at_seconds": -200, "type": "observe", "slot": 0, "state": "BUYING",  "item_id": 1234, "total": 10, "price": 100, "sold": 0, "spent": 0},
+    {"at_seconds": -150, "type": "observe", "slot": 3, "state": "SELLING", "item_id": 8888, "total": 20, "price": 500, "sold": 0, "spent": 0},
+    {"at_seconds": -100, "type": "hop", "ge_readable": true, "live_slots": []},
+    {"at_seconds": 0,    "type": "hop", "ge_readable": false}
+  ],
+  "expect": {
+    "live_slot_items": {"0": 1234, "3": 8888},
+    "reported_fills": []
+  }
+}

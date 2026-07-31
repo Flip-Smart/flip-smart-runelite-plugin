@@ -1,0 +1,20 @@
+{
+  "name": "relog-does-not-recount-offline-fill",
+  "description": "A buy fills to 4/10, the player logs out, and 3 more fill while away. On relog the client reports the cumulative 7. Only the 3-unit offline delta is new information; reporting 7 re-counts the 4 already sent. The fill delta is computed against the in-memory record, so when a relog leaves no record the baseline reads 0 and the whole cumulative re-reports.",
+  "rsn": "TestPlayer",
+  "timeline": [
+    {"at_seconds": -600, "type": "observe", "slot": 0, "state": "BUYING", "item_id": 7777, "total": 10, "price": 100, "sold": 0, "spent": 0},
+    {"at_seconds": -500, "type": "observe", "slot": 0, "state": "BUYING", "item_id": 7777, "total": 10, "price": 100, "sold": 4, "spent": 400},
+    {"at_seconds": -100, "type": "relog", "ge_readable": true,
+      "live_slots": [
+        {"slot": 0, "state": "BUYING", "item_id": 7777, "total": 10, "price": 100, "sold": 7, "spent": 700}
+      ]},
+    {"at_seconds": 0, "type": "observe", "slot": 0, "state": "BUYING", "item_id": 7777, "total": 10, "price": 100, "sold": 7, "spent": 700}
+  ],
+  "expect": {
+    "reported_fills": [
+      {"item_id": 7777, "is_buy": true, "quantity": 4},
+      {"item_id": 7777, "is_buy": true, "quantity": 3}
+    ]
+  }
+}
