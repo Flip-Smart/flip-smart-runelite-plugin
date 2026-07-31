@@ -1,13 +1,12 @@
 package com.flipsmart.api.dto;
-import com.flipsmart.domain.flip.FlipRecommendation;
 
+import com.flipsmart.domain.flip.FlipRecommendation;
 import com.google.gson.annotations.SerializedName;
+import java.util.List;
+import java.util.Map;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.ToString;
-
-import java.util.List;
-import java.util.Map;
 
 @Data
 public class TimeframeFlipFinderResponse
@@ -160,7 +159,7 @@ public class TimeframeFlipFinderResponse
 
 		if (recommendations != null)
 		{
-			java.util.List<FlipRecommendation> converted = new java.util.ArrayList<>();
+			List<FlipRecommendation> converted = new java.util.ArrayList<>();
 			for (TimeframeRecommendation rec : recommendations)
 			{
 				converted.add(rec.toFlipRecommendation());

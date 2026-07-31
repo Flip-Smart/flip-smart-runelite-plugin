@@ -1,5 +1,6 @@
 package com.flipsmart.trading;
 
+import com.flipsmart.domain.offer.OfferRecord;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -98,13 +99,13 @@ public final class FillWatermarks
 	 * starts the marks in the right place. Terminal records are skipped: they are finished, and
 	 * no further observation of them can arrive.</p>
 	 */
-	public synchronized void seedFrom(java.util.Collection<com.flipsmart.domain.offer.OfferRecord> records)
+	public synchronized void seedFrom(java.util.Collection<OfferRecord> records)
 	{
 		if (records == null)
 		{
 			return;
 		}
-		for (com.flipsmart.domain.offer.OfferRecord r : records)
+		for (OfferRecord r : records)
 		{
 			if (r == null || r.getSlot() == null || r.getState().isTerminal())
 			{

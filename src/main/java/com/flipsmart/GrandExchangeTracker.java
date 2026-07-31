@@ -1,32 +1,34 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.OfferAction;
+
 import com.flipsmart.api.dto.ActiveFlipsResponse;
 import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.domain.flip.FlipRecommendation;
-import com.flipsmart.domain.flip.ActiveFlip;
-import com.flipsmart.recommend.ManualSellFocus;
+import com.flipsmart.domain.offer.OfferAction;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.recommend.CollectOrigin;
+import com.flipsmart.recommend.ManualSellFocus;
 import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.ItemUtils;
-
-import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.client.game.ItemManager;
-
-import javax.inject.Inject;
-import javax.inject.Singleton;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.IntFunction;
 import java.util.function.Supplier;
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import javax.swing.SwingUtilities;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.client.game.ItemManager;
 
 /**
  * Handles GE offer state changes: cancelled, collected/empty, and active fills.
@@ -51,26 +53,41 @@ public class GrandExchangeTracker
 	private OfferStore offerStore = new OfferStore();
 
 	// Set after construction (created in plugin startUp)
+	@Setter
 	private AutoRecommendService autoRecommendService;
+	@Setter
 	private ManualAdjustmentTracker manualAdjustmentTracker;
+	@Setter
 	private ActiveOfferAdvisorService activeOfferAdvisorService;
+	@Setter
 	private java.util.function.BooleanSupplier adjustmentPromptsEnabled;
+	@Setter
 	private FlipSmartConfig config;
 
 	// Callbacks wired by the plugin
+	@Setter
 	private Supplier<Optional<String>> rsnSupplier;
+	@Setter
 	private Runnable onPanelRefresh;
+	@Setter
 	private Runnable onActiveFlipsRefresh;
+	@Setter
 	private Consumer<List<PendingOrder>> onPendingOrdersUpdate;
+	@Setter
 	private Consumer<FocusedFlip> onFocusChanged;
+	@Setter
 	private BiConsumer<Integer, Boolean> onFocusClear;
 	// Fires on every order submission (buy or sell), for BOTH manual and Auto, unlike
 	// onFocusClear which is skipped during Auto. Used to mark Flip Finder-sourced buys.
+	@Setter
 	private BiConsumer<Integer, Boolean> onOrderSubmitted;
+	@Setter
 	private IntFunction<Integer> displayedSellPriceProvider;
+	@Setter
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 	// Cost basis straight from the offer store, so a manual exit can be priced without
 	// the backend's slot-capped active-flips list.
+	@Setter
 	private IntFunction<AwaitingSaleLots.BuyBasis> buyBasisProvider;
 
 	// Debounce: prevent duplicate autoFocusOnActiveFlip calls for the same item
@@ -132,80 +149,15 @@ public class GrandExchangeTracker
 		}
 	}
 
-	public void setAutoRecommendService(AutoRecommendService service)
-	{
-		this.autoRecommendService = service;
-	}
 
-	public void setManualAdjustmentTracker(ManualAdjustmentTracker tracker)
-	{
-		this.manualAdjustmentTracker = tracker;
-	}
 
-	public void setActiveOfferAdvisorService(ActiveOfferAdvisorService service)
-	{
-		this.activeOfferAdvisorService = service;
-	}
 
-	public void setAdjustmentPromptsEnabled(java.util.function.BooleanSupplier supplier)
-	{
-		this.adjustmentPromptsEnabled = supplier;
-	}
 
-	public void setRsnSupplier(Supplier<Optional<String>> rsnSupplier)
-	{
-		this.rsnSupplier = rsnSupplier;
-	}
 
-	public void setConfig(FlipSmartConfig config)
-	{
-		this.config = config;
-	}
 
-	public void setOnPanelRefresh(Runnable callback)
-	{
-		this.onPanelRefresh = callback;
-	}
 
-	public void setOnActiveFlipsRefresh(Runnable callback)
-	{
-		this.onActiveFlipsRefresh = callback;
-	}
 
-	public void setOnPendingOrdersUpdate(Consumer<List<PendingOrder>> callback)
-	{
-		this.onPendingOrdersUpdate = callback;
-	}
 
-	public void setOnFocusChanged(Consumer<FocusedFlip> callback)
-	{
-		this.onFocusChanged = callback;
-	}
-
-	public void setOnFocusClear(BiConsumer<Integer, Boolean> callback)
-	{
-		this.onFocusClear = callback;
-	}
-
-	public void setOnOrderSubmitted(BiConsumer<Integer, Boolean> callback)
-	{
-		this.onOrderSubmitted = callback;
-	}
-
-	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
-	{
-		this.displayedSellPriceProvider = provider;
-	}
-
-	public void setOneShotScheduler(BiConsumer<Integer, Runnable> scheduler)
-	{
-		this.oneShotScheduler = scheduler;
-	}
-
-	public void setBuyBasisProvider(IntFunction<AwaitingSaleLots.BuyBasis> provider)
-	{
-		this.buyBasisProvider = provider;
-	}
 
 	// =====================
 	// GE Offer Changed Handler
@@ -246,7 +198,7 @@ public class GrandExchangeTracker
 		// CANCELLED_PARTIAL, so a legitimate later cancel still proceeds.
 		OfferRecord previousOffer = offerStore.bySlot(ctx.slot);
 		if (previousOffer == null
-			|| previousOffer.getState() == com.flipsmart.domain.offer.OfferState.CANCELLED_PARTIAL)
+			|| previousOffer.getState() == OfferState.CANCELLED_PARTIAL)
 		{
 			log.debug("Ignoring duplicate cancellation event for slot {}", ctx.slot);
 			return;
@@ -296,7 +248,7 @@ public class GrandExchangeTracker
 		if ((partialBuyCancel || sellCancelWithRemaining) && slotFreedByApply)
 		{
 			OfferRecord promoted = previousOffer
-				.withFill(ctx.quantitySold, ctx.spent, com.flipsmart.domain.offer.OfferState.CANCELLED_PARTIAL,
+				.withFill(ctx.quantitySold, ctx.spent, OfferState.CANCELLED_PARTIAL,
 					System.currentTimeMillis());
 			offerStore.importRecords(replaceInStore(promoted));
 		}
@@ -315,9 +267,9 @@ public class GrandExchangeTracker
 		}
 	}
 
-	private java.util.List<OfferRecord> replaceInStore(OfferRecord replacement)
+	private List<OfferRecord> replaceInStore(OfferRecord replacement)
 	{
-		java.util.List<OfferRecord> records = new java.util.ArrayList<>(offerStore.allRecords());
+		List<OfferRecord> records = new java.util.ArrayList<>(offerStore.allRecords());
 		records.removeIf(r -> r.getOfferId() == replacement.getOfferId());
 		records.add(replacement);
 		return records;
@@ -881,7 +833,7 @@ public class GrandExchangeTracker
 			config != null ? config.priceOffset() : 0);
 		if (onFocusChanged != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
+			SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
 		}
 		log.debug("Manual sell focus resolved locally: {} @ {} gp (qty: inv={})",
 			itemName, sellPrice, inventoryCount);
@@ -1111,7 +1063,7 @@ public class GrandExchangeTracker
 
 		if (onFocusChanged != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
+			SwingUtilities.invokeLater(() -> onFocusChanged.accept(focus));
 		}
 		log.debug("Auto-focused on active flip for sell: {} @ {} gp (qty: api={}, inv={}, using={})",
 			flip.getItemName(), sellPrice, apiQuantity, inventoryFallbackCount, sellQuantity);
@@ -1178,7 +1130,7 @@ public class GrandExchangeTracker
 	{
 		if (onActiveFlipsRefresh != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(onActiveFlipsRefresh);
+			SwingUtilities.invokeLater(onActiveFlipsRefresh);
 		}
 	}
 
@@ -1187,7 +1139,7 @@ public class GrandExchangeTracker
 		if (onPanelRefresh != null && oneShotScheduler != null)
 		{
 			oneShotScheduler.accept(TRANSACTION_REFRESH_DELAY_MS, () ->
-				javax.swing.SwingUtilities.invokeLater(onPanelRefresh));
+				SwingUtilities.invokeLater(onPanelRefresh));
 		}
 	}
 
@@ -1195,7 +1147,7 @@ public class GrandExchangeTracker
 	{
 		if (onPendingOrdersUpdate != null && onActiveFlipsRefresh != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> {
+			SwingUtilities.invokeLater(() -> {
 				onPendingOrdersUpdate.accept(null);
 				onActiveFlipsRefresh.run();
 			});

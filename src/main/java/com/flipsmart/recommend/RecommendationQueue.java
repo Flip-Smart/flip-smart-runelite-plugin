@@ -1,7 +1,6 @@
 package com.flipsmart.recommend;
 
 import com.flipsmart.domain.flip.FlipRecommendation;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -10,6 +9,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.ToIntFunction;
+import lombok.Getter;
+import lombok.Setter;
 
 /**
  * Owns the auto-recommend buy queue: the ordered recommendation list, the
@@ -25,24 +26,17 @@ public final class RecommendationQueue
 	private final List<FlipRecommendation> recommendations = new ArrayList<>();
 	// Cached item names from recommendations - survives queue refreshes
 	private final Map<Integer, String> itemNames = new ConcurrentHashMap<>();
+	@Getter @Setter
 	private int currentIndex;
 
 	// Offer-screen lock. While set, the coordinator drops focus changes
 	// for any item other than this one. null = unlocked.
+	@Getter @Setter
 	private volatile Integer lockedItemId;
 
 	// Timestamp of last queue refresh for staleness checks
+	@Getter @Setter
 	private volatile long lastQueueRefreshMillis;
-
-	public int getCurrentIndex()
-	{
-		return currentIndex;
-	}
-
-	public void setCurrentIndex(int index)
-	{
-		this.currentIndex = index;
-	}
 
 	public int size()
 	{
@@ -182,29 +176,12 @@ public final class RecommendationQueue
 	// Offer-screen lock
 	// =====================
 
-	public Integer getLockedItemId()
-	{
-		return lockedItemId;
-	}
-
-	public void setLockedItemId(Integer itemId)
-	{
-		this.lockedItemId = itemId;
-	}
 
 	// =====================
 	// Refresh timestamp
 	// =====================
 
-	public long getLastQueueRefreshMillis()
-	{
-		return lastQueueRefreshMillis;
-	}
 
-	public void setLastQueueRefreshMillis(long millis)
-	{
-		this.lastQueueRefreshMillis = millis;
-	}
 
 	// =====================
 	// Cursor advancement

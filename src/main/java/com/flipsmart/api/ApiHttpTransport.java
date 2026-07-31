@@ -3,26 +3,26 @@ package com.flipsmart.api;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.api.dto.AuthResult;
 import com.flipsmart.api.dto.DeviceAuthResponse;
-import com.flipsmart.api.dto.EntitlementsResponse;
 import com.flipsmart.api.dto.DeviceStatusResponse;
+import com.flipsmart.api.dto.EntitlementsResponse;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import lombok.extern.slf4j.Slf4j;
-import okhttp3.Call;
-import okhttp3.Callback;
-import okhttp3.MediaType;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
-
 import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
-
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 /**
  * Transport + auth/session core for the FlipSmart API.
@@ -47,7 +47,9 @@ public class ApiHttpTransport
 	private static final int HTTP_SERVER_ERROR_THRESHOLD = 500;
 	private static final int HTTP_TOO_MANY_REQUESTS = 429;
 
+	@Getter
 	private final OkHttpClient httpClient;
+	@Getter
 	private final Gson gson;
 	private final FlipSmartConfig config;
 	private final ApiBackoffGate backoffGate;
@@ -69,9 +71,11 @@ public class ApiHttpTransport
 	private final Object authLock = new Object();
 
 	// Callback when authentication permanently fails (both refresh token and password fail)
+	@Setter
 	private volatile Runnable onAuthFailure = null;
 
 	// Callback when refresh token changes (for persistence to config)
+	@Setter
 	private volatile Consumer<String> onRefreshTokenChanged = null;
 
 	// Coalesce concurrent authenticateAsync() calls into a single attempt
@@ -90,11 +94,6 @@ public class ApiHttpTransport
 		this.backoffGate = backoffGate;
 	}
 
-	public Gson getGson()
-	{
-		return gson;
-	}
-
 	/**
 	 * Deserialize a response body into a DTO using the transport's Gson. Centralizes
 	 * the {@code gson.fromJson(body, T.class)} boilerplate that each endpoint group
@@ -104,11 +103,6 @@ public class ApiHttpTransport
 	public <T> T parse(String body, Class<T> type)
 	{
 		return gson.fromJson(body, type);
-	}
-
-	public OkHttpClient getHttpClient()
-	{
-		return httpClient;
 	}
 
 	/**
@@ -559,14 +553,23 @@ public class ApiHttpTransport
 	 */
 	public AuthResult login(String email, String password)
 	{
+		return awaitAuth("Login", loginAsync(email, password));
+	}
+
+	/**
+	 * Block on an async auth call, turning any failure into a failed {@link AuthResult}.
+	 * {@code label} names the operation in both the log line and the returned message.
+	 */
+	private static AuthResult awaitAuth(String label, CompletableFuture<AuthResult> call)
+	{
 		try
 		{
-			return loginAsync(email, password).get();
+			return call.get();
 		}
 		catch (Exception e)
 		{
-			log.error("Login failed: {}", e.getMessage());
-			return new AuthResult(false, "Login failed: " + e.getMessage());
+			log.error("{} failed: {}", label, e.getMessage());
+			return new AuthResult(false, label + " failed: " + e.getMessage());
 		}
 	}
 
@@ -775,15 +778,7 @@ public class ApiHttpTransport
 	 */
 	public AuthResult signup(String email, String password)
 	{
-		try
-		{
-			return signupAsync(email, password).get();
-		}
-		catch (Exception e)
-		{
-			log.error("Signup failed: {}", e.getMessage());
-			return new AuthResult(false, "Signup failed: " + e.getMessage());
-		}
+		return awaitAuth("Signup", signupAsync(email, password));
 	}
 
 	/**
@@ -844,25 +839,6 @@ public class ApiHttpTransport
 		}
 	}
 
-	/**
-	 * Set callback for when authentication permanently fails.
-	 * This is called when both refresh token and password auth fail,
-	 * indicating the user needs to re-login manually.
-	 */
-	public void setOnAuthFailure(Runnable callback)
-	{
-		this.onAuthFailure = callback;
-	}
-
-	/**
-	 * Set callback for when the refresh token changes (rotation or new login).
-	 * This allows the caller to persist the new token to config immediately,
-	 * preventing token loss if the plugin is closed before the panel saves it.
-	 */
-	public void setOnRefreshTokenChanged(Consumer<String> callback)
-	{
-		this.onRefreshTokenChanged = callback;
-	}
 
 	/**
 	 * Notify that authentication has permanently failed

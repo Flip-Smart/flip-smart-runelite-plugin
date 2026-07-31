@@ -1,80 +1,88 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.WikiPrice;
-import com.flipsmart.api.dto.SellPriceCheckRequest;
-import com.flipsmart.domain.offer.OfferSignal;
+
+import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.OfferAdviceResult;
+import com.flipsmart.api.dto.SellPriceCheckRequest;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.ActiveFlipItemIds;
 import com.flipsmart.domain.flip.ActiveFlipProjection;
 import com.flipsmart.domain.flip.ActiveFlipsSnapshotPayload;
 import com.flipsmart.domain.flip.AwaitingSaleLot;
 import com.flipsmart.domain.flip.AwaitingSaleLots;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferSignal;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.PendingOrder;
-import com.flipsmart.api.dto.OfferAdviceResult;
-import com.flipsmart.api.dto.OfferAdviceRequest;
-import com.flipsmart.util.BuyPriceLookup;
-import com.flipsmart.util.ItemUtils;
-import com.flipsmart.util.TimeUtils;
-import com.flipsmart.util.GpUtils;
+import com.flipsmart.exit.ExitTradesController;
 import com.flipsmart.plugin.EventRouter;
 import com.flipsmart.plugin.PanelRefreshCoalescer;
 import com.flipsmart.plugin.PluginScheduler;
 import com.flipsmart.plugin.RsnSyncGate;
 import com.flipsmart.plugin.ServiceWiring;
-
+import com.flipsmart.trading.OfferStore;
+import com.flipsmart.util.BuyPriceLookup;
+import com.flipsmart.util.GpUtils;
+import com.flipsmart.util.ItemUtils;
+import com.flipsmart.util.TimeUtils;
 import com.google.gson.Gson;
 import com.google.inject.Provides;
+import java.awt.Point;
+import java.awt.Rectangle;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.api.Player;
 import net.runelite.api.WorldType;
+import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
-import net.runelite.api.events.WorldChanged;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
-import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
-import net.runelite.api.widgets.Widget;
+import net.runelite.api.events.WorldChanged;
 import net.runelite.api.gameval.InterfaceID;
-import net.runelite.api.gameval.VarbitID;
-import net.runelite.api.gameval.VarPlayerID;
+import net.runelite.api.widgets.Widget;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
-import net.runelite.client.ui.ClientUI;
-import net.runelite.client.input.KeyManager;
-import net.runelite.client.input.MouseListener;
-import net.runelite.client.input.MouseManager;
-import net.runelite.client.config.ConfigManager;
-import net.runelite.client.events.ConfigChanged;
-import net.runelite.client.eventbus.Subscribe;
-import net.runelite.client.plugins.Plugin;
-import net.runelite.client.plugins.PluginDescriptor;
-import net.runelite.client.ui.overlay.OverlayManager;
-import net.runelite.api.ChatMessageType;
 import net.runelite.client.chat.ChatColorType;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
-
-import javax.inject.Inject;
-import java.awt.Point;
-import java.awt.Rectangle;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.eventbus.Subscribe;
+import net.runelite.client.events.ConfigChanged;
+import net.runelite.client.input.KeyManager;
+import net.runelite.client.input.MouseListener;
+import net.runelite.client.input.MouseManager;
+import net.runelite.client.plugins.Plugin;
+import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientUI;
+import net.runelite.client.ui.overlay.OverlayManager;
 
 @Slf4j
 @PluginDescriptor(
@@ -113,6 +121,7 @@ public class FlipSmartPlugin extends Plugin
 	private InventoryHighlightOverlay inventoryHighlightOverlay;
 
 	@Inject
+	@Getter
 	private FlipSmartApiClient apiClient;
 
 	@Inject
@@ -146,6 +155,7 @@ public class FlipSmartPlugin extends Plugin
 	private DumpAlertService dumpAlertService;
 
 	@Inject
+	@Getter
 	private MotdService motdService;
 
 	@Inject
@@ -161,7 +171,8 @@ public class FlipSmartPlugin extends Plugin
 	private GrandExchangeTracker grandExchangeTracker;
 
 	@Inject
-	private com.flipsmart.trading.OfferStore offerStore;
+	@Getter
+	private OfferStore offerStore;
 
 	@Inject
 	private com.flipsmart.trading.RoundTripLedger roundTripLedger;
@@ -185,6 +196,7 @@ public class FlipSmartPlugin extends Plugin
 	private Gson gson;
 
 	// Flip Finder panel
+	@Getter
 	private FlipFinderPanel flipFinderPanel;
 	private net.runelite.client.ui.NavigationButton flipFinderNavButton;
 
@@ -194,13 +206,14 @@ public class FlipSmartPlugin extends Plugin
 
 	// Exit Trades controller (guided mass sell/cancel)
 	@Getter
-	private com.flipsmart.exit.ExitTradesController exitTradesController;
+	private ExitTradesController exitTradesController;
 
 	// Manual flip adjustment tracker (API-based staleness detection)
 	private ManualAdjustmentTracker manualAdjustmentTracker;
 
 	// Centralized session state management (provided via @Provides @Singleton)
 	@Inject
+	@Getter
 	private PlayerSession session;
 
 	// Timer / one-shot ownership extracted into PluginScheduler
@@ -231,21 +244,24 @@ public class FlipSmartPlugin extends Plugin
 	private volatile boolean membersWorld = true;
 
 	// Cached account-type string — updated on the client thread, read from any thread.
+	@Getter
 	private volatile String accountType;
 
 	// Cached GE location flag — updated each game tick on the client thread.
+	@Getter
 	private volatile boolean atGrandExchange = false;
 
 	// Canonical item ids currently held in the inventory. Rebuilt on the client
 	// thread (inventory ItemContainerChanged) and published as one volatile swap to
 	// an immutable set, so the Swing EDT reader in the Active Flips filter always
 	// sees a complete snapshot, never a partially-rebuilt set.
-	private volatile java.util.Set<Integer> inventoryFlipItemIds = java.util.Collections.emptySet();
+	@Getter
+	private volatile Set<Integer> inventoryFlipItemIds = Collections.emptySet();
 
 	// Canonical item id -> inventory count, rebuilt on the client thread alongside
 	// inventoryFlipItemIds and published as one volatile swap. Safe to read off the
 	// client thread (e.g. the Swing EDT) where the live client inventory API cannot be.
-	private volatile java.util.Map<Integer, Integer> inventoryFlipItemCounts = java.util.Collections.emptyMap();
+	private volatile Map<Integer, Integer> inventoryFlipItemCounts = Collections.emptyMap();
 
 	// False until an inventory container has actually been read. Distinguishes "holds
 	// nothing" from "not logged in", so a collected lot is only dropped as sold when the
@@ -291,39 +307,7 @@ public class FlipSmartPlugin extends Plugin
 		UNKNOWN           // Gray ? - Wiki price unavailable
 	}
 
-	
-	/**
-	 * Get the centralized player session state.
-	 */
-	public PlayerSession getSession()
-	{
-		return session;
-	}
 
-	/**
-	 * Authoritative offer-state store (for overlay/panel reads).
-	 */
-	public com.flipsmart.trading.OfferStore getOfferStore()
-	{
-		return offerStore;
-	}
-
-	public FlipSmartApiClient getApiClient()
-	{
-		return apiClient;
-	}
-
-	/** Flip Finder panel (may be null until initialized / when disabled in config). */
-	public FlipFinderPanel getFlipFinderPanel()
-	{
-		return flipFinderPanel;
-	}
-
-	/** MOTD service (used by the event router on login). */
-	public MotdService getMotdService()
-	{
-		return motdService;
-	}
 
 	/**
 	 * Get current RSN (delegates to session for backwards compatibility).
@@ -372,10 +356,6 @@ public class FlipSmartPlugin extends Plugin
 		return membersWorld;
 	}
 
-	public boolean isAtGrandExchange()
-	{
-		return atGrandExchange;
-	}
 
 	/**
 	 * Refresh the cached members-world state from the Client API.
@@ -395,10 +375,6 @@ public class FlipSmartPlugin extends Plugin
 		accountType = AccountTypeMapper.toApiValue(client.getAccountType());
 	}
 
-	public String getAccountType()
-	{
-		return accountType;
-	}
 
 	public int getFlipSlotLimit()
 	{
@@ -450,7 +426,7 @@ public class FlipSmartPlugin extends Plugin
 	 * Local OfferStore records for an item — the fallback source for the recorded
 	 * buy price when the backend-sourced active-flips snapshot is empty.
 	 */
-	public java.util.List<com.flipsmart.domain.offer.OfferRecord> getOfferRecordsForItem(int itemId)
+	public List<OfferRecord> getOfferRecordsForItem(int itemId)
 	{
 		return offerStore.forItem(itemId);
 	}
@@ -462,16 +438,16 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
 	{
-		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys = new java.util.ArrayList<>();
-		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
+		List<OfferRecord> buys = new ArrayList<>();
+		for (OfferRecord r : offerStore.forItem(itemId))
 		{
 			if (r.isBuy())
 			{
 				buys.add(r);
 			}
 		}
-		com.flipsmart.domain.offer.OfferRecord bestFilled = mostRecentFilledBuy(buys);
-		com.flipsmart.domain.offer.OfferRecord best = bestFilled != null ? bestFilled : mostRecentBuy(buys);
+		OfferRecord bestFilled = mostRecentFilledBuy(buys);
+		OfferRecord best = bestFilled != null ? bestFilled : mostRecentBuy(buys);
 		if (best == null)
 		{
 			return null;
@@ -480,11 +456,11 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/** Most recently active buy record in {@code buys}, or {@code null} when the list is empty. */
-	private static com.flipsmart.domain.offer.OfferRecord mostRecentBuy(
-		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys)
+	private static OfferRecord mostRecentBuy(
+		List<OfferRecord> buys)
 	{
-		com.flipsmart.domain.offer.OfferRecord best = null;
-		for (com.flipsmart.domain.offer.OfferRecord r : buys)
+		OfferRecord best = null;
+		for (OfferRecord r : buys)
 		{
 			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
 			{
@@ -495,11 +471,11 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/** Most recently active buy record in {@code buys} that has at least one filled unit. */
-	private static com.flipsmart.domain.offer.OfferRecord mostRecentFilledBuy(
-		java.util.List<com.flipsmart.domain.offer.OfferRecord> buys)
+	private static OfferRecord mostRecentFilledBuy(
+		List<OfferRecord> buys)
 	{
-		com.flipsmart.domain.offer.OfferRecord best = null;
-		for (com.flipsmart.domain.offer.OfferRecord r : buys)
+		OfferRecord best = null;
+		for (OfferRecord r : buys)
 		{
 			if (r.getFilledQuantity() <= 0)
 			{
@@ -513,14 +489,14 @@ public class FlipSmartPlugin extends Plugin
 		return best;
 	}
 
-	private static int avgBuyPrice(com.flipsmart.domain.offer.OfferRecord best)
+	private static int avgBuyPrice(OfferRecord best)
 	{
 		return best.getSpent() > 0 && best.getFilledQuantity() > 0
 			? (int) (best.getSpent() / best.getFilledQuantity())
 			: best.getPrice();
 	}
 
-	private static String firstBuyTimeIso(com.flipsmart.domain.offer.OfferRecord best)
+	private static String firstBuyTimeIso(OfferRecord best)
 	{
 		long firstBuyMillis = best.getCreatedAtMillis() > 0
 			? best.getCreatedAtMillis()
@@ -542,9 +518,9 @@ public class FlipSmartPlugin extends Plugin
 
 	public List<ActiveFlip> getProjectedActiveFlips(Map<Integer, ActiveFlip> enrichmentByItemId)
 	{
-		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveSellOffers = new java.util.ArrayList<>();
-		java.util.Set<Integer> liveSellItemIds = new java.util.HashSet<>();
-		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.liveOffers())
+		List<OfferRecord> liveSellOffers = new ArrayList<>();
+		Set<Integer> liveSellItemIds = new HashSet<>();
+		for (OfferRecord r : offerStore.liveOffers())
 		{
 			if (!r.isBuy() && r.getSlot() != null)
 			{
@@ -553,7 +529,7 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 
-		Map<Integer, Integer> inventoryCounts = new java.util.HashMap<>();
+		Map<Integer, Integer> inventoryCounts = new HashMap<>();
 		for (int itemId : getInventoryFlipItemIds())
 		{
 			int count = getInventoryCountSnapshot(itemId);
@@ -563,11 +539,11 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 
-		java.util.List<AwaitingSaleLot> awaitingSaleLots =
+		List<AwaitingSaleLot> awaitingSaleLots =
 			AwaitingSaleLots.derive(inventoryCounts, this::buyBasisForItem, liveSellItemIds);
 
 		return ActiveFlipProjection.project(liveSellOffers, this::buyBasisForItem, awaitingSaleLots,
-			enrichmentByItemId == null ? java.util.Collections.emptyMap() : enrichmentByItemId);
+			enrichmentByItemId == null ? Collections.emptyMap() : enrichmentByItemId);
 	}
 
 	/**
@@ -594,11 +570,11 @@ public class FlipSmartPlugin extends Plugin
 	 * {@code offerStoreSeeded} field (set on the client thread) instead of calling the
 	 * client API directly.
 	 */
-	private java.util.List<ActiveFlip> buildActiveFlipsSnapshotPayload()
+	private List<ActiveFlip> buildActiveFlipsSnapshotPayload()
 	{
-		java.util.List<ActiveFlip> projection = getProjectedActiveFlips(java.util.Collections.emptyMap());
-		java.util.List<PendingOrder> pendingBuys = getPendingBuyOrders();
-		java.util.List<ActiveFlip> payload = ActiveFlipsSnapshotPayload.combine(projection, pendingBuys);
+		List<ActiveFlip> projection = getProjectedActiveFlips(Collections.emptyMap());
+		List<PendingOrder> pendingBuys = getPendingBuyOrders();
+		List<ActiveFlip> payload = ActiveFlipsSnapshotPayload.combine(projection, pendingBuys);
 
 		return ActiveFlipsSnapshotPayload.isUnobservedEmpty(payload, !offerStoreSeeded) ? null : payload;
 	}
@@ -721,7 +697,7 @@ public class FlipSmartPlugin extends Plugin
 	 *
 	 * This shows if your offer is "in the margin" and likely to fill.
 	 */
-	public OfferCompetitiveness calculateCompetitiveness(com.flipsmart.domain.offer.OfferRecord record)
+	public OfferCompetitiveness calculateCompetitiveness(OfferRecord record)
 	{
 		if (record == null)
 		{
@@ -793,11 +769,11 @@ public class FlipSmartPlugin extends Plugin
 	 * Get current buy orders in GE slots (pending or partially filled).
 	 * These are buy orders that haven't been fully collected yet.
 	 */
-	public java.util.List<PendingOrder> getPendingBuyOrders()
+	public List<PendingOrder> getPendingBuyOrders()
 	{
-		java.util.List<PendingOrder> pendingOrders = new java.util.ArrayList<>();
+		List<PendingOrder> pendingOrders = new ArrayList<>();
 
-		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			// Include all buy orders (pending or partially filled)
 			if (offer.isBuy() && offer.getSlot() != null)
@@ -824,10 +800,10 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Get the set of item IDs currently in GE buy slots.
 	 */
-	public java.util.Set<Integer> getCurrentGEBuyItemIds()
+	public Set<Integer> getCurrentGEBuyItemIds()
 	{
-		java.util.Set<Integer> itemIds = new java.util.HashSet<>();
-		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		Set<Integer> itemIds = new HashSet<>();
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.isBuy())
 			{
@@ -848,10 +824,10 @@ public class FlipSmartPlugin extends Plugin
 	 * restored from disk at login and never cleared while empty, so a sold item would
 	 * otherwise linger there forever and keep consuming a slot.</p>
 	 */
-	public java.util.Set<Integer> getActiveFlipItemIds()
+	public Set<Integer> getActiveFlipItemIds()
 	{
-		java.util.Set<Integer> liveOfferItemIds = new java.util.HashSet<>();
-		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		Set<Integer> liveOfferItemIds = new HashSet<>();
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			liveOfferItemIds.add(offer.getItemId());
 		}
@@ -859,26 +835,15 @@ public class FlipSmartPlugin extends Plugin
 			inventoryFlipItemCounts, inventorySnapshotKnown);
 	}
 
-	/**
-	 * Canonical item ids currently held in the inventory, as a thread-safe snapshot
-	 * maintained on the client thread. Read from the Swing EDT by the Active Flips
-	 * display filter to keep collected-but-unsold flips visible across a client
-	 * restart (when session-only collected state is lost) without reading the game
-	 * client off-thread.
-	 */
-	public java.util.Set<Integer> getInventoryFlipItemIds()
-	{
-		return inventoryFlipItemIds;
-	}
 
 	/**
 	 * Get all active flip item IDs including items in inventory.
 	 * This is used for filtering active flips display to show items the player
 	 * actually has (in GE slots or inventory).
 	 */
-	public java.util.Set<Integer> getActiveFlipItemIdsWithInventory()
+	public Set<Integer> getActiveFlipItemIdsWithInventory()
 	{
-		java.util.Set<Integer> itemIds = getActiveFlipItemIds();
+		Set<Integer> itemIds = getActiveFlipItemIds();
 		
 		// Also include items currently in inventory
 		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
@@ -967,7 +932,7 @@ public class FlipSmartPlugin extends Plugin
 	public void highlightSlotForItem(int itemId)
 	{
 		geSlotOverlay.clearAllAdjustmentHighlights();
-		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId && offer.getSlot() != null)
 			{
@@ -1022,7 +987,7 @@ public class FlipSmartPlugin extends Plugin
 			// from re-creating the sell overlay after a sell order was placed
 			if (flipFinderPanel != null)
 			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+				SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
 			}
 		}
 	}
@@ -1033,7 +998,7 @@ public class FlipSmartPlugin extends Plugin
 		updateInventoryHighlightForFocus(focus);
 		if (flipFinderPanel != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
+			SwingUtilities.invokeLater(() -> flipFinderPanel.setExternalFocus(focus));
 		}
 	}
 
@@ -1072,7 +1037,7 @@ public class FlipSmartPlugin extends Plugin
 			updateInventoryHighlightForFocus(null);
 			if (flipFinderPanel != null)
 			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
+				SwingUtilities.invokeLater(() -> flipFinderPanel.clearFocus());
 			}
 		}
 	}
@@ -1275,7 +1240,7 @@ public class FlipSmartPlugin extends Plugin
 
 		if (flipFinderPanel != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
+			SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
 		}
 	}
 
@@ -1330,7 +1295,7 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("User premium status: {}", isPremium);
 			if (flipFinderPanel != null)
 			{
-				javax.swing.SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
+				SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
 			}
 
 			// Pull webhook config after auth is confirmed
@@ -1401,7 +1366,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void backfillMissingTimestamps()
 	{
-		java.util.List<com.flipsmart.domain.offer.OfferRecord> tracked = offerStore.liveOffers();
+		List<OfferRecord> tracked = offerStore.liveOffers();
 		if (tracked.isEmpty())
 		{
 			return;
@@ -1416,14 +1381,14 @@ public class FlipSmartPlugin extends Plugin
 				return;
 			}
 
-			Map<Integer, ActiveFlip> flipsByItem = new java.util.HashMap<>();
+			Map<Integer, ActiveFlip> flipsByItem = new HashMap<>();
 			for (ActiveFlip flip : response.getActiveFlips())
 			{
 				flipsByItem.put(flip.getItemId(), flip);
 			}
 
 			int corrected = 0;
-			for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+			for (OfferRecord offer : offerStore.liveOffers())
 			{
 				if (correctOfferTimestamp(offer, flipsByItem))
 				{
@@ -1448,7 +1413,7 @@ public class FlipSmartPlugin extends Plugin
 	 * local timestamps, since they're more accurate (set at offer placement time).
 	 * The backend's last_buy_time can be from older transactions for the same item.
 	 */
-	private boolean correctOfferTimestamp(com.flipsmart.domain.offer.OfferRecord offer, Map<Integer, ActiveFlip> flipsByItem)
+	private boolean correctOfferTimestamp(OfferRecord offer, Map<Integer, ActiveFlip> flipsByItem)
 	{
 		if (offer.getCreatedAtMillis() > 0)
 		{
@@ -1849,7 +1814,7 @@ public class FlipSmartPlugin extends Plugin
 		});
 
 		// Try to load custom icon from resources
-		java.awt.image.BufferedImage iconImage = null;
+		BufferedImage iconImage = null;
 		try
 		{
 			iconImage = net.runelite.client.util.ImageUtil.loadImageResource(getClass(), "/flip_finder_icon.png");
@@ -1880,10 +1845,10 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Create a default icon for the Flip Finder button
 	 */
-	private java.awt.image.BufferedImage createDefaultIcon()
+	private BufferedImage createDefaultIcon()
 	{
 		// Create a simple default icon
-		java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+		BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
 		java.awt.Graphics2D g = image.createGraphics();
 		g.setColor(java.awt.Color.ORANGE);
 		g.fillRect(2, 2, 12, 12);
@@ -1902,8 +1867,8 @@ public class FlipSmartPlugin extends Plugin
 		if (inventory == null)
 		{
 			session.setCashStack(0);
-			inventoryFlipItemIds = java.util.Collections.emptySet();
-			inventoryFlipItemCounts = java.util.Collections.emptyMap();
+			inventoryFlipItemIds = Collections.emptySet();
+			inventoryFlipItemCounts = Collections.emptyMap();
 			inventorySnapshotKnown = false;
 			return;
 		}
@@ -1911,8 +1876,8 @@ public class FlipSmartPlugin extends Plugin
 		int totalCash = 0;
 		Item[] items = inventory.getItems();
 
-		java.util.Set<Integer> currentInventoryIds = new java.util.HashSet<>();
-		java.util.Map<Integer, Integer> currentInventoryCounts = new java.util.HashMap<>();
+		Set<Integer> currentInventoryIds = new HashSet<>();
+		Map<Integer, Integer> currentInventoryCounts = new HashMap<>();
 		for (Item item : items)
 		{
 			if (item.getId() == COINS_ITEM_ID)
@@ -1926,9 +1891,9 @@ public class FlipSmartPlugin extends Plugin
 				currentInventoryCounts.merge(canonicalId, item.getQuantity(), Integer::sum);
 			}
 		}
-		java.util.Map<Integer, Integer> previousInventoryCounts = inventoryFlipItemCounts;
-		inventoryFlipItemIds = java.util.Collections.unmodifiableSet(currentInventoryIds);
-		inventoryFlipItemCounts = java.util.Collections.unmodifiableMap(currentInventoryCounts);
+		Map<Integer, Integer> previousInventoryCounts = inventoryFlipItemCounts;
+		inventoryFlipItemIds = Collections.unmodifiableSet(currentInventoryIds);
+		inventoryFlipItemCounts = Collections.unmodifiableMap(currentInventoryCounts);
 		inventorySnapshotKnown = true;
 
 		// An inventory change adds or removes an awaiting-sale lot, so re-derive the
@@ -1970,10 +1935,10 @@ public class FlipSmartPlugin extends Plugin
 	 * Awaiting-sale derivation ignores coins, so cash-only movement must not force
 	 * a projection re-render.
 	 */
-	private boolean heldItemsChanged(java.util.Map<Integer, Integer> before, java.util.Map<Integer, Integer> after)
+	private boolean heldItemsChanged(Map<Integer, Integer> before, Map<Integer, Integer> after)
 	{
-		java.util.Map<Integer, Integer> a = new java.util.HashMap<>(before);
-		java.util.Map<Integer, Integer> b = new java.util.HashMap<>(after);
+		Map<Integer, Integer> a = new HashMap<>(before);
+		Map<Integer, Integer> b = new HashMap<>(after);
 		a.remove(COINS_ITEM_ID);
 		b.remove(COINS_ITEM_ID);
 		return !a.equals(b);
@@ -2014,7 +1979,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (flipFinderPanel != null && config.showFlipFinder())
 		{
-			javax.swing.SwingUtilities.invokeLater(() ->
+			SwingUtilities.invokeLater(() ->
 			{
 				log.debug("Auto-refreshing flip finder");
 				session.setLastFlipFinderRefresh(System.currentTimeMillis());
@@ -2057,7 +2022,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			if (flipFinderPanel != null)
 			{
-				javax.swing.SwingUtilities.invokeLater(() ->
+				SwingUtilities.invokeLater(() ->
 				{
 					log.debug("Auto-recommend refresh cycle");
 					flipFinderPanel.refresh();
@@ -2107,11 +2072,11 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		lastAdvisorPollMs = System.currentTimeMillis();
-		java.util.List<com.flipsmart.domain.offer.OfferRecord> liveOffers = offerStore.liveOffers();
-		java.util.Set<Integer> activeItemIds = new java.util.HashSet<>();
-		for (com.flipsmart.domain.offer.OfferRecord o : liveOffers)
+		List<OfferRecord> liveOffers = offerStore.liveOffers();
+		Set<Integer> activeItemIds = new HashSet<>();
+		for (OfferRecord o : liveOffers)
 		{
-			if (o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
+			if (o.getState() != OfferState.FILLED)
 			{
 				activeItemIds.add(o.getItemId());
 			}
@@ -2120,10 +2085,10 @@ public class FlipSmartPlugin extends Plugin
 		{
 			activeOfferAdvisorService.reconcile(activeItemIds);
 		}
-		java.util.List<OfferAdviceRequest> requests = new java.util.ArrayList<>();
-		for (com.flipsmart.domain.offer.OfferRecord offer : liveOffers)
+		List<OfferAdviceRequest> requests = new ArrayList<>();
+		for (OfferRecord offer : liveOffers)
 		{
-			if (offer.getState() == com.flipsmart.domain.offer.OfferState.FILLED)
+			if (offer.getState() == OfferState.FILLED)
 			{
 				continue;
 			}
@@ -2191,7 +2156,7 @@ public class FlipSmartPlugin extends Plugin
 	 * offer's own average fill (falling back to the listed price), which the
 	 * margin-decay exit (#918 AC2) needs.
 	 */
-	private Integer avgBuyPriceFor(com.flipsmart.domain.offer.OfferRecord offer)
+	private Integer avgBuyPriceFor(OfferRecord offer)
 	{
 		if (!offer.isBuy())
 		{
@@ -2225,7 +2190,7 @@ public class FlipSmartPlugin extends Plugin
 		sess.setRecommendedPrice(itemId, resp.getNewPrice());
 		if (autoRecommendService != null)
 		{
-			com.flipsmart.domain.offer.OfferRecord offer = findLiveOfferForItem(itemId);
+			OfferRecord offer = findLiveOfferForItem(itemId);
 			if (offer != null)
 			{
 				autoRecommendService.surfaceAdvisorResell(offer, resp.getNewPrice(), resp.getNetProfitEstimate());
@@ -2248,7 +2213,7 @@ public class FlipSmartPlugin extends Plugin
 	private int last12hRecalcItemId = -1;
 	private long last12hRecalcMs;
 
-	static boolean ladderOwnsSell(com.flipsmart.domain.offer.OfferRecord liveSell, long now)
+	static boolean ladderOwnsSell(OfferRecord liveSell, long now)
 	{
 		if (liveSell == null)
 		{
@@ -2258,12 +2223,12 @@ public class FlipSmartPlugin extends Plugin
 		return ageMinutes >= LADDER_HANDOFF_MINUTES;
 	}
 
-	private com.flipsmart.domain.offer.OfferRecord findLiveSellForItem(int itemId)
+	private OfferRecord findLiveSellForItem(int itemId)
 	{
-		for (com.flipsmart.domain.offer.OfferRecord o : offerStore.liveOffers())
+		for (OfferRecord o : offerStore.liveOffers())
 		{
 			if (o.getItemId() == itemId && !o.isBuy()
-				&& o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
+				&& o.getState() != OfferState.FILLED)
 			{
 				return o;
 			}
@@ -2377,11 +2342,11 @@ public class FlipSmartPlugin extends Plugin
 			.build());
 	}
 
-	private com.flipsmart.domain.offer.OfferRecord findLiveOfferForItem(int itemId)
+	private OfferRecord findLiveOfferForItem(int itemId)
 	{
-		for (com.flipsmart.domain.offer.OfferRecord o : offerStore.liveOffers())
+		for (OfferRecord o : offerStore.liveOffers())
 		{
-			if (o.getItemId() == itemId && o.getState() != com.flipsmart.domain.offer.OfferState.FILLED)
+			if (o.getItemId() == itemId && o.getState() != OfferState.FILLED)
 			{
 				return o;
 			}
@@ -2396,7 +2361,7 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		int itemId = resp.getItemIdHint();
-		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			if (offer.getItemId() == itemId)
 			{
@@ -2431,8 +2396,8 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return 0;
 		}
-		com.flipsmart.domain.offer.OfferRecord best = null;
-		for (com.flipsmart.domain.offer.OfferRecord r : offerStore.forItem(itemId))
+		OfferRecord best = null;
+		for (OfferRecord r : offerStore.forItem(itemId))
 		{
 			if (r.isBuy() && r.getFilledQuantity() > 0
 				&& (best == null
@@ -2527,7 +2492,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		com.flipsmart.exit.ExitTradesController.PersistedState state =
+		ExitTradesController.PersistedState state =
 			exitTradesController.getStateForPersistence(System.currentTimeMillis());
 		if (state == null)
 		{
@@ -2552,8 +2517,8 @@ public class FlipSmartPlugin extends Plugin
 		}
 		try
 		{
-			com.flipsmart.exit.ExitTradesController.PersistedState state =
-				gson.fromJson(json, com.flipsmart.exit.ExitTradesController.PersistedState.class);
+			ExitTradesController.PersistedState state =
+				gson.fromJson(json, ExitTradesController.PersistedState.class);
 			if (exitTradesController.restoreState(state, System.currentTimeMillis(), EXIT_TRADES_MAX_AGE_MS))
 			{
 				exitTradesController.surfaceCurrent(); // re-prompt pending slots (AC9 immediate resell)
@@ -2656,7 +2621,7 @@ public class FlipSmartPlugin extends Plugin
 	private final MouseListener overlayMouseListener = new MouseListener()
 	{
 		@Override
-		public java.awt.event.MouseEvent mouseClicked(java.awt.event.MouseEvent e)
+		public MouseEvent mouseClicked(MouseEvent e)
 		{
 			// Get the overlay bounds
 			Rectangle overlayBounds = geOverlay.getBounds();
@@ -2683,37 +2648,37 @@ public class FlipSmartPlugin extends Plugin
 		}
 		
 		@Override
-		public java.awt.event.MouseEvent mousePressed(java.awt.event.MouseEvent e)
+		public MouseEvent mousePressed(MouseEvent e)
 		{
 			return e;
 		}
 		
 		@Override
-		public java.awt.event.MouseEvent mouseReleased(java.awt.event.MouseEvent e)
+		public MouseEvent mouseReleased(MouseEvent e)
 		{
 			return e;
 		}
 		
 		@Override
-		public java.awt.event.MouseEvent mouseEntered(java.awt.event.MouseEvent e)
+		public MouseEvent mouseEntered(MouseEvent e)
 		{
 			return e;
 		}
 		
 		@Override
-		public java.awt.event.MouseEvent mouseExited(java.awt.event.MouseEvent e)
+		public MouseEvent mouseExited(MouseEvent e)
 		{
 			return e;
 		}
 		
 		@Override
-		public java.awt.event.MouseEvent mouseDragged(java.awt.event.MouseEvent e)
+		public MouseEvent mouseDragged(MouseEvent e)
 		{
 			return e;
 		}
 		
 		@Override
-		public java.awt.event.MouseEvent mouseMoved(java.awt.event.MouseEvent e)
+		public MouseEvent mouseMoved(MouseEvent e)
 		{
 			return e;
 		}

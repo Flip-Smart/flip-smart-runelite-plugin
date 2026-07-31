@@ -1,20 +1,22 @@
 package com.flipsmart;
+
 import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
-import com.flipsmart.domain.flip.FlipRecommendation;
-import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
-
-import lombok.extern.slf4j.Slf4j;
-
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.IntConsumer;
 import java.util.function.ObjIntConsumer;
+import java.util.function.Supplier;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Tracks adjustment timers for manual (non-auto-recommend) flip offers.
@@ -63,31 +65,42 @@ public class ManualAdjustmentTracker
 	private final Map<Integer, OfferAdjustmentState> trackedOffers = new ConcurrentHashMap<>();
 
 	// Callback to show adjustment prompts in FlipAssistOverlay
+	@Setter
 	private volatile ObjIntConsumer<String> onAdjustmentPrompt;
 
 	// Callback to set a FocusedFlip for buy adjustments
+	@Setter
 	private volatile BiConsumer<FocusedFlip, String> onFocusFlip;
 
 	// Callback to highlight a GE slot for adjustment
+	@Setter
 	private volatile BiConsumer<Integer, Integer> onHighlightSlot;
 
 	// Callback to clear a GE slot highlight
-	private volatile java.util.function.IntConsumer onClearHighlight;
+	@Setter
+	private volatile IntConsumer onClearHighlight;
 
 	// Callback to highlight an inventory item for sell adjustments
-	private volatile java.util.function.IntConsumer onHighlightInventoryItem;
+	@Setter
+	private volatile IntConsumer onHighlightInventoryItem;
 
 	// Callback to clear an inventory item highlight
-	private volatile java.util.function.IntConsumer onClearInventoryItem;
+	@Setter
+	private volatile IntConsumer onClearInventoryItem;
 
 	// Callback to persist adjusted sell price to session
+	@Setter
 	private volatile BiConsumer<Integer, Integer> onSellPriceAdjusted;
 
 	// Suppliers for ditch logic — needed to fetch replacement recommendations
-	private volatile java.util.function.Supplier<Integer> cashStackSupplier;
-	private volatile java.util.function.Supplier<String> rsnSupplier;
-	private volatile java.util.function.Supplier<Integer> filledSlotsSupplier;
-	private volatile java.util.function.Supplier<Boolean> membersWorldSupplier;
+	@Setter
+	private volatile Supplier<Integer> cashStackSupplier;
+	@Setter
+	private volatile Supplier<String> rsnSupplier;
+	@Setter
+	private volatile Supplier<Integer> filledSlotsSupplier;
+	@Setter
+	private volatile Supplier<Boolean> membersWorldSupplier;
 
 	public ManualAdjustmentTracker(FlipSmartApiClient apiClient, FlipSmartConfig config, OfferStore offerStore)
 	{
@@ -96,60 +109,12 @@ public class ManualAdjustmentTracker
 		this.offerStore = offerStore;
 	}
 
-	public void setOnAdjustmentPrompt(ObjIntConsumer<String> callback)
-	{
-		this.onAdjustmentPrompt = callback;
-	}
 
-	public void setOnFocusFlip(BiConsumer<FocusedFlip, String> callback)
-	{
-		this.onFocusFlip = callback;
-	}
 
-	public void setOnHighlightSlot(BiConsumer<Integer, Integer> callback)
-	{
-		this.onHighlightSlot = callback;
-	}
 
-	public void setOnClearHighlight(java.util.function.IntConsumer callback)
-	{
-		this.onClearHighlight = callback;
-	}
 
-	public void setOnHighlightInventoryItem(java.util.function.IntConsumer callback)
-	{
-		this.onHighlightInventoryItem = callback;
-	}
 
-	public void setOnClearInventoryItem(java.util.function.IntConsumer callback)
-	{
-		this.onClearInventoryItem = callback;
-	}
 
-	public void setOnSellPriceAdjusted(BiConsumer<Integer, Integer> callback)
-	{
-		this.onSellPriceAdjusted = callback;
-	}
-
-	public void setCashStackSupplier(java.util.function.Supplier<Integer> supplier)
-	{
-		this.cashStackSupplier = supplier;
-	}
-
-	public void setRsnSupplier(java.util.function.Supplier<String> supplier)
-	{
-		this.rsnSupplier = supplier;
-	}
-
-	public void setFilledSlotsSupplier(java.util.function.Supplier<Integer> supplier)
-	{
-		this.filledSlotsSupplier = supplier;
-	}
-
-	public void setMembersWorldSupplier(java.util.function.Supplier<Boolean> supplier)
-	{
-		this.membersWorldSupplier = supplier;
-	}
 
 	/**
 	 * Schedule an adjustment timer for a manual buy offer.
@@ -215,7 +180,7 @@ public class ManualAdjustmentTracker
 		if (removed != null)
 		{
 			log.debug("Manual adjustment timer cleared for {} (slot {})", removed.itemName, geSlot);
-			java.util.function.IntConsumer cb = onClearHighlight;
+			IntConsumer cb = onClearHighlight;
 			if (cb != null)
 			{
 				cb.accept(geSlot);
@@ -234,7 +199,7 @@ public class ManualAdjustmentTracker
 	{
 		for (Map.Entry<Integer, OfferAdjustmentState> entry : trackedOffers.entrySet())
 		{
-			java.util.function.IntConsumer cb = onClearHighlight;
+			IntConsumer cb = onClearHighlight;
 			if (cb != null)
 			{
 				cb.accept(entry.getKey());
@@ -446,7 +411,7 @@ public class ManualAdjustmentTracker
 
 	private void notifyInventoryHighlight(int itemId)
 	{
-		java.util.function.IntConsumer cb = onHighlightInventoryItem;
+		IntConsumer cb = onHighlightInventoryItem;
 		if (cb != null)
 		{
 			cb.accept(itemId);
@@ -455,7 +420,7 @@ public class ManualAdjustmentTracker
 
 	private void notifyClearInventoryHighlight(int itemId)
 	{
-		java.util.function.IntConsumer cb = onClearInventoryItem;
+		IntConsumer cb = onClearInventoryItem;
 		if (cb != null)
 		{
 			cb.accept(itemId);

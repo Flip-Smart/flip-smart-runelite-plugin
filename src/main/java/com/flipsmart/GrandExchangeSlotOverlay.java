@@ -1,10 +1,13 @@
 package com.flipsmart;
+
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
-
+import java.text.NumberFormat;
+import java.util.List;
+import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
@@ -15,9 +18,7 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.OverlayPriority;
 
-import javax.inject.Inject;
 import java.awt.*;
-import java.text.NumberFormat;
 
 /**
  * Overlay that draws timer and competitiveness indicators directly on the
@@ -375,7 +376,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		graphics.setFont(new Font("Arial", Font.PLAIN, 11));
 		FontMetrics fm = graphics.getFontMetrics();
 
-		java.util.List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy, offer.getTotalQuantity(), offer.getItemId());
+		List<String> lines = buildTooltipLines(wikiPrice, offerPrice, buyPrice, isBuy, offer.getTotalQuantity(), offer.getItemId());
 		Color yourPriceColor = determineYourPriceColor(wikiPrice, offerPrice, isBuy);
 
 		drawTooltipBackground(graphics, x, y, lines, fm);
@@ -395,10 +396,10 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Build tooltip text lines based on wiki price data
 	 */
-	private java.util.List<String> buildTooltipLines(WikiPrice wikiPrice, int offerPrice,
+	private List<String> buildTooltipLines(WikiPrice wikiPrice, int offerPrice,
 													  Integer buyPrice, boolean isBuy, int totalQuantity, int itemId)
 	{
-		java.util.List<String> lines = new java.util.ArrayList<>();
+		List<String> lines = new java.util.ArrayList<>();
 
 		addPriceLines(lines, wikiPrice);
 		lines.add("Your Price: " + NUMBER_FORMAT.format(offerPrice) + " gp");
@@ -411,7 +412,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		return lines;
 	}
 
-	private void addPriceLines(java.util.List<String> lines, WikiPrice wikiPrice)
+	private void addPriceLines(List<String> lines, WikiPrice wikiPrice)
 	{
 		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
 		{
@@ -428,7 +429,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 	}
 
-	private void addProfitLossLine(java.util.List<String> lines, int sellPrice, int buyPrice, int totalQuantity, int itemId)
+	private void addProfitLossLine(List<String> lines, int sellPrice, int buyPrice, int totalQuantity, int itemId)
 	{
 		// Honor the GE tax-exempt list and the <=50gp threshold (issue #685 Bugs 3 & 4).
 		// ROI uses netPnlPerItem so it automatically becomes pre-tax for exempt items
@@ -477,7 +478,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private static final int DIVIDER_HEIGHT = 6;
 
-	private void drawTooltipBackground(Graphics2D graphics, int x, int y, java.util.List<String> lines, FontMetrics fm)
+	private void drawTooltipBackground(Graphics2D graphics, int x, int y, List<String> lines, FontMetrics fm)
 	{
 		int lineHeight = fm.getHeight();
 		int padding = 5;
@@ -500,7 +501,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Draw tooltip text lines
 	 */
-	private void drawTooltipText(Graphics2D graphics, int x, int y, java.util.List<String> lines,
+	private void drawTooltipText(Graphics2D graphics, int x, int y, List<String> lines,
 								 Color yourPriceColor, FontMetrics fm)
 	{
 		int padding = 5;

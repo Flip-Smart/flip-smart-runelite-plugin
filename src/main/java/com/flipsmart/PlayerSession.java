@@ -1,8 +1,6 @@
 package com.flipsmart;
-import com.flipsmart.recommend.CollectOrigin;
-import lombok.Getter;
-import lombok.extern.slf4j.Slf4j;
 
+import com.flipsmart.recommend.CollectOrigin;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -10,6 +8,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Centralized state management for a player's flip session.
@@ -24,12 +25,15 @@ public class PlayerSession
 	// =====================
 
 	@Getter
+	@Setter
 	private volatile String rsn;
 
 	@Getter
+	@Setter
 	private volatile boolean loggedIntoRunescape;
 
 	@Getter
+	@Setter
 	private volatile int lastLoginTick;
 
 	// =====================
@@ -64,6 +68,7 @@ public class PlayerSession
 	// =====================
 
 	@Getter
+	@Setter
 	private volatile boolean offlineSyncCompleted;
 
 	// =====================
@@ -71,12 +76,15 @@ public class PlayerSession
 	// =====================
 
 	@Getter
+	@Setter
 	private volatile boolean bankSnapshotInProgress;
 
 	@Getter
+	@Setter
 	private volatile long lastBankSnapshotAttempt;
 
 	@Getter
+	@Setter
 	private volatile long lastFlipFinderRefresh;
 
 	// =====================
@@ -90,11 +98,6 @@ public class PlayerSession
 	// Session Identity Methods
 	// =====================
 
-	public void setRsn(String rsn)
-	{
-		this.rsn = rsn;
-	}
-
 	public Optional<String> getRsnSafe()
 	{
 		String currentRsn = this.rsn;
@@ -103,16 +106,6 @@ public class PlayerSession
 			return Optional.of(currentRsn);
 		}
 		return Optional.empty();
-	}
-
-	public void setLoggedIntoRunescape(boolean loggedIn)
-	{
-		this.loggedIntoRunescape = loggedIn;
-	}
-
-	public void setLastLoginTick(int tick)
-	{
-		this.lastLoginTick = tick;
 	}
 
 	// =====================
@@ -325,29 +318,12 @@ public class PlayerSession
 	// Sync Status Methods
 	// =====================
 
-	public void setOfflineSyncCompleted(boolean completed)
-	{
-		this.offlineSyncCompleted = completed;
-	}
-
 	// =====================
 	// Feature State Methods
 	// =====================
 
-	public void setBankSnapshotInProgress(boolean inProgress)
-	{
-		this.bankSnapshotInProgress = inProgress;
-	}
 
-	public void setLastBankSnapshotAttempt(long timestamp)
-	{
-		this.lastBankSnapshotAttempt = timestamp;
-	}
 
-	public void setLastFlipFinderRefresh(long timestamp)
-	{
-		this.lastFlipFinderRefresh = timestamp;
-	}
 
 	// =====================
 	// Lifecycle Methods

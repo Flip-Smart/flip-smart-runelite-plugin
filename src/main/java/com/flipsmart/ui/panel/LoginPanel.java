@@ -1,5 +1,6 @@
 package com.flipsmart.ui.panel;
 
+import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.FlipSmartApiClient;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.api.dto.AuthResult;
@@ -155,21 +156,15 @@ public class LoginPanel
 		contentPanel.setBorder(BorderFactory.createEmptyBorder(40, 20, 40, 20));
 
 		// Title
-		JLabel titleLabel = new JLabel("FlipSmart");
-		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(new Font(FONT_ARIAL, Font.BOLD, 24));
+		JLabel titleLabel = CardWidgets.label("FlipSmart", Color.WHITE, new Font(FONT_ARIAL, Font.BOLD, 24));
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		// Subtitle
-		JLabel subtitleLabel = new JLabel("Sign in to start flipping");
-		subtitleLabel.setForeground(Color.LIGHT_GRAY);
-		subtitleLabel.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
+		JLabel subtitleLabel = CardWidgets.label("Sign in to start flipping", Color.LIGHT_GRAY, new Font(FONT_ARIAL, Font.PLAIN, 14));
 		subtitleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		// Email field
-		JLabel emailLabel = new JLabel("Email");
-		emailLabel.setForeground(Color.LIGHT_GRAY);
-		emailLabel.setFont(FONT_PLAIN_12);
+		JLabel emailLabel = CardWidgets.label("Email", Color.LIGHT_GRAY, FONT_PLAIN_12);
 		emailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		emailField = new JTextField(20);
@@ -183,9 +178,7 @@ public class LoginPanel
 		));
 
 		// Password field
-		JLabel passwordLabel = new JLabel("Password");
-		passwordLabel.setForeground(Color.LIGHT_GRAY);
-		passwordLabel.setFont(FONT_PLAIN_12);
+		JLabel passwordLabel = CardWidgets.label("Password", Color.LIGHT_GRAY, FONT_PLAIN_12);
 		passwordLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
 		passwordField = new JPasswordField(20);
@@ -205,8 +198,7 @@ public class LoginPanel
 		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 
 		// Buttons panel for Login/Sign Up
-		JPanel buttonsPanel = new JPanel(new GridLayout(1, 2, 10, 0));
-		buttonsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		JPanel buttonsPanel = CardWidgets.panel(new GridLayout(1, 2, 10, 0), ColorScheme.DARK_GRAY_COLOR);
 		buttonsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
 
 		// Sign Up button
@@ -234,8 +226,7 @@ public class LoginPanel
 		buttonsPanel.add(loginButton);
 
 		// Divider
-		JPanel dividerPanel = new JPanel(new BorderLayout());
-		dividerPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		JPanel dividerPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARK_GRAY_COLOR);
 		dividerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
 
 		JLabel orLabel = new JLabel("OR", SwingConstants.CENTER);

@@ -1,8 +1,10 @@
 package com.flipsmart.api.dto;
-import com.flipsmart.domain.offer.OfferAction;
 
+import com.flipsmart.domain.offer.OfferAction;
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 @Data
 public class OfferAdviceResponse
@@ -26,17 +28,9 @@ public class OfferAdviceResponse
 	@SerializedName("cumulative_margin_reduction_pct")
 	private double cumulativeMarginReductionPct;
 
+	@Getter @Setter
 	private transient Integer itemIdHint;
 
-	public Integer getItemIdHint()
-	{
-		return itemIdHint;
-	}
-
-	public void setItemIdHint(Integer itemIdHint)
-	{
-		this.itemIdHint = itemIdHint;
-	}
 
 	public OfferAction getActionEnum()
 	{

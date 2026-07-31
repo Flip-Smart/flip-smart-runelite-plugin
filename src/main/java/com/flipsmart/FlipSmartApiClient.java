@@ -1,5 +1,31 @@
 package com.flipsmart;
+
 import com.flipsmart.api.ApiHttpTransport;
+import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.AuthResult;
+import com.flipsmart.api.dto.BankItem;
+import com.flipsmart.api.dto.BankItemId;
+import com.flipsmart.api.dto.BankSnapshotResult;
+import com.flipsmart.api.dto.BlocklistsResponse;
+import com.flipsmart.api.dto.CompletedFlipsResponse;
+import com.flipsmart.api.dto.DeviceAuthResponse;
+import com.flipsmart.api.dto.DeviceStatusResponse;
+import com.flipsmart.api.dto.DumpEvent;
+import com.flipsmart.api.dto.FavoritesResponse;
+import com.flipsmart.api.dto.FlipAdjustmentRequest;
+import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.FlipStatisticsResponse;
+import com.flipsmart.api.dto.HistoryBackfillEntry;
+import com.flipsmart.api.dto.MotdResponse;
+import com.flipsmart.api.dto.OfferAdviceBatchResponse;
+import com.flipsmart.api.dto.OfferAdviceRequest;
+import com.flipsmart.api.dto.PluginSyncResponse;
+import com.flipsmart.api.dto.SellPriceCheckRequest;
+import com.flipsmart.api.dto.SellPriceCheckResponse;
+import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
+import com.flipsmart.api.dto.TransactionRequest;
+import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.endpoints.ActiveFlipEndpoints;
 import com.flipsmart.api.endpoints.ActiveFlipsSnapshotEndpoints;
 import com.flipsmart.api.endpoints.BankSnapshotEndpoints;
@@ -12,45 +38,19 @@ import com.flipsmart.api.endpoints.OfferActionEndpoints;
 import com.flipsmart.api.endpoints.TradeStationEndpoints;
 import com.flipsmart.api.endpoints.TransactionEndpoints;
 import com.flipsmart.api.endpoints.WebhookEndpoints;
-import com.flipsmart.api.dto.ActiveFlipsResponse;
-import com.flipsmart.api.dto.CompletedFlipsResponse;
-import com.flipsmart.api.dto.FavoritesResponse;
-import com.flipsmart.api.dto.FlipAdjustmentResponse;
-import com.flipsmart.api.dto.OfferAdviceBatchResponse;
-import com.flipsmart.api.dto.BankSnapshotResult;
-import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
-import com.flipsmart.api.dto.FlipFinderResponse;
-import com.flipsmart.api.dto.PluginSyncResponse;
-import com.flipsmart.api.dto.BlocklistsResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
-import com.flipsmart.api.dto.DumpEvent;
-import com.flipsmart.api.dto.FlipStatisticsResponse;
-import com.flipsmart.api.dto.OfferAdviceRequest;
-import com.flipsmart.api.dto.SellPriceCheckRequest;
-import com.flipsmart.api.dto.SellPriceCheckResponse;
-import com.flipsmart.api.dto.AuthResult;
-import com.flipsmart.api.dto.DeviceAuthResponse;
-import com.flipsmart.api.dto.DeviceStatusResponse;
-import com.flipsmart.api.dto.MotdResponse;
-import com.flipsmart.api.dto.TransactionRequest;
-import com.flipsmart.api.dto.HistoryBackfillEntry;
-import com.flipsmart.api.dto.BankItem;
-import com.flipsmart.api.dto.BankItemId;
-import com.flipsmart.api.dto.WikiPrice;
-import com.flipsmart.api.dto.FlipAdjustmentRequest;
-
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
-import lombok.extern.slf4j.Slf4j;
-import okhttp3.OkHttpClient;
-
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import lombok.extern.slf4j.Slf4j;
+import okhttp3.OkHttpClient;
 
 /**
  * Facade over the FlipSmart API. Delegates transport + auth/session to
@@ -288,7 +288,7 @@ public class FlipSmartApiClient
 		return transactions.recordTransactionAsync(itemId, itemName, transactionType, quantity, pricePerItem, rsn);
 	}
 
-	public CompletableFuture<Void> recordHistoryBackfillBatchAsync(String rsn, java.util.List<HistoryBackfillEntry> entries)
+	public CompletableFuture<Void> recordHistoryBackfillBatchAsync(String rsn, List<HistoryBackfillEntry> entries)
 	{
 		return transactions.recordHistoryBackfillBatchAsync(rsn, entries);
 	}
@@ -354,9 +354,9 @@ public class FlipSmartApiClient
 
 	public CompletableFuture<BankSnapshotResult> createBankSnapshotAsync(
 		String rsn,
-		java.util.List<BankItem> items,
-		java.util.List<BankItemId> inventoryItems,
-		java.util.List<BankItemId> gearItems,
+		List<BankItem> items,
+		List<BankItemId> inventoryItems,
+		List<BankItemId> gearItems,
 		long geOffersValue)
 	{
 		return bankSnapshots.createBankSnapshotAsync(rsn, items, inventoryItems, gearItems, geOffersValue);
@@ -431,7 +431,7 @@ public class FlipSmartApiClient
 	// Offer actions
 	// ============================================================================
 
-	public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(java.util.List<OfferAdviceRequest> reqs)
+	public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(List<OfferAdviceRequest> reqs)
 	{
 		return offerActions.postOfferActionsBatchAsync(reqs);
 	}
@@ -483,7 +483,7 @@ public class FlipSmartApiClient
 	// Trade Station
 	// ============================================================================
 
-	public CompletableFuture<Boolean> pushTradeStationSlotsAsync(String rsn, java.util.List<Integer> itemIds)
+	public CompletableFuture<Boolean> pushTradeStationSlotsAsync(String rsn, List<Integer> itemIds)
 	{
 		return tradeStation.pushTradeStationSlotsAsync(rsn, itemIds);
 	}
@@ -492,7 +492,7 @@ public class FlipSmartApiClient
 	// Active Flips snapshot mirror
 	// ============================================================================
 
-	public CompletableFuture<Boolean> pushActiveFlipsSnapshotAsync(String rsn, java.util.List<com.flipsmart.domain.flip.ActiveFlip> flips)
+	public CompletableFuture<Boolean> pushActiveFlipsSnapshotAsync(String rsn, List<com.flipsmart.domain.flip.ActiveFlip> flips)
 	{
 		return activeFlipsSnapshot.pushActiveFlipsSnapshotAsync(rsn, flips);
 	}
@@ -547,7 +547,7 @@ public class FlipSmartApiClient
 		return body;
 	}
 
-	public static JsonObject buildOfferActionsBody(java.util.List<OfferAdviceRequest> reqs)
+	public static JsonObject buildOfferActionsBody(List<OfferAdviceRequest> reqs)
 	{
 		JsonObject body = new JsonObject();
 		com.google.gson.JsonArray offers = new com.google.gson.JsonArray();

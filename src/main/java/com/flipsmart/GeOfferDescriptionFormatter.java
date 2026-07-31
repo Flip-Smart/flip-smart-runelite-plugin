@@ -1,6 +1,5 @@
 package com.flipsmart;
 import com.flipsmart.util.GeTax;
-import com.flipsmart.util.GpUtils;
 
 import java.util.Locale;
 

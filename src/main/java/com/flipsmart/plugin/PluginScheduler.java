@@ -6,7 +6,7 @@ import java.util.TimerTask;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
-
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -53,6 +53,7 @@ public class PluginScheduler
 	 * independent deadline, so a manual refresh (which restarts the timer) always
 	 * moves the countdown and the actual refresh together. 0 when the timer is stopped.
 	 */
+	@Getter
 	private volatile long nextFlipFinderRefreshAtMillis;
 
 	private final LongSupplier clock;
@@ -124,16 +125,6 @@ public class PluginScheduler
 			nextFlipFinderRefreshAtMillis = 0;
 			log.debug("Flip Finder auto-refresh stopped");
 		}
-	}
-
-	/**
-	 * Wall-clock instant of the next flip-finder auto-refresh, or 0 when the timer
-	 * is not running. The panel's countdown label reads this so the display and the
-	 * actual refresh trigger can never drift apart.
-	 */
-	public long getNextFlipFinderRefreshAtMillis()
-	{
-		return nextFlipFinderRefreshAtMillis;
 	}
 
 	/**

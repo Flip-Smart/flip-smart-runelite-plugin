@@ -1,5 +1,11 @@
 package com.flipsmart;
 
+import java.awt.geom.Area;
+import java.awt.image.BufferedImage;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.widgets.Widget;
@@ -7,12 +13,7 @@ import net.runelite.api.widgets.WidgetItem;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.WidgetItemOverlay;
 
-import javax.inject.Inject;
 import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 public class InventoryHighlightOverlay extends WidgetItemOverlay
@@ -86,14 +87,14 @@ public class InventoryHighlightOverlay extends WidgetItemOverlay
 		float pulseAlpha = (float) (0.5 + 0.5 * Math.sin(elapsed / 1500.0 * 2 * Math.PI));
 
 		Shape originalClip = graphics.getClip();
-		java.awt.geom.Area clipArea = new java.awt.geom.Area(new Rectangle(
+		Area clipArea = new Area(new Rectangle(
 			bounds.x - 10, bounds.y - 10,
 			bounds.width + 20, bounds.height + 20));
 		// Stacks render a quantity number in the top-left corner; crop it out so the
 		// glow doesn't obscure it. A single item shows no number, so highlight fully.
 		if (quantity > SINGLE_ITEM_QUANTITY)
 		{
-			clipArea.subtract(new java.awt.geom.Area(new Rectangle(
+			clipArea.subtract(new Area(new Rectangle(
 				bounds.x, bounds.y, bounds.width / 2, bounds.height / 3)));
 		}
 		graphics.setClip(clipArea);

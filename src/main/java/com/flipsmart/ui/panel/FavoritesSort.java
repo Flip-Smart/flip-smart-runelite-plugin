@@ -2,6 +2,7 @@ package com.flipsmart.ui.panel;
 
 import com.flipsmart.api.dto.FavoriteItem;
 import java.util.Comparator;
+import lombok.Getter;
 
 public enum FavoritesSort
 {
@@ -10,6 +11,7 @@ public enum FavoritesSort
 	ALPHABETICAL("A-Z", Comparator.comparing(
 		f -> f.getItemName() == null ? "" : f.getItemName(), String.CASE_INSENSITIVE_ORDER));
 
+	@Getter
 	private final String label;
 	private final Comparator<FavoriteItem> itemComparator;
 
@@ -17,11 +19,6 @@ public enum FavoritesSort
 	{
 		this.label = label;
 		this.itemComparator = itemComparator;
-	}
-
-	public String getLabel()
-	{
-		return label;
 	}
 
 	public Comparator<FavoriteItem> comparator()

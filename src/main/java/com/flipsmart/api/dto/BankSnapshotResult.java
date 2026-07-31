@@ -1,5 +1,7 @@
 package com.flipsmart.api.dto;
 
+import lombok.Getter;
+
 /**
  * Outcome of a bank snapshot upload. The server answers HTTP 429 when a
  * snapshot was already taken inside its 24h window; that is an expected
@@ -8,7 +10,9 @@ package com.flipsmart.api.dto;
  */
 public final class BankSnapshotResult
 {
+	@Getter
 	private final BankSnapshotResponse response;
+	@Getter
 	private final boolean rateLimited;
 
 	private BankSnapshotResult(BankSnapshotResponse response, boolean rateLimited)
@@ -37,13 +41,4 @@ public final class BankSnapshotResult
 		return response != null;
 	}
 
-	public boolean isRateLimited()
-	{
-		return rateLimited;
-	}
-
-	public BankSnapshotResponse getResponse()
-	{
-		return response;
-	}
 }
