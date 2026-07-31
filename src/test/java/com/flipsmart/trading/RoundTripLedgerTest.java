@@ -30,6 +30,55 @@ public class RoundTripLedgerTest
     }
 
     @Test
+    public void basis_isWeightedAcrossTheOpenCycle()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 10, 100);
+        ledger.recordBuyBasis(RSN, ITEM, 10, 140);
+
+        assertEquals(Integer.valueOf(120), ledger.currentBasis(RSN, ITEM));
+    }
+
+    @Test
+    public void basis_isAbsentBeforeAnyBuy()
+    {
+        assertNull("an untouched item has no basis", ledger.currentBasis(RSN, ITEM));
+    }
+
+    @Test
+    public void basis_resetsWhenTheCycleCloses()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 10, 100);
+        ledger.recordFill(RSN, ITEM, true, 10);
+        ledger.recordFill(RSN, ITEM, false, 10);   // fully liquidated: cycle closes
+
+        assertNull("a closed cycle carries no basis", ledger.currentBasis(RSN, ITEM));
+
+        ledger.recordBuyBasis(RSN, ITEM, 5, 200);
+        assertEquals("the next cycle starts clean",
+            Integer.valueOf(200), ledger.currentBasis(RSN, ITEM));
+    }
+
+    @Test
+    public void basis_survivesAPartialLiquidation()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 10, 100);
+        ledger.recordFill(RSN, ITEM, true, 10);
+        ledger.recordFill(RSN, ITEM, false, 3);    // holdings still 7, cycle stays open
+
+        assertEquals("a partial sell does not disturb the buy-side basis",
+            Integer.valueOf(100), ledger.currentBasis(RSN, ITEM));
+    }
+
+    @Test
+    public void basis_ignoresAZeroPrice()
+    {
+        // A placement row carries no price; folding it in would drag the average toward zero.
+        ledger.recordBuyBasis(RSN, ITEM, 10, 0);
+
+        assertNull("a priceless fill contributes no basis", ledger.currentBasis(RSN, ITEM));
+    }
+
+    @Test
     public void cleanTwoCycleSequence_producesTwoDistinctIds()
     {
         int buyLow = ledger.recordFill(RSN, ITEM, true, 10);

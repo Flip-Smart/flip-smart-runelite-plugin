@@ -130,7 +130,14 @@ public final class TransactionLogger
             // so this fill's peeked id — and thus its dedup key — differs from the original's. The
             // ledger recognised it as a byte-identical re-delivery and mutated nothing; forwarding
             // it would stamp the backend with the next cycle's id, so drop it here.
+            // Basis is deliberately not folded either — a re-delivery buys nothing.
             return;
+        }
+        if (r.isBuy())
+        {
+            // Folded quantity, not the caller's: the ledger rebaselines a slot-keyed fill against
+            // what that slot already absorbed, and the basis has to describe the same items.
+            roundTripLedger.recordBuyBasis(rsn, r.getItemId(), fill.foldedQuantity, pricePerItem);
         }
         apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).build());
     }

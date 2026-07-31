@@ -36,6 +36,14 @@ public final class RoundTripLedger
         public int cycleId;
 
         /**
+         * Buy-side quantity and outlay accumulated for the CURRENT cycle, zeroed when it closes.
+         * Scoping them to the cycle is what keeps a cost basis from averaging across positions the
+         * player has already fully liquidated.
+         */
+        public int boughtQuantity;
+        public long boughtSpent;
+
+        /**
          * Cumulative filled quantity already folded into {@code heldQuantity} for the offer currently
          * on each (slot, direction), keyed by {@code slot * 2 + (isBuy ? 1 : 0)}. PERSISTED: on relog
          * the login reconciliation re-feeds an open offer's full current cumulative, and matching it
@@ -76,10 +84,18 @@ public final class RoundTripLedger
         public final Integer roundTripId;
         public final boolean duplicateSuppressed;
 
-        public FillResult(Integer roundTripId, boolean duplicateSuppressed)
+        /**
+         * Quantity actually folded into held, which is not always what the caller passed — a
+         * slot-keyed fill rebaselines against what that slot has already absorbed. Cost basis
+         * must follow this number, or the money would describe a different number of items.
+         */
+        public final int foldedQuantity;
+
+        public FillResult(Integer roundTripId, boolean duplicateSuppressed, int foldedQuantity)
         {
             this.roundTripId = roundTripId;
             this.duplicateSuppressed = duplicateSuppressed;
+            this.foldedQuantity = foldedQuantity;
         }
     }
 
@@ -135,7 +151,7 @@ public final class RoundTripLedger
         {
             if (rsn == null || rsn.isEmpty())
             {
-                return new FillResult(null, false);
+                return new FillResult(null, false, 0);
             }
             Entry e = entryFor(rsn, itemId);
 
@@ -145,7 +161,7 @@ public final class RoundTripLedger
             String fingerprint = slot == null ? null : slot + ":" + isBuy + ":" + cumulativeQuantity;
             if (fingerprint != null && fingerprint.equals(e.lastClosingFingerprint))
             {
-                return new FillResult(e.cycleId, true);
+                return new FillResult(e.cycleId, true, 0);
             }
 
             int effectiveDelta;
@@ -165,7 +181,7 @@ public final class RoundTripLedger
                 {
                     // Exactly the cumulative already folded in for this (slot, direction): a relog
                     // re-feed or a duplicate re-delivery. Fold nothing; tell the caller not to forward.
-                    return new FillResult(e.cycleId, true);
+                    return new FillResult(e.cycleId, true, 0);
                 }
                 // A lower cumulative means a fresh offer reused the slot (fills restart at 0), so its
                 // whole cumulative is new; a higher one is genuine incremental progress on this offer.
@@ -187,6 +203,10 @@ public final class RoundTripLedger
             if (closed)
             {
                 e.cycleId++;
+                // The position is gone, so its cost basis goes with it — otherwise the next cycle
+                // would inherit the average of stock that has already been sold.
+                e.boughtQuantity = 0;
+                e.boughtSpent = 0L;
                 e.lastClosingFingerprint = fingerprint;
             }
             else
@@ -205,7 +225,54 @@ public final class RoundTripLedger
                 e.absorbedBySlotDir.remove(slot * 2);
                 e.absorbedBySlotDir.remove(slot * 2 + 1);
             }
-            return new FillResult(roundTripId, false);
+            return new FillResult(roundTripId, false, effectiveDelta);
+        }
+    }
+
+    /**
+     * Fold a buy's quantity and outlay into the current cycle's cost basis.
+     *
+     * <p>Takes a per-item price rather than a total so the money always corresponds to the
+     * quantity actually folded in: {@link #recordFillGuarded} may rebaseline a fill's quantity
+     * against what a slot has already absorbed, and a separately-supplied total would then
+     * describe a different number of items than the one recorded.</p>
+     *
+     * <p>A non-positive price contributes nothing — a placement row carries no price, and folding
+     * it in would drag the average toward zero.</p>
+     */
+    public void recordBuyBasis(String rsn, int itemId, int quantity, int pricePerItem)
+    {
+        if (rsn == null || rsn.isEmpty() || quantity <= 0 || pricePerItem <= 0)
+        {
+            return;
+        }
+        synchronized (lock)
+        {
+            Entry e = entryFor(rsn, itemId);
+            e.boughtQuantity += quantity;
+            e.boughtSpent += (long) quantity * pricePerItem;
+        }
+    }
+
+    /**
+     * Quantity-weighted average buy price for the OPEN cycle, or {@code null} when it has taken
+     * no priced buys. Because a closed cycle's basis is cleared, this can never average across a
+     * position the player has already liquidated.
+     */
+    public Integer currentBasis(String rsn, int itemId)
+    {
+        if (rsn == null || rsn.isEmpty())
+        {
+            return null;
+        }
+        synchronized (lock)
+        {
+            Entry e = entryFor(rsn, itemId);
+            if (e.boughtQuantity <= 0)
+            {
+                return null;
+            }
+            return (int) Math.round(e.boughtSpent / (double) e.boughtQuantity);
         }
     }
 
