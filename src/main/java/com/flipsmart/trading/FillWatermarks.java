@@ -35,6 +35,14 @@ public final class FillWatermarks
 	private static final int SPENT = 1;
 	private static final int FIRST_GENERATION = 1;
 
+	/**
+	 * Prefix marking a persisted slot generation rather than a fill mark. Without carrying
+	 * generation across a restart, a slot restarts at the first generation while marks from the
+	 * previous session survive, so a new order matching a slot's earliest use would adopt that
+	 * finished order's mark and have its fills suppressed.
+	 */
+	private static final String GENERATION_KEY_PREFIX = "gen:";
+
 	private final Map<String, long[]> marks = new HashMap<>();
 	private final Map<Integer, Integer> slotGeneration = new HashMap<>();
 
@@ -71,7 +79,14 @@ public final class FillWatermarks
 
 	public synchronized Map<String, long[]> export()
 	{
-		return new HashMap<>(marks);
+		Map<String, long[]> out = new HashMap<>(marks);
+		// Generation rides along in the same map so there is only ever one thing to keep fresh.
+		// An identity key carries four colon-separated fields, so this prefix cannot collide.
+		for (Map.Entry<Integer, Integer> entry : slotGeneration.entrySet())
+		{
+			out.put(GENERATION_KEY_PREFIX + entry.getKey(), new long[]{entry.getValue(), 0L});
+		}
+		return out;
 	}
 
 	/**
@@ -118,6 +133,11 @@ public final class FillWatermarks
 			{
 				continue;
 			}
+			if (entry.getKey().startsWith(GENERATION_KEY_PREFIX))
+			{
+				restoreGeneration(entry.getKey(), incoming[FILLED]);
+				continue;
+			}
 			long[] current = marks.get(entry.getKey());
 			if (current == null)
 			{
@@ -128,6 +148,20 @@ public final class FillWatermarks
 				Math.max(current[FILLED], incoming[FILLED]),
 				Math.max(current[SPENT], incoming[SPENT])
 			});
+		}
+	}
+
+	/** Adopt a persisted slot generation, keeping the later one so a slot never rewinds. */
+	private void restoreGeneration(String key, long persisted)
+	{
+		try
+		{
+			int slot = Integer.parseInt(key.substring(GENERATION_KEY_PREFIX.length()));
+			slotGeneration.put(slot, Math.max(generationFor(slot), (int) persisted));
+		}
+		catch (NumberFormatException e)
+		{
+			// A malformed key is not worth failing a restore over; the slot keeps its default.
 		}
 	}
 }

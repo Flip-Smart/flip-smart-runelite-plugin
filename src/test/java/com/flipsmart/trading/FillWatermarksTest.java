@@ -95,6 +95,37 @@ public class FillWatermarksTest
 	}
 
 	@Test
+	public void generation_survivesARestart_soAReusedSlotDoesNotInheritAFinishedMark()
+	{
+		FillWatermarks before = new FillWatermarks();
+		OfferIdentity finished = OfferIdentity.of(0, 7777, true, before.generationFor(0));
+		before.observe(finished, 10, 1000L);
+		before.advanceGeneration(0);
+
+		// A restart: only what export() carries survives.
+		FillWatermarks after = new FillWatermarks();
+		after.mergeFrom(before.export());
+
+		OfferIdentity next = OfferIdentity.of(0, 7777, true, after.generationFor(0));
+		assertNotEquals("a new order must not reuse a finished order's identity", finished, next);
+		assertEquals("its fills must still be reported", 5, after.observe(next, 5, 500L).quantity);
+	}
+
+	@Test
+	public void generation_neverRewindsOnAStaleRestore()
+	{
+		FillWatermarks watermarks = new FillWatermarks();
+		watermarks.advanceGeneration(0);
+		watermarks.advanceGeneration(0);
+		int current = watermarks.generationFor(0);
+
+		// A snapshot written two turnovers ago must not roll the slot backwards.
+		watermarks.mergeFrom(new FillWatermarks().export());
+
+		assertEquals("generation only ever moves forward", current, watermarks.generationFor(0));
+	}
+
+	@Test
 	public void mergeFrom_adoptsMarksTheSessionHasNotSeen()
 	{
 		FillWatermarks watermarks = new FillWatermarks();
