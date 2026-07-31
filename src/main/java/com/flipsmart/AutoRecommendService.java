@@ -2009,8 +2009,22 @@ public class AutoRecommendService
 	 * Add a tracked offer to the stale queue if not already present.
 	 * If the queue was empty, immediately shows the first prompt.
 	 */
+	/** Current stale-queue depth. */
+	int staleOfferCount()
+	{
+		return staleOffers.size();
+	}
+
 	void addToStaleQueue(OfferRecord offer)
 	{
+		if (offer.getState() == OfferState.CANCELLED_PARTIAL)
+		{
+			// Cancelled but still occupying its slot until the player collects, so it reads as
+			// live. There is nothing left to cancel, and the resolver already produces the
+			// collect that is the only remaining action.
+			return;
+		}
+
 		if (skipCooldown.isCoolingDown(offer.getItemId()))
 		{
 			// Snoozed by a recent skip — don't re-prompt until the cooldown lifts.
