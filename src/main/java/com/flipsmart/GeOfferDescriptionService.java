@@ -484,7 +484,8 @@ public class GeOfferDescriptionService
 	private String buildSellDescription(int itemId)
 	{
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
-			plugin.getCurrentActiveFlips(), plugin.getOfferRecordsForItem(itemId), itemId);
+			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
+			plugin.getOfferRecordsForItem(itemId), itemId);
 		int sellPrice = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
 		int quantity = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
 		return GeOfferDescriptionFormatter.formatSellDescription(itemId, recordedBuyPrice, sellPrice, quantity);
@@ -493,7 +494,8 @@ public class GeOfferDescriptionService
 	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
 	{
 		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
-			plugin.getCurrentActiveFlips(), plugin.getOfferRecordsForItem(itemId), itemId);
+			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
+			plugin.getOfferRecordsForItem(itemId), itemId);
 		return GeOfferDescriptionFormatter.formatSellDescription(
 			itemId, recordedBuyPrice, Math.max(listedPrice, 0), Math.max(totalQuantity, 0));
 	}
