@@ -333,6 +333,10 @@ public final class RoundTripLedger
             {
                 Entry source = entry.getValue();
                 Entry clone = new Entry(source.heldQuantity, source.cycleId);
+                // The open cycle's basis travels with the position it describes; a restored
+                // position without it falls back to averaging across already-closed flips.
+                clone.boughtQuantity = source.boughtQuantity;
+                clone.boughtSpent = source.boughtSpent;
                 if (source.absorbedBySlotDir != null)
                 {
                     clone.absorbedBySlotDir = new HashMap<>(source.absorbedBySlotDir);

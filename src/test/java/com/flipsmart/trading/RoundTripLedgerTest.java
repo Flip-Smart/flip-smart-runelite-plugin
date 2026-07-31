@@ -39,6 +39,22 @@ public class RoundTripLedgerTest
     }
 
     @Test
+    public void basis_survivesAnExportImportRoundTrip()
+    {
+        // Persistence is the only thing that carries a position across a restart, and a position
+        // whose basis does not come with it silently falls back to averaging across closed flips.
+        ledger.recordFill(RSN, ITEM, true, 10);
+        ledger.recordBuyBasis(RSN, ITEM, 10, 1736);
+
+        RoundTripLedger restored = new RoundTripLedger();
+        restored.importState(RSN, ledger.export(RSN));
+
+        assertEquals("held quantity survives", 10, restored.heldQuantity(RSN, ITEM));
+        assertEquals("so must the basis it depends on",
+            Integer.valueOf(1736), restored.currentBasis(RSN, ITEM));
+    }
+
+    @Test
     public void basis_isAbsentBeforeAnyBuy()
     {
         assertNull("an untouched item has no basis", ledger.currentBasis(RSN, ITEM));
