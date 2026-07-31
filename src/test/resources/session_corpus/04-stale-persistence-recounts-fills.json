@@ -1,8 +1,6 @@
 {
   "name": "stale-persistence-recounts-fills",
   "description": "A buy is persisted at 0 filled, then fills to 4 in session. The next persist is skipped (the RSN is unresolvable during the logout window), so the preload reattaches the stale 0-filled record and the running total resets. The following observation of cumulative 4 then re-reports fills already sent, because the delta is computed against whatever record is in the store rather than against the highest cumulative ever seen.",
-  "known_failure": true,
-  "measured_today": ["7777:true:4", "7777:true:4"],
   "rsn": "TestPlayer",
   "timeline": [
     {"at_seconds": -600, "type": "observe", "slot": 0, "state": "BUYING", "item_id": 7777, "total": 10, "price": 100, "sold": 0, "spent": 0},
