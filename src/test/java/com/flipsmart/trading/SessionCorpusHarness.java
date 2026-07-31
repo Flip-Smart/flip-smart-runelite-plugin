@@ -110,18 +110,44 @@ final class SessionCorpusHarness
 		ItemManager itemManager = mock(ItemManager.class);
 		when(itemManager.getItemComposition(anyInt())).thenReturn(anyComposition);
 
-		// Everything above survives a restart because it stands in for the client and its config
-		// file. Everything below is process state, rebuilt from the config blob alone when the
-		// timeline restarts.
+		// Everything in the environment survives a restart because it stands in for the client
+		// and its config file. The Session below is process state, rebuilt from the config blob
+		// alone when the timeline restarts.
+		Environment env = new Environment(session, configManager, client, clientThread,
+			itemManager, fills);
 		Session live = new Session();
-		live.rebuild(session, configManager, client, clientThread, itemManager, fills);
+		live.rebuild(env);
 
 		for (JsonElement element : fixture.getAsJsonArray("timeline"))
 		{
-			applyEvent(element.getAsJsonObject(), base, live, client,
-				session, configManager, clientThread, itemManager, fills);
+			applyEvent(element.getAsJsonObject(), base, live, env);
 		}
 		return new Result(live.store, fills);
+	}
+
+	/**
+	 * The client/config/item stand-ins a real restart would rebuild the process against. Grouped
+	 * so the harness can pass "what a restart reads" as a single unit.
+	 */
+	private static final class Environment
+	{
+		final PlayerSession session;
+		final ConfigManager configManager;
+		final Client client;
+		final ClientThread clientThread;
+		final ItemManager itemManager;
+		final List<OfferEvent> fills;
+
+		Environment(PlayerSession session, ConfigManager configManager, Client client,
+			ClientThread clientThread, ItemManager itemManager, List<OfferEvent> fills)
+		{
+			this.session = session;
+			this.configManager = configManager;
+			this.client = client;
+			this.clientThread = clientThread;
+			this.itemManager = itemManager;
+			this.fills = fills;
+		}
 	}
 
 	/**
@@ -135,34 +161,31 @@ final class SessionCorpusHarness
 		private OfferStore store;
 		private OfflineSyncService service;
 
-		void rebuild(PlayerSession session, ConfigManager configManager, Client client,
-			ClientThread clientThread, ItemManager itemManager, List<OfferEvent> fills)
+		void rebuild(Environment env)
 		{
 			store = new OfferStore();
 			store.addListener(e ->
 			{
 				if (e.newlyFilledQuantity > 0)
 				{
-					fills.add(e);
+					env.fills.add(e);
 				}
 			});
 			service = new OfflineSyncService(
-				session,
-				configManager,
+				env.session,
+				env.configManager,
 				new Gson(),
-				client,
-				clientThread,
+				env.client,
+				env.clientThread,
 				mock(ActiveFlipTracker.class),
 				mock(GEHistoryService.class),
 				store,
-				itemManager,
+				env.itemManager,
 				new RoundTripLedger());
 		}
 	}
 
-	private static void applyEvent(JsonObject event, long base, Session live, Client client,
-		PlayerSession session, ConfigManager configManager, ClientThread clientThread,
-		ItemManager itemManager, List<OfferEvent> fills)
+	private static void applyEvent(JsonObject event, long base, Session live, Environment env)
 	{
 		long at = base + event.get("at_seconds").getAsLong() * 1000L;
 		String type = event.get("type").getAsString();
@@ -187,12 +210,12 @@ final class SessionCorpusHarness
 		if ("restart".equals(type))
 		{
 			// Nothing but the config blob crosses a process boundary.
-			live.rebuild(session, configManager, client, clientThread, itemManager, fills);
+			live.rebuild(env);
 		}
 		// Built before the stubbing call: creating mocks inside a when(...) argument throws
 		// UnfinishedStubbingException.
 		GrandExchangeOffer[] snapshot = toSnapshot(event);
-		when(client.getGrandExchangeOffers()).thenReturn(snapshot);
+		when(env.client.getGrandExchangeOffers()).thenReturn(snapshot);
 		live.service.preloadPersistedOffers();
 	}
 
