@@ -87,19 +87,6 @@ public final class TimeUtils
 		}
 	}
 
-	public static String formatElapsedTimeShort(long createdAtMillis)
-	{
-		long elapsed = Math.max(0, System.currentTimeMillis() - createdAtMillis);
-		long minutes = elapsed / 60000;
-		long hours = elapsed / 3600000;
-
-		if (hours > 0)
-		{
-			return hours + "h";
-		}
-		return minutes + "m";
-	}
-
 	/**
 	 * Format elapsed time as a relative "ago" string (e.g., "just now", "5m ago", "2h 15m ago").
 	 */

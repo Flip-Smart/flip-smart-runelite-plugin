@@ -53,32 +53,6 @@ public final class SmartSellPricer
 	}
 
 	/**
-	 * Check if an active flip has exceeded its time threshold and should
-	 * switch to loss-minimizing sell price.
-	 */
-	public static boolean shouldUseLossMinimizingPrice(ActiveFlip flip, Integer dailyVolume)
-	{
-		String buyTimeStr = flip.getLastBuyTime();
-		if (buyTimeStr == null || buyTimeStr.isEmpty())
-		{
-			return false;
-		}
-
-		try
-		{
-			Instant buyTime = Instant.parse(buyTimeStr);
-			Duration elapsed = Duration.between(buyTime, Instant.now());
-			int thresholdMinutes = getSellPriceThresholdMinutes(flip, dailyVolume);
-			return elapsed.toMinutes() >= thresholdMinutes;
-		}
-		catch (DateTimeParseException e)
-		{
-			log.debug("Failed to parse buy time: {}", buyTimeStr);
-			return false;
-		}
-	}
-
-	/**
 	 * Calculate the minimum profitable sell price for an active flip.
 	 * This is the price that would result in zero profit after tax.
 	 * Formula: minSellPrice = buyPrice / (1 - taxRate)

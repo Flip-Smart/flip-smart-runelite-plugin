@@ -23,7 +23,6 @@ import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.api.dto.PluginSyncResponse;
 import com.flipsmart.api.dto.SellPriceCheckRequest;
 import com.flipsmart.api.dto.SellPriceCheckResponse;
-import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.api.dto.TransactionRequest;
 import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.endpoints.ActiveFlipEndpoints;
@@ -248,14 +247,6 @@ public class FlipSmartApiClient
 	public CompletableFuture<Boolean> removeFavoriteAsync(int itemId)
 	{
 		return favorites.removeFavoriteAsync(itemId);
-	}
-
-	@Deprecated(since = "1.5.0", forRemoval = true)
-	@SuppressWarnings("removal")
-	public CompletableFuture<TimeframeFlipFinderResponse> getTimeframeFlipRecommendationsAsync(
-		String timeframe, Integer cashStack, int limit, Integer priceOffset)
-	{
-		return flips.getTimeframeFlipRecommendationsAsync(timeframe, cashStack, limit, priceOffset);
 	}
 
 	public CompletableFuture<FlipAdjustmentResponse> getFlipAdjustmentAsync(FlipAdjustmentRequest req)

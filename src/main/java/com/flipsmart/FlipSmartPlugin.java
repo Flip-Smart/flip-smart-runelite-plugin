@@ -310,14 +310,6 @@ public class FlipSmartPlugin extends Plugin
 
 
 	/**
-	 * Get current RSN (delegates to session for backwards compatibility).
-	 */
-	public String getCurrentRsn()
-	{
-		return session.getRsn();
-	}
-
-	/**
 	 * Get current cash stack (delegates to session for backwards compatibility).
 	 */
 	public int getCurrentCashStack()
@@ -379,12 +371,6 @@ public class FlipSmartPlugin extends Plugin
 	public int getFlipSlotLimit()
 	{
 		return isPremium() ? 8 : 2;
-	}
-
-	/** Whether the player has a free GE slot below {@code slotLimit}, per the offer store. */
-	public boolean hasAvailableGESlots(int slotLimit)
-	{
-		return offerStore.liveOffers().size() < slotLimit;
 	}
 
 	/**
@@ -798,22 +784,6 @@ public class FlipSmartPlugin extends Plugin
 	}
 	
 	/**
-	 * Get the set of item IDs currently in GE buy slots.
-	 */
-	public Set<Integer> getCurrentGEBuyItemIds()
-	{
-		Set<Integer> itemIds = new HashSet<>();
-		for (OfferRecord offer : offerStore.liveOffers())
-		{
-			if (offer.isBuy())
-			{
-				itemIds.add(offer.getItemId());
-			}
-		}
-		return itemIds;
-	}
-
-	/**
 	 * Get all active flip item IDs - items that should show as active flips.
 	 * This includes:
 	 * 1. Items currently in GE buy slots (pending or filled)
@@ -836,31 +806,6 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 
-	/**
-	 * Get all active flip item IDs including items in inventory.
-	 * This is used for filtering active flips display to show items the player
-	 * actually has (in GE slots or inventory).
-	 */
-	public Set<Integer> getActiveFlipItemIdsWithInventory()
-	{
-		Set<Integer> itemIds = getActiveFlipItemIds();
-		
-		// Also include items currently in inventory
-		ItemContainer inventory = client.getItemContainer(INVENTORY_CONTAINER_ID);
-		if (inventory != null)
-		{
-			for (Item item : inventory.getItems())
-			{
-				if (item.getId() > 0)
-				{
-					itemIds.add(item.getId());
-				}
-			}
-		}
-		
-		return itemIds;
-	}
-	
 	@Override
 	protected void startUp() throws Exception
 	{

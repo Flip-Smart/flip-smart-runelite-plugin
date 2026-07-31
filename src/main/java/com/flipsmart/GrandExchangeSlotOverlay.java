@@ -59,8 +59,6 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final Color COLOR_UNCOMPETITIVE_CB = new Color(255, 140, 0);         // Orange
 
 	// Adjustment highlight color — amber pulse to draw attention without conflicting with red/green
-	private static final Color COLOR_ADJUSTMENT_HIGHLIGHT = new Color(255, 185, 50, 200);
-
 	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance();
 
 	// Slots with pending adjustment recommendations (slot -> recommended price)

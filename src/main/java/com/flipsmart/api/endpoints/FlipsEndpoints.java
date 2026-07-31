@@ -5,7 +5,6 @@ import com.flipsmart.api.dto.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.PluginSyncResponse;
-import com.flipsmart.api.dto.TimeframeFlipFinderResponse;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.google.gson.JsonObject;
 import okhttp3.Request;
@@ -236,38 +235,6 @@ public class FlipsEndpoints
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 			.exceptionally(e -> false);
-	}
-
-	/**
-	 * Fetch timeframe-based flip recommendations from the API asynchronously.
-	 */
-	@Deprecated(since = "1.5.0", forRemoval = true)
-	public CompletableFuture<TimeframeFlipFinderResponse> getTimeframeFlipRecommendationsAsync(
-		String timeframe, Integer cashStack, int limit, Integer priceOffset)
-	{
-		String apiUrl = transport.getApiUrl();
-
-		// Build URL with query parameters
-		StringBuilder urlBuilder = new StringBuilder();
-		urlBuilder.append(String.format("%s/flip-finder/timeframe?timeframe=%s&limit=%d", apiUrl, timeframe, limit));
-
-		if (cashStack != null)
-		{
-			urlBuilder.append(String.format("&cash_stack=%d", cashStack));
-		}
-
-		if (priceOffset != null && priceOffset > 0)
-		{
-			urlBuilder.append(String.format("&price_offset=%d", priceOffset));
-		}
-
-		String url = urlBuilder.toString();
-		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
-			.get();
-
-		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			transport.parse(jsonData, TimeframeFlipFinderResponse.class));
 	}
 
 	/**

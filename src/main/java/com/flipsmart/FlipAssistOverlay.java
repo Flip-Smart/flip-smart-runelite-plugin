@@ -72,7 +72,6 @@ public class FlipAssistOverlay extends Overlay
 	// Hint message
 	private static final String HINT_TITLE = "FlipSmart";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
-	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	private static final String LOGIN_MESSAGE = "Log in to use FlipSmart";
 	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to backfill recent trades";
 	private static final String MONITORING_MESSAGE = "Monitoring your flips";

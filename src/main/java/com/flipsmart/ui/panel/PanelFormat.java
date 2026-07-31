@@ -146,27 +146,6 @@ public final class PanelFormat
 	}
 
 	/**
-	 * Format margin text with ROI for display
-	 */
-	public static String formatMarginText(int marginPerItem, double roi, boolean isLoss)
-	{
-		String marginText = Math.abs(marginPerItem) >= 1000
-			? formatGP(marginPerItem)
-			: formatGPExact(marginPerItem);
-
-		if (Double.isInfinite(roi) || Double.isNaN(roi))
-		{
-			return String.format("Margin: %s (pending)", marginText);
-		}
-
-		if (isLoss)
-		{
-			return String.format(FORMAT_MARGIN_ROI_LOSS, marginText, roi);
-		}
-		return String.format(FORMAT_MARGIN_ROI, marginText, roi);
-	}
-
-	/**
 	 * Format profit and cost text for display
 	 */
 	public static String formatProfitCostText(int totalProfit, int totalCost)

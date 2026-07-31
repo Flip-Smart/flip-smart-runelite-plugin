@@ -100,7 +100,6 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String FORMAT_QTY = "Qty: %d";
 	private static final String FORMAT_SELL = "Sell: %s";
 	private static final String FORMAT_ROI = "ROI: %.1f%%";
-	private static final String FORMAT_BUY_SELL = "Buy: %s | Sell: %s";
 	private static final String ERROR_DIALOG_TITLE = "Error";
 	private static final String LIQUIDITY_NA = "Liquidity: N/A";
 	private static final String RISK_NA = "Risk: N/A";

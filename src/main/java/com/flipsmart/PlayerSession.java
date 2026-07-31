@@ -303,17 +303,6 @@ public class PlayerSession
 		originalMargins.put(itemId, margin);
 	}
 
-	public void removeOriginalMargin(int itemId)
-	{
-		originalMargins.remove(itemId);
-	}
-
-	public void clearRecommendedPrices()
-	{
-		recommendedPrices.clear();
-		originalMargins.clear();
-	}
-
 	// =====================
 	// Sync Status Methods
 	// =====================
