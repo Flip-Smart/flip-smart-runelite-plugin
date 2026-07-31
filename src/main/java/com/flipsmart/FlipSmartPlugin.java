@@ -2474,6 +2474,15 @@ public class FlipSmartPlugin extends Plugin
 
 	private String getExitTradesStateKey()
 	{
+		return stateKeyFor(EXIT_TRADES_STATE_KEY_PREFIX);
+	}
+
+	/**
+	 * Per-RSN config key for {@code prefix}, falling back to the last known RSN and then
+	 * to a fixed placeholder, so state never leaks between accounts.
+	 */
+	private String stateKeyFor(String prefix)
+	{
 		String rsn = session.getRsn();
 		if (rsn == null || rsn.isEmpty())
 		{
@@ -2481,9 +2490,9 @@ public class FlipSmartPlugin extends Plugin
 		}
 		if (rsn == null || rsn.isEmpty())
 		{
-			return EXIT_TRADES_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
+			return prefix + UNKNOWN_RSN_FALLBACK;
 		}
-		return EXIT_TRADES_STATE_KEY_PREFIX + rsn;
+		return prefix + rsn;
 	}
 
 	private void persistExitTradesState()
@@ -2537,16 +2546,7 @@ public class FlipSmartPlugin extends Plugin
 
 	private String getAutoRecommendStateKey()
 	{
-		String rsn = session.getRsn();
-		if (rsn == null || rsn.isEmpty())
-		{
-			rsn = lastKnownRsn;
-		}
-		if (rsn == null || rsn.isEmpty())
-		{
-			return AUTO_RECOMMEND_STATE_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return AUTO_RECOMMEND_STATE_KEY_PREFIX + rsn;
+		return stateKeyFor(AUTO_RECOMMEND_STATE_KEY_PREFIX);
 	}
 
 	/**

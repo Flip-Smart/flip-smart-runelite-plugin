@@ -41,23 +41,34 @@ public class ActiveFlipEndpoints
 	 */
 	public CompletableFuture<ActiveFlipsResponse> getActiveFlipsAsync(String rsn)
 	{
-		String apiUrl = transport.getApiUrl();
-		String url;
+		return getScoped("/transactions/active-flips", "", rsn, ActiveFlipsResponse.class);
+	}
+
+	/**
+	 * GET {@code path}, optionally scoped to a single RSN, decoding the body into
+	 * {@code type}. {@code query} is the leading query string without the rsn pair
+	 * ("limit=50", or empty when the path takes no other parameters).
+	 */
+	private <T> CompletableFuture<T> getScoped(String path, String query, String rsn, Class<T> type)
+	{
+		StringBuilder url = new StringBuilder(transport.getApiUrl()).append(path);
+		String separator = "?";
+		if (!query.isEmpty())
+		{
+			url.append(separator).append(query);
+			separator = "&";
+		}
 		if (rsn != null && !rsn.isEmpty())
 		{
-			url = String.format("%s/transactions/active-flips?rsn=%s", apiUrl, urlEncode(rsn));
-		}
-		else
-		{
-			url = String.format("%s/transactions/active-flips", apiUrl);
+			url.append(separator).append("rsn=").append(urlEncode(rsn));
 		}
 
 		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
+			.url(url.toString())
 			.get();
 
 		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, ActiveFlipsResponse.class));
+			gson.fromJson(jsonData, type));
 	}
 
 	/**
@@ -225,23 +236,7 @@ public class ActiveFlipEndpoints
 	 */
 	public CompletableFuture<CompletedFlipsResponse> getCompletedFlipsAsync(int limit, String rsn)
 	{
-		String apiUrl = transport.getApiUrl();
-		String url;
-		if (rsn != null && !rsn.isEmpty())
-		{
-			url = String.format("%s/flips/completed?limit=%d&rsn=%s", apiUrl, limit, urlEncode(rsn));
-		}
-		else
-		{
-			url = String.format("%s/flips/completed?limit=%d", apiUrl, limit);
-		}
-
-		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
-			.get();
-
-		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, CompletedFlipsResponse.class));
+		return getScoped("/flips/completed", "limit=" + limit, rsn, CompletedFlipsResponse.class);
 	}
 
 	/**
@@ -257,22 +252,6 @@ public class ActiveFlipEndpoints
 	 */
 	public CompletableFuture<FlipStatisticsResponse> getFlipStatisticsAsync(int days, String rsn)
 	{
-		String apiUrl = transport.getApiUrl();
-		String url;
-		if (rsn != null && !rsn.isEmpty())
-		{
-			url = String.format("%s/flips/statistics?days=%d&rsn=%s", apiUrl, days, urlEncode(rsn));
-		}
-		else
-		{
-			url = String.format("%s/flips/statistics?days=%d", apiUrl, days);
-		}
-
-		Request.Builder requestBuilder = new Request.Builder()
-			.url(url)
-			.get();
-
-		return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
-			gson.fromJson(jsonData, FlipStatisticsResponse.class));
+		return getScoped("/flips/statistics", "days=" + days, rsn, FlipStatisticsResponse.class);
 	}
 }
