@@ -142,7 +142,12 @@ final class SessionCorpusHarness
 		}
 
 		// A hop and a relog both persist then preload; only a relog loses the in-memory store.
-		service.persistOfferState();
+		// "persist": false models the window where the RSN cannot be resolved and the newer
+		// store state never reaches disk, so the preload reattaches an older persisted record.
+		if (!event.has("persist") || event.get("persist").getAsBoolean())
+		{
+			service.persistOfferState();
+		}
 		if ("relog".equals(type))
 		{
 			store.importRecords(Collections.emptyList());
