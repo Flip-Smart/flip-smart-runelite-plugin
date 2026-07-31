@@ -1,0 +1,22 @@
+{
+  "name": "hop-preserves-collected-buy-basis",
+  "description": "A collected buy is the cost basis for the sell that follows it. LOGGED_IN fires on every world hop, so a reconcile that drops terminal history erases breakeven and profit mid-session with no logout.",
+  "rsn": "TestPlayer",
+  "timeline": [
+    {"at_seconds": -300, "type": "observe", "slot": 0, "state": "BUYING",  "item_id": 4444, "total": 10, "price": 100, "sold": 0,  "spent": 0},
+    {"at_seconds": -200, "type": "observe", "slot": 0, "state": "BOUGHT",  "item_id": 4444, "total": 10, "price": 100, "sold": 10, "spent": 1000},
+    {"at_seconds": -100, "type": "observe", "slot": 0, "state": "EMPTY",   "item_id": 4444, "total": 10, "price": 100, "sold": 10, "spent": 1000},
+    {"at_seconds": -50,  "type": "observe", "slot": 1, "state": "SELLING", "item_id": 5555, "total": 10, "price": 300, "sold": 0,  "spent": 0},
+    {"at_seconds": 0,    "type": "hop", "ge_readable": true,
+      "live_slots": [
+        {"slot": 1, "state": "SELLING", "item_id": 5555, "total": 10, "price": 300, "sold": 0, "spent": 0}
+      ]}
+  ],
+  "expect": {
+    "buy_basis": {"4444": 100},
+    "live_slot_items": {"1": 5555},
+    "reported_fills": [
+      {"item_id": 4444, "is_buy": true, "quantity": 10}
+    ]
+  }
+}
