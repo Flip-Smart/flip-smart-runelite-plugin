@@ -1,4 +1,5 @@
 package com.flipsmart;
+
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.domain.offer.OfferState;
@@ -6,19 +7,8 @@ import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferReconciler;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.trading.RoundTripLedger;
-
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import lombok.extern.slf4j.Slf4j;
-import net.runelite.api.Client;
-import net.runelite.api.GrandExchangeOffer;
-import net.runelite.api.GrandExchangeOfferState;
-import net.runelite.client.callback.ClientThread;
-import net.runelite.client.config.ConfigManager;
-import net.runelite.client.game.ItemManager;
-
-import javax.inject.Inject;
-import javax.inject.Singleton;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,6 +17,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
+import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.game.ItemManager;
 
 /**
  * Handles offline fill detection, offer state persistence, and collected item tracking.
@@ -78,6 +78,7 @@ public class OfflineSyncService
 	private final RoundTripLedger roundTripLedger;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
+	@Setter
 	private Runnable onSyncComplete;
 
 	@Inject
@@ -103,11 +104,6 @@ public class OfflineSyncService
 		this.offerStore = offerStore;
 		this.itemManager = itemManager;
 		this.roundTripLedger = roundTripLedger;
-	}
-
-	public void setOnSyncComplete(Runnable onSyncComplete)
-	{
-		this.onSyncComplete = onSyncComplete;
 	}
 
 	/**
@@ -172,8 +168,8 @@ public class OfflineSyncService
 			{
 				return new HashSet<>();
 			}
-			Type type = new TypeToken<java.util.List<Integer>>(){}.getType();
-			java.util.List<Integer> items = gson.fromJson(json, type);
+			Type type = new TypeToken<List<Integer>>(){}.getType();
+			List<Integer> items = gson.fromJson(json, type);
 			return items != null ? new HashSet<>(items) : new HashSet<>();
 		}
 		catch (Exception e)
@@ -274,7 +270,7 @@ public class OfflineSyncService
 		{
 			try
 			{
-				String json = gson.toJson(new java.util.ArrayList<>(session.getCollectedItemsForPersistence()));
+				String json = gson.toJson(new ArrayList<>(session.getCollectedItemsForPersistence()));
 				configManager.setConfiguration(CONFIG_GROUP, collectedKey, json);
 
 				Map<Integer, Integer> quantities = session.getCollectedQuantitiesForPersistence();
@@ -311,7 +307,7 @@ public class OfflineSyncService
 			try
 			{
 				configManager.setConfiguration(CONFIG_GROUP, FLIP_FINDER_SOURCED_KEY_PREFIX + rsn,
-					gson.toJson(new java.util.ArrayList<>(sourced)));
+					gson.toJson(new ArrayList<>(sourced)));
 			}
 			catch (Exception e)
 			{
@@ -922,8 +918,8 @@ public class OfflineSyncService
 				return new HashSet<>();
 			}
 
-			Type type = new TypeToken<java.util.List<Integer>>(){}.getType();
-			java.util.List<Integer> items = gson.fromJson(json, type);
+			Type type = new TypeToken<List<Integer>>(){}.getType();
+			List<Integer> items = gson.fromJson(json, type);
 			log.debug("Loaded {} persisted collected items for {}", items != null ? items.size() : 0, session.getRsn());
 			return items != null ? new HashSet<>(items) : new HashSet<>();
 		}

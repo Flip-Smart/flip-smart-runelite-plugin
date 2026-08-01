@@ -3,15 +3,16 @@ package com.flipsmart.trading;
 import com.flipsmart.FlipSmartApiClient;
 import com.flipsmart.PlayerSession;
 import com.flipsmart.api.dto.TransactionRequest;
-
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Supplier;
+import javax.inject.Inject;
+import javax.inject.Singleton;
 
 /**
  * Single recording point for GE transactions, driven by OfferEvents from OfferStore.
@@ -89,7 +90,7 @@ public final class TransactionLogger
         }
     }
 
-    private void recordPlacement(com.flipsmart.domain.offer.OfferRecord r)
+    private void recordPlacement(OfferRecord r)
     {
         String rsn = rsnSupplier.get().orElse(null);
         String key = idempotencyKey(rsn, r, Type.PLACE);
@@ -103,7 +104,7 @@ public final class TransactionLogger
         apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).roundTripId(roundTripId).build());
     }
 
-    private void recordFill(com.flipsmart.domain.offer.OfferRecord r, int newlyFilled, long newlySpent)
+    private void recordFill(OfferRecord r, int newlyFilled, long newlySpent)
     {
         String rsn = rsnSupplier.get().orElse(null);
         String key = idempotencyKey(rsn, r, Type.FILL);
@@ -120,9 +121,9 @@ public final class TransactionLogger
         // The offer is done filling (so its slot's cumulative baseline may reset) once it is no longer
         // NEW or PARTIAL_FILL — i.e. FILLED, collected, or cancelled. A still-filling offer keeps its
         // baseline so a sibling slot of the same item is never double-counted on a mid-fill close.
-        com.flipsmart.domain.offer.OfferState state = r.getState();
-        boolean offerComplete = state != com.flipsmart.domain.offer.OfferState.NEW
-            && state != com.flipsmart.domain.offer.OfferState.PARTIAL_FILL;
+        OfferState state = r.getState();
+        boolean offerComplete = state != OfferState.NEW
+            && state != OfferState.PARTIAL_FILL;
         RoundTripLedger.FillResult fill = roundTripLedger.recordFillGuarded(
             rsn, r.getItemId(), r.getSlot(), r.isBuy(), newlyFilled, r.getFilledQuantity(), offerComplete);
         if (fill.duplicateSuppressed)
@@ -171,14 +172,14 @@ public final class TransactionLogger
      * only for client-side send suppression; the sent idempotency key is unchanged.
      */
     static String normalizedDedupKey(String rsn, Integer roundTripId,
-                                     com.flipsmart.domain.offer.OfferRecord r, Type type)
+                                     OfferRecord r, Type type)
     {
         long cumulative = type == Type.PLACE ? 0 : r.getFilledQuantity();
         return rsn + ":" + r.getItemId() + ":" + r.isBuy() + ":" + r.getSlot()
             + ":" + roundTripId + ":" + type + ":" + cumulative;
     }
 
-    private TransactionRequest.Builder baseBuilder(com.flipsmart.domain.offer.OfferRecord r,
+    private TransactionRequest.Builder baseBuilder(OfferRecord r,
                                                     int qty, int price, String rsn, String key)
     {
         Integer recPrice = r.isBuy() ? session.getRecommendedPrice(r.getItemId()) : null;
@@ -197,7 +198,7 @@ public final class TransactionLogger
      * Format: {@code rsn:offerId:createdAtMillis:TYPE:cumulative}
      * where cumulative=0 for PLACE, filledQuantity for FILL.
      */
-    public static String idempotencyKey(String rsn, com.flipsmart.domain.offer.OfferRecord r, Type type)
+    public static String idempotencyKey(String rsn, OfferRecord r, Type type)
     {
         long cumulative = type == Type.PLACE ? 0 : r.getFilledQuantity();
         return rsn + ":" + r.getOfferId() + ":" + r.getCreatedAtMillis() + ":" + type + ":" + cumulative;

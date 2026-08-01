@@ -1,6 +1,7 @@
 package com.flipsmart.exit;
 
 import lombok.Getter;
+import lombok.Setter;
 
 /** One occupied GE slot the Exit Trades flow must unwind. Phase mutates as the player acts. */
 @Getter
@@ -11,7 +12,9 @@ public final class ExitSlotTarget
 	private final String itemName;
 	private final boolean buy;
 	private final int buyBasis;
+	@Setter
 	private ExitPhase phase;
+	@Setter
 	private int heldQuantity; // stock bought from a cancelled/filled buy, remembered across the collect lag
 
 	private ExitSlotTarget(int slot, int itemId, String itemName, boolean buy, int buyBasis, ExitPhase phase)
@@ -34,13 +37,4 @@ public final class ExitSlotTarget
 		return new ExitSlotTarget(slot, itemId, itemName, true, buyBasis, ExitPhase.PENDING_CANCEL);
 	}
 
-	public void setPhase(ExitPhase phase)
-	{
-		this.phase = phase;
-	}
-
-	public void setHeldQuantity(int heldQuantity)
-	{
-		this.heldQuantity = heldQuantity;
-	}
 }

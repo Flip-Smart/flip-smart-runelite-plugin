@@ -1,7 +1,6 @@
 package com.flipsmart.api.endpoints;
 
 import com.flipsmart.api.ApiHttpTransport;
-import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import lombok.extern.slf4j.Slf4j;

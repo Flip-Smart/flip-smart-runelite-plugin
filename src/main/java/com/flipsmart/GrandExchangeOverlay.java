@@ -1,7 +1,11 @@
 package com.flipsmart;
+
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.ItemUtils;
-
+import java.awt.image.BufferedImage;
+import java.text.DecimalFormat;
+import javax.inject.Inject;
+import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
@@ -16,10 +20,7 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.ui.overlay.OverlayPriority;
 import net.runelite.client.util.AsyncBufferedImage;
 
-import javax.inject.Inject;
 import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.text.DecimalFormat;
 
 import static net.runelite.api.MenuAction.RUNELITE_OVERLAY_CONFIG;
 import static net.runelite.client.ui.overlay.OverlayManager.OPTION_CONFIGURE;
@@ -90,6 +91,7 @@ public class GrandExchangeOverlay extends Overlay
 	private final ItemManager itemManager;
 
 	private boolean isCollapsed = false;
+	@Getter
 	private Rectangle collapseButtonBounds = new Rectangle();
 
 	@Inject
@@ -598,8 +600,4 @@ public class GrandExchangeOverlay extends Overlay
 		return isCollapsed;
 	}
 	
-	public Rectangle getCollapseButtonBounds()
-	{
-		return collapseButtonBounds;
-	}
 }

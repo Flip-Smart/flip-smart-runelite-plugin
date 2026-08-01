@@ -1,37 +1,56 @@
 package com.flipsmart;
-import com.flipsmart.domain.flip.CompletedFlip;
-import com.flipsmart.domain.flip.FlipRecommendation;
+
 import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.BlocklistSummary;
 import com.flipsmart.api.dto.CompletedFlipsResponse;
 import com.flipsmart.api.dto.FavoriteItem;
-import com.flipsmart.api.dto.FavoritesResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
-import com.flipsmart.api.dto.PluginSyncResponse;
-import com.flipsmart.domain.flip.FlipAnalysis;
 import com.flipsmart.domain.flip.ActiveFlip;
-import com.flipsmart.api.dto.BlocklistSummary;
+import com.flipsmart.domain.flip.CompletedFlip;
+import com.flipsmart.domain.flip.FlipAnalysis;
+import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferTransition;
 import com.flipsmart.domain.offer.PendingOrder;
 import com.flipsmart.exit.ExitTradesDialog;
 import com.flipsmart.recommend.SmartSellPricer;
+import com.flipsmart.session.OpenPositions;
+import com.flipsmart.session.SessionClock;
+import com.flipsmart.session.SessionStats;
+import com.flipsmart.session.SessionStatsView;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.ui.panel.FavoritesSort;
 import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
-import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.ui.panel.Paginator;
-import com.flipsmart.session.OpenPositions;
-import com.flipsmart.session.SessionClock;
-import com.flipsmart.session.SessionStats;
-import com.flipsmart.session.SessionStatsView;
-import com.flipsmart.util.BuyPriceLookup;
+import com.flipsmart.ui.panel.PanelFormat;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
 import com.flipsmart.util.TimeUtils;
-
+import java.awt.Component;
+import java.awt.Graphics;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.function.Consumer;
+import java.util.function.Function;
+import java.util.function.Supplier;
+import javax.swing.Timer;
+import javax.swing.border.EmptyBorder;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
+import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -40,19 +59,8 @@ import net.runelite.client.ui.PluginPanel;
 import net.runelite.client.util.AsyncBufferedImage;
 import net.runelite.client.util.LinkBrowser;
 
-import javax.swing.*;
-import javax.swing.border.EmptyBorder;
-import javax.swing.event.PopupMenuEvent;
-import javax.swing.event.PopupMenuListener;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
-import java.text.ParseException;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ThreadLocalRandom;
+import javax.swing.*;
 
 @Slf4j
 public class FlipFinderPanel extends PluginPanel
@@ -186,7 +194,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final JTabbedPane tabbedPane = new JTabbedPane();
 	private final SessionClock sessionClock = new SessionClock(System.currentTimeMillis());
 	private final SessionStatsView sessionStatsView = new SessionStatsView();
-	private javax.swing.Timer sessionStatsTimer;
+	private Timer sessionStatsTimer;
 	private SessionStats.ProfitBase sessionProfitBase = SessionStats.ProfitBase.EMPTY;
 	private final transient FlipSmartPlugin plugin;  // Reference to plugin to store recommended prices
 	
@@ -198,12 +206,12 @@ public class FlipFinderPanel extends PluginPanel
 
 	// Completed tab sort controls
 	private CompletedSort completedSort = CompletedSort.RECENCY;
-	private final java.util.Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
+	private final Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
 
 	// Favorites tab sort + pagination controls
 	private FavoritesSort favoritesSort = FavoritesSort.PROFIT;
 	private int favoritesPage = 0;
-	private final java.util.Map<FavoritesSort, JLabel> favoritesSortTabs = new java.util.EnumMap<>(FavoritesSort.class);
+	private final Map<FavoritesSort, JLabel> favoritesSortTabs = new java.util.EnumMap<>(FavoritesSort.class);
 	private JLabel favoritesPageLabel;
 	private JLabel favoritesPrevPageLabel;
 	private JLabel favoritesNextPageLabel;
@@ -230,21 +238,24 @@ public class FlipFinderPanel extends PluginPanel
 	private JLabel subscribeLabel;
 
 	// Callback for when authentication completes (to sync RSN)
+	@Setter
 	private transient Runnable onAuthSuccess;
 
 	// Flip Assist focus tracking
+	@Getter
 	private transient FocusedFlip currentFocus = null;
 	private transient JPanel currentFocusedPanel = null;
 	private transient int currentFocusedItemId = -1;
-	private transient java.util.function.Consumer<FocusedFlip> onFocusChanged;
+	@Setter
+	private transient Consumer<FocusedFlip> onFocusChanged;
 
 	/** Refresh closures for the cards currently on the Active Flips tab; rebuilt with the list. */
-	private final transient java.util.List<Runnable> activeFlipCardRefreshers = new java.util.ArrayList<>();
-	private transient javax.swing.Timer activeFlipsPriceTimer;
+	private final transient List<Runnable> activeFlipCardRefreshers = new ArrayList<>();
+	private transient Timer activeFlipsPriceTimer;
 
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
-	private final java.util.Map<Integer, Integer> displayedSellPrices = new java.util.concurrent.ConcurrentHashMap<>();
+	private final Map<Integer, Integer> displayedSellPrices = new ConcurrentHashMap<>();
 
 	// Auto-recommend UI
 	private JToggleButton autoRecommendButton;
@@ -255,7 +266,7 @@ public class FlipFinderPanel extends PluginPanel
 	// The next-refresh deadline itself lives on the PluginScheduler (the single source
 	// of truth shared with the actual refresh trigger); this ticker only renders it.
 	private JLabel refreshCountdownLabel;
-	private transient javax.swing.Timer refreshCountdownTimer;
+	private transient Timer refreshCountdownTimer;
 
 	// Cashstack override indicator (AC3) — shows the active override or an error
 	private JLabel cashstackOverrideLabel;
@@ -267,7 +278,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	// Favorited item ids, hydrated from the sync payload. Card rebuilds are full removeAll(),
 	// so star fill is read from here at build time rather than stored on the widget.
-	private final java.util.Set<Integer> favoriteItemIds = new java.util.concurrent.CopyOnWriteArraySet<>();
+	private final Set<Integer> favoriteItemIds = new java.util.concurrent.CopyOnWriteArraySet<>();
 
 	public FlipFinderPanel(FlipSmartConfig config, FlipSmartApiClient apiClient, ItemManager itemManager, FlipSmartPlugin plugin, ConfigManager configManager)
 	{
@@ -363,21 +374,18 @@ public class FlipFinderPanel extends PluginPanel
 		mainPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
 
 		// Header: brand title + website link stacked on the left, buttons on the right
-		JPanel headerPanel = new JPanel(new BorderLayout());
-		headerPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel headerPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 		headerPanel.setBorder(new EmptyBorder(10, 10, 10, 10));
 
 		JPanel titleBox = new JPanel();
 		titleBox.setLayout(new BoxLayout(titleBox, BoxLayout.Y_AXIS));
 		titleBox.setBackground(ColorScheme.DARKER_GRAY_COLOR);
 
-		JLabel titleLabel = new JLabel("FlipSmart");
-		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(FONT_BOLD_16);
-		titleLabel.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+		JLabel titleLabel = CardWidgets.label("FlipSmart", Color.WHITE, FONT_BOLD_16);
+		titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		JLabel brandLink = buildWebsiteLink();
-		brandLink.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+		brandLink.setAlignmentX(Component.LEFT_ALIGNMENT);
 
 		titleBox.add(titleLabel);
 		titleBox.add(brandLink);
@@ -402,8 +410,7 @@ public class FlipFinderPanel extends PluginPanel
 		settingsButton.setToolTipText("Quick settings");
 		settingsButton.addActionListener(e -> showSettingsPopout(settingsButton));
 
-		JPanel headerButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-		headerButtons.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel headerButtons = CardWidgets.panel(new FlowLayout(FlowLayout.RIGHT, 8, 0), ColorScheme.DARKER_GRAY_COLOR);
 		headerButtons.add(logoutButton);
 		headerButtons.add(refreshButton);
 		headerButtons.add(settingsButton);
@@ -412,8 +419,7 @@ public class FlipFinderPanel extends PluginPanel
 		headerPanel.add(headerButtons, BorderLayout.EAST);
 
 		// Low-emphasis refresh countdown, right-aligned beneath the header buttons
-		JPanel countdownRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
-		countdownRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel countdownRow = CardWidgets.panel(new FlowLayout(FlowLayout.RIGHT, 4, 0), ColorScheme.DARKER_GRAY_COLOR);
 		refreshCountdownLabel = new JLabel();
 		refreshCountdownLabel.setIcon(new ImageIcon(PanelFormat.drawClockIcon(COLOR_TEXT_DIM_GRAY)));
 		refreshCountdownLabel.setForeground(COLOR_TEXT_DIM_GRAY);
@@ -422,13 +428,10 @@ public class FlipFinderPanel extends PluginPanel
 		headerPanel.add(countdownRow, BorderLayout.SOUTH);
 
 		// Controls panel (flip style dropdown)
-		JPanel controlsPanel = new JPanel(new BorderLayout());
-		controlsPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel controlsPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 		controlsPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
 
-		JLabel flipStyleLabel = new JLabel("Style: ");
-		flipStyleLabel.setForeground(Color.LIGHT_GRAY);
-		flipStyleLabel.setFont(FONT_PLAIN_12);
+		JLabel flipStyleLabel = CardWidgets.label("Style: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
 
 		// Custom renderer for better appearance
 		flipStyleDropdown.setRenderer(new DefaultListCellRenderer() {
@@ -470,23 +473,19 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		JLabel flipTimeframeLabel = new JLabel("Timeframe: ");
-		flipTimeframeLabel.setForeground(Color.LIGHT_GRAY);
-		flipTimeframeLabel.setFont(FONT_PLAIN_12);
+		JLabel flipTimeframeLabel = CardWidgets.label("Timeframe: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
 
 		// Row 1: Style dropdown (left) + Auto button (right)
-		JPanel styleRow = new JPanel(new BorderLayout());
-		styleRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel styleRow = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 
-		JPanel styleLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		styleLeft.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel styleLeft = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 5, 0), ColorScheme.DARKER_GRAY_COLOR);
 		styleLeft.add(flipStyleLabel);
 		styleLeft.add(flipStyleDropdown);
 
 		// Auto-recommend toggle button
 		autoRecommendButton = new JToggleButton("Auto") {
 			@Override
-			protected void paintComponent(java.awt.Graphics g)
+			protected void paintComponent(Graphics g)
 			{
 				super.paintComponent(g);
 				if (isSelected())
@@ -542,24 +541,20 @@ public class FlipFinderPanel extends PluginPanel
 		});
 		skipButton.setVisible(false);
 
-		JPanel styleRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-		styleRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel styleRight = CardWidgets.panel(new FlowLayout(FlowLayout.RIGHT, 5, 0), ColorScheme.DARKER_GRAY_COLOR);
 		styleRight.add(autoRecommendButton);
 
 		styleRow.add(styleLeft, BorderLayout.WEST);
 		styleRow.add(styleRight, BorderLayout.EAST);
 
 		// Row 2: Timeframe dropdown (left) + Skip button (right)
-		JPanel timeframeRow = new JPanel(new BorderLayout());
-		timeframeRow.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel timeframeRow = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 
-		JPanel timeframeLeft = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-		timeframeLeft.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel timeframeLeft = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 5, 0), ColorScheme.DARKER_GRAY_COLOR);
 		timeframeLeft.add(flipTimeframeLabel);
 		timeframeLeft.add(flipTimeframeDropdown);
 
-		JPanel timeframeRight = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
-		timeframeRight.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel timeframeRight = CardWidgets.panel(new FlowLayout(FlowLayout.RIGHT, 5, 0), ColorScheme.DARKER_GRAY_COLOR);
 		timeframeRight.add(skipButton);
 
 		timeframeRow.add(timeframeLeft, BorderLayout.WEST);
@@ -575,8 +570,7 @@ public class FlipFinderPanel extends PluginPanel
 		controlsPanel.add(dropdownWrapper, BorderLayout.WEST);
 
 		// Status panel
-		JPanel statusPanel = new JPanel(new BorderLayout());
-		statusPanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel statusPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 		statusPanel.setBorder(new EmptyBorder(5, 10, 5, 10));
 		statusLabel.setForeground(Color.LIGHT_GRAY);
 		statusLabel.setFont(FONT_PLAIN_12);
@@ -593,8 +587,7 @@ public class FlipFinderPanel extends PluginPanel
 		cashstackOverrideLabel = new JLabel();
 		cashstackOverrideLabel.setFont(FONT_PLAIN_12);
 		cashstackOverrideLabel.setVisible(false);
-		JPanel overridePanel = new JPanel(new BorderLayout());
-		overridePanel.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel overridePanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 		overridePanel.setBorder(new EmptyBorder(0, 10, 5, 10));
 		overridePanel.add(cashstackOverrideLabel, BorderLayout.CENTER);
 
@@ -680,7 +673,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			
 			@Override
-			protected void paintTabBackground(java.awt.Graphics g, int tabPlacement, int tabIndex,
+			protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex,
 											  int x, int y, int w, int h, boolean isSelected) {
 				// Paint background for tabs
 				g.setColor(isSelected ? ColorScheme.DARKER_GRAY_COLOR : ColorScheme.DARK_GRAY_COLOR);
@@ -688,7 +681,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			
 			@Override
-			protected void paintTabBorder(java.awt.Graphics g, int tabPlacement, int tabIndex,
+			protected void paintTabBorder(Graphics g, int tabPlacement, int tabIndex,
 										  int x, int y, int w, int h, boolean isSelected) {
 				// Paint border/underline for selected tab
 				if (isSelected) {
@@ -698,15 +691,14 @@ public class FlipFinderPanel extends PluginPanel
 			}
 			
 			@Override
-			protected void paintContentBorder(java.awt.Graphics g, int tabPlacement, int selectedIndex) {
+			protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
 				// Don't paint content border
 			}
 		});
 		
 		// The Recommended tab swaps between the algorithm list and the favorites list via a
 		// centered toggle button, so the favorites view no longer needs its own tab.
-		JPanel toggleBar = new JPanel(new FlowLayout(FlowLayout.CENTER, 0, 4));
-		toggleBar.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel toggleBar = CardWidgets.panel(new FlowLayout(FlowLayout.CENTER, 0, 4), ColorScheme.DARKER_GRAY_COLOR);
 		favoritesToggleButton = new JButton("★ Favorites");
 		favoritesToggleButton.setFocusable(false);
 		favoritesToggleButton.setFont(FONT_PLAIN_11);
@@ -734,8 +726,7 @@ public class FlipFinderPanel extends PluginPanel
 		recommendedCardPanel.add(recommendedScrollPane, CARD_ALGORITHM);
 		recommendedCardPanel.add(favoritesScrollPane, CARD_FAVORITES);
 
-		JPanel recommendedTabPanel = new JPanel(new BorderLayout());
-		recommendedTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		JPanel recommendedTabPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARK_GRAY_COLOR);
 		recommendedTabPanel.add(recommendedControls, BorderLayout.NORTH);
 		recommendedTabPanel.add(recommendedCardPanel, BorderLayout.CENTER);
 		recommendedTabPanel.add(buildFavoritesPaginationRow(), BorderLayout.SOUTH);
@@ -744,8 +735,7 @@ public class FlipFinderPanel extends PluginPanel
 		tabbedPane.addTab("Active Flips", activeFlipsScrollPane);
 
 		// Completed tab carries a secondary sort row (Profit / Recency) above its list
-		JPanel completedTabPanel = new JPanel(new BorderLayout());
-		completedTabPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		JPanel completedTabPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARK_GRAY_COLOR);
 		completedTabPanel.add(buildCompletedSortRow(), BorderLayout.NORTH);
 		completedTabPanel.add(completedFlipsScrollPane, BorderLayout.CENTER);
 		tabbedPane.addTab("Completed", completedTabPanel);
@@ -816,9 +806,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		JLabel websiteLink = new JLabel("Website");
-		websiteLink.setForeground(new Color(100, 180, 255));
-		websiteLink.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
+		JLabel websiteLink = CardWidgets.label("Website", new Color(100, 180, 255), new Font(FONT_ARIAL, Font.PLAIN, 14));
 		websiteLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
 		websiteLink.setToolTipText("Visit our website to view your flips and track your performance");
 		websiteLink.addMouseListener(new MouseAdapter()
@@ -830,9 +818,7 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		JLabel discordLink = new JLabel("Discord");
-		discordLink.setForeground(new Color(88, 101, 242));
-		discordLink.setFont(new Font(FONT_ARIAL, Font.PLAIN, 14));
+		JLabel discordLink = CardWidgets.label("Discord", new Color(88, 101, 242), new Font(FONT_ARIAL, Font.PLAIN, 14));
 		discordLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
 		discordLink.setToolTipText("Join our Discord community");
 		discordLink.addMouseListener(new MouseAdapter()
@@ -870,13 +856,13 @@ public class FlipFinderPanel extends PluginPanel
 	private JSpinner minVolumeSpinner;
 
 	private void showItemContextMenu(int itemId, String itemName, JLabel starLabel,
-		java.awt.Component invoker, int x, int y)
+		Component invoker, int x, int y)
 	{
 		showItemContextMenu(itemId, itemName, starLabel, invoker, x, y, false, null);
 	}
 
 	private void showItemContextMenu(int itemId, String itemName, JLabel starLabel,
-		java.awt.Component invoker, int x, int y, boolean includeDismiss, Runnable onDismiss)
+		Component invoker, int x, int y, boolean includeDismiss, Runnable onDismiss)
 	{
 		JPopupMenu menu = new JPopupMenu();
 		menu.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -976,12 +962,9 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildMinProfitRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 
-		JLabel label = new JLabel("Min Profit: ");
-		label.setForeground(Color.LIGHT_GRAY);
-		label.setFont(FONT_PLAIN_12);
+		JLabel label = CardWidgets.label("Min Profit: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
 		label.setToolTipText(FILTER_TOOLTIP);
 
 		JSpinner spinner = new JSpinner(
@@ -1014,12 +997,9 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildMinVolumeRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 
-		JLabel label = new JLabel("Min Volume: ");
-		label.setForeground(Color.LIGHT_GRAY);
-		label.setFont(FONT_PLAIN_12);
+		JLabel label = CardWidgets.label("Min Volume: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
 		label.setToolTipText(FILTER_TOOLTIP);
 
 		JSpinner spinner = new JSpinner(
@@ -1037,8 +1017,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildUpdateButtonRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 
 		JButton update = new JButton("Update");
 		update.setFont(FONT_PLAIN_12);
@@ -1059,8 +1038,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildExitTradesRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 
 		boolean exitActive = plugin.getExitTradesController() != null
 			&& plugin.getExitTradesController().isActive();
@@ -1096,8 +1074,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JPanel buildHideButtonsRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 
 		JCheckBox hide = new JCheckBox("Hide FlipSmart Buttons");
 		hide.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -1461,7 +1438,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		if (refreshCountdownTimer == null)
 		{
-			refreshCountdownTimer = new javax.swing.Timer(1000, e -> updateRefreshCountdownLabel());
+			refreshCountdownTimer = new Timer(1000, e -> updateRefreshCountdownLabel());
 			refreshCountdownTimer.start();
 		}
 		updateRefreshCountdownLabel();
@@ -1479,7 +1456,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * consumers — render, session P&L, cross-thread overlay reads — go through here so
 	 * there is a single source of truth and no maintained cache.
 	 */
-	private java.util.List<ActiveFlip> projectedActiveFlips()
+	private List<ActiveFlip> projectedActiveFlips()
 	{
 		Map<Integer, ActiveFlip> enrichment;
 		synchronized (enrichmentByItemId)
@@ -1511,7 +1488,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		if (sessionStatsTimer == null)
 		{
-			sessionStatsTimer = new javax.swing.Timer(1000, e ->
+			sessionStatsTimer = new Timer(1000, e ->
 			{
 				sessionClock.update(plugin.isLoggedIntoRunescape(), System.currentTimeMillis());
 				renderSessionStats();
@@ -1531,7 +1508,7 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		if (activeFlipsPriceTimer == null)
 		{
-			activeFlipsPriceTimer = new javax.swing.Timer(ACTIVE_FLIPS_PRICE_REFRESH_MS,
+			activeFlipsPriceTimer = new Timer(ACTIVE_FLIPS_PRICE_REFRESH_MS,
 				e -> runActiveFlipsPriceRefresh());
 		}
 		if (!activeFlipsPriceTimer.isRunning())
@@ -1580,7 +1557,7 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 		// Copy: a refresh repopulates cards, which can rebuild the list underneath us.
-		for (Runnable refresher : new java.util.ArrayList<>(activeFlipCardRefreshers))
+		for (Runnable refresher : new ArrayList<>(activeFlipCardRefreshers))
 		{
 			try
 			{
@@ -1845,7 +1822,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * projected flip counts as active, plus the store-derived pending buys.
 	 * Only writes the header while the Active Flips tab is selected.
 	 */
-	private void updateActiveFlipsStatusLabel(java.util.List<ActiveFlip> active, java.util.List<PendingOrder> pending)
+	private void updateActiveFlipsStatusLabel(List<ActiveFlip> active, List<PendingOrder> pending)
 	{
 		if (tabbedPane.getSelectedIndex() != TAB_ACTIVE_FLIPS)
 		{
@@ -1874,8 +1851,8 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 		final int scrollPos = getScrollPosition(activeFlipsScrollPane);
-		java.util.List<ActiveFlip> active = projectedActiveFlips();
-		java.util.List<PendingOrder> pending = plugin.getPendingBuyOrders();
+		List<ActiveFlip> active = projectedActiveFlips();
+		List<PendingOrder> pending = plugin.getPendingBuyOrders();
 		if (active.isEmpty() && pending.isEmpty())
 		{
 			showNoActiveFlips();
@@ -1891,7 +1868,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * @param pendingOrders the list of pending orders (used to trigger refresh)
 	 */
 	@SuppressWarnings("unused")
-	public void updatePendingOrders(java.util.List<PendingOrder> pendingOrders)
+	public void updatePendingOrders(List<PendingOrder> pendingOrders)
 	{
 		redisplayActiveFlipsLocally();
 	}
@@ -2003,7 +1980,7 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Populate the completed flips list
 	 */
-	private void populateCompletedFlips(java.util.List<CompletedFlip> flips)
+	private void populateCompletedFlips(List<CompletedFlip> flips)
 	{
 		completedFlipsListContainer.removeAll();
 
@@ -2021,22 +1998,22 @@ public class FlipFinderPanel extends PluginPanel
 	 * Return a copy of {@code flips} ordered by the active Completed-tab sort:
 	 * Profit (highest net profit first, AC7) or Recency (most recently sold first, AC8).
 	 */
-	private java.util.List<CompletedFlip> sortedCompletedFlips(java.util.List<CompletedFlip> flips)
+	private List<CompletedFlip> sortedCompletedFlips(List<CompletedFlip> flips)
 	{
-		java.util.List<CompletedFlip> sorted = new ArrayList<>(flips);
-		java.util.Comparator<CompletedFlip> comparator;
+		List<CompletedFlip> sorted = new ArrayList<>(flips);
+		Comparator<CompletedFlip> comparator;
 		if (completedSort == CompletedSort.PROFIT)
 		{
-			comparator = java.util.Comparator.comparingLong(CompletedFlip::getNetProfit).reversed();
+			comparator = Comparator.comparingLong(CompletedFlip::getNetProfit).reversed();
 		}
 		else
 		{
-			java.util.Map<CompletedFlip, Long> tsCache = new java.util.IdentityHashMap<>();
+			Map<CompletedFlip, Long> tsCache = new java.util.IdentityHashMap<>();
 			for (CompletedFlip f : sorted)
 			{
 				tsCache.put(f, TimeUtils.parseIsoToMillis(f.getSellTime()));
 			}
-			comparator = java.util.Comparator
+			comparator = Comparator
 				.comparingLong((CompletedFlip f) -> tsCache.get(f))
 				.thenComparingInt(CompletedFlip::getId)
 				.reversed();
@@ -2051,21 +2028,29 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel buildCompletedSortRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		return buildSortRow(CompletedSort.values(), sort -> sort.label,
+			this::selectCompletedSort, completedSortTabs, this::applyCompletedSortTabStyles);
+	}
+
+	/**
+	 * Shared "Sort: [tab][tab]..." row for the completed and favourites lists. Both
+	 * differ only in their enum, its label accessor, and what a click does.
+	 */
+	private <T extends Enum<T>> JPanel buildSortRow(T[] sorts, Function<T, String> label,
+		Consumer<T> onSelect, Map<T, JLabel> tabs, Runnable applyStyles)
+	{
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 4), ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(0, 4, 0, 0));
 
-		JLabel sortByLabel = new JLabel("Sort:");
-		sortByLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-		sortByLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+		JLabel sortByLabel = CardWidgets.label("Sort:", COLOR_TEXT_DIM_GRAY, new Font(FONT_ARIAL, Font.ITALIC, 10));
 		row.add(sortByLabel);
 
 		Font tabFont = new Font(FONT_ARIAL, Font.BOLD, 11);
 		EmptyBorder tabBorder = new EmptyBorder(2, 7, 2, 7);
 		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
-		for (CompletedSort sort : CompletedSort.values())
+		for (T sort : sorts)
 		{
-			JLabel tab = new JLabel(sort.label);
+			JLabel tab = new JLabel(label.apply(sort));
 			tab.setFont(tabFont);
 			tab.setBorder(tabBorder);
 			tab.setCursor(handCursor);
@@ -2075,14 +2060,14 @@ public class FlipFinderPanel extends PluginPanel
 				@Override
 				public void mouseClicked(MouseEvent e)
 				{
-					selectCompletedSort(sort);
+					onSelect.accept(sort);
 				}
 			});
-			completedSortTabs.put(sort, tab);
+			tabs.put(sort, tab);
 			row.add(tab);
 		}
 
-		applyCompletedSortTabStyles();
+		applyStyles.run();
 		return row;
 	}
 
@@ -2105,7 +2090,7 @@ public class FlipFinderPanel extends PluginPanel
 	/** Highlight the active sort tab (orange) and dim the others. */
 	private void applyCompletedSortTabStyles()
 	{
-		for (java.util.Map.Entry<CompletedSort, JLabel> entry : completedSortTabs.entrySet())
+		for (Map.Entry<CompletedSort, JLabel> entry : completedSortTabs.entrySet())
 		{
 			boolean selected = entry.getKey() == completedSort;
 			JLabel tab = entry.getValue();
@@ -2138,7 +2123,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * live SELL offer or an awaiting-sale inventory lot — so every projected flip renders
 	 * with no dedup against the pending rows.
 	 */
-	private void displayActiveFlipsAndPending(java.util.List<ActiveFlip> activeFlips, java.util.List<PendingOrder> pendingOrders)
+	private void displayActiveFlipsAndPending(List<ActiveFlip> activeFlips, List<PendingOrder> pendingOrders)
 	{
 		activeFlipsListContainer.removeAll();
 		activeFlipCardRefreshers.clear();
@@ -2468,15 +2453,11 @@ public class FlipFinderPanel extends PluginPanel
 		emptyPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 		emptyPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE));
 
-		JLabel titleLabel = new JLabel(title);
-		titleLabel.setForeground(Color.WHITE);
-		titleLabel.setFont(FONT_BOLD_16);
+		JLabel titleLabel = CardWidgets.label(title, Color.WHITE, FONT_BOLD_16);
 		titleLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		JLabel instructionLabel = new JLabel(instruction);
-		instructionLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-		instructionLabel.setFont(FONT_PLAIN_12);
+		JLabel instructionLabel = CardWidgets.label(instruction, COLOR_TEXT_DIM_GRAY, FONT_PLAIN_12);
 		instructionLabel.setHorizontalAlignment(SwingConstants.CENTER);
 		instructionLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
@@ -2681,39 +2662,8 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private JPanel buildFavoritesSortRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		row.setBorder(new EmptyBorder(0, 4, 0, 0));
-
-		JLabel sortByLabel = new JLabel("Sort:");
-		sortByLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-		sortByLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
-		row.add(sortByLabel);
-
-		Font tabFont = new Font(FONT_ARIAL, Font.BOLD, 11);
-		EmptyBorder tabBorder = new EmptyBorder(2, 7, 2, 7);
-		Cursor handCursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR);
-		for (FavoritesSort sort : FavoritesSort.values())
-		{
-			JLabel tab = new JLabel(sort.getLabel());
-			tab.setFont(tabFont);
-			tab.setBorder(tabBorder);
-			tab.setCursor(handCursor);
-			tab.setOpaque(true);
-			tab.addMouseListener(new MouseAdapter()
-			{
-				@Override
-				public void mouseClicked(MouseEvent e)
-				{
-					selectFavoritesSort(sort);
-				}
-			});
-			favoritesSortTabs.put(sort, tab);
-			row.add(tab);
-		}
-
-		applyFavoritesSortTabStyles();
-		return row;
+		return buildSortRow(FavoritesSort.values(), FavoritesSort::getLabel,
+			this::selectFavoritesSort, favoritesSortTabs, this::applyFavoritesSortTabStyles);
 	}
 
 	/** Persist the chosen sort, reset to page 0, restyle the tabs, and re-render the list. */
@@ -2733,7 +2683,7 @@ public class FlipFinderPanel extends PluginPanel
 	/** Highlight the active sort tab (orange) and dim the others. */
 	private void applyFavoritesSortTabStyles()
 	{
-		for (java.util.Map.Entry<FavoritesSort, JLabel> entry : favoritesSortTabs.entrySet())
+		for (Map.Entry<FavoritesSort, JLabel> entry : favoritesSortTabs.entrySet())
 		{
 			boolean selected = entry.getKey() == favoritesSort;
 			JLabel tab = entry.getValue();
@@ -2794,8 +2744,7 @@ public class FlipFinderPanel extends PluginPanel
 	/** Build the row holding the premium-gated "Flip only from favorites" checkbox. */
 	private JPanel buildFlipOnlyFavoritesRow()
 	{
-		JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new FlowLayout(FlowLayout.LEFT, 6, 0), ColorScheme.DARKER_GRAY_COLOR);
 		row.setBorder(new EmptyBorder(0, 4, 4, 0));
 		row.add(buildFlipOnlyFavoritesCheck());
 		return row;
@@ -2964,9 +2913,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Recommended Buy/Sell prices — buy blue, sell orange, bold (matches the Active-tab live-price row).
 		// White base foreground keeps the "Buy:"/"Sell:" label text (outside the coloured spans) legible.
-		JLabel priceLabel = new JLabel(PanelFormat.buySellHtml(displayBuyPrice, displaySellPrice));
-		priceLabel.setForeground(Color.WHITE);
-		priceLabel.setFont(FONT_PLAIN_12);
+		JLabel priceLabel = CardWidgets.label(PanelFormat.buySellHtml(displayBuyPrice, displaySellPrice), Color.WHITE, FONT_PLAIN_12);
 
 		// Quantity
 		JLabel quantityLabel = new JLabel(String.format("Qty: %d (Limit: %d)",
@@ -2981,19 +2928,13 @@ public class FlipFinderPanel extends PluginPanel
 		marginLabel.setFont(FONT_PLAIN_12);
 
 		// Potential profit and total cost
-		JLabel profitLabel = new JLabel(PanelFormat.formatProfitCostText(displayProfit, displayCost));
-		profitLabel.setForeground(new Color(255, 215, 0));
-		profitLabel.setFont(FONT_PLAIN_12);
+		JLabel profitLabel = CardWidgets.label(PanelFormat.formatProfitCostText(displayProfit, displayCost), new Color(255, 215, 0), FONT_PLAIN_12);
 
 		// Volume info
-		JLabel volumeLabel = new JLabel(PanelFormat.formatVolumeText(rec.getDailyVolume()));
-		volumeLabel.setForeground(Color.CYAN);
-		volumeLabel.setFont(FONT_PLAIN_12);
+		JLabel volumeLabel = CardWidgets.label(PanelFormat.formatVolumeText(rec.getDailyVolume()), Color.CYAN, FONT_PLAIN_12);
 
 		// Risk info
-		JLabel riskLabel = new JLabel(PanelFormat.formatRiskText(rec.getRiskScore(), rec.getRiskRating()));
-		riskLabel.setForeground(PanelFormat.getRiskColor(rec.getRiskScore()));
-		riskLabel.setFont(FONT_PLAIN_12);
+		JLabel riskLabel = CardWidgets.label(PanelFormat.formatRiskText(rec.getRiskScore(), rec.getRiskRating()), PanelFormat.getRiskColor(rec.getRiskScore()), FONT_PLAIN_12);
 
 		CardWidgets.addLabelsWithSpacing(detailsPanel, priceLabel, quantityLabel, marginLabel,
 			profitLabel, volumeLabel, riskLabel);
@@ -3083,9 +3024,7 @@ public class FlipFinderPanel extends PluginPanel
 			extraDetails.setBackground(panel.getBackground());
 			extraDetails.setBorder(new EmptyBorder(5, 0, 0, 0));
 
-			JLabel focusHint = new JLabel("Click to focus • Press hotkey to auto-fill GE");
-			focusHint.setForeground(COLOR_FOCUSED_BORDER);
-			focusHint.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
+			JLabel focusHint = CardWidgets.label("Click to focus • Press hotkey to auto-fill GE", COLOR_FOCUSED_BORDER, new Font(FONT_ARIAL, Font.ITALIC, 10));
 
 			extraDetails.add(focusHint);
 			panel.add(extraDetails, BorderLayout.SOUTH);
@@ -3173,11 +3112,9 @@ public class FlipFinderPanel extends PluginPanel
 	private HeaderPanels createItemHeaderPanels(int itemId, String itemName, Color bgColor,
 		JLabel trailingIcon, JLabel cornerSubtitle)
 	{
-		JPanel topPanel = new JPanel(new BorderLayout(4, 0));
-		topPanel.setBackground(bgColor);
+		JPanel topPanel = CardWidgets.panel(new BorderLayout(4, 0), bgColor);
 
-		JPanel namePanel = new JPanel(new BorderLayout(5, 0));
-		namePanel.setBackground(bgColor);
+		JPanel namePanel = CardWidgets.panel(new BorderLayout(5, 0), bgColor);
 
 		AsyncBufferedImage itemImage = itemManager.getImage(itemId);
 		JLabel iconLabel = new JLabel();
@@ -3249,106 +3186,105 @@ public class FlipFinderPanel extends PluginPanel
 	 * Create a clickable chart icon label that opens the item's page on the website.
 	 * Uses a simple bar chart icon drawn with Java 2D graphics.
 	 */
-	private JLabel createChartIconLabel(int itemId)
+	/** Base for the small clickable card icons: image, tooltip, hand cursor, transparent. */
+	private static JLabel iconLabel(BufferedImage icon, String tooltip)
 	{
-		java.awt.image.BufferedImage chartIcon = PanelFormat.drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
+		JLabel label = new JLabel(new ImageIcon(icon));
+		label.setToolTipText(tooltip);
+		label.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		label.setOpaque(false);
+		return label;
+	}
 
-		JLabel chartLabel = new JLabel(new ImageIcon(chartIcon));
-		chartLabel.setToolTipText("View price history on FlipSmart website");
-		chartLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		chartLabel.setBorder(BorderFactory.createEmptyBorder(0, 1, 0, 0));
-		chartLabel.setOpaque(false);
+	/** As {@link #iconLabel(BufferedImage, String)}, with {@code leftPad} px of left inset. */
+	private static JLabel iconLabel(BufferedImage icon, String tooltip, int leftPad)
+	{
+		JLabel label = iconLabel(icon, tooltip);
+		label.setBorder(BorderFactory.createEmptyBorder(0, leftPad, 0, 0));
+		return label;
+	}
 
-		// Add click listener to open website
-		chartLabel.addMouseListener(new MouseAdapter()
+	/** Show {@code hover} while the pointer is over an enabled {@code label}, else {@code base}. */
+	private static void hoverSwap(JLabel label, BufferedImage base, Supplier<BufferedImage> hover)
+	{
+		label.addMouseListener(new MouseAdapter()
 		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				// Prevent the click from propagating to the parent panel
-				e.consume();
-				LinkBrowser.browse(WEBSITE_ITEM_URL + itemId);
-			}
-
 			@Override
 			public void mouseEntered(MouseEvent e)
 			{
-				chartLabel.setIcon(new ImageIcon(PanelFormat.drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200))));
+				if (label.isEnabled())
+				{
+					label.setIcon(new ImageIcon(hover.get()));
+				}
 			}
 
 			@Override
 			public void mouseExited(MouseEvent e)
 			{
-				chartLabel.setIcon(new ImageIcon(chartIcon));
+				label.setIcon(new ImageIcon(base));
 			}
 		});
+	}
 
+	/** Click handler that stops the event reaching the card underneath. */
+	private static void onIconClick(JLabel label, Runnable action)
+	{
+		label.addMouseListener(new MouseAdapter()
+		{
+			@Override
+			public void mouseClicked(MouseEvent e)
+			{
+				e.consume();
+				action.run();
+			}
+		});
+	}
+
+	private JLabel createChartIconLabel(int itemId)
+	{
+		BufferedImage chartIcon = PanelFormat.drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
+		JLabel chartLabel = iconLabel(chartIcon, "View price history on FlipSmart website", 1);
+		hoverSwap(chartLabel, chartIcon,
+			() -> PanelFormat.drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200)));
+		onIconClick(chartLabel, () -> LinkBrowser.browse(WEBSITE_ITEM_URL + itemId));
 		return chartLabel;
 	}
 
 	private JLabel createRefreshIconLabel(Runnable onRefresh)
 	{
-		java.awt.image.BufferedImage refreshIcon = PanelFormat.drawRefreshIcon(new Color(120, 200, 255));
-
-		JLabel refreshLabel = new JLabel(new ImageIcon(refreshIcon));
-		refreshLabel.setToolTipText("Refresh latest prices.");
-		refreshLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		refreshLabel.setBorder(BorderFactory.createEmptyBorder(0, 1, 0, 0));
-		refreshLabel.setOpaque(false);
-
-		refreshLabel.addMouseListener(new MouseAdapter()
+		BufferedImage refreshIcon = PanelFormat.drawRefreshIcon(new Color(120, 200, 255));
+		JLabel refreshLabel = iconLabel(refreshIcon, "Refresh latest prices.", 1);
+		hoverSwap(refreshLabel, refreshIcon, () -> PanelFormat.drawRefreshIcon(new Color(170, 225, 255)));
+		onIconClick(refreshLabel, () ->
 		{
-			@Override
-			public void mouseClicked(MouseEvent e)
+			if (!refreshLabel.isEnabled())
 			{
-				e.consume();
-				if (!refreshLabel.isEnabled())
-				{
-					return;
-				}
-				refreshLabel.setEnabled(false);
-				refreshLabel.setCursor(Cursor.getDefaultCursor());
-				onRefresh.run();
-				restartActiveFlipsPriceTimer();
-				// Re-enable shortly after; the async re-populate updates the rows independently
-				javax.swing.Timer timer = new javax.swing.Timer(1200, ev ->
-				{
-					refreshLabel.setEnabled(true);
-					refreshLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-				});
-				timer.setRepeats(false);
-				timer.start();
+				return;
 			}
-
-			@Override
-			public void mouseEntered(MouseEvent e)
+			refreshLabel.setEnabled(false);
+			refreshLabel.setCursor(Cursor.getDefaultCursor());
+			onRefresh.run();
+			restartActiveFlipsPriceTimer();
+			// Re-enable shortly after; the async re-populate updates the rows independently
+			Timer timer = new Timer(1200, ev ->
 			{
-				if (refreshLabel.isEnabled())
-				{
-					refreshLabel.setIcon(new ImageIcon(PanelFormat.drawRefreshIcon(new Color(170, 225, 255))));
-				}
-			}
-
-			@Override
-			public void mouseExited(MouseEvent e)
-			{
-				refreshLabel.setIcon(new ImageIcon(refreshIcon));
-			}
+				refreshLabel.setEnabled(true);
+				refreshLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
+			});
+			timer.setRepeats(false);
+			timer.start();
 		});
 
 		return refreshLabel;
 	}
 
-	/**
-	 * Create a clickable block icon label that adds the item to a blocklist.
-	 * Uses a ban/circle-slash icon drawn with Java 2D graphics.
-	 */
-	public static boolean isFavorite(java.util.Set<Integer> favorites, int itemId)
+	/** Whether {@code itemId} is in the caller's favourites, null-safe on the set. */
+	public static boolean isFavorite(Set<Integer> favorites, int itemId)
 	{
 		return favorites != null && favorites.contains(itemId);
 	}
 
-	private void applyFavoriteItemIds(java.util.List<Integer> ids)
+	private void applyFavoriteItemIds(List<Integer> ids)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
@@ -3363,20 +3299,9 @@ public class FlipFinderPanel extends PluginPanel
 	private JLabel createStarIconLabel(int itemId)
 	{
 		boolean filled = isFavorite(favoriteItemIds, itemId);
-		JLabel star = new JLabel(new ImageIcon(
-			PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR)));
-		star.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		star.setToolTipText(filled ? "Remove from favorites" : "Add to favorites");
-		star.setOpaque(false);
-		star.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				e.consume();
-				handleStarClick(itemId, star);
-			}
-		});
+		JLabel star = iconLabel(PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR),
+			filled ? "Remove from favorites" : "Add to favorites");
+		onIconClick(star, () -> handleStarClick(itemId, star));
 		return star;
 	}
 
@@ -3440,36 +3365,10 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JLabel createBlockIconLabel(int itemId, String itemName)
 	{
-		java.awt.image.BufferedImage blockIcon = PanelFormat.drawBlockIcon(new Color(180, 100, 100));
-
-		JLabel blockLabel = new JLabel(new ImageIcon(blockIcon));
-		blockLabel.setToolTipText("Block this item from recommendations");
-		blockLabel.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		blockLabel.setBorder(BorderFactory.createEmptyBorder(0, 2, 0, 0));
-		blockLabel.setOpaque(false);
-
-		// Add click listener to block the item
-		blockLabel.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				e.consume();
-				handleBlockItemClick(itemId, itemName);
-			}
-
-			@Override
-			public void mouseEntered(MouseEvent e)
-			{
-				blockLabel.setIcon(new ImageIcon(PanelFormat.drawBlockIcon(new Color(255, 100, 100))));
-			}
-
-			@Override
-			public void mouseExited(MouseEvent e)
-			{
-				blockLabel.setIcon(new ImageIcon(blockIcon));
-			}
-		});
+		BufferedImage blockIcon = PanelFormat.drawBlockIcon(new Color(180, 100, 100));
+		JLabel blockLabel = iconLabel(blockIcon, "Block this item from recommendations", 2);
+		hoverSwap(blockLabel, blockIcon, () -> PanelFormat.drawBlockIcon(new Color(255, 100, 100)));
+		onIconClick(blockLabel, () -> handleBlockItemClick(itemId, itemName));
 
 		return blockLabel;
 	}
@@ -3716,24 +3615,7 @@ public class FlipFinderPanel extends PluginPanel
 			clearFocus();
 		}
 	}
-	
-	/**
-	 * Set the callback for when the focused flip changes
-	 */
-	public void setOnFocusChanged(java.util.function.Consumer<FocusedFlip> callback)
-	{
-		this.onFocusChanged = callback;
-	}
 
-	/**
-	 * Set the callback for when authentication succeeds.
-	 * This allows the plugin to sync RSN after Discord login.
-	 */
-	public void setOnAuthSuccess(Runnable callback)
-	{
-		this.onAuthSuccess = callback;
-	}
-	
 	/**
 	 * Set a recommendation as the current focus for Flip Assist
 	 */
@@ -3973,13 +3855,6 @@ public class FlipFinderPanel extends PluginPanel
 		updateChildBackgrounds(panel, COLOR_AUTO_RECOMMEND_BG);
 	}
 	
-	/**
-	 * Get the current focused flip
-	 */
-	public FocusedFlip getCurrentFocus()
-	{
-		return currentFocus;
-	}
 	
 	/**
 	 * Get the displayed sell price for an item from the Active Flips panel.
@@ -4644,8 +4519,7 @@ public class FlipFinderPanel extends PluginPanel
 		final JLabel completedStarLabel = header.starLabel;
 
 		// Details section with profit/loss info - use GridBagLayout for tighter column spacing
-		JPanel detailsPanel = new JPanel(new GridBagLayout());
-		detailsPanel.setBackground(backgroundColor);
+		JPanel detailsPanel = CardWidgets.panel(new GridBagLayout(), backgroundColor);
 		detailsPanel.setBorder(new EmptyBorder(3, 0, 0, 0));
 		
 		GridBagConstraints gbc = new GridBagConstraints();
@@ -4653,22 +4527,14 @@ public class FlipFinderPanel extends PluginPanel
 		gbc.insets = new Insets(1, 0, 1, 15); // 15px gap between columns
 
 		// Row 1: Quantity and Buy Price
-		JLabel qtyLabel = new JLabel(String.format(FORMAT_QTY, flip.getQuantity()));
-		qtyLabel.setForeground(COLOR_TEXT_GRAY);
-		qtyLabel.setFont(FONT_PLAIN_12);
+		JLabel qtyLabel = CardWidgets.label(String.format(FORMAT_QTY, flip.getQuantity()), COLOR_TEXT_GRAY, FONT_PLAIN_12);
 
-		JLabel buyPriceLabel = new JLabel(String.format("Buy: %s", PanelFormat.formatGPExact(flip.getBuyPricePerItem())));
-		buyPriceLabel.setForeground(COLOR_BUY_RED);
-		buyPriceLabel.setFont(FONT_PLAIN_12);
+		JLabel buyPriceLabel = CardWidgets.label(String.format("Buy: %s", PanelFormat.formatGPExact(flip.getBuyPricePerItem())), COLOR_BUY_RED, FONT_PLAIN_12);
 
 		// Row 2: Invested and Sell Price
-		JLabel investedLabel = new JLabel(String.format("Cost: %s", PanelFormat.formatGP(flip.getBuyTotal())));
-		investedLabel.setForeground(COLOR_TEXT_GRAY);
-		investedLabel.setFont(FONT_PLAIN_12);
+		JLabel investedLabel = CardWidgets.label(String.format("Cost: %s", PanelFormat.formatGP(flip.getBuyTotal())), COLOR_TEXT_GRAY, FONT_PLAIN_12);
 
-		JLabel sellPriceLabel = new JLabel(String.format(FORMAT_SELL, PanelFormat.formatGPExact(flip.getSellPricePerItem())));
-		sellPriceLabel.setForeground(COLOR_SELL_GREEN);
-		sellPriceLabel.setFont(FONT_PLAIN_12);
+		JLabel sellPriceLabel = CardWidgets.label(String.format(FORMAT_SELL, PanelFormat.formatGPExact(flip.getSellPricePerItem())), COLOR_SELL_GREEN, FONT_PLAIN_12);
 
 		// Row 3: Net Profit and ROI
 		JLabel profitLabel = new JLabel(String.format("Profit: %s", PanelFormat.formatGP(flip.getNetProfit())));
@@ -4678,9 +4544,7 @@ public class FlipFinderPanel extends PluginPanel
 		profitLabel.setForeground(profitColor);
 		profitLabel.setFont(FONT_BOLD_12);
 
-		JLabel roiLabel = new JLabel(String.format(FORMAT_ROI, flip.getRoiPercent()));
-		roiLabel.setForeground(profitColor);
-		roiLabel.setFont(FONT_BOLD_12);
+		JLabel roiLabel = CardWidgets.label(String.format(FORMAT_ROI, flip.getRoiPercent()), profitColor, FONT_BOLD_12);
 
 		// Add labels with GridBagLayout - columns stay compact
 		gbc.gridx = 0; gbc.gridy = 0; detailsPanel.add(qtyLabel, gbc);
@@ -4742,14 +4606,10 @@ public class FlipFinderPanel extends PluginPanel
 						String.format("%dh %dm", hours, minutes) :
 						String.format("%dm", minutes);
 
-					JLabel durationLabel = new JLabel(String.format("Duration: %s", duration));
-					durationLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-					durationLabel.setFont(FONT_PLAIN_12);
+					JLabel durationLabel = CardWidgets.label(String.format("Duration: %s", duration), COLOR_TEXT_DIM_GRAY, FONT_PLAIN_12);
 
 					// GE Tax
-					JLabel taxLabel = new JLabel(String.format("GE Tax: %s", PanelFormat.formatGP(flip.getGeTax())));
-					taxLabel.setForeground(COLOR_TEXT_DIM_GRAY);
-					taxLabel.setFont(FONT_PLAIN_12);
+					JLabel taxLabel = CardWidgets.label(String.format("GE Tax: %s", PanelFormat.formatGP(flip.getGeTax())), COLOR_TEXT_DIM_GRAY, FONT_PLAIN_12);
 
 					extraDetails.add(durationLabel);
 					extraDetails.add(Box.createRigidArea(new Dimension(0, 2)));

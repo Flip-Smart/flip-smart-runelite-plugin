@@ -8,7 +8,6 @@ import com.flipsmart.FlipAssistOverlay;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.FlipSmartPlugin;
 import com.flipsmart.GEHistoryService;
-import com.flipsmart.GrandExchangeOverlay;
 import com.flipsmart.GrandExchangeSlotOverlay;
 import com.flipsmart.InventoryHighlightOverlay;
 import com.flipsmart.ManualAdjustmentTracker;

@@ -1,6 +1,5 @@
 package com.flipsmart.session;
 
-import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;

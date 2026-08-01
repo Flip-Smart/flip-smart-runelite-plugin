@@ -1,8 +1,19 @@
 package com.flipsmart;
+
 import com.flipsmart.api.dto.HistoryBackfillEntry;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.trading.OfferStore;
-
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;
 import net.runelite.api.Client;
@@ -12,17 +23,6 @@ import net.runelite.client.chat.ChatColorType;
 import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
-
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Reads the in-game GE History tab to recover actual fill prices for trades
@@ -65,6 +65,7 @@ public class GEHistoryService
 	private final AtomicInteger pendingHistoryReadTicks = new AtomicInteger(0);
 	private volatile boolean historyReadThisSession = false;
 	private volatile boolean chatPromptSent = false;
+	@Setter
 	private volatile Runnable onBackfillComplete;
 
 	// Monotonic game-tick counter and the tick of the most recent read, used to
@@ -204,16 +205,6 @@ public class GEHistoryService
 			.type(ChatMessageType.CONSOLE)
 			.runeLiteFormattedMessage(msg)
 			.build());
-	}
-
-	/**
-	 * Runs after a History-backfill batch lands on the API. Used by the
-	 * plugin to refresh Active Flips / Completed panels so backfilled trades
-	 * appear without the user having to manually reload.
-	 */
-	public void setOnBackfillComplete(Runnable callback)
-	{
-		this.onBackfillComplete = callback;
 	}
 
 	/**

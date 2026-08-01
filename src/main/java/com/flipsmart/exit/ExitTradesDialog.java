@@ -1,5 +1,6 @@
 package com.flipsmart.exit;
 
+import com.flipsmart.ui.panel.CardWidgets;
 import net.runelite.client.ui.ColorScheme;
 
 import javax.swing.BorderFactory;
@@ -42,8 +43,7 @@ public final class ExitTradesDialog
 		heading.setBorder(BorderFactory.createEmptyBorder(10, 12, 0, 12));
 		dialog.add(heading, BorderLayout.NORTH);
 
-		JPanel cards = new JPanel(new GridLayout(1, 3, 8, 0));
-		cards.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel cards = CardWidgets.panel(new GridLayout(1, 3, 8, 0), ColorScheme.DARKER_GRAY_COLOR);
 		cards.setBorder(BorderFactory.createEmptyBorder(8, 12, 12, 12));
 		cards.add(card("Regular Sell",
 			"Sell-only: stops suggesting new buys but keeps the normal sell flow and prices. Stays on until you switch back to Buy/Sell mode.",

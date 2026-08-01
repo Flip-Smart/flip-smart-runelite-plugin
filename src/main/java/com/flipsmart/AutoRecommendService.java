@@ -1,37 +1,40 @@
 package com.flipsmart;
+
+import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
 import com.flipsmart.api.dto.FlipAdjustmentRequest;
-import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.api.dto.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
-import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.recommend.ActionDecision;
 import com.flipsmart.recommend.ActionResolver;
-import com.flipsmart.recommend.AdjustmentService;
+import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.recommend.AdjustmentService.SellAdjustmentState;
+import com.flipsmart.recommend.AdjustmentService;
 import com.flipsmart.recommend.CollectOrigin;
 import com.flipsmart.recommend.CollectedItem;
 import com.flipsmart.recommend.RecommendationQueue;
-import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.recommend.ResolverInput;
 import com.flipsmart.recommend.SkipCooldownTracker;
 import com.flipsmart.recommend.StaleOfferQueue;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
-
-import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
-import lombok.extern.slf4j.Slf4j;
-
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.ObjIntConsumer;
+import javax.swing.SwingUtilities;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Manages the auto-recommend queue for cycling through flip recommendations.
@@ -113,7 +116,6 @@ public class AutoRecommendService
 	 */
 	private static final long PENDING_SELL_PRICE_GRACE_MS = 90_000L;
 
-
 	private final FlipSmartConfig config;
 	private final FlipSmartPlugin plugin;
 	private final OfferStore offerStore;
@@ -135,63 +137,76 @@ public class AutoRecommendService
 
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
+	@Getter
 	private volatile boolean active;
 
 	// Callback to update Flip Assist overlay and panel
+	@Setter
 	private volatile Consumer<FocusedFlip> onFocusChanged;
 
 	// Callback to update status text in the panel
+	@Setter
 	private volatile Consumer<String> onStatusChanged;
 
 	// Callback when the queue advances (for panel highlight updates)
+	@Setter
 	private volatile Runnable onQueueAdvanced;
 
 	// Callback when skip exhausts the queue (to trigger a refresh)
+	@Setter
 	private volatile Runnable onQueueExhausted;
 
 	// Callback to update the Flip Assist overlay message (when no flip is focused)
 	// ObjIntConsumer<message, itemId> — itemId <= 0 means no icon
+	@Setter
 	private volatile ObjIntConsumer<String> onOverlayMessageChanged;
 
 	// Clears all transient slot highlights and lights the live slot for the given
 	// item. Used by both the stale re-sell prompt and the collect prompt so the
 	// bright box always tracks the currently-prompted item.
-	private volatile java.util.function.IntConsumer onHighlightItemSlot;
+	@Setter
+	private volatile IntConsumer onHighlightItemSlot;
 
 	// Clears all GE slot adjustment highlights when the stale-offer queue drains,
 	// so a slot highlight never lingers without a matching prompt.
+	@Setter
 	private volatile Runnable onClearAllHighlights;
 
 	// Sticky highlight callbacks (keyed by GE slot): keep a skipped-but-cooling action's
 	// orange box lit across focus changes, and drop it when the cooldown ends or the offer
 	// is acted on.
-	private volatile java.util.function.IntConsumer onStickyHighlight;
-	private volatile java.util.function.IntConsumer onClearStickyHighlight;
+	@Setter
+	private volatile IntConsumer onStickyHighlight;
+	@Setter
+	private volatile IntConsumer onClearStickyHighlight;
 
 	// Full highlight reset (transient + sticky) used when auto-mode stops.
+	@Setter
 	private volatile Runnable onResetAllHighlights;
 
 	// Items whose orange box is kept sticky because their action was skipped and is still
 	// cooling. Maps itemId -> the GE slot recorded at skip time, so the sticky box can be
 	// cleared by slot even after the offer has left the GE (the item lookup would then fail).
-	private final Map<Integer, Integer> stickyHighlightSlots = new java.util.concurrent.ConcurrentHashMap<>();
+	private final Map<Integer, Integer> stickyHighlightSlots = new ConcurrentHashMap<>();
 
 	// Items whose surfaced resell price is a margin-decay EXIT (#918 AC2) rather than a
 	// buy reprice, so the prompt reads "Cancel & re-sell" instead of "Adjust buy".
-	private final java.util.Set<Integer> advisorExitResellItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final Set<Integer> advisorExitResellItems = ConcurrentHashMap.newKeySet();
 
 	// Items whose stale-queue prompt originates from the Active-mode advisor (SURFACE_PRICE
 	// reprices and margin-decay exits). These are backend-authoritative and must bypass the local
 	// wiki competitiveness prune that governs legacy stale-offer prompts — otherwise an advisor
 	// reprice/exit on an offer the local check still reads as "competitive" (green) is dropped
 	// before it can surface.
-	private final java.util.Set<Integer> advisorSurfacedItems = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final Set<Integer> advisorSurfacedItems = ConcurrentHashMap.newKeySet();
 
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
+	@Setter
 	private volatile IntFunction<Integer> displayedSellPriceProvider;
 
 	// Last overlay message sent — readable by the overlay as a fallback when the
 	// async callback result gets lost due to race conditions
+	@Getter
 	private volatile String lastOverlayMessage;
 
 	// Currently-focused collected item sell prompt — used by skip() to remove stuck items
@@ -204,6 +219,7 @@ public class AutoRecommendService
 	// Fires on each applied decision so action alerts can notify. The notifier owns its own
 	// change detection: resolveAndApply re-applies unchanged decisions on every offer event,
 	// while the tick re-resolve only calls on change.
+	@Setter
 	private Consumer<ActionDecision> onActionAlert;
 
 	// Whether a FocusedFlip (buy/sell setup overlay) is currently shown. The game-tick
@@ -235,75 +251,15 @@ public class AutoRecommendService
 		this.offerStore = offerStore;
 	}
 
-	public void setOnFocusChanged(Consumer<FocusedFlip> callback)
-	{
-		this.onFocusChanged = callback;
-	}
 
-	public void setOnStatusChanged(Consumer<String> callback)
-	{
-		this.onStatusChanged = callback;
-	}
 
-	public void setOnActionAlert(Consumer<ActionDecision> callback)
-	{
-		this.onActionAlert = callback;
-	}
 
-	public void setOnQueueAdvanced(Runnable callback)
-	{
-		this.onQueueAdvanced = callback;
-	}
 
-	public void setOnQueueExhausted(Runnable callback)
-	{
-		this.onQueueExhausted = callback;
-	}
 
-	public void setOnOverlayMessageChanged(ObjIntConsumer<String> callback)
-	{
-		this.onOverlayMessageChanged = callback;
-	}
 
-	public void setOnHighlightItemSlot(java.util.function.IntConsumer callback)
-	{
-		this.onHighlightItemSlot = callback;
-	}
 
-	public void setOnClearAllHighlights(Runnable callback)
-	{
-		this.onClearAllHighlights = callback;
-	}
 
-	public void setOnStickyHighlight(java.util.function.IntConsumer callback)
-	{
-		this.onStickyHighlight = callback;
-	}
 
-	public void setOnClearStickyHighlight(java.util.function.IntConsumer callback)
-	{
-		this.onClearStickyHighlight = callback;
-	}
-
-	public void setOnResetAllHighlights(Runnable callback)
-	{
-		this.onResetAllHighlights = callback;
-	}
-
-	public void setDisplayedSellPriceProvider(IntFunction<Integer> provider)
-	{
-		this.displayedSellPriceProvider = provider;
-	}
-
-	public boolean isActive()
-	{
-		return active;
-	}
-
-	public String getLastOverlayMessage()
-	{
-		return lastOverlayMessage;
-	}
 
 	public long getLastQueueRefreshMillis()
 	{
@@ -1738,7 +1694,12 @@ public class AutoRecommendService
 	 * Displays one at a time with a counter (e.g., "1/3: Cancel Berserker necklace?").
 	 * When the queue is exhausted, falls through to normal focusNextAvailableAction.
 	 */
-	private void focusNextStaleOffer()
+	/**
+	 * Drop queue entries that no longer apply, then report whether any stale work remains.
+	 * Returning false means the queue drained and normal flow has already been resumed, so
+	 * the caller should simply return.
+	 */
+	private boolean pruneStaleQueue()
 	{
 		// Remove offers that are no longer relevant:
 		// - cancelled/collected (no longer in GE)
@@ -1758,6 +1719,15 @@ public class AutoRecommendService
 				onClearAllHighlights.run();
 			}
 			focusNextAvailableAction();
+			return false;
+		}
+		return true;
+	}
+
+	private void focusNextStaleOffer()
+	{
+		if (!pruneStaleQueue())
+		{
 			return;
 		}
 
@@ -1821,7 +1791,7 @@ public class AutoRecommendService
 		{
 			return;
 		}
-		java.util.function.IntConsumer cb = onHighlightItemSlot;
+		IntConsumer cb = onHighlightItemSlot;
 		if (cb != null)
 		{
 			cb.accept(itemId);
@@ -1877,20 +1847,8 @@ public class AutoRecommendService
 
 	private void focusStaleOfferForItem(int itemId)
 	{
-		PlayerSession session = plugin.getSession();
-		if (session != null)
+		if (!pruneStaleQueue())
 		{
-			List<OfferRecord> currentOffers = offerStore.liveOffers();
-			staleOffers.pruneIrrelevant(o -> staleOfferNoLongerRelevant(o, currentOffers));
-		}
-
-		if (staleOffers.isEmpty())
-		{
-			if (onClearAllHighlights != null)
-			{
-				onClearAllHighlights.run();
-			}
-			focusNextAvailableAction();
 			return;
 		}
 
@@ -1942,7 +1900,7 @@ public class AutoRecommendService
 			return;
 		}
 		stickyHighlightSlots.put(itemId, slot);
-		java.util.function.IntConsumer cb = onStickyHighlight;
+		IntConsumer cb = onStickyHighlight;
 		if (cb != null)
 		{
 			cb.accept(slot);
@@ -1955,7 +1913,7 @@ public class AutoRecommendService
 		Integer slot = stickyHighlightSlots.remove(itemId);
 		if (slot != null)
 		{
-			java.util.function.IntConsumer cb = onClearStickyHighlight;
+			IntConsumer cb = onClearStickyHighlight;
 			if (cb != null)
 			{
 				cb.accept(slot);
@@ -1976,7 +1934,7 @@ public class AutoRecommendService
 			return;
 		}
 		List<OfferRecord> live = offerStore.liveOffers();
-		for (Integer itemId : new java.util.ArrayList<>(stickyHighlightSlots.keySet()))
+		for (Integer itemId : new ArrayList<>(stickyHighlightSlots.keySet()))
 		{
 			boolean cooling = skipCooldown.isCoolingDown(itemId);
 			boolean stillLiveOffer = live.stream()
@@ -2055,11 +2013,22 @@ public class AutoRecommendService
 	 */
 	public synchronized void surfaceAdvisorResell(OfferRecord offer, int newPrice, Integer netProfitEstimate)
 	{
+		surfaceAdvisorPrompt(offer, newPrice, netProfitEstimate, false);
+	}
+
+	/**
+	 * Shared body of the two advisor sell prompts. The {@code exit} flag is what separates
+	 * them: an exit re-sell marks the item so the prompt reads "Cancel &amp; re-sell", and
+	 * deliberately skips the session recommended price so the listing takes the no-offset
+	 * path. The statement order here reproduces both original methods exactly.
+	 */
+	private void surfaceAdvisorPrompt(OfferRecord offer, int price, Integer netProfitEstimate, boolean exit)
+	{
 		if (offer == null)
 		{
 			return;
 		}
-		staleOffers.putResellPrice(offer.getItemId(), newPrice);
+		staleOffers.putResellPrice(offer.getItemId(), price);
 		if (netProfitEstimate != null)
 		{
 			staleOffers.putResellNet(offer.getItemId(), netProfitEstimate);
@@ -2068,12 +2037,19 @@ public class AutoRecommendService
 		{
 			staleOffers.removeResellNet(offer.getItemId());
 		}
-		PlayerSession sess = plugin.getSession();
-		if (sess != null)
+		if (!exit)
 		{
-			sess.setRecommendedPrice(offer.getItemId(), newPrice);
+			PlayerSession sess = plugin.getSession();
+			if (sess != null)
+			{
+				sess.setRecommendedPrice(offer.getItemId(), price);
+			}
+			advisorExitResellItems.remove(offer.getItemId());
 		}
-		advisorExitResellItems.remove(offer.getItemId());
+		else
+		{
+			advisorExitResellItems.add(offer.getItemId());
+		}
 		advisorSurfacedItems.add(offer.getItemId());
 		addToStaleQueue(offer);
 	}
@@ -2087,22 +2063,7 @@ public class AutoRecommendService
 	 */
 	public synchronized void surfaceAdvisorExitResell(OfferRecord offer, int resellPrice, Integer netProfitEstimate)
 	{
-		if (offer == null)
-		{
-			return;
-		}
-		staleOffers.putResellPrice(offer.getItemId(), resellPrice);
-		if (netProfitEstimate != null)
-		{
-			staleOffers.putResellNet(offer.getItemId(), netProfitEstimate);
-		}
-		else
-		{
-			staleOffers.removeResellNet(offer.getItemId());
-		}
-		advisorExitResellItems.add(offer.getItemId());
-		advisorSurfacedItems.add(offer.getItemId());
-		addToStaleQueue(offer);
+		surfaceAdvisorPrompt(offer, resellPrice, netProfitEstimate, true);
 	}
 
 	/**
@@ -2599,7 +2560,7 @@ public class AutoRecommendService
 				Runnable exhaustedCallback = onQueueExhausted;
 				if (exhaustedCallback != null)
 				{
-					javax.swing.SwingUtilities.invokeLater(exhaustedCallback);
+					SwingUtilities.invokeLater(exhaustedCallback);
 				}
 			}
 			return;
@@ -3110,7 +3071,7 @@ public class AutoRecommendService
 		Consumer<FocusedFlip> callback = onFocusChanged;
 		if (callback != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(focus));
+			SwingUtilities.invokeLater(() -> callback.accept(focus));
 		}
 	}
 
@@ -3162,7 +3123,7 @@ public class AutoRecommendService
 		Runnable callback = onQueueAdvanced;
 		if (callback != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(callback);
+			SwingUtilities.invokeLater(callback);
 		}
 	}
 
@@ -3177,7 +3138,7 @@ public class AutoRecommendService
 		ObjIntConsumer<String> callback = onOverlayMessageChanged;
 		if (callback != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(message, itemId));
+			SwingUtilities.invokeLater(() -> callback.accept(message, itemId));
 		}
 	}
 
@@ -3187,7 +3148,7 @@ public class AutoRecommendService
 		Consumer<String> callback = onStatusChanged;
 		if (callback != null)
 		{
-			javax.swing.SwingUtilities.invokeLater(() -> callback.accept(status));
+			SwingUtilities.invokeLater(() -> callback.accept(status));
 		}
 	}
 

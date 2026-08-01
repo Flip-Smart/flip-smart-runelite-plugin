@@ -1,21 +1,22 @@
 package com.flipsmart.session;
 
-import net.runelite.client.ui.ColorScheme;
-
-import javax.swing.BorderFactory;
-import javax.swing.BoxLayout;
-import javax.swing.JLabel;
-import javax.swing.JPanel;
-import javax.swing.SwingConstants;
+import com.flipsmart.ui.panel.CardWidgets;
 import java.awt.BorderLayout;
 import java.awt.Color;
-import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
+import javax.swing.BorderFactory;
+import javax.swing.BoxLayout;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.SwingConstants;
+import lombok.Getter;
+import lombok.Setter;
+import net.runelite.client.ui.ColorScheme;
 
 /**
  * The session-performance block above the panel tabs: session profit, session
@@ -38,6 +39,7 @@ public final class SessionStatsView
 	// triangle glyphs; Arial (as the rest of the panel uses) renders them.
 	private static final Font ARROW_FONT = new Font("Arial", Font.PLAIN, 11);
 
+	@Getter
 	private final JPanel component = new JPanel();
 	private final JPanel body = new JPanel();
 	private final JLabel toggleArrow = new JLabel(ARROW_EXPANDED, SwingConstants.RIGHT);
@@ -46,7 +48,9 @@ public final class SessionStatsView
 	private final JLabel realisedRateValue = new JLabel();
 	private final JLabel projectedRateValue = new JLabel();
 
+	@Getter
 	private boolean collapsed;
+	@Setter
 	private Consumer<Boolean> toggleListener;
 
 	public SessionStatsView()
@@ -68,8 +72,7 @@ public final class SessionStatsView
 
 	private JPanel buildHeader()
 	{
-		JPanel header = new JPanel(new BorderLayout());
-		header.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel header = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 		header.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_HEIGHT));
 		header.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
@@ -94,8 +97,7 @@ public final class SessionStatsView
 
 	private JPanel buildRow(String label, JLabel valueLabel)
 	{
-		JPanel row = new JPanel(new BorderLayout());
-		row.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		JPanel row = CardWidgets.panel(new BorderLayout(), ColorScheme.DARKER_GRAY_COLOR);
 		row.setMaximumSize(new Dimension(Integer.MAX_VALUE, ROW_HEIGHT));
 		JLabel name = new JLabel(label);
 		name.setForeground(Color.LIGHT_GRAY);
@@ -105,21 +107,7 @@ public final class SessionStatsView
 		return row;
 	}
 
-	public Component getComponent()
-	{
-		return component;
-	}
 
-	public boolean isCollapsed()
-	{
-		return collapsed;
-	}
-
-	/** Notified with the new collapsed state whenever the user clicks the header. */
-	public void setToggleListener(Consumer<Boolean> listener)
-	{
-		this.toggleListener = listener;
-	}
 
 	/** Apply a collapsed state (e.g. restoring a persisted preference) without notifying the listener. */
 	public void setCollapsed(boolean value)

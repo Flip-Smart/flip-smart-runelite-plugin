@@ -1,8 +1,16 @@
 package com.flipsmart;
-import com.flipsmart.domain.offer.OfferRecord;
-import com.flipsmart.domain.flip.ActiveFlip;
-import com.flipsmart.trading.OfferStore;
 
+import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.trading.OfferStore;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import javax.inject.Inject;
+import javax.inject.Singleton;
+import javax.swing.SwingUtilities;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
@@ -11,13 +19,6 @@ import net.runelite.api.Item;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.game.ItemManager;
-
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
 
 /**
  * Tracks the lifecycle of active flips: mark sold, auto-close,
@@ -36,7 +37,9 @@ public class ActiveFlipTracker
 	private final ItemManager itemManager;
 	private final OfferStore offerStore;
 
+	@Setter
 	private Runnable onPanelRefreshNeeded;
+	@Setter
 	private Runnable onActiveFlipsRefreshNeeded;
 
 	@Inject
@@ -56,15 +59,6 @@ public class ActiveFlipTracker
 		this.offerStore = offerStore;
 	}
 
-	public void setOnPanelRefreshNeeded(Runnable callback)
-	{
-		this.onPanelRefreshNeeded = callback;
-	}
-
-	public void setOnActiveFlipsRefreshNeeded(Runnable callback)
-	{
-		this.onActiveFlipsRefreshNeeded = callback;
-	}
 
 	/**
 	 * Mark an item as sold - removes it from the collected tracking.
@@ -101,7 +95,7 @@ public class ActiveFlipTracker
 				log.debug("Dismissed active flip for item {}", itemId);
 				if (onPanelRefreshNeeded != null)
 				{
-					javax.swing.SwingUtilities.invokeLater(onPanelRefreshNeeded);
+					SwingUtilities.invokeLater(onPanelRefreshNeeded);
 				}
 			}
 		});
@@ -132,7 +126,7 @@ public class ActiveFlipTracker
 				log.debug("Successfully auto-closed active flip for item {} (no items remaining)", itemId);
 				if (onPanelRefreshNeeded != null)
 				{
-					javax.swing.SwingUtilities.invokeLater(onPanelRefreshNeeded);
+					SwingUtilities.invokeLater(onPanelRefreshNeeded);
 				}
 			}
 		});
@@ -205,7 +199,7 @@ public class ActiveFlipTracker
 	private Set<Integer> collectAllActiveItemIds()
 	{
 		Set<Integer> itemIds = new java.util.HashSet<>();
-		for (com.flipsmart.domain.offer.OfferRecord offer : offerStore.liveOffers())
+		for (OfferRecord offer : offerStore.liveOffers())
 		{
 			itemIds.add(offer.getItemId());
 		}
@@ -245,7 +239,7 @@ public class ActiveFlipTracker
 			log.debug("Stale flip cleanup completed successfully");
 			if (onActiveFlipsRefreshNeeded != null)
 			{
-				javax.swing.SwingUtilities.invokeLater(onActiveFlipsRefreshNeeded);
+				SwingUtilities.invokeLater(onActiveFlipsRefreshNeeded);
 			}
 		}
 	}

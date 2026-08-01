@@ -5,9 +5,6 @@ import com.flipsmart.api.dto.WikiPrice;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
-
-import lombok.extern.slf4j.Slf4j;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,6 +13,9 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Owns an in-progress Exit Trades run: a mode plus an ordered per-slot queue the player
@@ -27,20 +27,31 @@ public final class ExitTradesController
 	private static final int GE_SLOTS = 8;
 
 	private final OfferStore offerStore;
+	@Setter
 	private IntUnaryOperator buyBasisSupplier = itemId -> 0;
+	@Setter
 	private IntUnaryOperator backendSellPriceSupplier = itemId -> 0;
+	@Setter
 	private IntFunction<WikiPrice> wikiPriceSupplier = itemId -> null;
+	@Setter
 	private IntUnaryOperator inventoryQtySupplier = itemId -> 0;
+	@Setter
 	private Consumer<FocusedFlip> onFocusTarget = f -> { };
+	@Setter
 	private BiConsumer<String, Integer> onStatusMessage = (m, id) -> { };
+	@Setter
 	private IntConsumer onHighlightSlotForItem = itemId -> { };
+	@Setter
 	private Runnable onClearHighlights = () -> { };
+	@Setter
 	private Runnable onComplete = () -> { };
 
 	// active/mode are read across threads — the client thread (resolver, overlay focus), the Swing
 	// EDT (cog button, panel focus guard), and the render thread (isModifyingActiveOffer) — so the
 	// buy-suppression / ownsOverlay checks see a consistent value without a one-tick stale read.
+	@Getter
 	private volatile boolean active;
+	@Getter
 	private volatile ExitTradesMode mode;
 	private volatile boolean modifyingActiveOffer;
 	private final List<ExitSlotTarget> targets = new ArrayList<>();
@@ -50,51 +61,9 @@ public final class ExitTradesController
 		this.offerStore = offerStore;
 	}
 
-	public void setBuyBasisSupplier(IntUnaryOperator supplier)
-	{
-		this.buyBasisSupplier = supplier;
-	}
 
-	/** Backend-computed exit-at-breakeven sell price (source of truth); 0 when unknown. */
-	public void setBackendSellPriceSupplier(IntUnaryOperator supplier)
-	{
-		this.backendSellPriceSupplier = supplier;
-	}
 
-	public void setWikiPriceSupplier(IntFunction<WikiPrice> supplier)
-	{
-		this.wikiPriceSupplier = supplier;
-	}
 
-	public void setInventoryQtySupplier(IntUnaryOperator supplier)
-	{
-		this.inventoryQtySupplier = supplier;
-	}
-
-	public void setOnFocusTarget(Consumer<FocusedFlip> cb)
-	{
-		this.onFocusTarget = cb;
-	}
-
-	public void setOnStatusMessage(BiConsumer<String, Integer> cb)
-	{
-		this.onStatusMessage = cb;
-	}
-
-	public void setOnHighlightSlotForItem(IntConsumer cb)
-	{
-		this.onHighlightSlotForItem = cb;
-	}
-
-	public void setOnClearHighlights(Runnable cb)
-	{
-		this.onClearHighlights = cb;
-	}
-
-	public void setOnComplete(Runnable cb)
-	{
-		this.onComplete = cb;
-	}
 
 	public void start(ExitTradesMode mode)
 	{
@@ -125,10 +94,6 @@ public final class ExitTradesController
 		log.debug("Exit Trades started: mode={} occupiedSlots={}", mode, targets.size());
 	}
 
-	public boolean isActive()
-	{
-		return active;
-	}
 
 	/**
 	 * Whether the exit flow owns the trading overlay (queue-driven breakeven/instant). REGULAR mode
@@ -139,10 +104,6 @@ public final class ExitTradesController
 		return active && mode != ExitTradesMode.REGULAR;
 	}
 
-	public ExitTradesMode getMode()
-	{
-		return mode;
-	}
 
 	public List<ExitSlotTarget> getTargets()
 	{

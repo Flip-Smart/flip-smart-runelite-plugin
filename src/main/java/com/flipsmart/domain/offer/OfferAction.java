@@ -1,5 +1,7 @@
 package com.flipsmart.domain.offer;
 
+import lombok.Getter;
+
 public enum OfferAction
 {
 	WAIT("wait"),
@@ -10,16 +12,12 @@ public enum OfferAction
 	EXIT_AT_BREAKEVEN("exit_at_breakeven"),
 	EXIT_AT_LOSS("exit_at_loss");
 
+	@Getter
 	private final String wire;
 
 	OfferAction(String wire)
 	{
 		this.wire = wire;
-	}
-
-	public String getWire()
-	{
-		return wire;
 	}
 
 	public static OfferAction fromWire(String value)

@@ -1,8 +1,13 @@
 package com.flipsmart;
+
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.TimeUtils;
-
+import java.text.DecimalFormat;
+import java.util.List;
+import java.util.function.Consumer;
+import javax.inject.Inject;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.VarPlayerID;
@@ -15,10 +20,7 @@ import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
 import net.runelite.client.util.AsyncBufferedImage;
 
-import javax.inject.Inject;
 import java.awt.*;
-import java.text.DecimalFormat;
-import java.util.function.Consumer;
 
 /**
  * Flip Assist overlay - a unique step-by-step workflow guide.
@@ -149,12 +151,8 @@ public class FlipAssistOverlay extends Overlay
 	@Getter
 	private FlipAssistStep currentStep = FlipAssistStep.SELECT_ITEM;
 	private FlipAssistStep previousStep = FlipAssistStep.SELECT_ITEM;
+	@Setter
 	private Consumer<FlipAssistStep> onStepChanged;
-
-	public void setOnStepChanged(Consumer<FlipAssistStep> callback)
-	{
-		this.onStepChanged = callback;
-	}
 
 	@Inject
 	private FlipAssistOverlay(FlipSmartPlugin flipSmartPlugin, Client client, ClientThread clientThread, FlipSmartConfig config, ItemManager itemManager, TradeActivityLog tradeActivityLog, GEHistoryService geHistoryService)
@@ -401,10 +399,10 @@ public class FlipAssistOverlay extends Overlay
 		FontMetrics smallMetrics = graphics.getFontMetrics();
 		int textPadding = 10;
 		int maxTextWidth = HINT_PANEL_WIDTH - textPadding * 2;
-		java.util.List<String> wrappedLines = null;
+		List<String> wrappedLines = null;
 
 		// Activity log: shown in idle assist states (waiting/monitoring) (AC4)
-		java.util.List<TradeActivityLog.Entry> activityEntries =
+		List<TradeActivityLog.Entry> activityEntries =
 			isIdleAssistMessage(message) ? tradeActivityLog.snapshot() : java.util.Collections.emptyList();
 		int activityLogHeight = computeActivityLogHeight(activityEntries, smallMetrics);
 
@@ -412,7 +410,7 @@ public class FlipAssistOverlay extends Overlay
 		if (hasIcon)
 		{
 			int iconSpace = 20 + 6; // hintIconSize + gap
-			java.util.List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
+			List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
 			int lineHeight = smallMetrics.getHeight();
 			int textHeight = lineHeight * iconLines.size();
 			// Title (20px) + gap (12px) + max(icon height, text height) + bottom padding (8px)
@@ -476,7 +474,7 @@ public class FlipAssistOverlay extends Overlay
 
 			// Wrap message to fit alongside icon
 			int iconSpace = hintIconSize + 6;
-			java.util.List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
+			List<String> iconLines = wrapText(message, smallMetrics, maxTextWidth - iconSpace);
 
 			int lineHeight = smallMetrics.getHeight();
 			int textBlockHeight = lineHeight * iconLines.size();
@@ -529,7 +527,7 @@ public class FlipAssistOverlay extends Overlay
 			|| message.startsWith(MONITORING_MESSAGE);
 	}
 
-	private int computeActivityLogHeight(java.util.List<TradeActivityLog.Entry> entries, FontMetrics fm)
+	private int computeActivityLogHeight(List<TradeActivityLog.Entry> entries, FontMetrics fm)
 	{
 		if (entries.isEmpty())
 		{
@@ -539,7 +537,7 @@ public class FlipAssistOverlay extends Overlay
 		return 4 + 1 + 4 + fm.getHeight() * entries.size() + 4;
 	}
 
-	private void renderActivityLog(Graphics2D graphics, java.util.List<TradeActivityLog.Entry> entries, int top, FontMetrics fm)
+	private void renderActivityLog(Graphics2D graphics, List<TradeActivityLog.Entry> entries, int top, FontMetrics fm)
 	{
 		int dividerY = top + 4;
 		graphics.setColor(COLOR_STEP_PENDING);
@@ -622,9 +620,9 @@ public class FlipAssistOverlay extends Overlay
 		return COLOR_TEXT;
 	}
 
-	private java.util.List<String> wrapText(String text, FontMetrics fm, int maxWidth)
+	private List<String> wrapText(String text, FontMetrics fm, int maxWidth)
 	{
-		java.util.List<String> lines = new java.util.ArrayList<>();
+		List<String> lines = new java.util.ArrayList<>();
 		for (String segment : text.split("\n"))
 		{
 			if (fm.stringWidth(segment) <= maxWidth)
@@ -639,7 +637,7 @@ public class FlipAssistOverlay extends Overlay
 		return lines;
 	}
 
-	private void wrapSegment(String segment, FontMetrics fm, int maxWidth, java.util.List<String> lines)
+	private void wrapSegment(String segment, FontMetrics fm, int maxWidth, List<String> lines)
 	{
 		StringBuilder currentLine = new StringBuilder();
 		for (String word : segment.split(" "))

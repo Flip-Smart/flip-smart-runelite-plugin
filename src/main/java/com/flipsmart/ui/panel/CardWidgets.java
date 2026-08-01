@@ -6,6 +6,7 @@ import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
+import java.awt.LayoutManager;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.ImageIcon;
@@ -33,11 +34,30 @@ public final class CardWidgets
 	 */
 	public static JLabel createStyledLabel(String text, Color foreground)
 	{
-		JLabel label = new JLabel(text);
-		label.setForeground(foreground);
-		label.setFont(FONT_PLAIN_12);
+		JLabel label = label(text, foreground, FONT_PLAIN_12);
 		label.setAlignmentX(Component.LEFT_ALIGNMENT);
 		return label;
+	}
+
+	/**
+	 * A label with its foreground and font applied. Unlike
+	 * {@link #createStyledLabel(String, Color)} this sets no alignment, so it suits
+	 * the plain construct-then-style idiom rather than the detail rows.
+	 */
+	public static JLabel label(String text, Color foreground, Font font)
+	{
+		JLabel label = new JLabel(text);
+		label.setForeground(foreground);
+		label.setFont(font);
+		return label;
+	}
+
+	/** A panel with its layout manager and background applied. */
+	public static JPanel panel(LayoutManager layout, Color background)
+	{
+		JPanel panel = new JPanel(layout);
+		panel.setBackground(background);
+		return panel;
 	}
 
 	/**
