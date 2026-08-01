@@ -138,7 +138,7 @@ def markdown(files: dict, baseline: dict | None, ceiling: int) -> str:
     if now > ceiling:
         out += [
             f"**Over the ceiling by {now-ceiling:,.0f} tokens.** Lower the count, or raise "
-            "the ceiling in `.github/token-ceiling` if the growth is deliberate.",
+            + "the ceiling in `.github/token-ceiling` if the growth is deliberate.",
             "",
         ]
 
@@ -156,7 +156,7 @@ def markdown(files: dict, baseline: dict | None, ceiling: int) -> str:
     out += [f"| {t:,.0f} | {100*t/now:.1f}% | `{p}` |" for p, t in ranked]
     out += ["", "</details>", "",
             "<sub>Comments and `src/test` are excluded -- the reviewer does not count them. "
-            "Splitting a file increases this number; merging small files reduces it.</sub>"]
+            + "Splitting a file increases this number; merging small files reduces it.</sub>"]
     return "\n".join(out)
 
 
