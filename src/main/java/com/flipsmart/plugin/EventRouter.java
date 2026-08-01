@@ -133,7 +133,6 @@ public class EventRouter
 		if (gameState == GameState.LOGGED_IN)
 		{
 			plugin.handleLoggedInState();
-			plugin.getMotdService().onLogin();
 		}
 	}
 
