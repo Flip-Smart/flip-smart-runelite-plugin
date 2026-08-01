@@ -17,7 +17,6 @@ import com.flipsmart.api.dto.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.FlipFinderResponse;
 import com.flipsmart.api.dto.FlipStatisticsResponse;
 import com.flipsmart.api.dto.HistoryBackfillEntry;
-import com.flipsmart.api.dto.MotdResponse;
 import com.flipsmart.api.dto.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.OfferAdviceRequest;
 import com.flipsmart.api.dto.PluginSyncResponse;
@@ -32,7 +31,6 @@ import com.flipsmart.api.endpoints.BlocklistEndpoints;
 import com.flipsmart.api.endpoints.FavoritesEndpoints;
 import com.flipsmart.api.endpoints.FlipsEndpoints;
 import com.flipsmart.api.endpoints.MarketDataEndpoints;
-import com.flipsmart.api.endpoints.MotdEndpoints;
 import com.flipsmart.api.endpoints.OfferActionEndpoints;
 import com.flipsmart.api.endpoints.TradeStationEndpoints;
 import com.flipsmart.api.endpoints.TransactionEndpoints;
@@ -73,7 +71,6 @@ public class FlipSmartApiClient
 	private final BankSnapshotEndpoints bankSnapshots;
 	private final BlocklistEndpoints blocklists;
 	private final WebhookEndpoints webhooks;
-	private final MotdEndpoints motd;
 	private final TradeStationEndpoints tradeStation;
 	private final FavoritesEndpoints favorites;
 	private final ActiveFlipsSnapshotEndpoints activeFlipsSnapshot;
@@ -99,7 +96,6 @@ public class FlipSmartApiClient
 		this.bankSnapshots = new BankSnapshotEndpoints(transport);
 		this.blocklists = new BlocklistEndpoints(transport);
 		this.webhooks = new WebhookEndpoints(transport);
-		this.motd = new MotdEndpoints(transport);
 		this.tradeStation = new TradeStationEndpoints(transport);
 		this.favorites = new FavoritesEndpoints(transport);
 		this.activeFlipsSnapshot = new ActiveFlipsSnapshotEndpoints(transport);
@@ -459,15 +455,6 @@ public class FlipSmartApiClient
 	public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
 	{
 		webhooks.deleteWebhookAsync(onSuccess, onError);
-	}
-
-	// ============================================================================
-	// MOTD
-	// ============================================================================
-
-	public CompletableFuture<MotdResponse> getMotdAsync()
-	{
-		return motd.getMotdAsync();
 	}
 
 	// ============================================================================

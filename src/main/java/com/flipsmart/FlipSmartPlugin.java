@@ -155,10 +155,6 @@ public class FlipSmartPlugin extends Plugin
 	private DumpAlertService dumpAlertService;
 
 	@Inject
-	@Getter
-	private MotdService motdService;
-
-	@Inject
 	private OfflineSyncService offlineSyncService;
 
 	@Inject
