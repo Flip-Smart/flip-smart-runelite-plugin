@@ -1,0 +1,77 @@
+name: Token budget
+
+# The plugin-hub AI reviewer refuses to run above 200,000 tokens of non-comment
+# code under src/main/java. This job reports what each PR does to that number and
+# fails if the branch lands above the ceiling in .github/token-ceiling.
+#
+# The ceiling ratchets DOWN: when a PR reduces the count, lower the ceiling to the
+# new actual in the same PR. That turns a one-time cleanup into a guarantee.
+
+on:
+  pull_request:
+    paths:
+      - 'src/main/**'
+      - 'tools/token-budget.py'
+      - '.github/token-ceiling'
+      - '.github/workflows/token-budget.yml'
+
+concurrency:
+  group: token-budget-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  measure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Measure base branch
+        run: |
+          git worktree add --detach /tmp/base "${{ github.event.pull_request.base.sha }}"
+          # Head's script measures both sides, so a change to the estimator itself
+          # can never masquerade as a change in the code it measures.
+          python3 tools/token-budget.py --root /tmp/base --baseline /tmp/base.json --save
+
+      - name: Measure this branch
+        id: budget
+        run: |
+          ceiling=$(tr -dc '0-9' < .github/token-ceiling)
+          echo "ceiling=$ceiling" >> "$GITHUB_OUTPUT"
+          if python3 tools/token-budget.py --baseline /tmp/base.json --ceiling "$ceiling" \
+               --markdown > /tmp/comment.md; then
+            echo "over=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "over=true" >> "$GITHUB_OUTPUT"
+          fi
+          cat /tmp/comment.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on the PR
+        # Fork PRs get a read-only token, so skip rather than fail the run. The
+        # gate below still enforces the ceiling for them via the step summary.
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          existing=$(gh api "repos/${{ github.repository }}/issues/$PR/comments" \
+            --jq 'map(select(.body | contains("<!-- token-budget -->"))) | .[0].id // empty')
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$existing" \
+              -F body=@/tmp/comment.md >/dev/null
+          else
+            gh api -X POST "repos/${{ github.repository }}/issues/$PR/comments" \
+              -F body=@/tmp/comment.md >/dev/null
+          fi
+
+      - name: Enforce the ceiling
+        if: steps.budget.outputs.over == 'true'
+        run: |
+          echo "::error::src/main is above the ${{ steps.budget.outputs.ceiling }} token ceiling."
+          echo "Reduce the count, or raise .github/token-ceiling if the growth is deliberate."
+          exit 1
