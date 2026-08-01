@@ -106,7 +106,7 @@ def diff(files: dict, baseline: dict) -> None:
         print(f"  {delta:>+9,.0f}  {path} {state}".rstrip())
 
 
-def markdown(files: dict, baseline: dict, ceiling: int) -> str:
+def markdown(files: dict, baseline: dict | None, ceiling: int) -> str:
     """PR-comment table. Shows what this branch actually bought."""
     now = sum(files.values())
     out = ["<!-- token-budget -->", "### Plugin token budget", ""]
