@@ -367,6 +367,60 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Build the main flip finder panel
 	 */
+	/** A footer link label that opens {@code url} in the system browser. */
+	private static JLabel externalLink(String text, Color colour, String tooltip, String url)
+	{
+		JLabel link = CardWidgets.label(text, colour, new Font(FONT_ARIAL, Font.PLAIN, 14));
+		link.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		link.setToolTipText(tooltip);
+		onIconClick(link, () -> LinkBrowser.browse(url));
+		return link;
+	}
+
+	/**
+	 * Brand-styled renderer for the two settings dropdowns: orange when selected, dark
+	 * otherwise, with {@code label} supplying the display text for values of {@code type}.
+	 */
+	private static <T> void applyDropdownRenderer(JComboBox<?> dropdown, Class<T> type,
+		Function<T, String> label)
+	{
+		dropdown.setRenderer(new DefaultListCellRenderer()
+		{
+			@Override
+			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+				boolean isSelected, boolean cellHasFocus)
+			{
+				Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+				if (c instanceof JLabel && type.isInstance(value))
+				{
+					((JLabel) c).setText(label.apply(type.cast(value)));
+				}
+				c.setBackground(isSelected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARKER_GRAY_COLOR);
+				c.setForeground(Color.WHITE);
+				return c;
+			}
+		});
+	}
+
+	/**
+	 * A tab's vertical list container wrapped in its scroll pane. All four tabs are
+	 * styled identically, and the vertical bar is always shown so the layout does not
+	 * shift the moment a list grows past one screen.
+	 */
+	private static JScrollPane listScrollPane(JPanel container)
+	{
+		container.setLayout(new BoxLayout(container, BoxLayout.Y_AXIS));
+		container.setBackground(ColorScheme.DARK_GRAY_COLOR);
+
+		JScrollPane pane = new JScrollPane(container);
+		pane.setBackground(ColorScheme.DARK_GRAY_COLOR);
+		pane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
+		pane.setBorder(BorderFactory.createEmptyBorder());
+		pane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+		pane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+		return pane;
+	}
+
 	private void buildMainPanel()
 	{
 		mainPanel = new JPanel(new BorderLayout());
@@ -432,45 +486,11 @@ public class FlipFinderPanel extends PluginPanel
 
 		JLabel flipStyleLabel = CardWidgets.label("Style: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
 
-		// Custom renderer for better appearance
-		flipStyleDropdown.setRenderer(new DefaultListCellRenderer() {
-			@Override
-			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-														  boolean isSelected, boolean cellHasFocus) {
-				Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-				if (c instanceof JLabel && value instanceof FlipSmartConfig.FlipStyle) {
-					FlipSmartConfig.FlipStyle style = (FlipSmartConfig.FlipStyle) value;
-					((JLabel) c).setText(style.name().charAt(0) + style.name().substring(1).toLowerCase());
-				}
-				if (isSelected) {
-					c.setBackground(ColorScheme.BRAND_ORANGE);
-				} else {
-					c.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				}
-				c.setForeground(Color.WHITE);
-				return c;
-			}
-		});
+		applyDropdownRenderer(flipStyleDropdown, FlipSmartConfig.FlipStyle.class,
+			style -> style.name().charAt(0) + style.name().substring(1).toLowerCase());
 
-		// Custom renderer for timeframe dropdown
-		flipTimeframeDropdown.setRenderer(new DefaultListCellRenderer() {
-			@Override
-			public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-														  boolean isSelected, boolean cellHasFocus) {
-				Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-				if (c instanceof JLabel && value instanceof FlipSmartConfig.FlipTimeframe) {
-					FlipSmartConfig.FlipTimeframe timeframe = (FlipSmartConfig.FlipTimeframe) value;
-					((JLabel) c).setText(timeframe.toString());
-				}
-				if (isSelected) {
-					c.setBackground(ColorScheme.BRAND_ORANGE);
-				} else {
-					c.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-				}
-				c.setForeground(Color.WHITE);
-				return c;
-			}
-		});
+		applyDropdownRenderer(flipTimeframeDropdown, FlipSmartConfig.FlipTimeframe.class,
+			FlipSmartConfig.FlipTimeframe::toString);
 
 		JLabel flipTimeframeLabel = CardWidgets.label("Timeframe: ", Color.LIGHT_GRAY, FONT_PLAIN_12);
 
@@ -606,52 +626,16 @@ public class FlipFinderPanel extends PluginPanel
 		updateCashstackOverrideIndicator();
 
 		// Recommended flips list container
-		recommendedListContainer.setLayout(new BoxLayout(recommendedListContainer, BoxLayout.Y_AXIS));
-		recommendedListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		recommendedScrollPane = new JScrollPane(recommendedListContainer);
-		recommendedScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		recommendedScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
-		recommendedScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		recommendedScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		// Always show scrollbar so layout always accounts for it
-		recommendedScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+		recommendedScrollPane = listScrollPane(recommendedListContainer);
 
 		// Favorites list container
-		favoritesListContainer.setLayout(new BoxLayout(favoritesListContainer, BoxLayout.Y_AXIS));
-		favoritesListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		favoritesScrollPane = new JScrollPane(favoritesListContainer);
-		favoritesScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		favoritesScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
-		favoritesScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		favoritesScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		// Always show scrollbar so layout always accounts for it
-		favoritesScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+		favoritesScrollPane = listScrollPane(favoritesListContainer);
 
 		// Active flips list container
-		activeFlipsListContainer.setLayout(new BoxLayout(activeFlipsListContainer, BoxLayout.Y_AXIS));
-		activeFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		activeFlipsScrollPane = new JScrollPane(activeFlipsListContainer);
-		activeFlipsScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		activeFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
-		activeFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		activeFlipsScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		// Always show scrollbar so layout always accounts for it
-		activeFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+		activeFlipsScrollPane = listScrollPane(activeFlipsListContainer);
 
 		// Completed flips list container
-		completedFlipsListContainer.setLayout(new BoxLayout(completedFlipsListContainer, BoxLayout.Y_AXIS));
-		completedFlipsListContainer.setBackground(ColorScheme.DARK_GRAY_COLOR);
-
-		completedFlipsScrollPane = new JScrollPane(completedFlipsListContainer);
-		completedFlipsScrollPane.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		completedFlipsScrollPane.getVerticalScrollBar().setPreferredSize(new Dimension(8, 0));
-		completedFlipsScrollPane.setBorder(BorderFactory.createEmptyBorder());
-		completedFlipsScrollPane.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-		// Always show scrollbar so layout always accounts for it
-		completedFlipsScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_ALWAYS);
+		completedFlipsScrollPane = listScrollPane(completedFlipsListContainer);
 
 		// Create tabbed pane with custom UI for full-width tabs
 		tabbedPane.setBackground(ColorScheme.DARKER_GRAY_COLOR);
@@ -805,29 +789,11 @@ public class FlipFinderPanel extends PluginPanel
 			}
 		});
 
-		JLabel websiteLink = CardWidgets.label("Website", new Color(100, 180, 255), new Font(FONT_ARIAL, Font.PLAIN, 14));
-		websiteLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		websiteLink.setToolTipText("Visit our website to view your flips and track your performance");
-		websiteLink.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				LinkBrowser.browse("https://flipsmart.net");
-			}
-		});
+		JLabel websiteLink = externalLink("Website", new Color(100, 180, 255),
+			"Visit our website to view your flips and track your performance", "https://flipsmart.net");
 
-		JLabel discordLink = CardWidgets.label("Discord", new Color(88, 101, 242), new Font(FONT_ARIAL, Font.PLAIN, 14));
-		discordLink.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		discordLink.setToolTipText("Join our Discord community");
-		discordLink.addMouseListener(new MouseAdapter()
-		{
-			@Override
-			public void mouseClicked(MouseEvent e)
-			{
-				LinkBrowser.browse(DISCORD_INVITE_URL);
-			}
-		});
+		JLabel discordLink = externalLink("Discord", new Color(88, 101, 242),
+			"Join our Discord community", DISCORD_INVITE_URL);
 
 		JPanel linksPanel = new JPanel();
 		linksPanel.setLayout(new BoxLayout(linksPanel, BoxLayout.X_AXIS));
