@@ -91,24 +91,5 @@ public class FlipAnalysis
 		private Integer volatility;
 	}
 
-	/**
-	 * Check if this item is a good flip based on efficiency score
-	 */
-	public boolean isGoodFlip(int minEfficiencyScore)
-	{
-		return efficiency != null &&
-			efficiency.getScore() != null &&
-			efficiency.getScore() >= minEfficiencyScore;
-	}
-
-	/**
-	 * Check if the item has positive net margin
-	 */
-	public boolean hasPositiveMargin()
-	{
-		return currentPrices != null &&
-			currentPrices.getNetMargin() != null &&
-			currentPrices.getNetMargin() > 0;
-	}
 }
 

@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.util.GpUtils;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.gameval.InterfaceID;
@@ -372,7 +373,7 @@ public class FlipAssistInputListener implements KeyListener
 		String quantityText = (quantityWidget != null && !quantityWidget.isHidden()) ? quantityWidget.getText() : null;
 		
 		// Parse quantity from text (e.g., "6,000" -> 6000)
-		int currentQuantity = parseNumberFromText(quantityText);
+		int currentQuantity = GpUtils.parseDigits(quantityText);
 		
 		// If quantity has been set (> 1, since default is often 1) and we're in an input,
 		// user is probably now setting price
@@ -382,27 +383,6 @@ public class FlipAssistInputListener implements KeyListener
 	/**
 	 * Parse a number from formatted text like "6,000" or "6000 coins".
 	 */
-	private int parseNumberFromText(String text)
-	{
-		if (text == null || text.isEmpty())
-		{
-			return 0;
-		}
-		try
-		{
-			// Remove commas, "coins", "gp", and any other non-numeric characters
-			String numericOnly = text.replaceAll("\\D", "");
-			if (numericOnly.isEmpty())
-			{
-				return 0;
-			}
-			return Integer.parseInt(numericOnly);
-		}
-		catch (NumberFormatException e)
-		{
-			return 0;
-		}
-	}
 	
 	/**
 	 * Check a specific widget for price/quantity keywords.

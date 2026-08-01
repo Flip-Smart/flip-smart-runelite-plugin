@@ -89,28 +89,5 @@ public class FlipRecommendation
 	@SerializedName("cost_per_flip")
 	private Integer costPerFlip;
 
-	/**
-	 * Get formatted margin text
-	 */
-	public String getFormattedMargin()
-	{
-		return GpUtils.formatGPWithSuffix(margin);
-	}
-
-	/**
-	 * Get formatted ROI text
-	 */
-	public String getFormattedROI()
-	{
-		return GpUtils.formatROI(roiPercent);
-	}
-
-	/**
-	 * Get formatted potential profit text
-	 */
-	public String getFormattedPotentialProfit()
-	{
-		return GpUtils.formatGPWithSuffix(potentialProfit);
-	}
 }
 

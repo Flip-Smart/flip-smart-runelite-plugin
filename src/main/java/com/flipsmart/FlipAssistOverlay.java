@@ -1,5 +1,6 @@
 package com.flipsmart;
 
+import com.flipsmart.util.GpUtils;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.TimeUtils;
 import java.text.DecimalFormat;
@@ -72,7 +73,6 @@ public class FlipAssistOverlay extends Overlay
 	// Hint message
 	private static final String HINT_TITLE = "FlipSmart";
 	private static final String HINT_MESSAGE = "Click on a flip suggestion to start";
-	private static final String UPGRADE_MESSAGE = "Upgrade to Premium for more flip slots";
 	private static final String LOGIN_MESSAGE = "Log in to use FlipSmart";
 	private static final String HISTORY_PROMPT_MESSAGE = "Open GE History tab to backfill recent trades";
 	private static final String MONITORING_MESSAGE = "Monitoring your flips";
@@ -1165,7 +1165,7 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return 0;
 		}
-		return parseNumericText(text);
+		return GpUtils.parseDigits(text);
 	}
 	
 	private int getCurrentPriceFromGE()
@@ -1222,34 +1222,11 @@ public class FlipAssistOverlay extends Overlay
 	{
 		if (text != null && text.toLowerCase().contains(COINS_TEXT))
 		{
-			return parseNumericText(text);
+			return GpUtils.parseDigits(text);
 		}
 		return 0;
 	}
 	
-	private int parseNumericText(String text)
-	{
-		if (text == null || text.isEmpty())
-		{
-			return 0;
-		}
-		
-		try
-		{
-			// Remove all non-digit characters (commas, spaces, "coins", etc.)
-			String numericOnly = text.replaceAll("\\D", "");
-			if (!numericOnly.isEmpty())
-			{
-				return Integer.parseInt(numericOnly);
-			}
-		}
-		catch (NumberFormatException e)
-		{
-			// Ignore
-		}
-		
-		return 0;
-	}
 	
 	private String truncateString(String str, int maxWidth, FontMetrics fm)
 	{

@@ -1,6 +1,5 @@
 package com.flipsmart.ui.panel;
 
-import com.flipsmart.ui.panel.CardWidgets;
 import com.flipsmart.FlipSmartApiClient;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.api.dto.AuthResult;
@@ -28,6 +27,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -44,8 +44,10 @@ public class LoginPanel
 {
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String CONFIG_KEY_EMAIL = "email";
-	private static final String CONFIG_KEY_PASSWORD = "password";  // Deprecated: kept for migration
 	private static final String CONFIG_KEY_REFRESH_TOKEN = "refreshToken";
+	// Only ever unset now -- the legacy password login path is gone, but old
+	// installs may still carry a stored password that we clear on next login.
+	private static final String CONFIG_KEY_PASSWORD = "password";
 
 	private static final String FONT_ARIAL = "Arial";
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
@@ -310,66 +312,36 @@ public class LoginPanel
 						{
 							log.debug("Refresh token auth failed (transient) - keeping token for next attempt");
 						}
-						tryLegacyPasswordAuth();
+						promptForLogin();
 					}
 				})
 			).exceptionally(e -> {
 				log.debug("Refresh token auth failed: {}", e.getMessage());
-				SwingUtilities.invokeLater(this::tryLegacyPasswordAuth);
+				SwingUtilities.invokeLater(this::promptForLogin);
 				return null;
 			});
 		}
 		else
 		{
-			// No refresh token, try legacy password auth
-			tryLegacyPasswordAuth();
+			// No refresh token at all -- straight to the login form.
+			promptForLogin();
 		}
 	}
 
 	/**
-	 * Try to authenticate with legacy stored password (migration path).
-	 * After successful login, the password will be cleared and replaced with refresh token.
+	 * No usable refresh token, so fall back to the login form. The email is pre-filled
+	 * from config so the user only has to re-enter their password.
 	 */
-	private void tryLegacyPasswordAuth()
+	private void promptForLogin()
 	{
 		String email = config.email();
-		String password = config.password();
-
-		// Always pre-fill email if available (helps users who need to re-login)
 		if (email != null && !email.isEmpty())
 		{
 			emailField.setText(email);
 		}
 
-		if (email != null && !email.isEmpty() && password != null && !password.isEmpty())
-		{
-			// Try to authenticate in background
-			CompletableFuture.runAsync(() -> {
-				AuthResult result = apiClient.login(email, password);
-
-				SwingUtilities.invokeLater(() -> {
-					if (result.success)
-					{
-						// Migration: save refresh token and clear password
-						saveRefreshToken(apiClient.getRefreshToken());
-						clearPassword();
-						onAuthenticationSuccess(null, false);
-					}
-					else
-					{
-						// Stay on login panel, show message
-						loginStatusLabel.setText("Please login to continue");
-						loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-					}
-				});
-			});
-		}
-		else
-		{
-			// No stored credentials - show helpful message to user
-			loginStatusLabel.setText("Please login to continue");
-			loginStatusLabel.setForeground(Color.LIGHT_GRAY);
-		}
+		loginStatusLabel.setText("Please login to continue");
+		loginStatusLabel.setForeground(Color.LIGHT_GRAY);
 	}
 
 	/**
@@ -377,45 +349,23 @@ public class LoginPanel
 	 */
 	private void handleLogin()
 	{
-		String email = emailField.getText().trim();
-		String password = new String(passwordField.getPassword());
-
-		if (email.isEmpty() || password.isEmpty())
-		{
-			showLoginStatus("Please enter email and password", false);
-			return;
-		}
-
-		setLoginButtonsEnabled(false);
-		showLoginStatus("Logging in...", true);
-
-		CompletableFuture.runAsync(() -> {
-			AuthResult result = apiClient.login(email, password);
-
-			SwingUtilities.invokeLater(() -> {
-				setLoginButtonsEnabled(true);
-
-				if (result.success)
-				{
-					// Save email and refresh token (NOT password) for next session
-					saveEmail(email);
-					saveRefreshToken(apiClient.getRefreshToken());
-					// Clear any legacy password storage
-					clearPassword();
-					onAuthenticationSuccess(result.message, true);
-				}
-				else
-				{
-					showLoginStatus(result.message, false);
-				}
-			});
-		});
+		submitCredentials("Logging in...", apiClient::login);
 	}
 
 	/**
 	 * Handle signup button click
 	 */
 	private void handleSignup()
+	{
+		submitCredentials("Creating account...", apiClient::signup);
+	}
+
+	/**
+	 * Shared submit path for login and signup, which differ only in the pending
+	 * message and which call they make. Validates, disables the buttons, runs
+	 * {@code auth} off the EDT, then persists the session on success.
+	 */
+	private void submitCredentials(String pendingMessage, BiFunction<String, String, AuthResult> auth)
 	{
 		String email = emailField.getText().trim();
 		String password = new String(passwordField.getPassword());
@@ -427,10 +377,10 @@ public class LoginPanel
 		}
 
 		setLoginButtonsEnabled(false);
-		showLoginStatus("Creating account...", true);
+		showLoginStatus(pendingMessage, true);
 
 		CompletableFuture.runAsync(() -> {
-			AuthResult result = apiClient.signup(email, password);
+			AuthResult result = auth.apply(email, password);
 
 			SwingUtilities.invokeLater(() -> {
 				setLoginButtonsEnabled(true);
@@ -440,7 +390,7 @@ public class LoginPanel
 					// Save email and refresh token (NOT password) for next session
 					saveEmail(email);
 					saveRefreshToken(apiClient.getRefreshToken());
-					// Clear any legacy password storage
+					// Wipe any password left over from the pre-refresh-token era
 					clearPassword();
 					onAuthenticationSuccess(result.message, true);
 				}
@@ -463,6 +413,12 @@ public class LoginPanel
 	/**
 	 * Save refresh token for persistent login (replaces password storage)
 	 */
+	/** Wipe any password left over from the pre-refresh-token era. */
+	private void clearPassword()
+	{
+		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD);
+	}
+
 	private void saveRefreshToken(String refreshToken)
 	{
 		if (refreshToken != null && !refreshToken.isEmpty())
@@ -477,24 +433,6 @@ public class LoginPanel
 	public void clearRefreshToken()
 	{
 		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_REFRESH_TOKEN);
-	}
-
-	/**
-	 * Clear legacy password storage (migration cleanup)
-	 */
-	private void clearPassword()
-	{
-		configManager.unsetConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD);
-	}
-
-	/**
-	 * @deprecated Use saveEmail() and saveRefreshToken() instead
-	 */
-	@Deprecated
-	private void saveCredentials(String email, String password)
-	{
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_EMAIL, email);
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_PASSWORD, password);
 	}
 
 	/**

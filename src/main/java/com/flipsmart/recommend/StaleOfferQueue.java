@@ -90,11 +90,6 @@ public final class StaleOfferQueue
 		staleResellNet.remove(itemId);
 	}
 
-	public void addPrompted(int itemId)
-	{
-		promptedStaleItems.add(itemId);
-	}
-
 	public void removePrompted(int itemId)
 	{
 		promptedStaleItems.remove(itemId);

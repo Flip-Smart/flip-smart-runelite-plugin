@@ -245,12 +245,4 @@ public class DumpAlertService
 			dump.getEstimatedProfit() != null ? dump.getEstimatedProfit() + "gp" : "unknown");
 	}
 
-	/**
-	 * Clear the item cooldown tracking (useful for testing or after long periods)
-	 */
-	public void clearItemCooldowns()
-	{
-		itemAlertCooldowns.clear();
-		log.debug("Cleared item cooldowns");
-	}
 }

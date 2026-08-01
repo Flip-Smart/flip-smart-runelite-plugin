@@ -3166,11 +3166,6 @@ public class AutoRecommendService
 		return queue.getCurrentIndex();
 	}
 
-	public synchronized int getQueueSize()
-	{
-		return queue.size();
-	}
-
 	/**
 	 * Whether Auto may start a NEW buy: a physical GE slot is free AND (premium, or a free
 	 * user is under their Flip Finder cap). Selling collected items is never gated by this —

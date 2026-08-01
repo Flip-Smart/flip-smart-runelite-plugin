@@ -133,22 +133,35 @@ public class PluginScheduler
 	 * @param loggedInCheck supplies whether the player is logged into RuneScape
 	 * @param refreshCycle  the cycle body to run when logged in
 	 */
-	public void startAutoRecommendRefreshTimer(BooleanSupplier loggedInCheck, Runnable refreshCycle)
+	/**
+	 * A daemon timer running {@code body} every {@code intervalMs}, but only while the
+	 * player is logged in. All three plugin timers share this shape; they differ only in
+	 * how they dispose of the previous timer, which stays with each caller.
+	 */
+	private static Timer startGatedTimer(String name, long intervalMs,
+		BooleanSupplier loggedInCheck, Runnable body)
 	{
-		stopAutoRecommendRefreshTimer();
-
-		autoRecommendRefreshTimer = new Timer("AutoRecommendRefreshTimer", true);
-		autoRecommendRefreshTimer.scheduleAtFixedRate(new TimerTask()
+		Timer timer = new Timer(name, true);
+		timer.scheduleAtFixedRate(new TimerTask()
 		{
 			@Override
 			public void run()
 			{
 				if (loggedInCheck.getAsBoolean())
 				{
-					refreshCycle.run();
+					body.run();
 				}
 			}
-		}, AUTO_RECOMMEND_REFRESH_INTERVAL_MS, AUTO_RECOMMEND_REFRESH_INTERVAL_MS);
+		}, intervalMs, intervalMs);
+		return timer;
+	}
+
+	public void startAutoRecommendRefreshTimer(BooleanSupplier loggedInCheck, Runnable refreshCycle)
+	{
+		stopAutoRecommendRefreshTimer();
+
+		autoRecommendRefreshTimer = startGatedTimer("AutoRecommendRefreshTimer",
+			AUTO_RECOMMEND_REFRESH_INTERVAL_MS, loggedInCheck, refreshCycle);
 
 		log.debug("Auto-recommend refresh timer started (every 2 minutes)");
 	}
@@ -176,18 +189,8 @@ public class PluginScheduler
 	 */
 	public void startActiveOfferAdvisorTimer(BooleanSupplier loggedInCheck, Runnable pollBody)
 	{
-		activeOfferAdvisorTimer = new Timer("ActiveOfferAdvisorTimer", true);
-		activeOfferAdvisorTimer.scheduleAtFixedRate(new TimerTask()
-		{
-			@Override
-			public void run()
-			{
-				if (loggedInCheck.getAsBoolean())
-				{
-					pollBody.run();
-				}
-			}
-		}, ACTIVE_OFFER_ADVISOR_INTERVAL_MS, ACTIVE_OFFER_ADVISOR_INTERVAL_MS);
+		activeOfferAdvisorTimer = startGatedTimer("ActiveOfferAdvisorTimer",
+			ACTIVE_OFFER_ADVISOR_INTERVAL_MS, loggedInCheck, pollBody);
 	}
 
 	public void stopActiveOfferAdvisorTimer()
@@ -214,18 +217,8 @@ public class PluginScheduler
 			activeFlipsSnapshotTimer.cancel();
 		}
 
-		activeFlipsSnapshotTimer = new Timer("ActiveFlipsSnapshotTimer", true);
-		activeFlipsSnapshotTimer.scheduleAtFixedRate(new TimerTask()
-		{
-			@Override
-			public void run()
-			{
-				if (loggedInCheck.getAsBoolean())
-				{
-					body.run();
-				}
-			}
-		}, ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS, ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS);
+		activeFlipsSnapshotTimer = startGatedTimer("ActiveFlipsSnapshotTimer",
+			ACTIVE_FLIPS_SNAPSHOT_INTERVAL_MS, loggedInCheck, body);
 	}
 
 	public void stopActiveFlipsSnapshotTimer()
