@@ -47,19 +47,19 @@ def strip_comments(source: str) -> str:
 
 def measure(root: str) -> dict:
     """Return {relative_path: estimated_tokens} for every counted file."""
-    main = os.path.join(root, "src", "main", "java")
-    if not os.path.isdir(main):
-        sys.exit(f"not a plugin checkout: {main} does not exist")
+    src_main = os.path.join(root, "src", "main", "java")
+    if not os.path.isdir(src_main):
+        sys.exit(f"not a plugin checkout: {src_main} does not exist")
 
     files = {}
-    for dirpath, _, filenames in os.walk(main):
+    for dirpath, _, filenames in os.walk(src_main):
         for name in filenames:
             if not name.endswith(".java"):
                 continue
             path = os.path.join(dirpath, name)
             with open(path, encoding="utf-8", errors="ignore") as handle:
                 body = strip_comments(handle.read())
-            rel = os.path.relpath(path, main).replace("com/flipsmart/", "")
+            rel = os.path.relpath(path, src_main).replace("com/flipsmart/", "")
             files[rel] = len(body) / CHARS_PER_TOKEN
     return files
 
