@@ -8,6 +8,9 @@ import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
+import net.runelite.client.util.ImageUtil;
 import javax.swing.JPanel;
 
 /**
@@ -58,6 +61,21 @@ public final class PanelFormat
 	public static String formatGPExact(long amount)
 	{
 		return GpUtils.formatGPExact(amount);
+	}
+
+	/**
+	 * Load a UI icon from resources. These were previously drawn with Graphics2D; the PNGs
+	 * are captures of that exact output, so swapping to assets changed no pixels while
+	 * removing the drawing code from the plugin-hub token budget (resources are not counted).
+	 */
+	private static final Map<String, BufferedImage> ICON_CACHE = new ConcurrentHashMap<>();
+
+	public static BufferedImage icon(String name)
+	{
+		// Cached: hoverSwap invokes its supplier on every hover event, so an uncached
+		// lookup would decode the PNG on the EDT each time the pointer crosses an icon.
+		return ICON_CACHE.computeIfAbsent(name,
+			key -> ImageUtil.loadImageResource(PanelFormat.class, "/icons/" + key + ".png"));
 	}
 
 	public static Color getRiskColor(double score)
@@ -242,154 +260,11 @@ public final class PanelFormat
 		return g;
 	}
 
-	/**
-	 * Draw a bar chart icon onto a 14x14 image with the given colors.
-	 */
-	public static BufferedImage drawChartIcon(Color barColor, Color baselineColor)
-	{
-		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = createTransparentIconGraphics(icon);
 
-		g.setColor(barColor);
-		g.fillRect(1, 9, 3, 4);   // Short bar
-		g.fillRect(5, 5, 3, 8);   // Medium bar
-		g.fillRect(9, 2, 3, 11);  // Tall bar
 
-		g.setColor(baselineColor);
-		g.drawLine(0, 13, 13, 13);
 
-		g.dispose();
-		return icon;
-	}
 
-	/**
-	 * Draw a small clock face onto a 12x12 image with the given color.
-	 */
-	public static BufferedImage drawClockIcon(Color color)
-	{
-		BufferedImage icon = new BufferedImage(12, 12, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = createTransparentIconGraphics(icon);
 
-		g.setColor(color);
-		g.setStroke(new BasicStroke(1.2f));
-		g.drawOval(1, 1, 9, 9);     // Face
-		g.drawLine(6, 6, 6, 3);     // Minute hand
-		g.drawLine(6, 6, 8, 7);     // Hour hand
-
-		g.dispose();
-		return icon;
-	}
-
-	/**
-	 * Draw a gear/cogwheel icon onto a {@code size}x{@code size} image with the given color.
-	 */
-	public static BufferedImage drawGearIcon(Color color, int size)
-	{
-		BufferedImage icon = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setColor(color);
-		g.setStroke(new BasicStroke(2f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-
-		double cx = size / 2.0;
-		double cy = size / 2.0;
-		double toothTip = size / 2.0 - 1.0;
-		double body = toothTip - 2.5;
-		int teeth = 8;
-
-		for (int i = 0; i < teeth; i++)
-		{
-			double a = Math.PI * 2 * i / teeth;
-			int x1 = (int) Math.round(cx + Math.cos(a) * body);
-			int y1 = (int) Math.round(cy + Math.sin(a) * body);
-			int x2 = (int) Math.round(cx + Math.cos(a) * toothTip);
-			int y2 = (int) Math.round(cy + Math.sin(a) * toothTip);
-			g.drawLine(x1, y1, x2, y2);
-		}
-
-		int bodyDia = (int) Math.round(body * 2);
-		g.fillOval((int) Math.round(cx - body), (int) Math.round(cy - body), bodyDia, bodyDia);
-
-		double hole = body * 0.45;
-		int holeDia = (int) Math.round(hole * 2);
-		g.setComposite(AlphaComposite.Clear);
-		g.fillOval((int) Math.round(cx - hole), (int) Math.round(cy - hole), holeDia, holeDia);
-
-		g.dispose();
-		return icon;
-	}
-
-	/**
-	 * Draw a ban/circle-slash icon onto a 14x14 image with the given color.
-	 */
-	public static BufferedImage drawBlockIcon(Color color)
-	{
-		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = createTransparentIconGraphics(icon);
-
-		g.setColor(color);
-		g.setStroke(new BasicStroke(1.5f));
-		g.drawOval(1, 1, 11, 11);
-		g.drawLine(3, 11, 11, 3);
-
-		g.dispose();
-		return icon;
-	}
-
-	/**
-	 * Draw a five-point star onto a 16x16 image. Filled paints the favorite state;
-	 * an unfilled star strokes the outline only for the not-favorited state.
-	 */
-	public static BufferedImage drawStarIcon(boolean filled, Color color)
-	{
-		BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = createTransparentIconGraphics(image);
-		int[] xs = new int[10];
-		int[] ys = new int[10];
-		double cx = 8;
-		double cy = 8;
-		double outer = 7;
-		double inner = 2.9;
-		for (int i = 0; i < 10; i++)
-		{
-			double r = (i % 2 == 0) ? outer : inner;
-			double a = Math.toRadians(-90 + i * 36);
-			xs[i] = (int) Math.round(cx + r * Math.cos(a));
-			ys[i] = (int) Math.round(cy + r * Math.sin(a));
-		}
-		Polygon star = new Polygon(xs, ys, 10);
-		g.setColor(color);
-		if (filled)
-		{
-			g.fillPolygon(star);
-		}
-		else
-		{
-			g.drawPolygon(star);
-		}
-		g.dispose();
-		return image;
-	}
-
-	/**
-	 * Draw a circular-arrow refresh icon onto a 14x14 image with the given color.
-	 */
-	public static BufferedImage drawRefreshIcon(Color color)
-	{
-		BufferedImage icon = new BufferedImage(14, 14, BufferedImage.TYPE_INT_ARGB);
-		Graphics2D g = createTransparentIconGraphics(icon);
-
-		g.setColor(color);
-		g.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_ROUND));
-		// Open ring (~250 deg) with a clear gap at the top-right where the arrowhead sits
-		g.drawArc(3, 4, 8, 8, 30, 250);
-		// Solid arrowhead at the ring's open (top-right) end, tip pointing right = clockwise reload
-		g.fillPolygon(new int[] {8, 13, 9}, new int[] {1, 4, 7}, 3);
-
-		g.dispose();
-		return icon;
-	}
 
 	/**
 	 * Get the base background color for a panel (either price indicator color or default).

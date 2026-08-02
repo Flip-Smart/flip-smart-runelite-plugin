@@ -15,10 +15,10 @@ import static org.junit.Assert.assertTrue;
 public class FavoritesStarStateTest
 {
 	@Test
-	public void drawStarIconReturnsSizedImageForBothStates()
+	public void starAssetsExistForBothStates()
 	{
-		BufferedImage filled = PanelFormat.drawStarIcon(true, Color.ORANGE);
-		BufferedImage empty = PanelFormat.drawStarIcon(false, Color.LIGHT_GRAY);
+		BufferedImage filled = PanelFormat.icon("star_on");
+		BufferedImage empty = PanelFormat.icon("star_off");
 		assertNotNull(filled);
 		assertNotNull(empty);
 		assertEquals(16, filled.getWidth());
