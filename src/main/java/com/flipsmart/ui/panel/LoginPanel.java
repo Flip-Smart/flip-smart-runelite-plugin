@@ -18,6 +18,7 @@ import javax.swing.JPasswordField;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.border.Border;
 import javax.swing.Timer;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -26,6 +27,7 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.awt.event.ActionListener;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiFunction;
 import java.util.concurrent.Executors;
@@ -51,6 +53,7 @@ public class LoginPanel
 
 	private static final String FONT_ARIAL = "Arial";
 	private static final Font FONT_PLAIN_12 = new Font(FONT_ARIAL, Font.PLAIN, 12);
+	private static final Color COLOR_DISCORD_BLURPLE = new Color(88, 101, 242);
 	private static final Color COLOR_PROFIT_GREEN = new Color(100, 255, 100);
 	private static final Color COLOR_LOSS_RED = new Color(255, 100, 100);
 
@@ -145,6 +148,55 @@ public class LoginPanel
 	/**
 	 * Build the login/signup panel
 	 */
+	/** A maximum size that lets a component fill its column but caps its height. */
+	static Dimension fullWidth(int height)
+	{
+		return new Dimension(Integer.MAX_VALUE, height);
+	}
+
+	/** Shared dark styling for the email and password inputs. */
+	static <T extends JTextField> T styleField(T field)
+	{
+		field.setMaximumSize(fullWidth(30));
+		field.setBackground(ColorScheme.DARKER_GRAY_COLOR);
+		field.setForeground(Color.WHITE);
+		field.setCaretColor(Color.WHITE);
+		field.setBorder(BorderFactory.createCompoundBorder(
+			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
+			BorderFactory.createEmptyBorder(5, 10, 5, 10)
+		));
+		return field;
+	}
+
+	/** A flat, hand-cursor button. Border varies per button, so it is passed in. */
+	static JButton actionButton(String text, Color background, Border border, ActionListener onClick)
+	{
+		JButton button = new JButton(text);
+		button.setBackground(background);
+		button.setForeground(Color.WHITE);
+		button.setFocusPainted(false);
+		button.setBorder(border);
+		button.setCursor(new Cursor(Cursor.HAND_CURSOR));
+		button.addActionListener(onClick);
+		return button;
+	}
+
+	/**
+	 * Add {@code entries} to {@code host} in order, as alternating component and the gap
+	 * to leave below it. The list ends on a component, which takes no trailing gap.
+	 */
+	static void stack(JPanel host, Object... entries)
+	{
+		for (int i = 0; i < entries.length; i++)
+		{
+			host.add((Component) entries[i]);
+			if (++i < entries.length)
+			{
+				host.add(Box.createRigidArea(new Dimension(0, (Integer) entries[i])));
+			}
+		}
+	}
+
 	private JPanel buildLoginPanel()
 	{
 		JPanel panel = new JPanel();
@@ -169,29 +221,13 @@ public class LoginPanel
 		JLabel emailLabel = CardWidgets.label("Email", Color.LIGHT_GRAY, FONT_PLAIN_12);
 		emailLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		emailField = new JTextField(20);
-		emailField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		emailField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		emailField.setForeground(Color.WHITE);
-		emailField.setCaretColor(Color.WHITE);
-		emailField.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(5, 10, 5, 10)
-		));
+		emailField = styleField(new JTextField(20));
 
 		// Password field
 		JLabel passwordLabel = CardWidgets.label("Password", Color.LIGHT_GRAY, FONT_PLAIN_12);
 		passwordLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-		passwordField = new JPasswordField(20);
-		passwordField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 30));
-		passwordField.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		passwordField.setForeground(Color.WHITE);
-		passwordField.setCaretColor(Color.WHITE);
-		passwordField.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.MEDIUM_GRAY_COLOR),
-			BorderFactory.createEmptyBorder(5, 10, 5, 10)
-		));
+		passwordField = styleField(new JPasswordField(20));
 
 		// Status label for messages
 		loginStatusLabel = new JLabel(" ");
@@ -201,35 +237,25 @@ public class LoginPanel
 
 		// Buttons panel for Login/Sign Up
 		JPanel buttonsPanel = CardWidgets.panel(new GridLayout(1, 2, 10, 0), ColorScheme.DARK_GRAY_COLOR);
-		buttonsPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 35));
+		buttonsPanel.setMaximumSize(fullWidth(35));
 
 		// Sign Up button
-		signupButton = new JButton("Sign Up");
-		signupButton.setBackground(ColorScheme.DARKER_GRAY_COLOR);
-		signupButton.setForeground(Color.WHITE);
-		signupButton.setFocusPainted(false);
-		signupButton.setBorder(BorderFactory.createCompoundBorder(
-			BorderFactory.createLineBorder(ColorScheme.BRAND_ORANGE),
-			BorderFactory.createEmptyBorder(8, 15, 8, 15)
-		));
-		signupButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		signupButton.addActionListener(e -> handleSignup());
+		signupButton = actionButton("Sign Up", ColorScheme.DARKER_GRAY_COLOR,
+			BorderFactory.createCompoundBorder(
+				BorderFactory.createLineBorder(ColorScheme.BRAND_ORANGE),
+				BorderFactory.createEmptyBorder(8, 15, 8, 15)),
+			e -> handleSignup());
 
 		// Login button
-		loginButton = new JButton("Login");
-		loginButton.setBackground(ColorScheme.BRAND_ORANGE);
-		loginButton.setForeground(Color.WHITE);
-		loginButton.setFocusPainted(false);
-		loginButton.setBorder(BorderFactory.createEmptyBorder(8, 15, 8, 15));
-		loginButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		loginButton.addActionListener(e -> handleLogin());
+		loginButton = actionButton("Login", ColorScheme.BRAND_ORANGE,
+			BorderFactory.createEmptyBorder(8, 15, 8, 15), e -> handleLogin());
 
 		buttonsPanel.add(signupButton);
 		buttonsPanel.add(loginButton);
 
 		// Divider
 		JPanel dividerPanel = CardWidgets.panel(new BorderLayout(), ColorScheme.DARK_GRAY_COLOR);
-		dividerPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+		dividerPanel.setMaximumSize(fullWidth(20));
 
 		JLabel orLabel = new JLabel("OR", SwingConstants.CENTER);
 		orLabel.setForeground(Color.GRAY);
@@ -237,36 +263,23 @@ public class LoginPanel
 		dividerPanel.add(orLabel, BorderLayout.CENTER);
 
 		// Discord login button (with Discord purple color)
-		discordButton = new JButton("Login with Discord");
-		discordButton.setBackground(new Color(88, 101, 242)); // Discord blurple
-		discordButton.setForeground(Color.WHITE);
-		discordButton.setFocusPainted(false);
-		discordButton.setBorder(BorderFactory.createEmptyBorder(10, 15, 10, 15));
-		discordButton.setCursor(new Cursor(Cursor.HAND_CURSOR));
-		discordButton.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+		discordButton = actionButton("Login with Discord", COLOR_DISCORD_BLURPLE,
+			BorderFactory.createEmptyBorder(10, 15, 10, 15), e -> handleDiscordLogin());
+		discordButton.setMaximumSize(fullWidth(40));
 		discordButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-		discordButton.addActionListener(e -> handleDiscordLogin());
 
-		// Add components with spacing
-		contentPanel.add(titleLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-		contentPanel.add(subtitleLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 30)));
-		contentPanel.add(emailLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-		contentPanel.add(emailField);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(passwordLabel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-		contentPanel.add(passwordField);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 20)));
-		contentPanel.add(buttonsPanel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(dividerPanel);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(discordButton);
-		contentPanel.add(Box.createRigidArea(new Dimension(0, 15)));
-		contentPanel.add(loginStatusLabel);
+		// Layout is a table of (component, gap below it); the final entry takes no gap.
+		stack(contentPanel,
+			titleLabel, 5,
+			subtitleLabel, 30,
+			emailLabel, 5,
+			emailField, 15,
+			passwordLabel, 5,
+			passwordField, 20,
+			buttonsPanel, 15,
+			dividerPanel, 15,
+			discordButton, 15,
+			loginStatusLabel);
 
 		// Center the content vertically
 		panel.add(contentPanel, BorderLayout.CENTER);
