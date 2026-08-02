@@ -31,18 +31,19 @@ public class CardWidgetsCharacterizationTest
 {
 	private static final Color FG = new Color(12, 34, 56);
 	private static final Color BG = new Color(65, 43, 21);
+	private static final String ARIAL = "Arial";
 
 	// ------------------------------------------------------------------ labels
 
 	@Test
 	public void labelAppliesTextForegroundAndFontVerbatim()
 	{
-		Font font = new Font("Arial", Font.BOLD, 12);
+		Font font = new Font(ARIAL, Font.BOLD, 12);
 		JLabel label = CardWidgets.label("hi", FG, font);
 
 		assertEquals("hi", label.getText());
 		assertEquals(FG, label.getForeground());
-		assertEquals("Arial", label.getFont().getName());
+		assertEquals(ARIAL, label.getFont().getName());
 		assertEquals(Font.BOLD, label.getFont().getStyle());
 		assertEquals(12, label.getFont().getSize());
 	}
@@ -56,7 +57,7 @@ public class CardWidgetsCharacterizationTest
 	@Test
 	public void labelIsNotOpaque()
 	{
-		assertFalse(CardWidgets.label("x", FG, new Font("Arial", Font.PLAIN, 10)).isOpaque());
+		assertFalse(CardWidgets.label("x", FG, new Font(ARIAL, Font.PLAIN, 10)).isOpaque());
 		assertFalse(CardWidgets.createStyledLabel("x", FG).isOpaque());
 	}
 
@@ -64,7 +65,7 @@ public class CardWidgetsCharacterizationTest
 	public void labelIsLeftAligned()
 	{
 		assertEquals(Component.LEFT_ALIGNMENT,
-			CardWidgets.label("x", FG, new Font("Arial", Font.PLAIN, 10)).getAlignmentX(), 0.0001);
+			CardWidgets.label("x", FG, new Font(ARIAL, Font.PLAIN, 10)).getAlignmentX(), 0.0001);
 	}
 
 	/** createStyledLabel is the no-font overload: Arial plain 12. */
@@ -73,7 +74,7 @@ public class CardWidgetsCharacterizationTest
 	{
 		JLabel label = CardWidgets.createStyledLabel("st", FG);
 		assertEquals(FG, label.getForeground());
-		assertEquals("Arial", label.getFont().getName());
+		assertEquals(ARIAL, label.getFont().getName());
 		assertEquals(Font.PLAIN, label.getFont().getStyle());
 		assertEquals(12, label.getFont().getSize());
 	}
