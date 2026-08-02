@@ -2909,23 +2909,25 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		panel.addMouseListener(new MouseAdapter()
 		{
-			private boolean expanded = false;
-
 			@Override
 			public void mouseClicked(MouseEvent e)
 			{
-				// Left click: set as Flip Assist focus
-				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 1 && !e.isPopupTrigger())
+				if (e.getButton() != MouseEvent.BUTTON1 || e.isPopupTrigger())
 				{
-					setFocus(rec, panel);
 					return;
 				}
-				// Double-click: toggle the focus/expand hint (right-click now opens the context menu)
-				if (e.getButton() == MouseEvent.BUTTON1 && e.getClickCount() == 2)
+				// Clicking the focused card clears focus; clicking any other one takes it.
+				// Matches the predicate the hover handlers below use, so the card that
+				// looks focused is exactly the one a click will unfocus.
+				if (currentFocus != null && currentFocus.getItemId() == rec.getItemId())
 				{
-					expanded = toggleExpandedState(panel, expanded);
-					panel.revalidate();
-					panel.repaint();
+					clearFocus();
+				}
+				else
+				{
+					// setFocus is a no-op while Exit Trades is active or a free user is
+					// at the item cap, so a blocked click changes nothing.
+					setFocus(rec, panel);
 				}
 			}
 
@@ -2971,35 +2973,6 @@ public class FlipFinderPanel extends PluginPanel
 		});
 	}
 
-	/**
-	 * Toggle expanded state of a panel (show/hide focus hint)
-	 */
-	private boolean toggleExpandedState(JPanel panel, boolean currentlyExpanded)
-	{
-		if (!currentlyExpanded)
-		{
-			// Add focus hint
-			JPanel extraDetails = new JPanel();
-			extraDetails.setLayout(new BoxLayout(extraDetails, BoxLayout.Y_AXIS));
-			extraDetails.setBackground(panel.getBackground());
-			extraDetails.setBorder(new EmptyBorder(5, 0, 0, 0));
-
-			JLabel focusHint = CardWidgets.label("Click to focus • Press hotkey to auto-fill GE", COLOR_FOCUSED_BORDER, new Font(FONT_ARIAL, Font.ITALIC, 10));
-
-			extraDetails.add(focusHint);
-			panel.add(extraDetails, BorderLayout.SOUTH);
-			return true;
-		}
-		else
-		{
-			// Remove extra details
-			if (panel.getComponentCount() > 2)
-			{
-				panel.remove(2);
-			}
-			return false;
-		}
-	}
 	
 	/**
 	 * Update child panel backgrounds
