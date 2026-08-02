@@ -3873,6 +3873,17 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Create a panel for an active flip with current market data
 	 */
+	/** The hairline rule separating a card's live-market block from its position block. */
+	private static void addCardDivider(JPanel detailsPanel)
+	{
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
+		JSeparator rowDivider = new JSeparator();
+		rowDivider.setForeground(new Color(70, 70, 70));
+		rowDivider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+		detailsPanel.add(rowDivider);
+		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
+	}
+
 	private JPanel createActiveFlipPanel(ActiveFlip flip)
 	{
 		JPanel panel = CardWidgets.createBaseItemPanel(ColorScheme.DARKER_GRAY_COLOR, 210, true);
@@ -3901,12 +3912,7 @@ public class FlipFinderPanel extends PluginPanel
 
 		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, marginLabel, taxLabel);
 		// Divider separates the "live" block from the position-reference block
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
-		JSeparator rowDivider = new JSeparator();
-		rowDivider.setForeground(new Color(70, 70, 70));
-		rowDivider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
-		detailsPanel.add(rowDivider);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
+		addCardDivider(detailsPanel);
 		CardWidgets.addLabelsWithSpacing(detailsPanel, currentProfitLabel, potentialLabel, qtyLabel,
 			liquidityLabel, riskLabel);
 
@@ -4264,12 +4270,7 @@ public class FlipFinderPanel extends PluginPanel
 		buyLimitLabel.setFont(FONT_PLAIN_11);
 
 		CardWidgets.addLabelsWithSpacing(detailsPanel, pricesLabel, marginLabel, taxLabel);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
-		JSeparator rowDivider = new JSeparator();
-		rowDivider.setForeground(new Color(70, 70, 70));
-		rowDivider.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
-		detailsPanel.add(rowDivider);
-		detailsPanel.add(Box.createRigidArea(new Dimension(0, 3)));
+		addCardDivider(detailsPanel);
 		CardWidgets.addLabelsWithSpacing(detailsPanel, potentialLabel, qtyLabel, liquidityLabel, riskLabel);
 
 		// Header with refresh + corner buy-limit, matching the active-flip cards
