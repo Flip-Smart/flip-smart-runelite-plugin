@@ -3032,6 +3032,9 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Create the item header panel with icon and name
 	 */
+	/** Right clearance for a card's corner content, so it sits past the always-visible scrollbar. */
+	private static final int CARD_EAST_INSET = 10;
+
 	private HeaderPanels createItemHeaderPanels(int itemId, String itemName, Color bgColor)
 	{
 		return createItemHeaderPanels(itemId, itemName, bgColor, null, null);
@@ -3056,8 +3059,10 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel nameLabel = new JLabel();
 		nameLabel.setForeground(Color.WHITE);
 		nameLabel.setVerticalAlignment(SwingConstants.TOP);
-		// Narrow the name a little more when a third (refresh) icon shares the corner
-		int nameWidth = trailingIcon != null ? 98 : 130;
+		// Narrow the name a little more when a third (refresh) icon shares the corner.
+		// Trimmed by 4px alongside the icon inset below so a long title keeps clear of the
+		// icons now that they sit further left.
+		int nameWidth = trailingIcon != null ? 94 : 126;
 		ItemNameFit.Fit nameFit = ItemNameFit.fit(itemName, nameWidth,
 			(text, size) -> nameLabel.getFontMetrics(new Font(FONT_ARIAL, Font.BOLD, size)).stringWidth(text));
 		Font nameFont = new Font(FONT_ARIAL, Font.BOLD, nameFit.getFontSize());
@@ -3076,6 +3081,10 @@ public class FlipFinderPanel extends PluginPanel
 
 		JPanel iconsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 1, 0));
 		iconsPanel.setOpaque(false);
+		// Clearance from the always-visible scrollbar is applied once, below, to whichever
+		// component actually goes into BorderLayout.EAST. Insetting iconsPanel here instead
+		// would double up on cards that stack it above a corner subtitle, pushing the icons
+		// left of the subtitle rather than keeping the two right edges aligned.
 
 		JLabel starLabel = createStarIconLabel(itemId);
 		iconsPanel.add(starLabel);
@@ -3101,14 +3110,16 @@ public class FlipFinderPanel extends PluginPanel
 			JPanel eastStack = new JPanel();
 			eastStack.setLayout(new BoxLayout(eastStack, BoxLayout.Y_AXIS));
 			eastStack.setOpaque(false);
-			// Right inset so the icons/buy-limit sit well clear of the card edge
-			eastStack.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 11));
+			// One inset for the whole stack keeps the icon row and the subtitle beneath it
+			// sharing a right edge, and clear of the scrollbar.
+			eastStack.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, CARD_EAST_INSET));
 			eastStack.add(iconsPanel);
 			eastStack.add(cornerSubtitle);
 			topPanel.add(eastStack, BorderLayout.EAST);
 		}
 		else
 		{
+			iconsPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, CARD_EAST_INSET));
 			topPanel.add(iconsPanel, BorderLayout.EAST);
 		}
 
