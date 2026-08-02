@@ -456,7 +456,7 @@ public class FlipFinderPanel extends PluginPanel
 		refreshButton.setMargin(new Insets(2, 4, 2, 4));
 		refreshButton.addActionListener(e -> manualRefresh());
 
-		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.drawGearIcon(Color.LIGHT_GRAY, 12)));
+		JButton settingsButton = new JButton(new ImageIcon(PanelFormat.icon("gear")));
 		settingsButton.setFocusable(false);
 		settingsButton.setFont(FONT_PLAIN_11);
 		settingsButton.setMargin(new Insets(1, 2, 1, 2));
@@ -474,7 +474,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Low-emphasis refresh countdown, right-aligned beneath the header buttons
 		JPanel countdownRow = CardWidgets.panel(new FlowLayout(FlowLayout.RIGHT, 4, 0), ColorScheme.DARKER_GRAY_COLOR);
 		refreshCountdownLabel = new JLabel();
-		refreshCountdownLabel.setIcon(new ImageIcon(PanelFormat.drawClockIcon(COLOR_TEXT_DIM_GRAY)));
+		refreshCountdownLabel.setIcon(new ImageIcon(PanelFormat.icon("clock")));
 		refreshCountdownLabel.setForeground(COLOR_TEXT_DIM_GRAY);
 		refreshCountdownLabel.setFont(new Font(FONT_ARIAL, Font.ITALIC, 10));
 		countdownRow.add(refreshCountdownLabel);
@@ -3175,19 +3175,19 @@ public class FlipFinderPanel extends PluginPanel
 
 	private JLabel createChartIconLabel(int itemId)
 	{
-		BufferedImage chartIcon = PanelFormat.drawChartIcon(new Color(100, 180, 255), new Color(150, 150, 150));
+		BufferedImage chartIcon = PanelFormat.icon("chart");
 		JLabel chartLabel = iconLabel(chartIcon, "View price history on FlipSmart website", 1);
 		hoverSwap(chartLabel, chartIcon,
-			() -> PanelFormat.drawChartIcon(new Color(150, 220, 255), new Color(200, 200, 200)));
+			() -> PanelFormat.icon("chart_hover"));
 		onIconClick(chartLabel, () -> LinkBrowser.browse(WEBSITE_ITEM_URL + itemId));
 		return chartLabel;
 	}
 
 	private JLabel createRefreshIconLabel(Runnable onRefresh)
 	{
-		BufferedImage refreshIcon = PanelFormat.drawRefreshIcon(new Color(120, 200, 255));
+		BufferedImage refreshIcon = PanelFormat.icon("refresh");
 		JLabel refreshLabel = iconLabel(refreshIcon, "Refresh latest prices.", 1);
-		hoverSwap(refreshLabel, refreshIcon, () -> PanelFormat.drawRefreshIcon(new Color(170, 225, 255)));
+		hoverSwap(refreshLabel, refreshIcon, () -> PanelFormat.icon("refresh_hover"));
 		onIconClick(refreshLabel, () ->
 		{
 			if (!refreshLabel.isEnabled())
@@ -3232,7 +3232,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JLabel createStarIconLabel(int itemId)
 	{
 		boolean filled = isFavorite(favoriteItemIds, itemId);
-		JLabel star = iconLabel(PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR),
+		JLabel star = iconLabel(PanelFormat.icon(filled ? "star_on" : "star_off"),
 			filled ? "Remove from favorites" : "Add to favorites");
 		onIconClick(star, () -> handleStarClick(itemId, star));
 		return star;
@@ -3292,15 +3292,15 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		boolean filled = isFavorite(favoriteItemIds, itemId);
 		starLabel.setIcon(new ImageIcon(
-			PanelFormat.drawStarIcon(filled, filled ? STAR_ON_COLOR : STAR_OFF_COLOR)));
+			PanelFormat.icon(filled ? "star_on" : "star_off")));
 		starLabel.setToolTipText(filled ? "Remove from favorites" : "Add to favorites");
 	}
 
 	private JLabel createBlockIconLabel(int itemId, String itemName)
 	{
-		BufferedImage blockIcon = PanelFormat.drawBlockIcon(new Color(180, 100, 100));
+		BufferedImage blockIcon = PanelFormat.icon("block");
 		JLabel blockLabel = iconLabel(blockIcon, "Block this item from recommendations", 2);
-		hoverSwap(blockLabel, blockIcon, () -> PanelFormat.drawBlockIcon(new Color(255, 100, 100)));
+		hoverSwap(blockLabel, blockIcon, () -> PanelFormat.icon("block_hover"));
 		onIconClick(blockLabel, () -> handleBlockItemClick(itemId, itemName));
 
 		return blockLabel;

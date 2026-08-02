@@ -1,39 +1,67 @@
 package com.flipsmart.ui.panel;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-import java.awt.Color;
 import java.awt.image.BufferedImage;
 import org.junit.Test;
 
+/**
+ * The refresh glyph is now a captured asset rather than Graphics2D output. These assert the
+ * same properties the drawing tests did, so a missing or wrong-sized asset still fails here.
+ */
 public class RefreshIconTest
 {
-	@Test
-	public void drawsFourteenBySfourteenIcon()
+	private static boolean hasOpaquePixel(BufferedImage icon)
 	{
-		BufferedImage icon = PanelFormat.drawRefreshIcon(new Color(120, 200, 255));
-		assertNotNull(icon);
+		for (int x = 0; x < icon.getWidth(); x++)
+		{
+			for (int y = 0; y < icon.getHeight(); y++)
+			{
+				if (((icon.getRGB(x, y) >>> 24) & 0xFF) > 0)
+				{
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	@Test
+	public void loadsFourteenByFourteenIcon()
+	{
+		BufferedImage icon = PanelFormat.icon("refresh");
+		assertNotNull("refresh.png must be present on the classpath", icon);
 		assertEquals(14, icon.getWidth());
 		assertEquals(14, icon.getHeight());
 	}
 
 	@Test
-	public void drawsAtLeastOneVisiblePixel()
+	public void assetHasVisiblePixels()
 	{
-		BufferedImage icon = PanelFormat.drawRefreshIcon(new Color(120, 200, 255));
-		boolean anyOpaque = false;
-		for (int x = 0; x < 14 && !anyOpaque; x++)
+		assertTrue("expected the refresh glyph to have visible pixels", hasOpaquePixel(PanelFormat.icon("refresh")));
+	}
+
+	/** The hover variant is a distinct asset, not a re-tint at runtime. */
+	@Test
+	public void hoverVariantIsADistinctAsset()
+	{
+		BufferedImage base = PanelFormat.icon("refresh");
+		BufferedImage hover = PanelFormat.icon("refresh_hover");
+		assertNotNull(hover);
+		boolean identical = true;
+		for (int x = 0; x < base.getWidth() && identical; x++)
 		{
-			for (int y = 0; y < 14; y++)
+			for (int y = 0; y < base.getHeight(); y++)
 			{
-				if (((icon.getRGB(x, y) >>> 24) & 0xFF) > 0)
+				if (base.getRGB(x, y) != hover.getRGB(x, y))
 				{
-					anyOpaque = true;
+					identical = false;
 					break;
 				}
 			}
 		}
-		assertTrue("expected the refresh glyph to draw visible pixels", anyOpaque);
+		assertFalse("hover variant must differ from the base icon", identical);
 	}
 }
