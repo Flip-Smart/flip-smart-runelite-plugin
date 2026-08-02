@@ -8,6 +8,8 @@ import java.awt.Graphics2D;
 import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.Map;
 import net.runelite.client.util.ImageUtil;
 import javax.swing.JPanel;
 
@@ -66,9 +68,14 @@ public final class PanelFormat
 	 * are captures of that exact output, so swapping to assets changed no pixels while
 	 * removing the drawing code from the plugin-hub token budget (resources are not counted).
 	 */
+	private static final Map<String, BufferedImage> ICON_CACHE = new ConcurrentHashMap<>();
+
 	public static BufferedImage icon(String name)
 	{
-		return ImageUtil.loadImageResource(PanelFormat.class, "/icons/" + name + ".png");
+		// Cached: hoverSwap invokes its supplier on every hover event, so an uncached
+		// lookup would decode the PNG on the EDT each time the pointer crosses an icon.
+		return ICON_CACHE.computeIfAbsent(name,
+			key -> ImageUtil.loadImageResource(PanelFormat.class, "/icons/" + key + ".png"));
 	}
 
 	public static Color getRiskColor(double score)
