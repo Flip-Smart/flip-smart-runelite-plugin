@@ -190,11 +190,18 @@ public class LoginPanel
 		for (int i = 0; i < entries.length; i++)
 		{
 			host.add((Component) entries[i]);
-			if (++i < entries.length)
+			i++;
+			if (i < entries.length)
 			{
-				host.add(Box.createRigidArea(new Dimension(0, (Integer) entries[i])));
+				host.add(verticalGap((Integer) entries[i]));
 			}
 		}
+	}
+
+	/** A rigid, invisible spacer of the given height for use between stacked components. */
+	private static Component verticalGap(int height)
+	{
+		return Box.createRigidArea(new Dimension(0, height));
 	}
 
 	private JPanel buildLoginPanel()
