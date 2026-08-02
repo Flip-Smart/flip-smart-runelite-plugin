@@ -667,17 +667,8 @@ public class OfflineSyncService
 	 */
 	private void rebuildCollectedItems(List<OfferRecord> persistedRecords)
 	{
-		Map<Integer, Integer> filledByItem = new HashMap<>();
-		for (OfferRecord r : persistedRecords)
-		{
-			if (r != null && r.isBuy() && r.getFilledQuantity() > 0)
-			{
-				filledByItem.merge(r.getItemId(), r.getFilledQuantity(), Integer::sum);
-			}
-		}
-
 		int rebuilt = 0;
-		for (Map.Entry<Integer, Integer> entry : filledByItem.entrySet())
+		for (Map.Entry<Integer, Integer> entry : filledBuyQuantitiesByItem(persistedRecords).entrySet())
 		{
 			int inventory = inventoryCountOrZero(entry.getKey());
 			if (inventory > 0)
@@ -690,6 +681,24 @@ public class OfflineSyncService
 		{
 			log.debug("Rebuilt {} collected item(s) for {} from persisted offers", rebuilt, session.getRsn());
 		}
+	}
+
+	/**
+	 * Total quantity actually bought per item across {@code records}. Summed rather than replaced:
+	 * a position built up over several offers of the same item is one holding, and taking only the
+	 * last record's fill would under-report it.
+	 */
+	private static Map<Integer, Integer> filledBuyQuantitiesByItem(List<OfferRecord> records)
+	{
+		Map<Integer, Integer> filledByItem = new HashMap<>();
+		for (OfferRecord r : records)
+		{
+			if (r != null && r.isBuy() && r.getFilledQuantity() > 0)
+			{
+				filledByItem.merge(r.getItemId(), r.getFilledQuantity(), Integer::sum);
+			}
+		}
+		return filledByItem;
 	}
 
 	/** Remove the config keys the collected set used to be stored in. Idempotent. */
