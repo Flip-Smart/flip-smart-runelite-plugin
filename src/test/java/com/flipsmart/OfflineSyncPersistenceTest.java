@@ -100,6 +100,77 @@ public class OfflineSyncPersistenceTest
 			ledger);
 	}
 
+	/**
+	 * A collected entry that has lost its backing is dropped silently.
+	 *
+	 * <p>Registering a History backfill here bypassed the reconciler's freshness cutoff
+	 * entirely, so records it had just routed to staleHistory as already-known were
+	 * prompted for anyway — and on every login, because a set pruned to empty never
+	 * cleared its own persisted blob.</p>
+	 */
+	@Test
+	public void prunedCollectedItemDoesNotRegisterHistoryBackfill()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.getCollectedItemIds())
+			.thenReturn(new java.util.HashSet<>(Collections.singletonList(4151)));
+		when(activeFlipTracker.getInventoryCountForItem(4151)).thenReturn(0);
+
+		assertEquals(1, service.pruneStaleCollectedItems());
+
+		verify(session, times(1)).removeCollectedItem(4151);
+		verify(geHistoryService, never()).registerOfflineFill(4151);
+	}
+
+	/**
+	 * The collected set is derived, not persisted: rebuilt from the persisted offer records
+	 * capped by what the player actually still holds, and never written to config.
+	 */
+	@Test
+	public void collectedSetIsRebuiltFromPersistedOffersAndNeverWrittenToConfig()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put(SYNC_MARKER_ZEZIMA, "500");
+		// Bought 10, but only 3 remain — the rest were sold or used while offline.
+		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(3);
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 4824, 10, 10), 2000L);
+
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList()); // fresh login
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		// Capped at the live inventory, not the 10 originally bought — the config-backed
+		// restore would have replayed the stale figure recorded at collect time.
+		verify(session, times(1)).addCollectedItem(4824, 3);
+
+		assertFalse("collected IDs must not be persisted", configStore.containsKey("collectedItems_Zezima"));
+		assertFalse("collected quantities must not be persisted", configStore.containsKey("collectedQuantities_Zezima"));
+		assertFalse("collected savedAt must not be persisted", configStore.containsKey("collectedItemsSavedAt_Zezima"));
+	}
+
+	/** Blobs written by an older client are cleaned up rather than left orphaned. */
+	@Test
+	public void legacyCollectedConfigKeysAreRemovedOnSync()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put("collectedItems_Zezima", "[4151]");
+		configStore.put("collectedQuantities_Zezima", "{\"4151\":5}");
+		configStore.put("collectedItemsSavedAt_Zezima", "1700000000000");
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertFalse(configStore.containsKey("collectedItems_Zezima"));
+		assertFalse(configStore.containsKey("collectedQuantities_Zezima"));
+		assertFalse(configStore.containsKey("collectedItemsSavedAt_Zezima"));
+	}
+
 	@Test
 	public void flipFinderSourced_persistsAndRestoresAcrossRestart()
 	{

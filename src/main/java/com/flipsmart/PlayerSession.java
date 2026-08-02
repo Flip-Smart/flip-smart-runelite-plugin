@@ -171,14 +171,6 @@ public class PlayerSession
 		return collectedItemIds.remove(itemId);
 	}
 
-	public void clearCollectedItems()
-	{
-		collectedItemIds.clear();
-		collectedQuantities.clear();
-		collectOrigins.clear();
-		collectedAtMillis.clear();
-	}
-
 	/** Mark an item as sourced from a Flip Finder recommendation (a focused buy was placed). */
 	public void markFlipFinderSourced(int itemId, long nowMs)
 	{
@@ -237,34 +229,6 @@ public class PlayerSession
 			}
 		}
 		return count;
-	}
-
-	public void restoreCollectedItems(Set<Integer> items)
-	{
-		collectedItemIds.clear();
-		collectedQuantities.clear();
-		collectOrigins.clear();
-		collectedAtMillis.clear();
-		if (items != null)
-		{
-			collectedItemIds.addAll(items);
-		}
-	}
-
-	public void restoreCollectedItems(Set<Integer> items, Map<Integer, Integer> quantities)
-	{
-		collectedItemIds.clear();
-		collectedQuantities.clear();
-		collectOrigins.clear();
-		collectedAtMillis.clear();
-		if (items != null)
-		{
-			collectedItemIds.addAll(items);
-		}
-		if (quantities != null)
-		{
-			collectedQuantities.putAll(quantities);
-		}
 	}
 
 	// =====================
@@ -377,24 +341,6 @@ public class PlayerSession
 	// =====================
 	// Query Methods
 	// =====================
-
-	/**
-	 * Get a snapshot of collected item IDs for persistence.
-	 * Returns a new HashSet to avoid concurrent modification during serialization.
-	 */
-	public Set<Integer> getCollectedItemsForPersistence()
-	{
-		return new HashSet<>(collectedItemIds);
-	}
-
-	/**
-	 * Get a snapshot of collected quantities for persistence.
-	 * Returns a new HashMap to avoid concurrent modification during serialization.
-	 */
-	public Map<Integer, Integer> getCollectedQuantitiesForPersistence()
-	{
-		return new HashMap<>(collectedQuantities);
-	}
 
 	// =====================
 	// Auto-Recommend Stale Notification Methods

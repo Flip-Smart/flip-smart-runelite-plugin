@@ -1243,9 +1243,10 @@ public class FlipSmartPlugin extends Plugin
 			webhookSyncService.pullFromBackend();
 		});
 
-		// Restore collected items from config (items bought but not yet sold)
-		// Must be after syncRSN() so we have the correct RSN for the config key
-		offlineSyncService.restoreCollectedItems();
+		// Collected items are no longer restored here: they are derived from the persisted offer
+		// records and live inventory, rebuilt by the offline sync scheduled below. That sync runs
+		// on a delay precisely because the inventory container is not reliably loaded on the first
+		// LOGGED_IN tick, which is what a restore at this point would have had to read.
 
 		// Restore the Flip Finder-sourced set so the free-tier cap survives a restart.
 		offlineSyncService.restoreFlipFinderSourcedItems();
