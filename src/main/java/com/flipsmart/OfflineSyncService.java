@@ -686,7 +686,7 @@ public class OfflineSyncService
 				rebuilt++;
 			}
 		}
-		if (rebuilt > 0)
+		if (rebuilt > 0 && log.isDebugEnabled())
 		{
 			log.debug("Rebuilt {} collected item(s) for {} from persisted offers", rebuilt, session.getRsn());
 		}

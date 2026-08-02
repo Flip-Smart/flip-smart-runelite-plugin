@@ -37,6 +37,8 @@ public class OfflineSyncPersistenceTest
 {
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String SYNC_MARKER_ZEZIMA = "offlineSyncAt_Zezima";
+	/** Prior-sync wall-clock: records with later activity count as fresh offline fills. */
+	private static final String PRIOR_SYNC_AT = "500";
 
 	private PlayerSession session;
 	private ConfigManager configManager;
@@ -131,7 +133,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put(SYNC_MARKER_ZEZIMA, "500");
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT);
 		// Bought 10, but only 3 remain — the rest were sold or used while offline.
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(3);
 
@@ -303,7 +305,7 @@ public class OfflineSyncPersistenceTest
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
 		// We've synced before (marker 500) and this fill is fresh since then (activity 2000).
-		configStore.put(SYNC_MARKER_ZEZIMA, "500");
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT);
 		// Item still in inventory (2 traded units), so the inventory gate allows the re-add.
 		when(activeFlipTracker.getInventoryCountForItem(111)).thenReturn(2);
 
@@ -345,7 +347,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -370,7 +372,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(7);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
