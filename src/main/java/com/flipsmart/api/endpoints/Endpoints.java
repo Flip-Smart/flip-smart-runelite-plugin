@@ -56,6 +56,9 @@ import static com.flipsmart.api.ApiHttpTransport.urlEncode;
  */
 public final class Endpoints
 {
+	private static final String JSON_KEY_ITEM_ID = "item_id";
+	private static final String JSON_KEY_RSN = "rsn";
+
 	private Endpoints()
 	{
 	}
@@ -66,7 +69,6 @@ public final class Endpoints
 	@Slf4j
 	public static class ActiveFlipEndpoints
 	{
-		private static final String JSON_KEY_ITEM_ID = "item_id";
 		private static final String JSON_KEY_PRICE_PER_ITEM = "price_per_item";
 
 		private final ApiHttpTransport transport;
@@ -225,7 +227,7 @@ public final class Endpoints
 			requestBody.addProperty("filled_quantity", filledQuantity);
 			requestBody.addProperty("order_quantity", orderQuantity);
 			requestBody.addProperty(JSON_KEY_PRICE_PER_ITEM, pricePerItem);
-			requestBody.addProperty("rsn", rsn);
+			requestBody.addProperty(JSON_KEY_RSN, rsn);
 
 			RequestBody body = RequestBody.create(JSON, requestBody.toString());
 			Request.Builder requestBuilder = new Request.Builder()
@@ -316,7 +318,7 @@ public final class Endpoints
 			String url = String.format("%s/plugin/active-flips-snapshot", transport.getApiUrl());
 
 			JsonObject body = new JsonObject();
-			body.addProperty("rsn", rsn);
+			body.addProperty(JSON_KEY_RSN, rsn);
 			body.addProperty("captured_at", Instant.now().toString());
 			// ActiveFlip carries @SerializedName on every field, so it serialises
 			// straight into the snake_case shape the backend expects.
@@ -342,7 +344,6 @@ public final class Endpoints
 	 */
 	public static class BankSnapshotEndpoints
 	{
-		private static final String JSON_KEY_ITEM_ID = "item_id";
 		private static final String JSON_KEY_QUANTITY = "quantity";
 		private static final String RATE_LIMIT_ERROR = "Error 429";
 
@@ -374,7 +375,7 @@ public final class Endpoints
 			String url = String.format("%s/bank/snapshot", apiUrl);
 
 			JsonObject requestBody = new JsonObject();
-			requestBody.addProperty("rsn", rsn);
+			requestBody.addProperty(JSON_KEY_RSN, rsn);
 			requestBody.addProperty("ge_offers_value", geOffersValue);
 
 			JsonArray itemsArray = new JsonArray();
@@ -432,7 +433,6 @@ public final class Endpoints
 	@Slf4j
 	public static class BlocklistEndpoints
 	{
-		private static final String JSON_KEY_ITEM_ID = "item_id";
 
 		private final ApiHttpTransport transport;
 
@@ -560,7 +560,6 @@ public final class Endpoints
 	 */
 	public static class FlipsEndpoints
 	{
-		private static final String JSON_KEY_ITEM_ID = "item_id";
 		static final long CACHE_DURATION_MS = 900_000;
 
 		private final ApiHttpTransport transport;
@@ -760,7 +759,7 @@ public final class Endpoints
 		public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Integer inventoryGp)
 		{
 			JsonObject body = new JsonObject();
-			body.addProperty("rsn", rsn);
+			body.addProperty(JSON_KEY_RSN, rsn);
 			body.addProperty("inventory_gp", inventoryGp);
 
 			Request.Builder requestBuilder = new Request.Builder()
@@ -795,7 +794,7 @@ public final class Endpoints
 			}
 			if (req.rsn != null)
 			{
-				jsonBody.addProperty("rsn", req.rsn);
+				jsonBody.addProperty(JSON_KEY_RSN, req.rsn);
 			}
 			if (req.style != null)
 			{
@@ -1238,7 +1237,7 @@ public final class Endpoints
 			String url = String.format("%s/trade-station/runelite-slots", transport.getApiUrl());
 
 			JsonObject body = new JsonObject();
-			body.addProperty("rsn", rsn);
+			body.addProperty(JSON_KEY_RSN, rsn);
 			JsonArray arr = new JsonArray();
 			for (Integer id : itemIds)
 			{
@@ -1264,7 +1263,6 @@ public final class Endpoints
 	@Slf4j
 	public static class TransactionEndpoints
 	{
-		private static final String JSON_KEY_ITEM_ID = "item_id";
 		private static final String JSON_KEY_QUANTITY = "quantity";
 		private static final String JSON_KEY_PRICE_PER_ITEM = "price_per_item";
 
@@ -1302,7 +1300,7 @@ public final class Endpoints
 			}
 			if (request.rsn != null && !request.rsn.isEmpty())
 			{
-				jsonBody.addProperty("rsn", request.rsn);
+				jsonBody.addProperty(JSON_KEY_RSN, request.rsn);
 			}
 			if (request.totalQuantity != null && request.totalQuantity > 0)
 			{
@@ -1363,7 +1361,7 @@ public final class Endpoints
 			String url = String.format("%s/transactions/history-backfill-batch", apiUrl);
 
 			JsonObject body = new JsonObject();
-			body.addProperty("rsn", rsn);
+			body.addProperty(JSON_KEY_RSN, rsn);
 			JsonArray arr = new JsonArray();
 			for (HistoryBackfillEntry e : entries)
 			{
