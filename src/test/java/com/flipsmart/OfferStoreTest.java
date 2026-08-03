@@ -7,6 +7,7 @@ import com.flipsmart.trading.OfferStore;
 import net.runelite.api.GrandExchangeOfferState;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -252,7 +253,7 @@ public class OfferStoreTest
         store.apply(sig(1, GrandExchangeOfferState.BUYING, 5678, 0, 10), NOW);
         long prunedId = store.bySlot(1).getOfferId();
 
-        List<OfferRecord> survivors = new java.util.ArrayList<>();
+        List<OfferRecord> survivors = new ArrayList<>();
         for (OfferRecord r : store.export())
         {
             if (r.getOfferId() != prunedId)
