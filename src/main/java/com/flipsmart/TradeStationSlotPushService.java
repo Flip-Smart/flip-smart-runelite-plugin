@@ -107,7 +107,7 @@ public class TradeStationSlotPushService
 		scheduler().execute(() -> doPush(snapshot)); // NOPMD DoNotUseThreads
 	}
 
-	private static ScheduledExecutorService newScheduler()
+	private static ScheduledExecutorService newScheduler() // NOPMD DoNotUseThreads
 	{
 		return Executors.newSingleThreadScheduledExecutor(r ->
 		{
@@ -118,13 +118,16 @@ public class TradeStationSlotPushService
 	}
 
 	/** The live scheduler, replacing it first if a previous shutdown terminated it. */
-	private synchronized ScheduledExecutorService scheduler()
+	private ScheduledExecutorService scheduler() // NOPMD DoNotUseThreads
 	{
-		if (scheduler == null || scheduler.isShutdown())
+		synchronized (this)
 		{
-			scheduler = newScheduler();
+			if (scheduler == null || scheduler.isShutdown())
+			{
+				scheduler = newScheduler();
+			}
+			return scheduler;
 		}
-		return scheduler;
 	}
 
 	public void shutdown()

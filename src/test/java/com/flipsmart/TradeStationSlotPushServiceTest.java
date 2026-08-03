@@ -56,6 +56,10 @@ public class TradeStationSlotPushServiceTest
 
 		// Previously threw RejectedExecutionException from the terminated executor.
 		service.scheduleSnapshotPush(java.util.Collections.singletonList(ABYSSAL_WHIP));
+
+		// The debounced task must actually run on the rebuilt executor, not merely be accepted.
+		verify(apiClient, timeout(5000).times(1))
+			.pushTradeStationSlotsAsync(eq(RSN), eq(java.util.Collections.singletonList(ABYSSAL_WHIP)));
 	}
 
 	@Test
