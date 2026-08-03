@@ -41,25 +41,34 @@ public class OfflineSyncService
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
 	private static final String PERSISTED_OFFERS_FALLBACK_KEY = "persistedOffers_lastSession";
-	private static final String COLLECTED_ITEMS_KEY_PREFIX = "collectedItems_";
 	private static final String FLIP_FINDER_SOURCED_KEY_PREFIX = "flipFinderSourced_";
-	private static final String COLLECTED_QUANTITIES_KEY_PREFIX = "collectedQuantities_";
-	private static final String COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX = "collectedItemsSavedAt_";
 	private static final String ROUND_TRIP_LEDGER_KEY_PREFIX = "roundTripLedger_";
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
 	// Wall-clock of the last completed offline sync, per RSN. A persisted offer is only a genuine
 	// offline fill if it was active since this marker; older leftovers are already-known history.
 	private static final String OFFLINE_SYNC_MARKER_KEY_PREFIX = "offlineSyncAt_";
 
-	/** Persisted collected-item entries older than this are dropped on restore. */
-	static final long MAX_PERSISTED_COLLECTED_AGE_MS = 7L * 24 * 60 * 60 * 1000;
+	/**
+	 * Config keys that held the collected set before it became derived state. Unset on the first
+	 * sync of each session so upgrading clients do not leave orphaned blobs behind.
+	 */
+	private static final String[] LEGACY_COLLECTED_KEY_PREFIXES = {
+		"collectedItems_", "collectedQuantities_", "collectedItemsSavedAt_"
+	};
 
 	/**
 	 * Terminal (already-collected/cancelled) offer records this old are no longer carried across a
-	 * reconcile. They exist to keep the cost basis of a position the player still holds, so the
-	 * window only has to outlive a realistic buy-to-sell gap.
+	 * reconcile. They keep the cost basis of a position the player still holds.
+	 *
+	 * <p>Matches the seven days the {@code collectedItems_<rsn>} blob used to retain for, because
+	 * the collected set is now derived from these records rather than stored separately. A shorter
+	 * window is fine while {@link RoundTripLedger} knows the held quantity — that exemption keeps a
+	 * backing record alive regardless of age — but a client with no persisted ledger cold-starts
+	 * from live unmatched buys only, so an already-collected holding gets {@code heldQuantity 0} and
+	 * would age out. At 24 hours that silently dropped positions bought the previous day on the
+	 * first login after upgrading.</p>
 	 */
-	static final long TERMINAL_HISTORY_RETENTION_MS = 24L * 60 * 60 * 1000;
+	static final long TERMINAL_HISTORY_RETENTION_MS = 7L * 24 * 60 * 60 * 1000;
 
 	/** Hard ceiling on retained terminal records so the persisted blob stays bounded. */
 	static final int MAX_RETAINED_TERMINAL_RECORDS = 300;
@@ -107,40 +116,6 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Restore collected item IDs from persisted config.
-	 * These are items that were bought but not yet sold when the player logged out.
-	 * Entries older than {@link #MAX_PERSISTED_COLLECTED_AGE_MS} are dropped.
-	 */
-	public void restoreCollectedItems()
-	{
-		String key = getCollectedItemsKey();
-		log.debug("Attempting to restore collected items for RSN: {} (key: {})", session.getRsn(), key);
-
-		if (isPersistedCollectedTooOld())
-		{
-			log.debug("Persisted collected items for {} are stale - clearing", session.getRsn());
-			clearPersistedCollectedItems();
-			session.clearCollectedItems();
-			return;
-		}
-
-		Set<Integer> persisted = loadPersistedCollectedItems();
-		if (!persisted.isEmpty())
-		{
-			Map<Integer, Integer> quantities = loadPersistedCollectedQuantities();
-			session.restoreCollectedItems(persisted, quantities);
-			log.debug("Restored {} collected items from previous session: {} (with {} quantities)",
-				persisted.size(), persisted, quantities.size());
-		}
-		else
-		{
-			log.debug("No collected items found in config for RSN: {}", session.getRsn());
-			session.clearCollectedItems();
-		}
-
-	}
-
-	/**
 	 * Restore the Flip Finder-sourced set for the current RSN on login, so the free-tier cap
 	 * counts flips that were in progress before a client restart. Stale entries (items no
 	 * longer an active flip) are pruned by {@code retainAndCountFlipFinderActive} on the first
@@ -179,42 +154,6 @@ public class OfflineSyncService
 		}
 	}
 
-	/** Missing timestamps (legacy data) are treated as stale. */
-	private boolean isPersistedCollectedTooOld()
-	{
-		String savedAtKey = getCollectedItemsSavedAtKey();
-		String collectedKey = getCollectedItemsKey();
-
-		String collectedJson = configManager.getConfiguration(CONFIG_GROUP, collectedKey);
-		if (collectedJson == null || collectedJson.isEmpty())
-		{
-			return false;
-		}
-
-		String savedAtStr = configManager.getConfiguration(CONFIG_GROUP, savedAtKey);
-		if (savedAtStr == null || savedAtStr.isEmpty())
-		{
-			return true;
-		}
-
-		try
-		{
-			long savedAt = Long.parseLong(savedAtStr);
-			return System.currentTimeMillis() - savedAt > MAX_PERSISTED_COLLECTED_AGE_MS;
-		}
-		catch (NumberFormatException e)
-		{
-			return true;
-		}
-	}
-
-	private void clearPersistedCollectedItems()
-	{
-		configManager.unsetConfiguration(CONFIG_GROUP, getCollectedItemsKey());
-		configManager.unsetConfiguration(CONFIG_GROUP, getCollectedQuantitiesKey());
-		configManager.unsetConfiguration(CONFIG_GROUP, getCollectedItemsSavedAtKey());
-	}
-
 	/**
 	 * Persist the current GE offer state to config for offline tracking.
 	 * Called when the player logs out or plugin shuts down.
@@ -229,8 +168,6 @@ public class OfflineSyncService
 		}
 
 		String offersKey = PERSISTED_OFFERS_KEY_PREFIX + rsn;
-		String collectedKey = COLLECTED_ITEMS_KEY_PREFIX + rsn;
-		String quantitiesKey = COLLECTED_QUANTITIES_KEY_PREFIX + rsn;
 
 		persistWatermarks(rsn);
 
@@ -258,41 +195,12 @@ public class OfflineSyncService
 			}
 		}
 
-		// Persist collected item IDs (items bought but not yet sold)
-		String savedAtKey = COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + rsn;
-		if (session.getCollectedItemIds().isEmpty())
-		{
-			// Same don't-destroy-on-empty treatment as the offers branch: a transient
-			// empty collected set during the logout/hop window must not wipe saved data.
-			log.debug("Collected set empty — preserving existing persisted collected items for {}", rsn);
-		}
-		else
-		{
-			try
-			{
-				String json = gson.toJson(new ArrayList<>(session.getCollectedItemsForPersistence()));
-				configManager.setConfiguration(CONFIG_GROUP, collectedKey, json);
-
-				Map<Integer, Integer> quantities = session.getCollectedQuantitiesForPersistence();
-				if (!quantities.isEmpty())
-				{
-					String qtyJson = gson.toJson(quantities);
-					configManager.setConfiguration(CONFIG_GROUP, quantitiesKey, qtyJson);
-				}
-				else
-				{
-					configManager.unsetConfiguration(CONFIG_GROUP, quantitiesKey);
-				}
-
-				configManager.setConfiguration(CONFIG_GROUP, savedAtKey, Long.toString(System.currentTimeMillis()));
-
-				log.debug("Persisted {} collected item IDs for {} (active flips)", session.getCollectedItemIds().size(), session.getRsn());
-			}
-			catch (Exception e)
-			{
-				log.error("Failed to persist collected items for {}: {}", session.getRsn(), e.getMessage());
-			}
-		}
+		// The collected set is NOT persisted. It is derived state — "buys I hold that no longer
+		// occupy a slot" — which the persisted offer records plus live inventory already answer,
+		// and rebuildCollectedItems reconstructs it on each sync. Storing it separately meant a
+		// cache that drifted from its own source, which pruneStaleCollectedItems then existed to
+		// repair; the repair in turn re-fired the GE History prompt for entries the reconciler had
+		// deliberately suppressed as already-known history.
 
 		// Persist the Flip Finder-sourced set so the free-tier cap survives a client restart.
 		Set<Integer> sourced = session.getFlipFinderSourcedItems();
@@ -485,6 +393,16 @@ public class OfflineSyncService
 				toImport.add(collected.withState(OfferState.COLLECTED, now));
 			}
 		}
+		else
+		{
+			// Deferring classification means carrying the records, not discarding them. They are
+			// non-terminal, so retainRecentTerminalHistory below will not pick them up, and
+			// importRecords replaces the store wholesale — leaving them out drops them, and the
+			// persist that follows writes the truncated set back over the saved blob. That erased
+			// the cost basis of a position the player still holds, and with the collected set now
+			// derived from these records rather than stored separately, it erased the position too.
+			toImport.addAll(plan.offlineCollected);
+		}
 		// A collected buy is the cost basis for the sell that follows it. The reconcile plan
 		// carries only live and offline-collected records, so importing just those erased every
 		// already-collected buy on each LOGGED_IN — which fires on every world hop, not only
@@ -671,27 +589,21 @@ public class OfflineSyncService
 			}
 		}
 
-		// Each offline-collected record represents an offer whose slot is now gone on login.
-		// Register exactly one backfill per record, using the reconciled filled qty — never
-		// the order total — so a partial-cancel contributes only what was actually traded.
+		// Rebuild the collected set before anything reads it. Driven by the whole persisted blob
+		// rather than plan.offlineCollected, so a position the player has held across several
+		// sessions — whose record long ago stopped being "recently vanished" — is still recovered.
+		// Records that reattached are excluded: their fills are still sitting in the GE slot, not in
+		// the player's inventory, so they have not been collected yet.
+		rebuildCollectedItems(persistedRecords, plan.reattached);
+
+		// Each offline-collected record represents an offer whose slot is now gone on login, and
+		// the reconciler has already dropped anything older than the freshness cutoff. This is the
+		// sole path that registers a History backfill, so the cutoff governs every prompt.
 		for (OfferRecord record : plan.offlineCollected)
 		{
-			int itemId = record.getItemId();
-			if (record.isBuy() && record.getFilledQuantity() > 0)
+			if (!record.isBuy() || record.getFilledQuantity() > 0)
 			{
-				// Only re-add a collected buy that is actually still in inventory. A buy the
-				// player already sold/used offline has no inventory and must not be re-injected,
-				// or it strands a phantom collect/sell prompt every login. Backfill always fires.
-				int inventory = inventoryCountOrZero(itemId);
-				if (inventory > 0)
-				{
-					session.addCollectedItem(itemId, Math.min(inventory, record.getFilledQuantity()));
-				}
-				geHistoryService.registerOfflineFill(itemId);
-			}
-			else if (!record.isBuy())
-			{
-				geHistoryService.registerOfflineFill(itemId);
+				geHistoryService.registerOfflineFill(record.getItemId());
 			}
 		}
 
@@ -702,6 +614,7 @@ public class OfflineSyncService
 		}
 
 		pruneStaleCollectedItems();
+		clearLegacyCollectedKeys();
 		writeOfflineSyncMarker(now);
 		persistOfferState();
 
@@ -758,9 +671,116 @@ public class OfflineSyncService
 	}
 
 	/**
+	 * Rebuild the collected set — items bought into inventory but not yet sold — from the persisted
+	 * offer records and live inventory, replacing the config-backed restore this used to do.
+	 *
+	 * <p>Driven by the full persisted blob rather than the reconciler's offline-collected bucket, so
+	 * a position held across several sessions is recovered even once its record has stopped being
+	 * recently-vanished. Quantities are capped at the current inventory count, which makes a holding
+	 * partly sold or used offline land at its true remainder instead of the figure recorded when it
+	 * was first collected.</p>
+	 *
+	 * <p>Records in {@code reattached} are skipped: those offers still occupy a GE slot, so their
+	 * fills are in the Exchange rather than the inventory and have not been collected. Without that
+	 * exclusion a live partial-fill would contribute to the collected set whenever the player
+	 * happened to hold units of the same item, stranding a phantom sell prompt.</p>
+	 *
+	 * <p>Adds only: a collect observed live earlier in this session keeps its entry, and
+	 * {@link #pruneStaleCollectedItems} drops whatever has no backing. Must run on the client
+	 * thread — it reads inventory.</p>
+	 */
+	private void rebuildCollectedItems(List<OfferRecord> persistedRecords, List<OfferRecord> reattached)
+	{
+		int rebuilt = 0;
+		for (Map.Entry<Integer, Integer> entry
+			: filledBuyQuantitiesByItem(excludingReattached(persistedRecords, reattached)).entrySet())
+		{
+			int inventory = inventoryCountOrZero(entry.getKey());
+			if (inventory > 0)
+			{
+				int quantity = Math.min(inventory, entry.getValue());
+				session.addCollectedItem(entry.getKey(), quantity);
+				rebuilt++;
+				// Per-item, because the aggregate count alone cannot show whether the inventory cap
+				// actually applied — the whole point of deriving the quantity rather than replaying
+				// the figure recorded at collect time.
+				if (log.isDebugEnabled())
+				{
+					log.debug("Rebuilt collected item {} qty={} (inventory={}, persistedFilled={}) for {}",
+						entry.getKey(), quantity, inventory, entry.getValue(), session.getRsn());
+				}
+			}
+		}
+		if (rebuilt > 0 && log.isDebugEnabled())
+		{
+			log.debug("Rebuilt {} collected item(s) for {} from persisted offers", rebuilt, session.getRsn());
+		}
+	}
+
+	/**
+	 * {@code records} minus the ones that reattached to a live GE slot. Those offers still occupy
+	 * their slot, so their fills are in the Exchange rather than the player's inventory.
+	 */
+	private static List<OfferRecord> excludingReattached(List<OfferRecord> records, List<OfferRecord> reattached)
+	{
+		Set<Long> stillInSlot = new HashSet<>();
+		for (OfferRecord r : reattached)
+		{
+			stillInSlot.add(r.getOfferId());
+		}
+		List<OfferRecord> out = new ArrayList<>(records.size());
+		for (OfferRecord r : records)
+		{
+			if (r != null && !stillInSlot.contains(r.getOfferId()))
+			{
+				out.add(r);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Total quantity actually bought per item across {@code records}. Summed rather than replaced:
+	 * a position built up over several offers of the same item is one holding, and taking only the
+	 * last record's fill would under-report it.
+	 */
+	private static Map<Integer, Integer> filledBuyQuantitiesByItem(List<OfferRecord> records)
+	{
+		Map<Integer, Integer> filledByItem = new HashMap<>();
+		for (OfferRecord r : records)
+		{
+			if (r != null && r.isBuy() && r.getFilledQuantity() > 0)
+			{
+				filledByItem.merge(r.getItemId(), r.getFilledQuantity(), Integer::sum);
+			}
+		}
+		return filledByItem;
+	}
+
+	/** Remove the config keys the collected set used to be stored in. Idempotent. */
+	private void clearLegacyCollectedKeys()
+	{
+		String rsn = resolvePersistenceRsn();
+		for (String prefix : LEGACY_COLLECTED_KEY_PREFIXES)
+		{
+			configManager.unsetConfiguration(CONFIG_GROUP, prefix + UNKNOWN_RSN_FALLBACK);
+			if (rsn != null)
+			{
+				configManager.unsetConfiguration(CONFIG_GROUP, prefix + rsn);
+			}
+		}
+	}
+
+	/**
 	 * Drop collectedItems entries with no inventory, in-flight/uncollected buy,
 	 * or active sell — they are "phantom" sell prompts from prior sessions (#451).
 	 * Must be called from the client thread.
+	 *
+	 * <p>Deliberately silent: an entry losing its backing is not evidence of a fresh offline sell.
+	 * Registering a History backfill here bypassed the reconciler's freshness cutoff entirely, so
+	 * records it had just routed to staleHistory as already-known were prompted for anyway — every
+	 * login, because a set pruned to empty never cleared its own persisted blob. The genuine
+	 * signal is the reconciler's offline-collected bucket, which is cutoff-gated.</p>
 	 */
 	int pruneStaleCollectedItems()
 	{
@@ -780,10 +800,6 @@ public class OfflineSyncService
 		}
 		for (int itemId : toRemove)
 		{
-			// A collected item disappearing without a tracked sell having
-			// happened in this session means it was sold offline. Register
-			// it for History backfill before we drop it from local state.
-			geHistoryService.registerOfflineFill(itemId);
 			session.removeCollectedItem(itemId);
 		}
 		return toRemove.size();
@@ -874,87 +890,6 @@ public class OfflineSyncService
 			return PERSISTED_OFFERS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
 		}
 		return PERSISTED_OFFERS_KEY_PREFIX + session.getRsn();
-	}
-
-	public String getCollectedItemsKey()
-	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return COLLECTED_ITEMS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return COLLECTED_ITEMS_KEY_PREFIX + session.getRsn();
-	}
-
-	public String getCollectedQuantitiesKey()
-	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return COLLECTED_QUANTITIES_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return COLLECTED_QUANTITIES_KEY_PREFIX + session.getRsn();
-	}
-
-	public String getCollectedItemsSavedAtKey()
-	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return COLLECTED_ITEMS_SAVED_AT_KEY_PREFIX + session.getRsn();
-	}
-
-	/**
-	 * Load previously persisted collected item IDs from config.
-	 */
-	private Set<Integer> loadPersistedCollectedItems()
-	{
-		String key = getCollectedItemsKey();
-
-		try
-		{
-			String json = configManager.getConfiguration(CONFIG_GROUP, key);
-			if (json == null || json.isEmpty())
-			{
-				return new HashSet<>();
-			}
-
-			Type type = new TypeToken<List<Integer>>(){}.getType();
-			List<Integer> items = gson.fromJson(json, type);
-			log.debug("Loaded {} persisted collected items for {}", items != null ? items.size() : 0, session.getRsn());
-			return items != null ? new HashSet<>(items) : new HashSet<>();
-		}
-		catch (Exception e)
-		{
-			log.error("Failed to load persisted collected items for {}: {}", session.getRsn(), e.getMessage());
-			return new HashSet<>();
-		}
-	}
-
-	/**
-	 * Load previously persisted collected quantities from config.
-	 */
-	private Map<Integer, Integer> loadPersistedCollectedQuantities()
-	{
-		String key = getCollectedQuantitiesKey();
-
-		try
-		{
-			String json = configManager.getConfiguration(CONFIG_GROUP, key);
-			if (json == null || json.isEmpty())
-			{
-				return new HashMap<>();
-			}
-
-			Type type = new TypeToken<Map<Integer, Integer>>(){}.getType();
-			Map<Integer, Integer> quantities = gson.fromJson(json, type);
-			log.debug("Loaded {} persisted collected quantities for {}", quantities != null ? quantities.size() : 0, session.getRsn());
-			return quantities != null ? quantities : new HashMap<>();
-		}
-		catch (Exception e)
-		{
-			log.error("Failed to load persisted collected quantities for {}: {}", session.getRsn(), e.getMessage());
-			return new HashMap<>();
-		}
 	}
 
 	/**

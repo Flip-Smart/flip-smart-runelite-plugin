@@ -37,6 +37,8 @@ public class OfflineSyncPersistenceTest
 {
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String SYNC_MARKER_ZEZIMA = "offlineSyncAt_Zezima";
+	/** Prior-sync wall-clock: records with later activity count as fresh offline fills. */
+	private static final String PRIOR_SYNC_AT = "500";
 
 	private PlayerSession session;
 	private ConfigManager configManager;
@@ -98,6 +100,162 @@ public class OfflineSyncPersistenceTest
 			store,
 			itemManager,
 			ledger);
+	}
+
+	/**
+	 * A collected entry that has lost its backing is dropped silently.
+	 *
+	 * <p>Registering a History backfill here bypassed the reconciler's freshness cutoff
+	 * entirely, so records it had just routed to staleHistory as already-known were
+	 * prompted for anyway — and on every login, because a set pruned to empty never
+	 * cleared its own persisted blob.</p>
+	 */
+	@Test
+	public void prunedCollectedItemDoesNotRegisterHistoryBackfill()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.getCollectedItemIds())
+			.thenReturn(new java.util.HashSet<>(Collections.singletonList(4151)));
+		when(activeFlipTracker.getInventoryCountForItem(4151)).thenReturn(0);
+
+		assertEquals(1, service.pruneStaleCollectedItems());
+
+		verify(session, times(1)).removeCollectedItem(4151);
+		verify(geHistoryService, never()).registerOfflineFill(4151);
+	}
+
+	/**
+	 * The collected set is derived, not persisted: rebuilt from the persisted offer records
+	 * capped by what the player actually still holds, and never written to config.
+	 */
+	@Test
+	public void collectedSetIsRebuiltFromPersistedOffersAndNeverWrittenToConfig()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT);
+		// Bought 10, but only 3 remain — the rest were sold or used while offline.
+		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(3);
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 4824, 10, 10), 2000L);
+
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList()); // fresh login
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		// Capped at the live inventory, not the 10 originally bought — the config-backed
+		// restore would have replayed the stale figure recorded at collect time.
+		verify(session, times(1)).addCollectedItem(4824, 3);
+
+		assertFalse("collected IDs must not be persisted", configStore.containsKey("collectedItems_Zezima"));
+		assertFalse("collected quantities must not be persisted", configStore.containsKey("collectedQuantities_Zezima"));
+		assertFalse("collected savedAt must not be persisted", configStore.containsKey("collectedItemsSavedAt_Zezima"));
+	}
+
+	/**
+	 * A partially-filled buy still sitting in its GE slot has NOT been collected — those fills are
+	 * in the Exchange, not the inventory. It must not contribute to the collected set even when the
+	 * player holds units of that item for unrelated reasons (supplies, an earlier flip), or the
+	 * rebuild strands exactly the phantom sell prompt this change exists to remove.
+	 *
+	 * <p>Found during in-game QA on a live 28924 partial-fill.</p>
+	 */
+	@Test
+	public void reattachedLiveBuyIsNotRebuiltIntoCollectedSet()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT);
+		when(activeFlipTracker.getInventoryCountForItem(28924)).thenReturn(7);
+
+		// A partial-fill buy that is still live in slot 0 when we log back in.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 28924, 20, 100), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// Built before the outer stubbing calls — these helpers stub inner mocks, and Mockito
+		// rejects a when() that lands inside an in-progress one.
+		ItemComposition comp = itemComp("i28924");
+		GrandExchangeOffer live = geOffer(28924, GrandExchangeOfferState.BUYING, 100, 100);
+		when(itemManager.getItemComposition(28924)).thenReturn(comp);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[]{live});
+
+		service.syncOfflineFills();
+
+		verify(session, never()).addCollectedItem(eq(28924), anyInt());
+	}
+
+	/**
+	 * When the GE snapshot is unreadable at preload, an offline-collected record must be carried
+	 * into the store unchanged rather than dropped.
+	 *
+	 * <p>It is non-terminal, so {@code retainRecentTerminalHistory} will not pick it up, and
+	 * {@code importRecords} replaces the store wholesale — omitting it drops the record, and the
+	 * persist that follows writes the truncated set back over the saved blob. That erases the cost
+	 * basis of a position the player still holds, and because the collected set is now derived from
+	 * these records, it erases the position from Active Flips too.</p>
+	 *
+	 * <p>Found during in-game QA: a 10,329-unit snape grass (231) buy disappeared after one login
+	 * where the slots were not yet loaded.</p>
+	 */
+	@Test
+	public void offlineCollectedRecordSurvivesPreloadWhenSlotsUnreadable()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// A filled buy that is gone from its slot, persisted from the previous session.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 231, 0, 10329), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 231, 10329, 10329), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// GE snapshot not loaded yet — the state this regression needs.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.preloadPersistedOffers();
+
+		boolean survived = false;
+		for (OfferRecord r : store.export())
+		{
+			if (r.getItemId() == 231 && r.getFilledQuantity() == 10329)
+			{
+				survived = true;
+			}
+		}
+		assertTrue("offline-collected record must survive an unreadable-slot preload", survived);
+
+		// And the persist that follows must not write a set that has lost it.
+		service.persistOfferState();
+		boolean stillPersisted = false;
+		for (OfferRecord r : service.loadPersistedOfferRecords())
+		{
+			if (r.getItemId() == 231 && r.getFilledQuantity() == 10329)
+			{
+				stillPersisted = true;
+			}
+		}
+		assertTrue("record must remain in the persisted blob", stillPersisted);
+	}
+
+	/** Blobs written by an older client are cleaned up rather than left orphaned. */
+	@Test
+	public void legacyCollectedConfigKeysAreRemovedOnSync()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put("collectedItems_Zezima", "[4151]");
+		configStore.put("collectedQuantities_Zezima", "{\"4151\":5}");
+		configStore.put("collectedItemsSavedAt_Zezima", "1700000000000");
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertFalse(configStore.containsKey("collectedItems_Zezima"));
+		assertFalse(configStore.containsKey("collectedQuantities_Zezima"));
+		assertFalse(configStore.containsKey("collectedItemsSavedAt_Zezima"));
 	}
 
 	@Test
@@ -232,7 +390,7 @@ public class OfflineSyncPersistenceTest
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
 		// We've synced before (marker 500) and this fill is fresh since then (activity 2000).
-		configStore.put(SYNC_MARKER_ZEZIMA, "500");
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT);
 		// Item still in inventory (2 traded units), so the inventory gate allows the re-add.
 		when(activeFlipTracker.getInventoryCountForItem(111)).thenReturn(2);
 
@@ -274,7 +432,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(0);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -299,7 +457,7 @@ public class OfflineSyncPersistenceTest
 	{
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		configStore.put(SYNC_MARKER_ZEZIMA, "500"); // fresh since last sync (activity 2000)
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT); // fresh since last sync (activity 2000)
 		when(activeFlipTracker.getInventoryCountForItem(4824)).thenReturn(7);
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 4824, 0, 10), 1000L);
@@ -441,8 +599,15 @@ public class OfflineSyncPersistenceTest
 
 		service.preloadPersistedOffers();
 
-		assertTrue("no COLLECTED duplicate manufactured when GE slots are unloaded",
-			store.forItem(7777).isEmpty());
+		// The record must be CARRIED, not dropped. This assertion used to require the store to be
+		// empty for the item, which conflated "do not manufacture a terminal duplicate" with
+		// "discard the record" — and the discard erased a still-held position's cost basis on the
+		// persist that follows. Classification is deferred to the +2s sync, which cannot classify a
+		// record that is no longer there.
+		List<OfferRecord> carried = store.forItem(7777);
+		assertEquals("record carried across an unreadable-slot preload", 1, carried.size());
+		assertFalse("no COLLECTED duplicate manufactured when GE slots are unloaded",
+			carried.get(0).getState().isTerminal());
 	}
 
 	@Test

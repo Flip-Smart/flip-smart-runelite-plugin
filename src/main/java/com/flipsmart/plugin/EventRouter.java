@@ -119,6 +119,13 @@ public class EventRouter
 		{
 			session.onLoginStateChange(client.getTickCount());
 
+			// These transitions clear offlineSyncCompleted, so the sync will run again on the
+			// LOGGED_IN that follows. GEHistoryService has to be cleared with it: its
+			// historyReadThisSession latch used to survive here (only LOGIN_SCREEN reset it),
+			// so any session in which the player had opened the History tab once silently
+			// dropped every offline fill across every later hop and reconnect.
+			geHistoryService.reset();
+
 			if (!offerStore.export().isEmpty())
 			{
 				offlineSyncService.persistOfferState();

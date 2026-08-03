@@ -282,6 +282,74 @@ public class GEHistoryServiceTest
 		verify(api, times(1)).recordHistoryBackfillBatchAsync(eq("Zezima"), anyList());
 	}
 
+	/** A visible History list whose rows the clientscripts have not written yet. */
+	private Widget unpopulatedHistoryList()
+	{
+		Widget list = mock(Widget.class);
+		when(list.isHidden()).thenReturn(false);
+		return list;
+	}
+
+	private GEHistoryService serviceReading(Widget list)
+	{
+		Client client = mock(Client.class);
+		when(client.getWidget(InterfaceID.GE_HISTORY, 3)).thenReturn(list);
+		return new GEHistoryService(client, mock(FlipSmartApiClient.class),
+			mock(PlayerSession.class), mock(ChatMessageManager.class), new OfferStore());
+	}
+
+	/** Drive the two-tick defer that {@code onHistoryWidgetLoaded} schedules. */
+	private static void runDeferredRead(GEHistoryService svc)
+	{
+		svc.onHistoryWidgetLoaded();
+		svc.onGameTick();
+		svc.onGameTick();
+	}
+
+	@Test
+	public void historyReadThatRecoveredNoRowsDoesNotLatchTheSessionFlag()
+	{
+		// WidgetLoaded fires when the interface is created, before the clientscripts
+		// populate the rows — so a deferred read can legitimately find nothing.
+		GEHistoryService svc = serviceReading(unpopulatedHistoryList());
+		runDeferredRead(svc);
+
+		svc.registerOfflineFill(4151);
+
+		// Pre-fix the flag latched on entry to readHistoryNow, ahead of the widget and
+		// row checks, so this registration was silently discarded and the fill stayed
+		// unrecoverable for the rest of the session.
+		assertTrue(svc.hasUnverifiedOfflineFills());
+	}
+
+	@Test
+	public void historyReadThatRecoveredRowsStillLatches()
+	{
+		// The other half of the fix: a read that actually parsed rows must keep
+		// suppressing further registrations, or the de-nag behaviour regresses.
+		GEHistoryService svc = serviceReading(visibleHistoryList());
+		runDeferredRead(svc);
+
+		svc.registerOfflineFill(4151);
+
+		assertFalse(svc.hasUnverifiedOfflineFills());
+	}
+
+	@Test
+	public void resetClearsTheLatchSoFillsAfterAHopRegisterAgain()
+	{
+		GEHistoryService svc = serviceReading(visibleHistoryList());
+		runDeferredRead(svc);
+		svc.registerOfflineFill(4151);
+		assertFalse(svc.hasUnverifiedOfflineFills());
+
+		// What EventRouter now does on HOPPING / CONNECTION_LOST.
+		svc.reset();
+		svc.registerOfflineFill(4151);
+
+		assertTrue(svc.hasUnverifiedOfflineFills());
+	}
+
 	@Test
 	public void proactiveRescanGatedUntilOfflineSyncCompletes()
 	{

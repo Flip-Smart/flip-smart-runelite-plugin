@@ -143,11 +143,8 @@ public class GEHistoryService
 
 	private void readHistoryNow()
 	{
-		// historyReadThisSession alone gates hasUnverifiedOfflineFills() and
-		// further registerOfflineFill calls; pendingOfflineFillItemIds is
-		// allowed to stay populated until reset() so future reads (e.g. user
-		// reopens History) can still see what we'd registered.
-		historyReadThisSession = true;
+		// Throttle the next re-scan regardless of outcome, so an unreadable tab
+		// cannot spin the proactive path every tick.
 		lastReadTick = tickCount;
 
 		Widget listWidget = client.getWidget(InterfaceID.GE_HISTORY, GE_HISTORY_LIST_CHILD);
@@ -161,6 +158,13 @@ public class GEHistoryService
 		{
 			return;
 		}
+
+		// Latch only once rows were actually recovered. Latching on entry — before the
+		// widget and row checks below — meant a WidgetLoaded whose clientscripts had not
+		// populated the list yet (or a tab closed within the two-tick defer) still counted
+		// as "History has been read", after which registerOfflineFill silently discards
+		// every subsequent offline fill for the rest of the session.
+		historyReadThisSession = true;
 
 		log.debug("Read {} GE history entries", entries.size());
 		backfillOfflineFills(entries);
