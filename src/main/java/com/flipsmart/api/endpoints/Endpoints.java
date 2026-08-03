@@ -1326,7 +1326,10 @@ public final class Endpoints
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
 				JsonObject responseObj = gson.fromJson(jsonData, JsonObject.class);
-				log.debug("Transaction recorded for {}: {}", request.rsn, responseObj.get("message").getAsString());
+				if (log.isDebugEnabled())
+				{
+					log.debug("Transaction recorded for {}: {}", request.rsn, responseObj.get("message").getAsString());
+				}
 				return null;
 			}).thenApply(v -> null);
 		}
