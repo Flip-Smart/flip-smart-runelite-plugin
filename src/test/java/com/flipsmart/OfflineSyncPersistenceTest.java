@@ -155,6 +155,39 @@ public class OfflineSyncPersistenceTest
 		assertFalse("collected savedAt must not be persisted", configStore.containsKey("collectedItemsSavedAt_Zezima"));
 	}
 
+	/**
+	 * A partially-filled buy still sitting in its GE slot has NOT been collected — those fills are
+	 * in the Exchange, not the inventory. It must not contribute to the collected set even when the
+	 * player holds units of that item for unrelated reasons (supplies, an earlier flip), or the
+	 * rebuild strands exactly the phantom sell prompt this change exists to remove.
+	 *
+	 * <p>Found during in-game QA on a live 28924 partial-fill.</p>
+	 */
+	@Test
+	public void reattachedLiveBuyIsNotRebuiltIntoCollectedSet()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		configStore.put(SYNC_MARKER_ZEZIMA, PRIOR_SYNC_AT);
+		when(activeFlipTracker.getInventoryCountForItem(28924)).thenReturn(7);
+
+		// A partial-fill buy that is still live in slot 0 when we log back in.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 28924, 20, 100), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// Built before the outer stubbing calls — these helpers stub inner mocks, and Mockito
+		// rejects a when() that lands inside an in-progress one.
+		ItemComposition comp = itemComp("i28924");
+		GrandExchangeOffer live = geOffer(28924, GrandExchangeOfferState.BUYING, 100, 100);
+		when(itemManager.getItemComposition(28924)).thenReturn(comp);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[]{live});
+
+		service.syncOfflineFills();
+
+		verify(session, never()).addCollectedItem(eq(28924), anyInt());
+	}
+
 	/** Blobs written by an older client are cleaned up rather than left orphaned. */
 	@Test
 	public void legacyCollectedConfigKeysAreRemovedOnSync()

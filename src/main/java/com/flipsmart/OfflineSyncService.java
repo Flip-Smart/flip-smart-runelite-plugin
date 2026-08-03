@@ -575,7 +575,9 @@ public class OfflineSyncService
 		// Rebuild the collected set before anything reads it. Driven by the whole persisted blob
 		// rather than plan.offlineCollected, so a position the player has held across several
 		// sessions — whose record long ago stopped being "recently vanished" — is still recovered.
-		rebuildCollectedItems(persistedRecords);
+		// Records that reattached are excluded: their fills are still sitting in the GE slot, not in
+		// the player's inventory, so they have not been collected yet.
+		rebuildCollectedItems(persistedRecords, plan.reattached);
 
 		// Each offline-collected record represents an offer whose slot is now gone on login, and
 		// the reconciler has already dropped anything older than the freshness cutoff. This is the
@@ -661,14 +663,33 @@ public class OfflineSyncService
 	 * partly sold or used offline land at its true remainder instead of the figure recorded when it
 	 * was first collected.</p>
 	 *
+	 * <p>Records in {@code reattached} are skipped: those offers still occupy a GE slot, so their
+	 * fills are in the Exchange rather than the inventory and have not been collected. Without that
+	 * exclusion a live partial-fill would contribute to the collected set whenever the player
+	 * happened to hold units of the same item, stranding a phantom sell prompt.</p>
+	 *
 	 * <p>Adds only: a collect observed live earlier in this session keeps its entry, and
 	 * {@link #pruneStaleCollectedItems} drops whatever has no backing. Must run on the client
 	 * thread — it reads inventory.</p>
 	 */
-	private void rebuildCollectedItems(List<OfferRecord> persistedRecords)
+	private void rebuildCollectedItems(List<OfferRecord> persistedRecords, List<OfferRecord> reattached)
 	{
+		Set<Long> stillInSlot = new HashSet<>();
+		for (OfferRecord r : reattached)
+		{
+			stillInSlot.add(r.getOfferId());
+		}
+		List<OfferRecord> collectedOnly = new ArrayList<>(persistedRecords.size());
+		for (OfferRecord r : persistedRecords)
+		{
+			if (r != null && !stillInSlot.contains(r.getOfferId()))
+			{
+				collectedOnly.add(r);
+			}
+		}
+
 		int rebuilt = 0;
-		for (Map.Entry<Integer, Integer> entry : filledBuyQuantitiesByItem(persistedRecords).entrySet())
+		for (Map.Entry<Integer, Integer> entry : filledBuyQuantitiesByItem(collectedOnly).entrySet())
 		{
 			int inventory = inventoryCountOrZero(entry.getKey());
 			if (inventory > 0)
