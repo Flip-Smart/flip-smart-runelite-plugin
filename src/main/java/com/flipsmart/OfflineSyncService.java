@@ -386,6 +386,16 @@ public class OfflineSyncService
 				toImport.add(collected.withState(OfferState.COLLECTED, now));
 			}
 		}
+		else
+		{
+			// Deferring classification means carrying the records, not discarding them. They are
+			// non-terminal, so retainRecentTerminalHistory below will not pick them up, and
+			// importRecords replaces the store wholesale — leaving them out drops them, and the
+			// persist that follows writes the truncated set back over the saved blob. That erased
+			// the cost basis of a position the player still holds, and with the collected set now
+			// derived from these records rather than stored separately, it erased the position too.
+			toImport.addAll(plan.offlineCollected);
+		}
 		// A collected buy is the cost basis for the sell that follows it. The reconcile plan
 		// carries only live and offline-collected records, so importing just those erased every
 		// already-collected buy on each LOGGED_IN — which fires on every world hop, not only

@@ -188,6 +188,58 @@ public class OfflineSyncPersistenceTest
 		verify(session, never()).addCollectedItem(eq(28924), anyInt());
 	}
 
+	/**
+	 * When the GE snapshot is unreadable at preload, an offline-collected record must be carried
+	 * into the store unchanged rather than dropped.
+	 *
+	 * <p>It is non-terminal, so {@code retainRecentTerminalHistory} will not pick it up, and
+	 * {@code importRecords} replaces the store wholesale — omitting it drops the record, and the
+	 * persist that follows writes the truncated set back over the saved blob. That erases the cost
+	 * basis of a position the player still holds, and because the collected set is now derived from
+	 * these records, it erases the position from Active Flips too.</p>
+	 *
+	 * <p>Found during in-game QA: a 10,329-unit snape grass (231) buy disappeared after one login
+	 * where the slots were not yet loaded.</p>
+	 */
+	@Test
+	public void offlineCollectedRecordSurvivesPreloadWhenSlotsUnreadable()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+
+		// A filled buy that is gone from its slot, persisted from the previous session.
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 231, 0, 10329), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 231, 10329, 10329), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// GE snapshot not loaded yet — the state this regression needs.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.preloadPersistedOffers();
+
+		boolean survived = false;
+		for (OfferRecord r : store.export())
+		{
+			if (r.getItemId() == 231 && r.getFilledQuantity() == 10329)
+			{
+				survived = true;
+			}
+		}
+		assertTrue("offline-collected record must survive an unreadable-slot preload", survived);
+
+		// And the persist that follows must not write a set that has lost it.
+		service.persistOfferState();
+		boolean stillPersisted = false;
+		for (OfferRecord r : service.loadPersistedOfferRecords())
+		{
+			if (r.getItemId() == 231 && r.getFilledQuantity() == 10329)
+			{
+				stillPersisted = true;
+			}
+		}
+		assertTrue("record must remain in the persisted blob", stillPersisted);
+	}
+
 	/** Blobs written by an older client are cleaned up rather than left orphaned. */
 	@Test
 	public void legacyCollectedConfigKeysAreRemovedOnSync()
@@ -547,8 +599,15 @@ public class OfflineSyncPersistenceTest
 
 		service.preloadPersistedOffers();
 
-		assertTrue("no COLLECTED duplicate manufactured when GE slots are unloaded",
-			store.forItem(7777).isEmpty());
+		// The record must be CARRIED, not dropped. This assertion used to require the store to be
+		// empty for the item, which conflated "do not manufacture a terminal duplicate" with
+		// "discard the record" — and the discard erased a still-held position's cost basis on the
+		// persist that follows. Classification is deferred to the +2s sync, which cannot classify a
+		// record that is no longer there.
+		List<OfferRecord> carried = store.forItem(7777);
+		assertEquals("record carried across an unreadable-slot preload", 1, carried.size());
+		assertFalse("no COLLECTED duplicate manufactured when GE slots are unloaded",
+			carried.get(0).getState().isTerminal());
 	}
 
 	@Test
