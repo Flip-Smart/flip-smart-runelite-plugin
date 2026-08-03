@@ -37,6 +37,7 @@ public class OfflineSyncPersistenceTest
 {
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String SYNC_MARKER_ZEZIMA = "offlineSyncAt_Zezima";
+	private static final String NEXT_OFFER_ID_MARKER_ZEZIMA = "nextOfferId_Zezima";
 	/** Prior-sync wall-clock: records with later activity count as fresh offline fills. */
 	private static final String PRIOR_SYNC_AT = "500";
 
@@ -270,11 +271,11 @@ public class OfflineSyncPersistenceTest
 		long highWater = store.nextOfferId();
 
 		service.persistOfferState();
-		assertTrue("high-water offer id key written", configStore.containsKey("nextOfferId_Zezima"));
+		assertTrue("high-water offer id key written", configStore.containsKey(NEXT_OFFER_ID_MARKER_ZEZIMA));
 
 		// A restart with an empty store, as if every record had aged out of retention.
 		OfferStore restarted = new OfferStore();
-		restarted.raiseNextOfferId(Long.parseLong(configStore.get("nextOfferId_Zezima")));
+		restarted.raiseNextOfferId(Long.parseLong(configStore.get(NEXT_OFFER_ID_MARKER_ZEZIMA)));
 		assertEquals("counter must not fall back below what was already issued",
 			highWater, restarted.nextOfferId());
 	}
@@ -288,12 +289,12 @@ public class OfflineSyncPersistenceTest
 		// persistence exists for. Caught in-game: the key was written as 1 against persisted
 		// records topping out at offerId 22.
 		when(session.getRsn()).thenReturn("Zezima");
-		configStore.put("nextOfferId_Zezima", "60");
+		configStore.put(NEXT_OFFER_ID_MARKER_ZEZIMA, "60");
 
 		service.persistOfferState();
 
 		assertEquals("an empty store must never lower the mark",
-			"60", configStore.get("nextOfferId_Zezima"));
+			"60", configStore.get(NEXT_OFFER_ID_MARKER_ZEZIMA));
 	}
 
 	@Test
@@ -307,7 +308,7 @@ public class OfflineSyncPersistenceTest
 		// so each shape needs to survive it.
 		for (String stored : new String[]{"not-a-number", "", "   "})
 		{
-			configStore.put("nextOfferId_Zezima", stored);
+			configStore.put(NEXT_OFFER_ID_MARKER_ZEZIMA, stored);
 			service.syncOfflineFills();
 			assertTrue("a mark of '" + stored + "' must not break the sync", store.nextOfferId() >= 1);
 		}
