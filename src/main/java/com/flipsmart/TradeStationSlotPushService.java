@@ -63,7 +63,6 @@ public class TradeStationSlotPushService
 		this.client = client;
 		this.apiClient = apiClient;
 		this.session = session;
-		this.scheduler = newScheduler();
 	}
 
 	/**
@@ -107,24 +106,19 @@ public class TradeStationSlotPushService
 		scheduler().execute(() -> doPush(snapshot)); // NOPMD DoNotUseThreads
 	}
 
-	private static ScheduledExecutorService newScheduler() // NOPMD DoNotUseThreads
-	{
-		return Executors.newSingleThreadScheduledExecutor(r ->
-		{
-			Thread t = new Thread(r, "flipsmart-trade-station-push"); // NOPMD DoNotUseThreads
-			t.setDaemon(true);
-			return t;
-		});
-	}
-
-	/** The live scheduler, replacing it first if a previous shutdown terminated it. */
+	/** The live scheduler, created on first use and replaced if a shutdown terminated it. */
 	private ScheduledExecutorService scheduler() // NOPMD DoNotUseThreads
 	{
 		synchronized (this)
 		{
 			if (scheduler == null || scheduler.isShutdown())
 			{
-				scheduler = newScheduler();
+				scheduler = Executors.newSingleThreadScheduledExecutor(r ->
+				{
+					Thread t = new Thread(r, "flipsmart-trade-station-push"); // NOPMD DoNotUseThreads
+					t.setDaemon(true);
+					return t;
+				});
 			}
 			return scheduler;
 		}
@@ -139,7 +133,10 @@ public class TradeStationSlotPushService
 		}
 		synchronized (this)
 		{
-			scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+			if (scheduler != null)
+			{
+				scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+			}
 		}
 	}
 
