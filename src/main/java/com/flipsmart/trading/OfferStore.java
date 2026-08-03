@@ -144,7 +144,7 @@ public final class OfferStore
      * The counter only ever moves forward: an import is routinely lossy — the
      * login reconcile drops terminal records past the retention window, and it
      * runs on every world hop, not just login — so assigning from the surviving
-     * maximum let the counter regress and hand a fresh offer an id the backend
+     * maximum would let the counter regress and hand a fresh offer an ID the backend
      * still holds fills under.
      */
     public synchronized void importRecords(List<OfferRecord> records)
