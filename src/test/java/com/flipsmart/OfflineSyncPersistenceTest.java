@@ -591,13 +591,15 @@ public class OfflineSyncPersistenceTest
 	 * for it. This is the false-nag the user hit: a relog with no new trades still prompted.
 	 */
 	@Test
-	public void staleOfflineRecordOlderThanLastSync_doesNotPrompt()
+	public void unresolvedOfflineRecordIsOfferedOnceThenNeverAgain()
 	{
+		// #1197: the freshness cutoff suppressed every genuine offline fill. A record's
+		// last-activity is when the plugin last OBSERVED a change, and an offline fill is by
+		// definition a change it did not observe, so the timestamp always trailed a marker that
+		// advanced on every sync. Offering now terminalises the record, and the reconciler skips
+		// terminal records — that, not a clock comparison, is what bounds it to exactly once.
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		// Last sync ran at 5000; this record's last activity (2000) predates it → already-known history.
-		configStore.put(SYNC_MARKER_ZEZIMA, "5000");
-
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 222, 0, 5), 1000L);
 		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 222, 2, 5), 2000L);
 		service.persistOfferState();
@@ -605,33 +607,43 @@ public class OfflineSyncPersistenceTest
 		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
 
 		service.syncOfflineFills();
+		verify(geHistoryService, times(1)).registerOfflineFill(222);
 
-		verify(geHistoryService, never()).registerOfflineFill(222);
+		// A second login over the now-terminal record must not offer it again.
+		service.syncOfflineFills();
+		verify(geHistoryService, times(1)).registerOfflineFill(222);
 	}
 
-	/**
-	 * First sync for an account (no marker yet): the persisted blob predates the feature and is
-	 * already known to the backend, so nothing is prompted — and the marker is written so genuinely
-	 * new offline fills on later logins are detected.
-	 */
 	@Test
-	public void firstSyncWithNoMarker_suppressesPreExistingBlob_andWritesMarker()
+	public void unloadedGeSnapshotAtSyncDefersInsteadOfOffering()
 	{
+		// A null offer array means GE data has not synced; reconciling against it would read every
+		// live offer as gone. Distinct from an array of EMPTY slots, which genuinely means no live
+		// offers and MUST still be offered — that is the case #1197 exists for.
 		when(session.getRsn()).thenReturn("Zezima");
 		when(session.isOfflineSyncCompleted()).thenReturn(false);
-		// No offlineSyncAt_Zezima marker present.
-
-		store.apply(sig(0, GrandExchangeOfferState.BUYING, 333, 0, 5), 1000L);
-		store.apply(sig(0, GrandExchangeOfferState.CANCELLED_BUY, 333, 2, 5), 2000L);
+		store.apply(sig(0, GrandExchangeOfferState.SELLING, 444, 0, 10), 1000L);
 		service.persistOfferState();
-		store.importRecords(Collections.emptyList());
+		// GE data has not synced yet: the client returns no offer array at all.
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+
+		service.syncOfflineFills();
+
+		verify(geHistoryService, never()).registerOfflineFill(444);
+	}
+
+	@Test
+	public void noOfflineSyncMarkerIsWritten()
+	{
+		// The offlineSyncAt_<rsn> key is gone: it could not distinguish "already offered" from
+		// "never observed", and advancing it on every sync is what broke the prompt.
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
 		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
 
 		service.syncOfflineFills();
 
-		verify(geHistoryService, never()).registerOfflineFill(333);
-		assertTrue("a sync marker is written so later genuine fills are detected",
-			configStore.containsKey(SYNC_MARKER_ZEZIMA));
+		assertFalse(configStore.containsKey(SYNC_MARKER_ZEZIMA));
 	}
 
 	/**

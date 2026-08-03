@@ -16,25 +16,17 @@ public final class OfferReconciler
         public final List<OfferRecord> reattached = new ArrayList<>();
         public final List<OfferSignal> minted = new ArrayList<>();
         public final List<OfferRecord> offlineCollected = new ArrayList<>();
-        // Non-terminal records last active before the freshness cutoff: leftovers from older
-        // sessions (already known to the backend). Terminalize them, but never prompt.
-        public final List<OfferRecord> staleHistory = new ArrayList<>();
-    }
-
-    public static Plan reconcile(List<OfferRecord> persisted, List<OfferSignal> liveSlots, long now)
-    {
-        // No freshness gate: every non-terminal unmatched record is treated as offline-collected.
-        // Used by the preload pass, which terminalizes both buckets regardless.
-        return reconcile(persisted, liveSlots, now, Long.MIN_VALUE);
     }
 
     /**
-     * @param freshnessThresholdMillis a non-terminal unmatched record counts as a genuine offline
-     *     fill only if its last activity is at or after this cutoff; older records are leftovers
-     *     from prior sessions and go to {@link Plan#staleHistory} instead of driving a prompt.
+     * A non-terminal record no live slot claims is an offer that completed while we were not
+     * watching. There is deliberately no timestamp gate on that: a record's last-activity is when
+     * the plugin last <em>observed</em> a change, and an offline fill is by definition a change it
+     * did not observe, so the timestamp can only ever say "older than the last sync". Whether a
+     * record has already been offered for backfill is answered by terminalising it once offered,
+     * not by comparing clocks.
      */
-    public static Plan reconcile(List<OfferRecord> persisted, List<OfferSignal> liveSlots, long now,
-        long freshnessThresholdMillis)
+    public static Plan reconcile(List<OfferRecord> persisted, List<OfferSignal> liveSlots, long now)
     {
         Plan plan = new Plan();
         List<OfferRecord> remaining = new ArrayList<>(persisted);
@@ -68,14 +60,7 @@ public final class OfferReconciler
             {
                 continue;
             }
-            if (r.getEffectiveLastActivityAtMillis() < freshnessThresholdMillis)
-            {
-                plan.staleHistory.add(r);
-            }
-            else
-            {
-                plan.offlineCollected.add(r);
-            }
+            plan.offlineCollected.add(r);
         }
         return plan;
     }

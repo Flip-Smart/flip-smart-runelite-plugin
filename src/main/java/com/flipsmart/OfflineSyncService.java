@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -44,9 +45,6 @@ public class OfflineSyncService
 	private static final String FLIP_FINDER_SOURCED_KEY_PREFIX = "flipFinderSourced_";
 	private static final String ROUND_TRIP_LEDGER_KEY_PREFIX = "roundTripLedger_";
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
-	// Wall-clock of the last completed offline sync, per RSN. A persisted offer is only a genuine
-	// offline fill if it was active since this marker; older leftovers are already-known history.
-	private static final String OFFLINE_SYNC_MARKER_KEY_PREFIX = "offlineSyncAt_";
 	// High-water offer id, per RSN. The store derives its counter from the records it imports, and
 	// retention pruning drops the oldest terminal ones — so across a client restart the counter
 	// fell back and could remint an id the backend still holds fills under. Persisting the mark
@@ -613,10 +611,7 @@ public class OfflineSyncService
 	private void reconcileOfflineFills(List<OfferRecord> persistedRecords)
 	{
 		long now = System.currentTimeMillis();
-		long freshnessThreshold = readOfflineFillFreshnessThreshold(now);
 		Map<Integer, OfferRecord> currentOffers = liveOffersBySlot();
-		log.debug("Loaded {} persisted offers, comparing with {} current offers",
-			persistedRecords.size(), currentOffers.size());
 
 		// Hand the snapshot to GEHistoryService so fully-completed offline trades
 		// (whose live record no longer exists post-sync) can still be matched and
@@ -624,11 +619,17 @@ public class OfflineSyncService
 		geHistoryService.setRecentlyPersistedOffers(persistedRecords);
 
 		// Reconcile persisted records against live slots to determine which offers
-		// completed or were cancelled while offline. Records last active before the
-		// freshness cutoff are leftovers from prior sessions (already backfilled) and
-		// are routed to staleHistory so they never re-fire the "open GE History" prompt.
+		// completed or were cancelled while offline.
 		List<OfferSignal> liveSlots = buildLiveSlotSignals();
-		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now, freshnessThreshold);
+		// liveSlots is the count that decides every classification below, and a zero-fill buy is
+		// terminalised without being registered — so without it in the log there is no way to tell
+		// a correct reattach from a silent misclassification after the fact.
+		if (log.isDebugEnabled())
+		{
+			log.debug("Loaded {} persisted offers, comparing with {} store-live and {} client slots",
+				persistedRecords.size(), currentOffers.size(), liveSlots.size());
+		}
+		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now);
 
 		// Restore original timestamps on still-live offers whose persisted record is older.
 		for (OfferRecord reattached : plan.reattached)
@@ -647,26 +648,36 @@ public class OfflineSyncService
 		// the player's inventory, so they have not been collected yet.
 		rebuildCollectedItems(persistedRecords, plan.reattached);
 
-		// Each offline-collected record represents an offer whose slot is now gone on login, and
-		// the reconciler has already dropped anything older than the freshness cutoff. This is the
-		// sole path that registers a History backfill, so the cutoff governs every prompt.
-		for (OfferRecord record : plan.offlineCollected)
+		// "No live offers" and "GE data not loaded yet" both surface as an empty signal list, and
+		// only the second is a reason to hold off — the first is the whole point of this path, a
+		// player logging in with everything completed. The client distinguishes them: the offer
+		// array is null until GE data syncs, then present with EMPTY slots. Treating an empty
+		// signal list as unreadable suppressed every genuine offline fill, which is the same
+		// failure the freshness marker produced by a different route.
+		if (client.getGrandExchangeOffers() == null)
 		{
-			if (!record.isBuy() || record.getFilledQuantity() > 0)
-			{
-				geHistoryService.registerOfflineFill(record.getItemId());
-			}
+			log.debug("GE snapshot not loaded at sync — deferring offline-fill classification");
 		}
-
-		if (!plan.staleHistory.isEmpty() && log.isDebugEnabled())
+		else
 		{
-			log.debug("Skipped {} stale persisted offer(s) older than last sync — already-known history, not prompted",
-				plan.staleHistory.size());
+			// Each offline-collected record is an offer whose slot is gone on login. This is the
+			// sole path that registers a History backfill.
+			for (OfferRecord record : plan.offlineCollected)
+			{
+				if (!record.isBuy() || record.getFilledQuantity() > 0)
+				{
+					geHistoryService.registerOfflineFill(record.getItemId());
+				}
+			}
+			// Offered once, so terminalise. A freshness cutoff could not tell "already offered" from
+			// "never observed": a record's last-activity is when the plugin last SAW it change, and
+			// an offline fill is by definition a change it did not see, so comparing that against a
+			// marker written on every sync failed every genuine offline fill.
+			terminaliseOffered(plan.offlineCollected, now);
 		}
 
 		pruneStaleCollectedItems();
 		clearLegacyCollectedKeys();
-		writeOfflineSyncMarker(now);
 		persistOfferState();
 
 		if (onSyncComplete != null)
@@ -676,40 +687,34 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Freshness cutoff for treating a persisted offer as a genuine offline fill: the wall-clock of
-	 * the previous completed offline sync. On the first sync for an account (marker absent) the whole
-	 * persisted blob predates the marker, so we return {@code now} — every existing record is treated
-	 * as already-known history and suppressed, rather than nagging for a backlog the backend already has.
+	 * Mark records we have just offered for backfill as collected — their slot is gone, which is
+	 * what collected means. Terminal records are skipped by the reconciler, so this is what keeps
+	 * the next login from offering the same record again.
 	 */
-	private long readOfflineFillFreshnessThreshold(long now)
+	private void terminaliseOffered(List<OfferRecord> offered, long now)
 	{
-		String rsn = resolvePersistenceRsn();
-		if (rsn == null)
+		if (offered.isEmpty())
 		{
-			return now;
+			return;
 		}
-		String raw = configManager.getConfiguration(CONFIG_GROUP, OFFLINE_SYNC_MARKER_KEY_PREFIX + rsn);
-		if (raw == null || raw.isEmpty())
+		// Merged rather than replaced in place: the store holds these only if the preload managed
+		// to import them, and the preload skips that when the GE slots were not yet readable. An
+		// offered record that never reached the store would otherwise stay non-terminal in the
+		// blob and be offered again on the next login.
+		Map<Long, OfferRecord> byId = new LinkedHashMap<>();
+		for (OfferRecord r : offerStore.export())
 		{
-			return now;
+			byId.put(r.getOfferId(), r);
 		}
-		try
+		for (OfferRecord r : offered)
 		{
-			return Long.parseLong(raw);
+			OfferRecord current = byId.getOrDefault(r.getOfferId(), r);
+			if (!current.getState().isTerminal())
+			{
+				byId.put(r.getOfferId(), current.withState(OfferState.COLLECTED, now));
+			}
 		}
-		catch (NumberFormatException e)
-		{
-			return now;
-		}
-	}
-
-	private void writeOfflineSyncMarker(long now)
-	{
-		String rsn = resolvePersistenceRsn();
-		if (rsn != null)
-		{
-			configManager.setConfiguration(CONFIG_GROUP, OFFLINE_SYNC_MARKER_KEY_PREFIX + rsn, Long.toString(now));
-		}
+		offerStore.importRecords(new ArrayList<>(byId.values()));
 	}
 
 	private OfferRecord findLiveRecordForSlot(Integer slot, Map<Integer, OfferRecord> currentOffers)
@@ -828,10 +833,10 @@ public class OfflineSyncService
 	 * Must be called from the client thread.
 	 *
 	 * <p>Deliberately silent: an entry losing its backing is not evidence of a fresh offline sell.
-	 * Registering a History backfill here bypassed the reconciler's freshness cutoff entirely, so
-	 * records it had just routed to staleHistory as already-known were prompted for anyway — every
-	 * login, because a set pruned to empty never cleared its own persisted blob. The genuine
-	 * signal is the reconciler's offline-collected bucket, which is cutoff-gated.</p>
+	 * Registering a History backfill here prompted for records the reconciler had already handled,
+	 * on every login, because a set pruned to empty never cleared its own persisted blob. The
+	 * genuine signal is the reconciler's offline-collected bucket, which is offered exactly once
+	 * because offering terminalises the record.</p>
 	 */
 	int pruneStaleCollectedItems()
 	{
