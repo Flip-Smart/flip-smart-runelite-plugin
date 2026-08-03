@@ -624,8 +624,11 @@ public class OfflineSyncService
 		// liveSlots is the count that decides every classification below, and a zero-fill buy is
 		// terminalised without being registered — so without it in the log there is no way to tell
 		// a correct reattach from a silent misclassification after the fact.
-		log.debug("Loaded {} persisted offers, comparing with {} store-live and {} client slots",
-			persistedRecords.size(), currentOffers.size(), liveSlots.size());
+		if (log.isDebugEnabled())
+		{
+			log.debug("Loaded {} persisted offers, comparing with {} store-live and {} client slots",
+				persistedRecords.size(), currentOffers.size(), liveSlots.size());
+		}
 		OfferReconciler.Plan plan = OfferReconciler.reconcile(persistedRecords, liveSlots, now);
 
 		// Restore original timestamps on still-live offers whose persisted record is older.
