@@ -47,6 +47,11 @@ public class OfflineSyncService
 	// Wall-clock of the last completed offline sync, per RSN. A persisted offer is only a genuine
 	// offline fill if it was active since this marker; older leftovers are already-known history.
 	private static final String OFFLINE_SYNC_MARKER_KEY_PREFIX = "offlineSyncAt_";
+	// High-water offer id, per RSN. The store derives its counter from the records it imports, and
+	// retention pruning drops the oldest terminal ones — so across a client restart the counter
+	// fell back and could remint an id the backend still holds fills under. Persisting the mark
+	// separately keeps it monotonic even when the records backing it are long gone.
+	private static final String NEXT_OFFER_ID_KEY_PREFIX = "nextOfferId_";
 
 	/**
 	 * Config keys that held the collected set before it became derived state. Unset on the first
@@ -194,6 +199,9 @@ public class OfflineSyncService
 				log.error("Failed to persist offer state for {}: {}", rsn, e.getMessage());
 			}
 		}
+
+		// After the records, so a failure here can never cost us the blob itself.
+		persistNextOfferId(rsn);
 
 		// The collected set is NOT persisted. It is derived state — "buys I hold that no longer
 		// occupy a slot" — which the persisted offer records plus live inventory already answer,
@@ -345,6 +353,9 @@ public class OfflineSyncService
 		offerStore.watermarks().seedFrom(persistedRecords);
 		offerStore.watermarks().mergeFrom(loadPersistedWatermarks());
 
+		// Ahead of the reconcile, which mints ids for live slots no persisted record claims.
+		offerStore.raiseNextOfferId(loadPersistedNextOfferId(resolvePersistenceRsn()));
+
 		reconcilePersistedIntoStore(persistedRecords);
 		// Runs after reconciliation so cold-start seeding (when there is no persisted
 		// ledger at all) sees the just-reattached live buys, not a pre-reconcile snapshot.
@@ -435,6 +446,46 @@ public class OfflineSyncService
 		catch (Exception e)
 		{
 			log.error("Failed to persist fill watermarks for {}", rsn, e);
+		}
+	}
+
+	/**
+	 * Save the high-water offer id, but only when it would rise. The same don't-destroy-on-empty
+	 * guard the offer records carry: the store is transiently empty during the logout/hop
+	 * transition and its counter reads 1, and writing that would erase the only surviving record
+	 * of ids whose offers have since aged out of retention — exactly what this mark exists to
+	 * keep. Comparing rather than checking for an empty store keeps the guard independent of the
+	 * order in which the counter is seeded.
+	 */
+	private void persistNextOfferId(String rsn)
+	{
+		try
+		{
+			long current = offerStore.nextOfferId();
+			if (current > loadPersistedNextOfferId(rsn))
+			{
+				configManager.setConfiguration(CONFIG_GROUP, NEXT_OFFER_ID_KEY_PREFIX + rsn,
+					Long.toString(current));
+			}
+		}
+		catch (Exception e)
+		{
+			log.error("Failed to persist next offer id for {}", rsn, e);
+		}
+	}
+
+	/** Saved high-water offer id for {@code rsn}, or 0 when none is stored or it is unreadable. */
+	private long loadPersistedNextOfferId(String rsn)
+	{
+		String raw = rsn == null ? null : configManager.getConfiguration(CONFIG_GROUP, NEXT_OFFER_ID_KEY_PREFIX + rsn);
+		try
+		{
+			// Absent, blank and corrupt all mean the same thing: no usable mark, so do not raise.
+			return raw == null ? 0L : Long.parseLong(raw.trim());
+		}
+		catch (NumberFormatException e)
+		{
+			return 0L;
 		}
 	}
 

@@ -36,6 +36,21 @@ public final class OfferStore
         return fillWatermarks;
     }
 
+    /** The id the next minted offer will take. Persisted so pruning cannot recycle ids. */
+    public synchronized long nextOfferId()
+    {
+        return nextOfferId;
+    }
+
+    /**
+     * Raise the counter to at least {@code candidate}, e.g. from a persisted high-water mark.
+     * Never lowers it, so restoring a stale value cannot reintroduce a collision.
+     */
+    public synchronized void raiseNextOfferId(long candidate)
+    {
+        nextOfferId = Math.max(nextOfferId, candidate);
+    }
+
     /** Register a listener to receive an {@link OfferEvent} after each successful state change. */
     public synchronized void addListener(Consumer<OfferEvent> listener)
     {
