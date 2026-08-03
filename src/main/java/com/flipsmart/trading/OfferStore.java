@@ -139,8 +139,13 @@ public final class OfferStore
 
     /**
      * Replace all state with {@code records} (e.g. restored from persistence),
-     * rebuilding the slot index for live records and re-seeding the id counter
+     * rebuilding the slot index for live records and raising the id counter
      * above the largest imported offerId so subsequent offers cannot collide.
+     * The counter only ever moves forward: an import is routinely lossy — the
+     * login reconcile drops terminal records past the retention window, and it
+     * runs on every world hop, not just login — so assigning from the surviving
+     * maximum let the counter regress and hand a fresh offer an id the backend
+     * still holds fills under.
      */
     public synchronized void importRecords(List<OfferRecord> records)
     {
@@ -156,7 +161,7 @@ public final class OfferStore
             }
             maxId = Math.max(maxId, r.getOfferId());
         }
-        nextOfferId = maxId + 1;
+        nextOfferId = Math.max(nextOfferId, maxId + 1);
         // A record entering the store carries progress that has already been reported. Raising the
         // marks to match keeps the next observation measuring the increment rather than re-reporting
         // the whole cumulative.
