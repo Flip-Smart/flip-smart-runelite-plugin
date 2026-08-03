@@ -545,18 +545,6 @@ public interface FlipSmartConfig extends Config
 	}
 
 	// ============================================
-	// General Section
-	// ============================================
-	@ConfigSection(
-		name = "General",
-		description = "General plugin settings",
-		position = 5,
-		closedByDefault = true
-	)
-	String generalSection = "general";
-
-
-	// ============================================
 	// Notifications Section
 	// ============================================
 	@ConfigSection(
