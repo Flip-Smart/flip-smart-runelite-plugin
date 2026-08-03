@@ -694,8 +694,17 @@ public class OfflineSyncService
 			int inventory = inventoryCountOrZero(entry.getKey());
 			if (inventory > 0)
 			{
-				session.addCollectedItem(entry.getKey(), Math.min(inventory, entry.getValue()));
+				int quantity = Math.min(inventory, entry.getValue());
+				session.addCollectedItem(entry.getKey(), quantity);
 				rebuilt++;
+				// Per-item, because the aggregate count alone cannot show whether the inventory cap
+				// actually applied — the whole point of deriving the quantity rather than replaying
+				// the figure recorded at collect time.
+				if (log.isDebugEnabled())
+				{
+					log.debug("Rebuilt collected item {} qty={} (inventory={}, persistedFilled={}) for {}",
+						entry.getKey(), quantity, inventory, entry.getValue(), session.getRsn());
+				}
 			}
 		}
 		if (rebuilt > 0 && log.isDebugEnabled())
