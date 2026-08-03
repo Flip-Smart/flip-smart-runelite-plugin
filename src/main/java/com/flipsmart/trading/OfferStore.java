@@ -36,6 +36,21 @@ public final class OfferStore
         return fillWatermarks;
     }
 
+    /** The id the next minted offer will take. Persisted so pruning cannot recycle ids. */
+    public synchronized long nextOfferId()
+    {
+        return nextOfferId;
+    }
+
+    /**
+     * Raise the counter to at least {@code candidate}, e.g. from a persisted high-water mark.
+     * Never lowers it, so restoring a stale value cannot reintroduce a collision.
+     */
+    public synchronized void raiseNextOfferId(long candidate)
+    {
+        nextOfferId = Math.max(nextOfferId, candidate);
+    }
+
     /** Register a listener to receive an {@link OfferEvent} after each successful state change. */
     public synchronized void addListener(Consumer<OfferEvent> listener)
     {
@@ -139,8 +154,13 @@ public final class OfferStore
 
     /**
      * Replace all state with {@code records} (e.g. restored from persistence),
-     * rebuilding the slot index for live records and re-seeding the id counter
+     * rebuilding the slot index for live records and raising the id counter
      * above the largest imported offerId so subsequent offers cannot collide.
+     * The counter only ever moves forward: an import is routinely lossy — the
+     * login reconcile drops terminal records past the retention window, and it
+     * runs on every world hop, not just login — so assigning from the surviving
+     * maximum would let the counter regress and hand a fresh offer an ID the backend
+     * still holds fills under.
      */
     public synchronized void importRecords(List<OfferRecord> records)
     {
@@ -156,7 +176,7 @@ public final class OfferStore
             }
             maxId = Math.max(maxId, r.getOfferId());
         }
-        nextOfferId = maxId + 1;
+        nextOfferId = Math.max(nextOfferId, maxId + 1);
         // A record entering the store carries progress that has already been reported. Raising the
         // marks to match keeps the next observation measuring the increment rather than re-reporting
         // the whole cumulative.

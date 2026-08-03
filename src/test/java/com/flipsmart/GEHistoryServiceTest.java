@@ -282,6 +282,77 @@ public class GEHistoryServiceTest
 		verify(api, times(1)).recordHistoryBackfillBatchAsync(eq("Zezima"), anyList());
 	}
 
+	@Test
+	public void rescanStopsOnceAReadHasSucceeded()
+	{
+		// The rescan exists to retry a read that found no rows, not to catch fills landing while
+		// the tab is open — an offer only enters History once collected, and collecting requires
+		// the main GE interface, which replaces the tab. So once a read parses rows there is
+		// nothing more to find. Previously it re-posted the same forty rows every ten seconds for
+		// as long as the tab stayed open; verified live at inserted=0 deduped=40, twenty times.
+		Client client = mock(Client.class);
+		Widget list = visibleHistoryList();
+		when(client.getWidget(InterfaceID.GE_HISTORY, 3)).thenReturn(list);
+
+		PlayerSession session = mock(PlayerSession.class);
+		when(session.isOfflineSyncCompleted()).thenReturn(true);
+		when(session.getRsnSafe()).thenReturn(Optional.of("Zezima"));
+
+		FlipSmartApiClient api = mock(FlipSmartApiClient.class);
+		when(api.recordHistoryBackfillBatchAsync(eq("Zezima"), anyList()))
+			.thenReturn(CompletableFuture.completedFuture(null));
+
+		GEHistoryService svc = new GEHistoryService(
+			client, api, session, mock(ChatMessageManager.class), new OfferStore());
+
+		for (int tick = 0; tick < 120; tick++)
+		{
+			svc.onGameTick();
+		}
+
+		verify(api, times(1)).recordHistoryBackfillBatchAsync(eq("Zezima"), anyList());
+	}
+
+	@Test
+	public void reopeningTheTabWithChangedContentsPostsAgain()
+	{
+		// New content is only ever reachable through a re-open, which fires WidgetLoaded again.
+		// This is the case the rescan gate must not swallow: collect an offer, come back to the
+		// History tab, and the new row still has to reach the backend.
+		Widget[] before = new Widget[]{
+			headerWidget("Bought:"), itemWidget(4151, 5),
+			priceWidget(GE_YELLOW + "10,000 coins</col><br>= 2,000 each")};
+		Widget[] after = new Widget[]{
+			headerWidget("Bought:"), itemWidget(4151, 9),
+			priceWidget(GE_YELLOW + "18,000 coins</col><br>= 2,000 each")};
+		Widget list = mock(Widget.class);
+		when(list.isHidden()).thenReturn(false);
+		when(list.getDynamicChildren()).thenReturn(before, after);
+
+		Client client = mock(Client.class);
+		when(client.getWidget(InterfaceID.GE_HISTORY, 3)).thenReturn(list);
+
+		PlayerSession session = mock(PlayerSession.class);
+		when(session.isOfflineSyncCompleted()).thenReturn(true);
+		when(session.getRsnSafe()).thenReturn(Optional.of("Zezima"));
+
+		FlipSmartApiClient api = mock(FlipSmartApiClient.class);
+		when(api.recordHistoryBackfillBatchAsync(eq("Zezima"), anyList()))
+			.thenReturn(CompletableFuture.completedFuture(null));
+
+		GEHistoryService svc = new GEHistoryService(
+			client, api, session, mock(ChatMessageManager.class), new OfferStore());
+
+		svc.onGameTick();
+
+		// Re-open the tab: WidgetLoaded, then the two-tick defer it schedules.
+		svc.onHistoryWidgetLoaded();
+		svc.onGameTick();
+		svc.onGameTick();
+
+		verify(api, times(2)).recordHistoryBackfillBatchAsync(eq("Zezima"), anyList());
+	}
+
 	/** A visible History list whose rows the clientscripts have not written yet. */
 	private Widget unpopulatedHistoryList()
 	{

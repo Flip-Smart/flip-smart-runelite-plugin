@@ -7,6 +7,7 @@ import com.flipsmart.trading.OfferStore;
 import net.runelite.api.GrandExchangeOfferState;
 import org.junit.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -238,6 +239,33 @@ public class OfferStoreTest
         assertEquals(5678, target.bySlot(1).getItemId());
         assertNull("terminal record's slot is not re-indexed", target.bySlot(2));
         assertEquals("terminal record is still retained", 1, target.forItem(4321).size());
+    }
+
+    @Test
+    public void lossyImport_doesNotRecycleAnIdTheBackendAlreadyHoldsFillsUnder()
+    {
+        // The login reconcile drops terminal records past the retention window and
+        // runs on every world hop, so an import is routinely a SUBSET of what the
+        // store held. Seeding the counter from the survivors let it regress and
+        // remint an id the backend still has fills recorded against.
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        store.apply(sig(1, GrandExchangeOfferState.BUYING, 5678, 0, 10), NOW);
+        long prunedId = store.bySlot(1).getOfferId();
+
+        List<OfferRecord> survivors = new ArrayList<>();
+        for (OfferRecord r : store.export())
+        {
+            if (r.getOfferId() != prunedId)
+            {
+                survivors.add(r);
+            }
+        }
+        store.importRecords(survivors);
+
+        store.apply(sig(2, GrandExchangeOfferState.BUYING, 9999, 0, 10), NOW);
+        assertTrue("id counter must not regress past a pruned record",
+            store.bySlot(2).getOfferId() > prunedId);
     }
 
     @Test
