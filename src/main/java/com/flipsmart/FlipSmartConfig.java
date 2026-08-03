@@ -281,17 +281,6 @@ public interface FlipSmartConfig extends Config
 		return true;
 	}
 
-	@ConfigItem(
-		keyName = "showGEDetailedInfo",
-		name = "Show Detailed Info",
-		description = "Show quantity, price per item, and total value (Full mode only)",
-		section = displaySection,
-		position = 4
-	)
-	default boolean showGEDetailedInfo()
-	{
-		return true;
-	}
 
 	@ConfigItem(
 		keyName = "showOfferTimers",
@@ -566,17 +555,6 @@ public interface FlipSmartConfig extends Config
 	)
 	String generalSection = "general";
 
-	@ConfigItem(
-		keyName = "trackHistory",
-		name = "Track History",
-		description = "Track flipping history across sessions",
-		section = generalSection,
-		position = 0
-	)
-	default boolean trackHistory()
-	{
-		return true;
-	}
 
 	// ============================================
 	// Notifications Section
