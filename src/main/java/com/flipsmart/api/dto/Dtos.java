@@ -889,7 +889,9 @@ public final class Dtos
 	 */
 	public static class WikiPrice
 	{
-		private static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
+		// Public so MarketDataEndpoints can share this instead of keeping its own
+		// copy in sync by hand.
+		public static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
 
 		public final int instaBuy;   // High price - what buyers pay to instant-buy
 		public final int instaSell;  // Low price - what sellers receive when instant-selling

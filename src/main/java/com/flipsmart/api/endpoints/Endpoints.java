@@ -869,8 +869,6 @@ public final class Endpoints
 	@Slf4j
 	public static class MarketDataEndpoints
 	{
-		private static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
-
 		// In-memory cache of per-item 24h daily volume — short TTL so price-volume swings
 		// are picked up the next time the user opens a buy window, but long enough to
 		// avoid hitting the API on every offer-screen rebuild as the player adjusts qty.
@@ -922,7 +920,7 @@ public final class Endpoints
 		public void fetchWikiPrices()
 		{
 			long now = System.currentTimeMillis();
-			if (now - lastWikiPriceFetch.get() < WIKI_PRICE_CACHE_DURATION_MS)
+			if (now - lastWikiPriceFetch.get() < WikiPrice.WIKI_PRICE_CACHE_DURATION_MS)
 			{
 				return;
 			}
@@ -1022,7 +1020,7 @@ public final class Endpoints
 		 */
 		public boolean needsWikiPriceRefresh()
 		{
-			return System.currentTimeMillis() - lastWikiPriceFetch.get() > WIKI_PRICE_CACHE_DURATION_MS;
+			return System.currentTimeMillis() - lastWikiPriceFetch.get() > WikiPrice.WIKI_PRICE_CACHE_DURATION_MS;
 		}
 
 		/**
