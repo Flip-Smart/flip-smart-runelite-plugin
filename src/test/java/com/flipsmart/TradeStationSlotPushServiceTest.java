@@ -15,6 +15,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -40,6 +41,32 @@ public class TradeStationSlotPushServiceTest
 		when(apiClient.pushTradeStationSlotsAsync(any(), any()))
 			.thenReturn(CompletableFuture.completedFuture(true));
 		service = new TradeStationSlotPushService(client, apiClient, session);
+	}
+
+	/**
+	 * The service is a singleton and RuneLite reuses the plugin instance across disable/enable, so a
+	 * scheduler terminated by shutdown() used to stay terminated for the life of the client. Every
+	 * GE offer event after a plugin toggle then threw RejectedExecutionException out of the event
+	 * subscriber. Observed in-game on 2026-08-02.
+	 */
+	@Test
+	public void scheduleAfterShutdownRebuildsTheExecutorInsteadOfThrowing()
+	{
+		service.shutdown();
+
+		// Previously threw RejectedExecutionException from the terminated executor.
+		service.scheduleSnapshotPush(java.util.Collections.singletonList(ABYSSAL_WHIP));
+	}
+
+	@Test
+	public void pushNowAfterShutdownRebuildsTheExecutorInsteadOfThrowing()
+	{
+		service.shutdown();
+
+		service.pushNow(java.util.Collections.singletonList(ABYSSAL_WHIP));
+
+		verify(apiClient, timeout(2000).times(1))
+			.pushTradeStationSlotsAsync(eq(RSN), eq(java.util.Collections.singletonList(ABYSSAL_WHIP)));
 	}
 
 	@Test
