@@ -684,22 +684,9 @@ public class OfflineSyncService
 	 */
 	private void rebuildCollectedItems(List<OfferRecord> persistedRecords, List<OfferRecord> reattached)
 	{
-		Set<Long> stillInSlot = new HashSet<>();
-		for (OfferRecord r : reattached)
-		{
-			stillInSlot.add(r.getOfferId());
-		}
-		List<OfferRecord> collectedOnly = new ArrayList<>(persistedRecords.size());
-		for (OfferRecord r : persistedRecords)
-		{
-			if (r != null && !stillInSlot.contains(r.getOfferId()))
-			{
-				collectedOnly.add(r);
-			}
-		}
-
 		int rebuilt = 0;
-		for (Map.Entry<Integer, Integer> entry : filledBuyQuantitiesByItem(collectedOnly).entrySet())
+		for (Map.Entry<Integer, Integer> entry
+			: filledBuyQuantitiesByItem(excludingReattached(persistedRecords, reattached)).entrySet())
 		{
 			int inventory = inventoryCountOrZero(entry.getKey());
 			if (inventory > 0)
@@ -721,6 +708,28 @@ public class OfflineSyncService
 		{
 			log.debug("Rebuilt {} collected item(s) for {} from persisted offers", rebuilt, session.getRsn());
 		}
+	}
+
+	/**
+	 * {@code records} minus the ones that reattached to a live GE slot. Those offers still occupy
+	 * their slot, so their fills are in the Exchange rather than the player's inventory.
+	 */
+	private static List<OfferRecord> excludingReattached(List<OfferRecord> records, List<OfferRecord> reattached)
+	{
+		Set<Long> stillInSlot = new HashSet<>();
+		for (OfferRecord r : reattached)
+		{
+			stillInSlot.add(r.getOfferId());
+		}
+		List<OfferRecord> out = new ArrayList<>(records.size());
+		for (OfferRecord r : records)
+		{
+			if (r != null && !stillInSlot.contains(r.getOfferId()))
+			{
+				out.add(r);
+			}
+		}
+		return out;
 	}
 
 	/**
