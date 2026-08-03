@@ -29,11 +29,11 @@ import net.runelite.client.chat.QueuedMessage;
  * completed while offline, then posts them to the API as is_history_backfill.
  * <p>
  * The read is triggered on multiple lifecycle points so it does not depend on
- * the user acting on a one-shot chat nag: on the History WidgetLoaded, when an
- * unverified offline fill is registered while the tab is already open, and by a
- * throttled periodic re-scan for as long as the tab stays visible. All triggers
- * only ever <em>read</em> the widget already on screen — the plugin never opens
- * or drives the interface for the player.
+ * the user acting on a one-shot chat nag: on the History WidgetLoaded, which fires
+ * on every open of the tab; when an unverified offline fill is registered while
+ * the tab is already open; and by a throttled re-scan that retries until a read
+ * recovers rows. All triggers only ever <em>read</em> the widget already on screen
+ * — the plugin never opens or drives the interface for the player.
  */
 @Slf4j
 @Singleton
@@ -47,11 +47,9 @@ public class GEHistoryService
 	// fixed-stride to handle variable-width rows.
 	private static final int GE_HISTORY_LIST_CHILD = 3;
 
-	// Minimum gap between reads triggered by the proactive re-scan, in game
-	// ticks (~0.6s each). Long enough that leaving the tab open does not spam
-	// POST /history-backfill-batch; short enough to pick up fills that land
-	// while the user is looking at the tab. Explicit WidgetLoaded/offline-fill
-	// reads are not throttled — only the periodic re-scan honours this.
+	// Minimum gap between retries by the re-scan, in game ticks (~0.6s each), while it is
+	// still waiting for a read that recovers rows. Explicit WidgetLoaded/offline-fill reads
+	// are not throttled — only the re-scan honours this.
 	private static final long PROACTIVE_RESCAN_INTERVAL_TICKS = 17;
 
 	private final Client client;
@@ -113,15 +111,20 @@ public class GEHistoryService
 	}
 
 	/**
-	 * Proactive lifecycle trigger: while the History tab stays visible, re-read
-	 * it on a throttled cadence so fills that land after the initial open are
-	 * still recovered without waiting for another WidgetLoaded or a manual nag.
-	 * Gated on offline sync so we never latch {@code historyReadThisSession}
-	 * before the reconciler has had a chance to register offline fills.
+	 * Retry trigger for a read that recovered nothing. WidgetLoaded fires when the interface is
+	 * created, ahead of the clientscripts that populate the rows, so the deferred read can find an
+	 * empty list; re-read on a throttled cadence until one parses.
+	 * <p>
+	 * It does NOT exist to catch fills landing while the tab is open: an offer only enters the
+	 * History tab once collected, and collecting requires the main GE interface, which replaces
+	 * the History tab. The tab's contents cannot change while it is visible, so once a read has
+	 * succeeded there is nothing further to find until it is re-opened — which fires WidgetLoaded
+	 * again. Gated on offline sync so we never latch {@code historyReadThisSession} before the
+	 * reconciler has had a chance to register offline fills.
 	 */
 	private void maybeProactiveRescan()
 	{
-		if (!session.isOfflineSyncCompleted())
+		if (!session.isOfflineSyncCompleted() || historyReadThisSession)
 		{
 			return;
 		}
