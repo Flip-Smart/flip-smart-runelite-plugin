@@ -1,5 +1,7 @@
 package com.flipsmart.api.dto;
 
+import com.flipsmart.api.dto.Dtos.PluginSyncResponse;
+
 import com.google.gson.Gson;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;

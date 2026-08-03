@@ -1,5 +1,7 @@
 package com.flipsmart.api.endpoints;
 
+import com.flipsmart.api.endpoints.Endpoints.FlipsEndpoints;
+
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;

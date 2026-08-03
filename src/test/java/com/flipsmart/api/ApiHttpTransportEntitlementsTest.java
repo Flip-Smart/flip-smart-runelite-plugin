@@ -1,7 +1,7 @@
 package com.flipsmart.api;
 
 import com.flipsmart.FlipSmartConfig;
-import com.flipsmart.api.dto.EntitlementsResponse;
+import com.flipsmart.api.dto.Dtos.EntitlementsResponse;
 import com.google.gson.Gson;
 import okhttp3.OkHttpClient;
 import org.junit.Before;

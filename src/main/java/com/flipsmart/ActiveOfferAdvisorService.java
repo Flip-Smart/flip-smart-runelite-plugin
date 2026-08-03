@@ -1,9 +1,9 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.offer.OfferRecord;
-import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
 import com.flipsmart.domain.offer.OfferDisposition;
-import com.flipsmart.api.dto.OfferAdviceRequest;
+import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

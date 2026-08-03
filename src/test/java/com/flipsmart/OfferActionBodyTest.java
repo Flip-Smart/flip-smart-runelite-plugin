@@ -1,5 +1,5 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.OfferAdviceRequest;
+import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
 
 import com.google.gson.JsonObject;
 import org.junit.Test;

@@ -1,7 +1,7 @@
 package com.flipsmart.exit;
 
 import com.flipsmart.FocusedFlip;
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;

@@ -1,6 +1,6 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.Dtos.ActiveFlipsResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
 import java.util.Collections;
 import java.util.Optional;

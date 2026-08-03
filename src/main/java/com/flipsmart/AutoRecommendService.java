@@ -1,9 +1,9 @@
 package com.flipsmart;
 
 import com.flipsmart.FlipAssistOverlay.FlipAssistStep;
-import com.flipsmart.api.dto.FlipAdjustmentRequest;
-import com.flipsmart.api.dto.FlipAdjustmentResponse;
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.FlipAdjustmentRequest;
+import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;

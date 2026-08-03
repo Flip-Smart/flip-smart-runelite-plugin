@@ -1,10 +1,10 @@
 package com.flipsmart.api;
 
 import com.flipsmart.FlipSmartConfig;
-import com.flipsmart.api.dto.AuthResult;
-import com.flipsmart.api.dto.DeviceAuthResponse;
-import com.flipsmart.api.dto.DeviceStatusResponse;
-import com.flipsmart.api.dto.EntitlementsResponse;
+import com.flipsmart.api.dto.Dtos.AuthResult;
+import com.flipsmart.api.dto.Dtos.DeviceAuthResponse;
+import com.flipsmart.api.dto.Dtos.DeviceStatusResponse;
+import com.flipsmart.api.dto.Dtos.EntitlementsResponse;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import java.io.IOException;

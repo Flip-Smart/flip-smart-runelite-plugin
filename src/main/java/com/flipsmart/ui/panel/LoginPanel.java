@@ -2,7 +2,7 @@ package com.flipsmart.ui.panel;
 
 import com.flipsmart.FlipSmartApiClient;
 import com.flipsmart.FlipSmartConfig;
-import com.flipsmart.api.dto.AuthResult;
+import com.flipsmart.api.dto.Dtos.AuthResult;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.ColorScheme;

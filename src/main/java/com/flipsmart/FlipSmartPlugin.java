@@ -1,10 +1,10 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.OfferAdviceRequest;
-import com.flipsmart.api.dto.OfferAdviceResponse;
-import com.flipsmart.api.dto.OfferAdviceResult;
-import com.flipsmart.api.dto.SellPriceCheckRequest;
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
+import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
+import com.flipsmart.api.dto.Dtos.OfferAdviceResult;
+import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.ActiveFlipItemIds;
 import com.flipsmart.domain.flip.ActiveFlipProjection;

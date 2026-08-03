@@ -1,5 +1,5 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.DumpEvent;
+import com.flipsmart.api.dto.Dtos.DumpEvent;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.ChatMessageType;

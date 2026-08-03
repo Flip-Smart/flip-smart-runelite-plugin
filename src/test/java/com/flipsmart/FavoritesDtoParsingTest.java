@@ -1,8 +1,8 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.FavoriteItem;
-import com.flipsmart.api.dto.FavoritesResponse;
-import com.flipsmart.api.dto.PluginSyncResponse;
+import com.flipsmart.api.dto.Dtos.FavoriteItem;
+import com.flipsmart.api.dto.Dtos.FavoritesResponse;
+import com.flipsmart.api.dto.Dtos.PluginSyncResponse;
 import com.google.gson.Gson;
 import org.junit.Test;
 

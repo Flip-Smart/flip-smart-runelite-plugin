@@ -1,6 +1,6 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.HistoryBackfillEntry;
+import com.flipsmart.api.dto.Dtos.HistoryBackfillEntry;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.trading.OfferStore;
 import java.util.ArrayList;
