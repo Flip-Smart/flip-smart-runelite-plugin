@@ -58,10 +58,17 @@ public class OfflineSyncService
 
 	/**
 	 * Terminal (already-collected/cancelled) offer records this old are no longer carried across a
-	 * reconcile. They exist to keep the cost basis of a position the player still holds, so the
-	 * window only has to outlive a realistic buy-to-sell gap.
+	 * reconcile. They keep the cost basis of a position the player still holds.
+	 *
+	 * <p>Matches the seven days the {@code collectedItems_<rsn>} blob used to retain for, because
+	 * the collected set is now derived from these records rather than stored separately. A shorter
+	 * window is fine while {@link RoundTripLedger} knows the held quantity — that exemption keeps a
+	 * backing record alive regardless of age — but a client with no persisted ledger cold-starts
+	 * from live unmatched buys only, so an already-collected holding gets {@code heldQuantity 0} and
+	 * would age out. At 24 hours that silently dropped positions bought the previous day on the
+	 * first login after upgrading.</p>
 	 */
-	static final long TERMINAL_HISTORY_RETENTION_MS = 24L * 60 * 60 * 1000;
+	static final long TERMINAL_HISTORY_RETENTION_MS = 7L * 24 * 60 * 60 * 1000;
 
 	/** Hard ceiling on retained terminal records so the persisted blob stays bounded. */
 	static final int MAX_RETAINED_TERMINAL_RECORDS = 300;
