@@ -38,6 +38,24 @@ public class PlayerSessionFlipFinderSourcedTest
 	}
 
 	@Test
+	public void overlappingBuyAndSellOfOneItemCountsAsASingleFlip()
+	{
+		// #1116 AC1/AC3: collecting part of a buy and relisting it to sell before the buy
+		// completes must not consume two of a free user's slots. Both legs are the same item, and
+		// counting is keyed by item id, so the pair collapses to one flip.
+		PlayerSession session = new PlayerSession();
+		session.markFlipFinderSourced(4151, T0);
+
+		// Two GE slots (the original buy and the early resale) plus the collected lot the player
+		// still holds — the shape FlipSmartPlugin.getActiveFlipItemIds() produces for an overlap.
+		Set<Integer> ids = com.flipsmart.domain.flip.ActiveFlipItemIds.derive(
+			active(4151), active(4151), Collections.singletonMap(4151, 5), true);
+
+		assertEquals("an overlapping buy+sell of one item is one flip", 1, ids.size());
+		assertEquals(1, session.retainAndCountFlipFinderActive(ids, T0));
+	}
+
+	@Test
 	public void prunesSourcedItemsNoLongerActive()
 	{
 		PlayerSession session = new PlayerSession();
