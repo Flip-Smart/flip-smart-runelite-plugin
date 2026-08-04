@@ -1,6 +1,6 @@
 package com.flipsmart.ui.panel;
 
-import com.flipsmart.api.dto.FavoriteItem;
+import com.flipsmart.api.dto.Dtos.FavoriteItem;
 import java.util.Comparator;
 import lombok.Getter;
 

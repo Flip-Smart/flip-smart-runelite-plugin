@@ -1,11 +1,11 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.ActiveFlipsResponse;
-import com.flipsmart.api.dto.BlocklistSummary;
-import com.flipsmart.api.dto.CompletedFlipsResponse;
-import com.flipsmart.api.dto.FavoriteItem;
-import com.flipsmart.api.dto.FlipFinderResponse;
-import com.flipsmart.api.dto.FlipStatisticsResponse;
+import com.flipsmart.api.dto.Dtos.ActiveFlipsResponse;
+import com.flipsmart.api.dto.Dtos.BlocklistSummary;
+import com.flipsmart.api.dto.Dtos.CompletedFlipsResponse;
+import com.flipsmart.api.dto.Dtos.FavoriteItem;
+import com.flipsmart.api.dto.Dtos.FlipFinderResponse;
+import com.flipsmart.api.dto.Dtos.FlipStatisticsResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipAnalysis;

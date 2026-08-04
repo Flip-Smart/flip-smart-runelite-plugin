@@ -2,7 +2,7 @@ package com.flipsmart.trading;
 
 import com.flipsmart.FlipSmartApiClient;
 import com.flipsmart.PlayerSession;
-import com.flipsmart.api.dto.TransactionRequest;
+import com.flipsmart.api.dto.Dtos.TransactionRequest;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.OfferTransition;

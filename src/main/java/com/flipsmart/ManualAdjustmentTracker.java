@@ -1,8 +1,8 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.FlipAdjustmentRequest;
-import com.flipsmart.api.dto.FlipAdjustmentResponse;
-import com.flipsmart.api.dto.FlipFinderResponse;
+import com.flipsmart.api.dto.Dtos.FlipAdjustmentRequest;
+import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
+import com.flipsmart.api.dto.Dtos.FlipFinderResponse;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;

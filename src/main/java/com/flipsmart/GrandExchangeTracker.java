@@ -1,7 +1,7 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.ActiveFlipsResponse;
-import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.Dtos.ActiveFlipsResponse;
+import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.domain.flip.FlipRecommendation;

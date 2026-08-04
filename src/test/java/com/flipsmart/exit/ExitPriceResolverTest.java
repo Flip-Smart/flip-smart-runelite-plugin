@@ -1,6 +1,6 @@
 package com.flipsmart.exit;
 
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 

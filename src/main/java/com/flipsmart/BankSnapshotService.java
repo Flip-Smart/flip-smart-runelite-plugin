@@ -1,7 +1,7 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.BankItemId;
-import com.flipsmart.api.dto.BankItem;
-import com.flipsmart.api.dto.BankSnapshotResponse;
+import com.flipsmart.api.dto.Dtos.BankItemId;
+import com.flipsmart.api.dto.Dtos.BankItem;
+import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.ItemUtils;
 

@@ -1,6 +1,6 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.TransactionRequest;
+import com.flipsmart.api.dto.Dtos.TransactionRequest;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.OfferTransition;

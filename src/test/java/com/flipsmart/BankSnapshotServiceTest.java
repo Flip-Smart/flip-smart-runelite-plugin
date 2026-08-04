@@ -1,7 +1,7 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.BankSnapshotResponse;
-import com.flipsmart.api.dto.BankSnapshotResult;
+import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
+import com.flipsmart.api.dto.Dtos.BankSnapshotResult;
 import net.runelite.api.Client;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;

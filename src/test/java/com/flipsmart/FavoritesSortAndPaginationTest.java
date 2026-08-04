@@ -1,6 +1,6 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.FavoriteItem;
+import com.flipsmart.api.dto.Dtos.FavoriteItem;
 import com.flipsmart.ui.panel.FavoritesSort;
 import com.flipsmart.ui.panel.Paginator;
 import java.util.ArrayList;

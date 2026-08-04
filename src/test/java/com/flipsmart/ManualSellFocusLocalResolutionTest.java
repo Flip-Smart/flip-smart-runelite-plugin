@@ -1,6 +1,6 @@
 package com.flipsmart;
 
-import com.flipsmart.api.dto.ActiveFlipsResponse;
+import com.flipsmart.api.dto.Dtos.ActiveFlipsResponse;
 import com.flipsmart.domain.flip.AwaitingSaleLots;
 import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.trading.OfferStore;

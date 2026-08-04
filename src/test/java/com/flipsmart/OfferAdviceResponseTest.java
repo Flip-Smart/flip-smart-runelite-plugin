@@ -1,6 +1,6 @@
 package com.flipsmart;
 import com.flipsmart.domain.offer.OfferAction;
-import com.flipsmart.api.dto.OfferAdviceResponse;
+import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
 
 import com.google.gson.Gson;
 import org.junit.Test;

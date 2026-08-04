@@ -1,5 +1,5 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.BuyPriceLookup;
 

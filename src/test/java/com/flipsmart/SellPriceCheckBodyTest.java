@@ -1,5 +1,5 @@
 package com.flipsmart;
-import com.flipsmart.api.dto.SellPriceCheckRequest;
+import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
 
 import com.google.gson.JsonObject;
 import org.junit.Test;

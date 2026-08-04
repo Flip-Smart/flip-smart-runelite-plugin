@@ -1,6 +1,6 @@
 package com.flipsmart.exit;
 
-import com.flipsmart.api.dto.WikiPrice;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.util.GeTax;
 
 /** Resolves the target exit sell price for a slot, per mode, with an AC8 mid-price fallback. */

@@ -1,5 +1,7 @@
 package com.flipsmart.api.endpoints;
 
+import com.flipsmart.api.endpoints.Endpoints.FlipsEndpoints;
+
 import com.flipsmart.api.ApiHttpTransport;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import java.util.ArrayList;
