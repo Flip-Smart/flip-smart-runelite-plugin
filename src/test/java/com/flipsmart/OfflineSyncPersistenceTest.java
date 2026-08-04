@@ -52,6 +52,15 @@ public class OfflineSyncPersistenceTest
 	private com.flipsmart.trading.RoundTripLedger ledger;
 	private ItemManager itemManager;
 	private Map<String, String> configStore;
+	/** Retries the last scheduled sync spent waiting before it resolved. */
+	private int pollsElapsed;
+	/**
+	 * Fake clock the deferral harness advances per retry. ClientThread re-runs a deferred task on
+	 * every invoke() — per client callback, NOT per game tick — so retries are far cheaper than
+	 * 600ms apart. 20ms models the >15-per-second rate observed in live QA.
+	 */
+	private long fakeNow = 1_000_000L;
+	private static final long POLL_INTERVAL_MS = 20L;
 
 	@Before
 	public void setUp()
@@ -86,6 +95,20 @@ public class OfflineSyncPersistenceTest
 			return null;
 		}).when(clientThread).invokeLater(any(Runnable.class));
 
+		// The BooleanSupplier overload is the client's defer-and-retry contract: re-run until it
+		// returns true. Driving it to completion here keeps every existing test synchronous while
+		// letting the deferral tests below see how long a sync actually waited.
+		doAnswer(inv -> {
+			java.util.function.BooleanSupplier poll = inv.getArgument(0);
+			pollsElapsed = 0;
+			while (!poll.getAsBoolean())
+			{
+				pollsElapsed++;
+				fakeNow += POLL_INTERVAL_MS;
+			}
+			return null;
+		}).when(clientThread).invokeLater(any(java.util.function.BooleanSupplier.class));
+
 		ledger = new com.flipsmart.trading.RoundTripLedger();
 		activeFlipTracker = mock(ActiveFlipTracker.class);
 		itemManager = mock(ItemManager.class);
@@ -101,6 +124,22 @@ public class OfflineSyncPersistenceTest
 			store,
 			itemManager,
 			ledger);
+		service.clock = () -> fakeNow;
+	}
+
+	/**
+	 * Stage a completed offline sell for {@code itemId}: persisted, then cleared from the store as
+	 * a fresh login would leave it. The record is non-terminal with no live slot, so a reconcile
+	 * must classify it as an offline fill.
+	 */
+	private void stageCompletedOfflineSell(int itemId)
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		store.apply(sig(0, GrandExchangeOfferState.SELLING, itemId, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.SOLD, itemId, 10, 10), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
 	}
 
 	/**
@@ -627,10 +666,120 @@ public class OfflineSyncPersistenceTest
 		// GE data has not synced yet: the client returns no offer array at all.
 		when(client.getGrandExchangeOffers()).thenReturn(null);
 
+		long start = fakeNow;
+		service.syncOfflineFills();
+
+		verify(geHistoryService, never()).registerOfflineFill(444);
+		assertTrue("must wait the full budget before giving up",
+			fakeNow - start >= OfflineSyncService.GE_SNAPSHOT_WAIT_MS);
+	}
+
+	/**
+	 * A sync scheduled by an earlier login can still be waiting when a later one reconciles.
+	 * Completion is what retires it — without that check the stale waiter reconciles a second
+	 * time and re-offers records the winner already terminalised.
+	 */
+	@Test
+	public void aWaiterRetiresOnceAnotherSyncHasCompleted()
+	{
+		stageCompletedOfflineSell(444);
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+
+		// The wait starts while the snapshot is unreadable...
+		service.syncOfflineFills();
+		verify(geHistoryService, never()).registerOfflineFill(444);
+
+		// ...and another login reconciles in the meantime.
+		when(session.isOfflineSyncCompleted()).thenReturn(true);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
 		service.syncOfflineFills();
 
 		verify(geHistoryService, never()).registerOfflineFill(444);
 	}
+
+	/**
+	 * The blob is re-read when the snapshot lands, not when the sync is scheduled. The wait can
+	 * span half a minute and a world hop, and reconciling the older copy resurrects records the
+	 * newer one has already retired.
+	 */
+	@Test
+	public void persistedRecordsAreLoadedAfterTheSnapshotArrives()
+	{
+		stageCompletedOfflineSell(444);
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger();
+		when(client.getGrandExchangeOffers())
+			.thenAnswer(inv -> polls.getAndIncrement() < 5 ? null : new GrandExchangeOffer[0]);
+
+		// Written after the sync is scheduled: only a load that happens post-wait can see it.
+		service.syncOfflineFills();
+
+		assertEquals(5, pollsElapsed);
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
+	}
+
+	/**
+	 * The wait is a deadline, not a retry count. ClientThread re-runs a deferred task on every
+	 * invoke() rather than once per game tick, so a count-based budget expires in a couple of
+	 * seconds of wall clock — found in live QA, where 15 retries elapsed inside one second. A
+	 * snapshot that takes many retries but little time must still be waited for.
+	 */
+	@Test
+	public void manyCheapRetriesDoNotExhaustTheWait()
+	{
+		stageCompletedOfflineSell(444);
+
+		// 500 retries — far past any sane retry cap, but only 10s of clock at 20ms apiece.
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger();
+		when(client.getGrandExchangeOffers())
+			.thenAnswer(inv -> polls.getAndIncrement() < 500 ? null : new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertEquals(500, pollsElapsed);
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
+	}
+
+	/**
+	 * The completion flag is the contract "the offer state you are looking at has been
+	 * reconciled". Setting it at schedule time made that false for the whole wait, and
+	 * permanently false-positive for a session whose snapshot never loaded — the sync was
+	 * marked done having classified nothing, with nothing left to retry it (#1203).
+	 */
+	@Test
+	public void syncThatNeverSeesAGeSnapshotIsNotMarkedComplete()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+
+		service.syncOfflineFills();
+
+		verify(session, never()).setOfflineSyncCompleted(true);
+	}
+
+	/**
+	 * The real failure #1203 describes: a slow login where the snapshot lands after the sync
+	 * fires. The offline fill must still be classified once GE data arrives, not skipped for
+	 * the session.
+	 */
+	@Test
+	public void geSnapshotArrivingLateIsReconciledOnceItLoads()
+	{
+		stageCompletedOfflineSell(444);
+
+		// Null for the first three polls, then the client finishes syncing GE data.
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger();
+		when(client.getGrandExchangeOffers())
+			.thenAnswer(inv -> polls.getAndIncrement() < 3 ? null : new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertEquals(3, pollsElapsed);
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
+		verify(session, times(1)).setOfflineSyncCompleted(true);
+	}
+
+
 
 	@Test
 	public void noOfflineSyncMarkerIsWritten()
