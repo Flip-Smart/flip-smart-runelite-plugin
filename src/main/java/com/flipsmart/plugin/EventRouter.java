@@ -125,6 +125,9 @@ public class EventRouter
 			// so any session in which the player had opened the History tab once silently
 			// dropped every offline fill across every later hop and reconnect.
 			geHistoryService.reset();
+			// A sync still waiting on this session's GE snapshot will never get one; release it
+			// so the sync scheduled after the next LOGGED_IN is not blocked behind it.
+			offlineSyncService.abandonPendingSync();
 
 			if (!offerStore.export().isEmpty())
 			{

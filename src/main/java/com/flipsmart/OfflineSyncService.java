@@ -78,6 +78,17 @@ public class OfflineSyncService
 
 	/** Per-RSN key holding the high-water fill marks. */
 	private static final String WATERMARKS_KEY_PREFIX = "fillWatermarks_";
+
+	/**
+	 * Client ticks to wait for the GE snapshot before abandoning a sync. At 600ms a tick that is
+	 * ~30s on top of the delay the scheduler already applies — enough for a cold start, without
+	 * letting a login the player has already left spin against the client thread indefinitely.
+	 */
+	static final int MAX_GE_SNAPSHOT_WAIT_TICKS = 50;
+
+	/** Set while a scheduled sync waits on the client thread, so a second cannot start. */
+	private volatile boolean syncInFlight;
+
 	private final PlayerSession session;
 	private final ConfigManager configManager;
 	private final Gson gson;
@@ -594,22 +605,60 @@ public class OfflineSyncService
 	 */
 	public void syncOfflineFills()
 	{
-		if (session.isOfflineSyncCompleted())
+		if (session.isOfflineSyncCompleted() || syncInFlight)
 		{
 			return;
 		}
-		session.setOfflineSyncCompleted(true);
+		syncInFlight = true;
 
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
 
-		// Live GE slots and item-name resolution must be read on the client thread —
-		// this method is invoked from a Swing timer, and touching client/itemManager
-		// off-thread throws.
-		clientThread.invokeLater(() -> reconcileOfflineFills(persistedRecords));
+		// Live GE slots and item-name resolution must be read on the client thread — this method
+		// is invoked from a Swing timer, and touching client/itemManager off-thread throws. The
+		// offer array is null until GE data syncs, and reconciling against a null one reads every
+		// held position as vanished, so wait for it across ticks rather than run once.
+		int[] ticksWaited = {0};
+		clientThread.invokeLater(() -> {
+			if (client.getGrandExchangeOffers() == null)
+			{
+				if (ticksWaited[0]++ < MAX_GE_SNAPSHOT_WAIT_TICKS)
+				{
+					return false;
+				}
+				// Left unsynced on purpose: the next login clears offlineSyncCompleted and
+				// schedules a fresh attempt, where marking it complete skipped the session.
+				log.debug("GE snapshot unreadable after {} ticks — leaving sync for next login",
+					ticksWaited[0]);
+				syncInFlight = false;
+				return true;
+			}
+			try
+			{
+				reconcileOfflineFills(persistedRecords);
+			}
+			finally
+			{
+				syncInFlight = false;
+			}
+			return true;
+		});
+	}
+
+	/**
+	 * Drop a wait whose snapshot is never coming, so the login it belongs to cannot latch the
+	 * service shut for the rest of the client's run.
+	 */
+	public void abandonPendingSync()
+	{
+		syncInFlight = false;
 	}
 
 	private void reconcileOfflineFills(List<OfferRecord> persistedRecords)
 	{
+		// Set here, not at schedule time: downstream readers take the flag to mean "this offer
+		// state has been reconciled", which is not true until this method runs.
+		session.setOfflineSyncCompleted(true);
+
 		long now = System.currentTimeMillis();
 		Map<Integer, OfferRecord> currentOffers = liveOffersBySlot();
 
@@ -648,33 +697,24 @@ public class OfflineSyncService
 		// the player's inventory, so they have not been collected yet.
 		rebuildCollectedItems(persistedRecords, plan.reattached);
 
-		// "No live offers" and "GE data not loaded yet" both surface as an empty signal list, and
-		// only the second is a reason to hold off — the first is the whole point of this path, a
-		// player logging in with everything completed. The client distinguishes them: the offer
-		// array is null until GE data syncs, then present with EMPTY slots. Treating an empty
-		// signal list as unreadable suppressed every genuine offline fill, which is the same
-		// failure the freshness marker produced by a different route.
-		if (client.getGrandExchangeOffers() == null)
+		// An empty signal list here means "no live offers", not "unreadable" — the caller has
+		// established the snapshot exists. A player logging in with everything already completed
+		// looks exactly like this, and must still be offered.
+		//
+		// Each offline-collected record is an offer whose slot is gone on login. This is the
+		// sole path that registers a History backfill.
+		for (OfferRecord record : plan.offlineCollected)
 		{
-			log.debug("GE snapshot not loaded at sync — deferring offline-fill classification");
-		}
-		else
-		{
-			// Each offline-collected record is an offer whose slot is gone on login. This is the
-			// sole path that registers a History backfill.
-			for (OfferRecord record : plan.offlineCollected)
+			if (!record.isBuy() || record.getFilledQuantity() > 0)
 			{
-				if (!record.isBuy() || record.getFilledQuantity() > 0)
-				{
-					geHistoryService.registerOfflineFill(record.getItemId());
-				}
+				geHistoryService.registerOfflineFill(record.getItemId());
 			}
-			// Offered once, so terminalise. A freshness cutoff could not tell "already offered" from
-			// "never observed": a record's last-activity is when the plugin last SAW it change, and
-			// an offline fill is by definition a change it did not see, so comparing that against a
-			// marker written on every sync failed every genuine offline fill.
-			terminaliseOffered(plan.offlineCollected, now);
 		}
+		// Offered once, so terminalise. A freshness cutoff could not tell "already offered" from
+		// "never observed": a record's last-activity is when the plugin last SAW it change, and
+		// an offline fill is by definition a change it did not see, so comparing that against a
+		// marker written on every sync failed every genuine offline fill.
+		terminaliseOffered(plan.offlineCollected, now);
 
 		pruneStaleCollectedItems();
 		clearLegacyCollectedKeys();

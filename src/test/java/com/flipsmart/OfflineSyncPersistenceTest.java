@@ -52,6 +52,8 @@ public class OfflineSyncPersistenceTest
 	private com.flipsmart.trading.RoundTripLedger ledger;
 	private ItemManager itemManager;
 	private Map<String, String> configStore;
+	/** Client ticks the last scheduled sync spent waiting before it resolved. */
+	private int ticksElapsed;
 
 	@Before
 	public void setUp()
@@ -85,6 +87,19 @@ public class OfflineSyncPersistenceTest
 			inv.<Runnable>getArgument(0).run();
 			return null;
 		}).when(clientThread).invokeLater(any(Runnable.class));
+
+		// The BooleanSupplier overload is the client's retry-next-tick contract: re-run until it
+		// returns true. Driving it to completion here keeps every existing test synchronous while
+		// letting the deferral tests below count how many ticks a sync actually waited.
+		doAnswer(inv -> {
+			java.util.function.BooleanSupplier tick = inv.getArgument(0);
+			ticksElapsed = 0;
+			while (!tick.getAsBoolean())
+			{
+				ticksElapsed++;
+			}
+			return null;
+		}).when(clientThread).invokeLater(any(java.util.function.BooleanSupplier.class));
 
 		ledger = new com.flipsmart.trading.RoundTripLedger();
 		activeFlipTracker = mock(ActiveFlipTracker.class);
@@ -630,6 +645,101 @@ public class OfflineSyncPersistenceTest
 		service.syncOfflineFills();
 
 		verify(geHistoryService, never()).registerOfflineFill(444);
+		assertEquals(OfflineSyncService.MAX_GE_SNAPSHOT_WAIT_TICKS, ticksElapsed);
+	}
+
+	/**
+	 * The completion flag is the contract "the offer state you are looking at has been
+	 * reconciled". Setting it at schedule time made that false for the whole wait, and
+	 * permanently false-positive for a session whose snapshot never loaded — the sync was
+	 * marked done having classified nothing, with nothing left to retry it (#1203).
+	 */
+	@Test
+	public void syncThatNeverSeesAGeSnapshotIsNotMarkedComplete()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+
+		service.syncOfflineFills();
+
+		verify(session, never()).setOfflineSyncCompleted(true);
+	}
+
+	/**
+	 * The real failure #1203 describes: a slow login where the snapshot lands after the sync
+	 * fires. The offline fill must still be classified once GE data arrives, not skipped for
+	 * the session.
+	 */
+	@Test
+	public void geSnapshotArrivingLateIsReconciledOnceItLoads()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		store.apply(sig(0, GrandExchangeOfferState.SELLING, 444, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.SOLD, 444, 10, 10), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// Null for the first three polls, then the client finishes syncing GE data.
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger();
+		when(client.getGrandExchangeOffers())
+			.thenAnswer(inv -> polls.getAndIncrement() < 3 ? null : new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertEquals(3, ticksElapsed);
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
+		verify(session, times(1)).setOfflineSyncCompleted(true);
+	}
+
+	/**
+	 * Abandoning a sync must release the in-flight latch, or the login that gave up would keep
+	 * every later one out for the rest of the client's run — trading one permanent skip for
+	 * another.
+	 */
+	@Test
+	public void abandonedSyncDoesNotBlockTheNextLogin()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		store.apply(sig(0, GrandExchangeOfferState.SELLING, 444, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.SOLD, 444, 10, 10), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+
+		service.syncOfflineFills();
+		verify(geHistoryService, never()).registerOfflineFill(444);
+
+		// Next login: GE data is there this time.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		service.syncOfflineFills();
+
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
+	}
+
+	/** The session-transition hook drops a wait whose snapshot is never coming. */
+	@Test
+	public void abandonPendingSyncReleasesAWaitInProgress()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		store.apply(sig(0, GrandExchangeOfferState.SELLING, 444, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.SOLD, 444, 10, 10), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// Never resolves, and the harness drains the supplier, so the latch is what is under test.
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+		service.syncOfflineFills();
+
+		service.abandonPendingSync();
+
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		service.syncOfflineFills();
+
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
 	}
 
 	@Test
