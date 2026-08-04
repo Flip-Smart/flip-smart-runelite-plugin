@@ -80,14 +80,21 @@ public class OfflineSyncService
 	private static final String WATERMARKS_KEY_PREFIX = "fillWatermarks_";
 
 	/**
-	 * Client ticks to wait for the GE snapshot before abandoning a sync. At 600ms a tick that is
-	 * ~30s on top of the delay the scheduler already applies — enough for a cold start, without
-	 * letting a login the player has already left spin against the client thread indefinitely.
+	 * How long to wait for the GE snapshot before abandoning a sync — generous enough for a cold
+	 * start, bounded so a login the player has already left cannot wait forever.
+	 *
+	 * <p>Deliberately wall-clock rather than a retry count. {@code ClientThread} re-runs a deferred
+	 * task on every {@code invoke()}, which is per client callback and not per 600ms game tick, so
+	 * a count of N retries buys an interval that varies with frame rate — measured at over 15 in a
+	 * single second during QA. Only a deadline expresses the wait that actually matters.</p>
 	 */
-	static final int MAX_GE_SNAPSHOT_WAIT_TICKS = 50;
+	static final long GE_SNAPSHOT_WAIT_MS = 30_000L;
 
 	/** Set while a scheduled sync waits on the client thread, so a second cannot start. */
 	private volatile boolean syncInFlight;
+
+	/** Test seam: deterministic clock for the snapshot wait. */
+	java.util.function.LongSupplier clock = System::currentTimeMillis;
 
 	private final PlayerSession session;
 	private final ConfigManager configManager;
@@ -617,18 +624,18 @@ public class OfflineSyncService
 		// is invoked from a Swing timer, and touching client/itemManager off-thread throws. The
 		// offer array is null until GE data syncs, and reconciling against a null one reads every
 		// held position as vanished, so wait for it across ticks rather than run once.
-		int[] ticksWaited = {0};
+		long deadline = clock.getAsLong() + GE_SNAPSHOT_WAIT_MS;
 		clientThread.invokeLater(() -> {
 			if (client.getGrandExchangeOffers() == null)
 			{
-				if (ticksWaited[0]++ < MAX_GE_SNAPSHOT_WAIT_TICKS)
+				if (clock.getAsLong() < deadline)
 				{
 					return false;
 				}
 				// Left unsynced on purpose: the next login clears offlineSyncCompleted and
 				// schedules a fresh attempt, where marking it complete skipped the session.
-				log.debug("GE snapshot unreadable after {} ticks — leaving sync for next login",
-					ticksWaited[0]);
+				log.debug("GE snapshot unreadable after {}ms — leaving sync for next login",
+					GE_SNAPSHOT_WAIT_MS);
 				syncInFlight = false;
 				return true;
 			}

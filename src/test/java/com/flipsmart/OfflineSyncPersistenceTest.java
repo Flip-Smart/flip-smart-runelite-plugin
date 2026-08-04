@@ -52,8 +52,15 @@ public class OfflineSyncPersistenceTest
 	private com.flipsmart.trading.RoundTripLedger ledger;
 	private ItemManager itemManager;
 	private Map<String, String> configStore;
-	/** Client ticks the last scheduled sync spent waiting before it resolved. */
-	private int ticksElapsed;
+	/** Retries the last scheduled sync spent waiting before it resolved. */
+	private int pollsElapsed;
+	/**
+	 * Fake clock the deferral harness advances per retry. ClientThread re-runs a deferred task on
+	 * every invoke() — per client callback, NOT per game tick — so retries are far cheaper than
+	 * 600ms apart. 20ms models the >15-per-second rate observed in live QA.
+	 */
+	private long fakeNow = 1_000_000L;
+	private static final long POLL_INTERVAL_MS = 20L;
 
 	@Before
 	public void setUp()
@@ -88,15 +95,16 @@ public class OfflineSyncPersistenceTest
 			return null;
 		}).when(clientThread).invokeLater(any(Runnable.class));
 
-		// The BooleanSupplier overload is the client's retry-next-tick contract: re-run until it
+		// The BooleanSupplier overload is the client's defer-and-retry contract: re-run until it
 		// returns true. Driving it to completion here keeps every existing test synchronous while
-		// letting the deferral tests below count how many ticks a sync actually waited.
+		// letting the deferral tests below see how long a sync actually waited.
 		doAnswer(inv -> {
-			java.util.function.BooleanSupplier tick = inv.getArgument(0);
-			ticksElapsed = 0;
-			while (!tick.getAsBoolean())
+			java.util.function.BooleanSupplier poll = inv.getArgument(0);
+			pollsElapsed = 0;
+			while (!poll.getAsBoolean())
 			{
-				ticksElapsed++;
+				pollsElapsed++;
+				fakeNow += POLL_INTERVAL_MS;
 			}
 			return null;
 		}).when(clientThread).invokeLater(any(java.util.function.BooleanSupplier.class));
@@ -116,6 +124,7 @@ public class OfflineSyncPersistenceTest
 			store,
 			itemManager,
 			ledger);
+		service.clock = () -> fakeNow;
 	}
 
 	/**
@@ -642,10 +651,39 @@ public class OfflineSyncPersistenceTest
 		// GE data has not synced yet: the client returns no offer array at all.
 		when(client.getGrandExchangeOffers()).thenReturn(null);
 
+		long start = fakeNow;
 		service.syncOfflineFills();
 
 		verify(geHistoryService, never()).registerOfflineFill(444);
-		assertEquals(OfflineSyncService.MAX_GE_SNAPSHOT_WAIT_TICKS, ticksElapsed);
+		assertTrue("must wait the full budget before giving up",
+			fakeNow - start >= OfflineSyncService.GE_SNAPSHOT_WAIT_MS);
+	}
+
+	/**
+	 * The wait is a deadline, not a retry count. ClientThread re-runs a deferred task on every
+	 * invoke() rather than once per game tick, so a count-based budget expires in a couple of
+	 * seconds of wall clock — found in live QA, where 15 retries elapsed inside one second. A
+	 * snapshot that takes many retries but little time must still be waited for.
+	 */
+	@Test
+	public void manyCheapRetriesDoNotExhaustTheWait()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+		store.apply(sig(0, GrandExchangeOfferState.SELLING, 444, 0, 10), 1000L);
+		store.apply(sig(0, GrandExchangeOfferState.SOLD, 444, 10, 10), 2000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		// 500 retries — far past any sane retry cap, but only 10s of clock at 20ms apiece.
+		java.util.concurrent.atomic.AtomicInteger polls = new java.util.concurrent.atomic.AtomicInteger();
+		when(client.getGrandExchangeOffers())
+			.thenAnswer(inv -> polls.getAndIncrement() < 500 ? null : new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertEquals(500, pollsElapsed);
+		verify(geHistoryService, times(1)).registerOfflineFill(444);
 	}
 
 	/**
@@ -688,7 +726,7 @@ public class OfflineSyncPersistenceTest
 
 		service.syncOfflineFills();
 
-		assertEquals(3, ticksElapsed);
+		assertEquals(3, pollsElapsed);
 		verify(geHistoryService, times(1)).registerOfflineFill(444);
 		verify(session, times(1)).setOfflineSyncCompleted(true);
 	}
