@@ -43,7 +43,13 @@ public class TradeStationSlotPushService
 	private final Client client;
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
-	private final ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
+	/**
+	 * Rebuilt on demand rather than created once. The service is a singleton and RuneLite reuses
+	 * the plugin instance across disable/enable, so a scheduler terminated by {@link #shutdown()}
+	 * would otherwise stay terminated for the life of the client and every later GE event would
+	 * throw RejectedExecutionException.
+	 */
+	private ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
 
 	private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
 	private final AtomicReference<List<Integer>> lastPushed = new AtomicReference<>();
@@ -57,12 +63,6 @@ public class TradeStationSlotPushService
 		this.client = client;
 		this.apiClient = apiClient;
 		this.session = session;
-		this.scheduler = Executors.newSingleThreadScheduledExecutor(r ->
-		{
-			Thread t = new Thread(r, "flipsmart-trade-station-push"); // NOPMD DoNotUseThreads
-			t.setDaemon(true);
-			return t;
-		});
 	}
 
 	/**
@@ -84,7 +84,7 @@ public class TradeStationSlotPushService
 		{
 			existing.cancel(false);
 		}
-		ScheduledFuture<?> next = scheduler.schedule(
+		ScheduledFuture<?> next = scheduler().schedule(
 			() -> doPush(snapshot),
 			DEBOUNCE_MS,
 			TimeUnit.MILLISECONDS);
@@ -103,7 +103,25 @@ public class TradeStationSlotPushService
 		{
 			existing.cancel(false);
 		}
-		scheduler.execute(() -> doPush(snapshot)); // NOPMD DoNotUseThreads
+		scheduler().execute(() -> doPush(snapshot)); // NOPMD DoNotUseThreads
+	}
+
+	/** The live scheduler, created on first use and replaced if a shutdown terminated it. */
+	private ScheduledExecutorService scheduler() // NOPMD DoNotUseThreads
+	{
+		synchronized (this)
+		{
+			if (scheduler == null || scheduler.isShutdown())
+			{
+				scheduler = Executors.newSingleThreadScheduledExecutor(r -> // NOPMD DoNotUseThreads
+				{
+					Thread t = new Thread(r, "flipsmart-trade-station-push"); // NOPMD DoNotUseThreads
+					t.setDaemon(true);
+					return t;
+				});
+			}
+			return scheduler;
+		}
 	}
 
 	public void shutdown()
@@ -113,7 +131,13 @@ public class TradeStationSlotPushService
 		{
 			existing.cancel(false);
 		}
-		scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+		synchronized (this)
+		{
+			if (scheduler != null)
+			{
+				scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+			}
+		}
 	}
 
 	/**
