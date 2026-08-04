@@ -113,7 +113,7 @@ public class TradeStationSlotPushService
 		{
 			if (scheduler == null || scheduler.isShutdown())
 			{
-				scheduler = Executors.newSingleThreadScheduledExecutor(r ->
+				scheduler = Executors.newSingleThreadScheduledExecutor(r -> // NOPMD DoNotUseThreads
 				{
 					Thread t = new Thread(r, "flipsmart-trade-station-push"); // NOPMD DoNotUseThreads
 					t.setDaemon(true);
