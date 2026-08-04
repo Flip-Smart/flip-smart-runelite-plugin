@@ -90,9 +90,6 @@ public class OfflineSyncService
 	 */
 	static final long GE_SNAPSHOT_WAIT_MS = 30_000L;
 
-	/** Set while a scheduled sync waits on the client thread, so a second cannot start. */
-	private volatile boolean syncInFlight;
-
 	/** Test seam: deterministic clock for the snapshot wait. */
 	java.util.function.LongSupplier clock = System::currentTimeMillis;
 
@@ -612,13 +609,10 @@ public class OfflineSyncService
 	 */
 	public void syncOfflineFills()
 	{
-		if (session.isOfflineSyncCompleted() || syncInFlight)
+		if (session.isOfflineSyncCompleted())
 		{
 			return;
 		}
-		syncInFlight = true;
-
-		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
 
 		// Live GE slots and item-name resolution must be read on the client thread — this method
 		// is invoked from a Swing timer, and touching client/itemManager off-thread throws. The
@@ -626,6 +620,13 @@ public class OfflineSyncService
 		// held position as vanished, so wait for it across ticks rather than run once.
 		long deadline = clock.getAsLong() + GE_SNAPSHOT_WAIT_MS;
 		clientThread.invokeLater(() -> {
+			// A sync scheduled by an earlier login can still be waiting when a later one finishes.
+			// Completion is the only thing worth serialising on, so it doubles as the re-entrancy
+			// guard: whoever reconciles first retires every other waiter.
+			if (session.isOfflineSyncCompleted())
+			{
+				return true;
+			}
 			if (client.getGrandExchangeOffers() == null)
 			{
 				if (clock.getAsLong() < deadline)
@@ -636,36 +637,17 @@ public class OfflineSyncService
 				// schedules a fresh attempt, where marking it complete skipped the session.
 				log.debug("GE snapshot unreadable after {}ms — leaving sync for next login",
 					GE_SNAPSHOT_WAIT_MS);
-				syncInFlight = false;
 				return true;
 			}
-			try
-			{
-				reconcileOfflineFills(persistedRecords);
-			}
-			finally
-			{
-				syncInFlight = false;
-			}
+			// Loaded here rather than at schedule time: the wait can span half a minute and a
+			// world hop, and the blob is rewritten in between.
+			reconcileOfflineFills(loadPersistedOfferRecords());
 			return true;
 		});
 	}
 
-	/**
-	 * Drop a wait whose snapshot is never coming, so the login it belongs to cannot latch the
-	 * service shut for the rest of the client's run.
-	 */
-	public void abandonPendingSync()
-	{
-		syncInFlight = false;
-	}
-
 	private void reconcileOfflineFills(List<OfferRecord> persistedRecords)
 	{
-		// Set here, not at schedule time: downstream readers take the flag to mean "this offer
-		// state has been reconciled", which is not true until this method runs.
-		session.setOfflineSyncCompleted(true);
-
 		long now = System.currentTimeMillis();
 		Map<Integer, OfferRecord> currentOffers = liveOffersBySlot();
 
@@ -726,6 +708,11 @@ public class OfflineSyncService
 		pruneStaleCollectedItems();
 		clearLegacyCollectedKeys();
 		persistOfferState();
+
+		// Last, so the flag only ever means "a sync ran to completion". Set at entry it would also
+		// be true for a reconcile that threw half way, retiring the retry that should have covered
+		// it. Downstream readers all run on later ticks, so nothing needs it sooner.
+		session.setOfflineSyncCompleted(true);
 
 		if (onSyncComplete != null)
 		{
