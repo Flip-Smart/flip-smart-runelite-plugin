@@ -31,7 +31,7 @@ public class ActiveFlipsSnapshotPushService
 
 	private final FlipSmartApiClient apiClient;
 	private final PlayerSession session;
-	private final ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
+	private ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
 	private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
 	private final AtomicReference<String> lastDelivered = new AtomicReference<>();
 
@@ -40,12 +40,24 @@ public class ActiveFlipsSnapshotPushService
 	{
 		this.apiClient = apiClient;
 		this.session = session;
-		this.scheduler = Executors.newSingleThreadScheduledExecutor(r ->
+	}
+
+	/** The live scheduler, created on first use and replaced if a shutdown terminated it. */
+	private ScheduledExecutorService scheduler() // NOPMD DoNotUseThreads
+	{
+		synchronized (this)
 		{
-			Thread t = new Thread(r, "flipsmart-active-flips-push"); // NOPMD DoNotUseThreads
-			t.setDaemon(true);
-			return t;
-		});
+			if (scheduler == null || scheduler.isShutdown())
+			{
+				scheduler = Executors.newSingleThreadScheduledExecutor(r -> // NOPMD DoNotUseThreads
+				{
+					Thread t = new Thread(r, "flipsmart-active-flips-push"); // NOPMD DoNotUseThreads
+					t.setDaemon(true);
+					return t;
+				});
+			}
+			return scheduler;
+		}
 	}
 
 	/**
@@ -74,7 +86,7 @@ public class ActiveFlipsSnapshotPushService
 		try
 		{
 			ScheduledFuture<?> previous = pending.getAndSet(
-				scheduler.schedule(() -> doPush(flipsSupplier), DEBOUNCE_MS, TimeUnit.MILLISECONDS));
+				scheduler().schedule(() -> doPush(flipsSupplier), DEBOUNCE_MS, TimeUnit.MILLISECONDS));
 			if (previous != null)
 			{
 				previous.cancel(false);
@@ -102,7 +114,10 @@ public class ActiveFlipsSnapshotPushService
 		{
 			previous.cancel(false);
 		}
-		scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+		if (scheduler != null)
+		{
+			scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+		}
 	}
 
 	/**
