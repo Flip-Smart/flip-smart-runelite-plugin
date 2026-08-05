@@ -1316,6 +1316,10 @@ public final class Endpoints
 			{
 				jsonBody.addProperty("round_trip_id", request.roundTripId);
 			}
+			if (request.slotGeneration != null)
+			{
+				jsonBody.addProperty("slot_generation", request.slotGeneration);
+			}
 
 			RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 

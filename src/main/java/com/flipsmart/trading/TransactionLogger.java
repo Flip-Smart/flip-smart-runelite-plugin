@@ -69,11 +69,11 @@ public final class TransactionLogger
                 // versus the single fill the old recording path produced.
                 if (e.newlyFilledQuantity > 0)
                 {
-                    recordFill(e.record, e.newlyFilledQuantity, e.newlySpent);
+                    recordFill(e.record, e.newlyFilledQuantity, e.newlySpent, e.slotGeneration);
                 }
                 else
                 {
-                    recordPlacement(e.record);
+                    recordPlacement(e.record, e.slotGeneration);
                 }
                 break;
             case FILLED_DELTA:
@@ -81,7 +81,7 @@ public final class TransactionLogger
             case CANCELLED:
                 if (e.newlyFilledQuantity > 0)
                 {
-                    recordFill(e.record, e.newlyFilledQuantity, e.newlySpent);
+                    recordFill(e.record, e.newlyFilledQuantity, e.newlySpent, e.slotGeneration);
                 }
                 break;
             default:
@@ -90,7 +90,7 @@ public final class TransactionLogger
         }
     }
 
-    private void recordPlacement(OfferRecord r)
+    private void recordPlacement(OfferRecord r, int slotGeneration)
     {
         String rsn = rsnSupplier.get().orElse(null);
         String key = idempotencyKey(rsn, r, Type.PLACE);
@@ -101,10 +101,10 @@ public final class TransactionLogger
         {
             return;
         }
-        apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).roundTripId(roundTripId).build());
+        apiClient.recordTransactionAsync(baseBuilder(r, 0, r.getPrice(), rsn, key).roundTripId(roundTripId).slotGeneration(slotGeneration).build());
     }
 
-    private void recordFill(OfferRecord r, int newlyFilled, long newlySpent)
+    private void recordFill(OfferRecord r, int newlyFilled, long newlySpent, int slotGeneration)
     {
         String rsn = rsnSupplier.get().orElse(null);
         String key = idempotencyKey(rsn, r, Type.FILL);
@@ -142,7 +142,7 @@ public final class TransactionLogger
             // what that slot already absorbed, and the basis has to describe the same items.
             roundTripLedger.recordBuyBasis(rsn, r.getItemId(), fill.foldedQuantity, pricePerItem);
         }
-        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).build());
+        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).slotGeneration(slotGeneration).build());
     }
 
     /**

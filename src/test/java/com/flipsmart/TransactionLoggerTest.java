@@ -351,4 +351,68 @@ public class TransactionLoggerTest
         assertEquals("the id opened before the relog is preserved after restoring the ledger",
             openCycleId, sellReq.roundTripId);
     }
+
+    /**
+     * The slot generation observed with a fill has to reach the backend, which uses it to
+     * tell one order apart from the next order to occupy the same slot (#1211). Sending
+     * nothing leaves the backend on its colliding round-trip + slot scope.
+     */
+    @Test
+    public void fillForwardsTheSlotGenerationItWasObservedWith()
+    {
+        TransactionLogger logger = newLogger(RSN);
+        OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
+            .withFill(2, 4_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L, 7));
+        assertEquals(Integer.valueOf(7), capture().slotGeneration);
+    }
+
+    @Test
+    public void placementForwardsTheSlotGeneration()
+    {
+        TransactionLogger logger = newLogger(RSN);
+        OfferRecord r = OfferRecord.newOffer(7, 2, 1515, "Yew logs", false, 100, 300, 1700000000000L);
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 0, 0, 4));
+        assertEquals(Integer.valueOf(4), capture().slotGeneration);
+    }
+
+    /**
+     * End-to-end through the real store: two consecutive orders in one slot must reach the
+     * backend under different generations, otherwise the second order's early fills are
+     * suppressed by the first order's watermark -- the #1211 failure.
+     */
+    @Test
+    public void consecutiveOrdersInOneSlotSendDistinctGenerations()
+    {
+        OfferStore store = new OfferStore();
+        store.addListener(newLogger(RSN)::onOfferEvent);
+
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, 571,
+            "Water orb", 10, 1736, 0, 0L), 1700000000000L);
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, 571,
+            "Water orb", 10, 1736, 10, 17360L), 1700000001000L);
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.EMPTY, 571,
+            "Water orb", 0, 0, 0, 0L), 1700000002000L);
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, 561,
+            "Nature rune", 10, 200, 0, 0L), 1700000003000L);
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, 561,
+            "Nature rune", 10, 200, 10, 2000L), 1700000004000L);
+
+        Integer firstOrder = null;
+        Integer secondOrder = null;
+        for (TransactionRequest req : captureAll())
+        {
+            if (req.itemId == 571)
+            {
+                firstOrder = req.slotGeneration;
+            }
+            else if (req.itemId == 561)
+            {
+                secondOrder = req.slotGeneration;
+            }
+        }
+        assertNotNull("first order reported a generation", firstOrder);
+        assertNotNull("second order reported a generation", secondOrder);
+        assertNotEquals("a reused slot must not reuse its predecessor's identity", firstOrder, secondOrder);
+    }
 }

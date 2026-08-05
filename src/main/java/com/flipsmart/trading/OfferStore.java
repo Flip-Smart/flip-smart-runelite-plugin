@@ -99,8 +99,9 @@ public final class OfferStore
             // for this order rather than against the record. The record can be rewound by a
             // reconcile against a stale snapshot; the mark cannot. Direction comes from the
             // record because a collect arrives as EMPTY, which reads as neither buy nor sell.
+            int generation = fillWatermarks.generationFor(signal.slot);
             OfferIdentity identity = OfferIdentity.of(
-                signal.slot, t.record.getItemId(), t.record.isBuy(), fillWatermarks.generationFor(signal.slot));
+                signal.slot, t.record.getItemId(), t.record.isBuy(), generation);
             FillWatermarks.Delta delta = fillWatermarks.observe(identity, signal.quantitySold, signal.spent);
 
             if (t.record.getState().isTerminal())
@@ -108,7 +109,7 @@ public final class OfferStore
                 fillWatermarks.advanceGeneration(signal.slot);
             }
 
-            event = new OfferEvent(t.kind, t.record, delta.quantity, delta.spent);
+            event = new OfferEvent(t.kind, t.record, delta.quantity, delta.spent, generation);
             snapshot = new ArrayList<>(listeners);
         }
 
