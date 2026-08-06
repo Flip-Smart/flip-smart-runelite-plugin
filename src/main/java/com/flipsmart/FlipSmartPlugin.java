@@ -858,7 +858,6 @@ public class FlipSmartPlugin extends Plugin
 			offlineSyncService, bankSnapshotService, geHistoryService, geOfferDescriptionService,
 			grandExchangeTracker, offerStore);
 
-		// Start dump alert service
 
 		// Sync webhook config to backend if configured
 		webhookSyncService.syncIfChanged();
@@ -1047,7 +1046,6 @@ public class FlipSmartPlugin extends Plugin
 		// Stop all pending one-shot timers
 		scheduler.stopAllOneShotTimers();
 
-		// Stop dump alert service
 
 		// Stop auto-recommend service and timer
 		scheduler.stopAutoRecommendRefreshTimer();
