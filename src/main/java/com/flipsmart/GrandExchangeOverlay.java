@@ -175,6 +175,33 @@ public class GrandExchangeOverlay extends Overlay
 	/**
 	 * Render the full-size overlay (original layout).
 	 */
+
+	/**
+	 * Panel background, border and centred drop-shadowed title, shared by the collapsed
+	 * header and both overlay layouts. Compact draws a single border and the small font;
+	 * the other two double the border and use bold. Sets the font, so callers needing
+	 * metrics afterwards read them from the graphics context.
+	 */
+	private void drawPanelChrome(Graphics2D graphics, int x, int y, int width, int height, int titleBaselineY,
+		boolean compact)
+	{
+		graphics.setColor(COLOR_BACKGROUND);
+		graphics.fillRect(x, y, width, height);
+		graphics.setColor(COLOR_BORDER);
+		graphics.drawRect(x, y, width, height);
+		if (!compact)
+		{
+			graphics.drawRect(x + 1, y + 1, width - 2, height - 2);
+		}
+		graphics.setFont(compact ? FontManager.getRunescapeSmallFont() : FontManager.getRunescapeBoldFont());
+		FontMetrics metrics = graphics.getFontMetrics();
+		int titleX = x + (width - metrics.stringWidth(OVERLAY_TITLE)) / 2;
+		graphics.setColor(Color.BLACK);
+		graphics.drawString(OVERLAY_TITLE, titleX + 1, titleBaselineY + 1);
+		graphics.setColor(COLOR_TITLE);
+		graphics.drawString(OVERLAY_TITLE, titleX, titleBaselineY);
+	}
+
 	private Dimension renderFull(Graphics2D graphics, GrandExchangeOffer[] offers)
 	{
 		int textWidth = 200;
@@ -189,24 +216,7 @@ public class GrandExchangeOverlay extends Overlay
 		{
 			int collapsedHeight = LINE_HEIGHT + (PADDING * 2) + COLLAPSED_EXTRA_PADDING;
 			
-			// Draw background
-			graphics.setColor(COLOR_BACKGROUND);
-			graphics.fillRect(x, y, totalWidth, collapsedHeight);
-			
-			// Draw border
-			graphics.setColor(COLOR_BORDER);
-			graphics.drawRect(x, y, totalWidth, collapsedHeight);
-			graphics.drawRect(x + 1, y + 1, totalWidth - 2, collapsedHeight - 2);
-			
-			// Draw centered title
-			graphics.setFont(FontManager.getRunescapeBoldFont());
-			FontMetrics metrics = graphics.getFontMetrics();
-			int titleX = x + (totalWidth - metrics.stringWidth(OVERLAY_TITLE)) / 2;
-			graphics.setColor(Color.BLACK);
-			graphics.drawString(OVERLAY_TITLE, titleX + 1, currentY + 1);
-			graphics.setColor(COLOR_TITLE);
-			graphics.drawString(OVERLAY_TITLE, titleX, currentY);
-			
+			drawPanelChrome(graphics, x, y, totalWidth, collapsedHeight, currentY, false);
 			// Set collapse button bounds for the entire header area
 			collapseButtonBounds = new Rectangle(x, y, totalWidth, collapsedHeight);
 			
@@ -255,29 +265,7 @@ public class GrandExchangeOverlay extends Overlay
 		int totalHeight = (lineCount * LINE_HEIGHT) + (PADDING * 2);
 		totalHeight += dividerCount * DIVIDER_SPACING;
 		totalHeight += TITLE_BOTTOM_PADDING;
-		
-		// Draw background with GE-style brown
-		graphics.setColor(COLOR_BACKGROUND);
-		graphics.fillRect(x, y, totalWidth, totalHeight);
-		
-		// Draw border
-		graphics.setColor(COLOR_BORDER);
-		graphics.drawRect(x, y, totalWidth, totalHeight);
-		graphics.drawRect(x + 1, y + 1, totalWidth - 2, totalHeight - 2);
-		
-		// Draw centered title with bold font
-		graphics.setFont(FontManager.getRunescapeBoldFont());
-		FontMetrics metrics = graphics.getFontMetrics();
-		int titleX = x + (totalWidth - metrics.stringWidth(OVERLAY_TITLE)) / 2;
-		
-		// Draw title shadow
-		graphics.setColor(Color.BLACK);
-		graphics.drawString(OVERLAY_TITLE, titleX + 1, currentY + 1);
-		
-		// Draw title text
-		graphics.setColor(COLOR_TITLE);
-		graphics.drawString(OVERLAY_TITLE, titleX, currentY);
-		
+		drawPanelChrome(graphics, x, y, totalWidth, totalHeight, currentY, false);
 		// Set collapse button bounds for the title area
 		collapseButtonBounds = new Rectangle(x, y, totalWidth, LINE_HEIGHT + PADDING);
 		
@@ -432,22 +420,8 @@ public class GrandExchangeOverlay extends Overlay
 		}
 		
 		// Draw background
-		graphics.setColor(COLOR_BACKGROUND);
-		graphics.fillRect(x, y, totalWidth, totalHeight);
-		
-		// Draw border
-		graphics.setColor(COLOR_BORDER);
-		graphics.drawRect(x, y, totalWidth, totalHeight);
-		
-		// Draw centered title
-		graphics.setFont(FontManager.getRunescapeSmallFont());
+		drawPanelChrome(graphics, x, y, totalWidth, totalHeight, currentY, true);
 		FontMetrics metrics = graphics.getFontMetrics();
-		int titleX = x + (totalWidth - metrics.stringWidth(OVERLAY_TITLE)) / 2;
-		graphics.setColor(Color.BLACK);
-		graphics.drawString(OVERLAY_TITLE, titleX + 1, currentY + 1);
-		graphics.setColor(COLOR_TITLE);
-		graphics.drawString(OVERLAY_TITLE, titleX, currentY);
-		
 		// Set collapse button bounds
 		collapseButtonBounds = new Rectangle(x, y, totalWidth, totalHeight);
 		
