@@ -10,7 +10,6 @@ import com.flipsmart.api.dto.Dtos.BlocklistsResponse;
 import com.flipsmart.api.dto.Dtos.CompletedFlipsResponse;
 import com.flipsmart.api.dto.Dtos.DeviceAuthResponse;
 import com.flipsmart.api.dto.Dtos.DeviceStatusResponse;
-import com.flipsmart.api.dto.Dtos.DumpEvent;
 import com.flipsmart.api.dto.Dtos.FavoritesResponse;
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
@@ -350,7 +349,7 @@ public class FlipSmartApiClient
 	}
 
 	// ============================================================================
-	// Market data: wiki prices, daily volume, dumps
+	// Market data: wiki prices, daily volume
 	// ============================================================================
 
 	public WikiPrice getWikiPrice(int itemId)
@@ -368,17 +367,7 @@ public class FlipSmartApiClient
 		return marketData.needsWikiPriceRefresh();
 	}
 
-	public void getDumpsAsync(String sortBy, int minProfit, int limit,
-	                          Consumer<DumpEvent[]> onSuccess,
-	                          Consumer<String> onError)
-	{
-		marketData.getDumpsAsync(sortBy, minProfit, limit, onSuccess, onError);
-	}
 
-	public void getDumpsAsync(Consumer<DumpEvent[]> onSuccess, Consumer<String> onError)
-	{
-		marketData.getDumpsAsync(onSuccess, onError);
-	}
 
 	public CompletableFuture<Integer> getDailyVolumeAsync(int itemId)
 	{

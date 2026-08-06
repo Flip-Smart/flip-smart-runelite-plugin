@@ -9,8 +9,6 @@ import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
 import com.flipsmart.api.dto.Dtos.BankSnapshotResult;
 import com.flipsmart.api.dto.Dtos.BlocklistsResponse;
 import com.flipsmart.api.dto.Dtos.CompletedFlipsResponse;
-import com.flipsmart.api.dto.Dtos.DumpEvent;
-import com.flipsmart.api.dto.Dtos.DumpsResponse;
 import com.flipsmart.api.dto.Dtos.FavoritesResponse;
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
@@ -863,7 +861,7 @@ public final class Endpoints
 	}
 
 	/**
-	 * Market-data endpoints: wiki real-time prices, per-item daily volume and dumps.
+	 * Market-data endpoints: wiki real-time prices and per-item daily volume.
 	 * Owns the wiki-price and daily-volume caches plus their in-flight dedup.
 	 */
 	@Slf4j
@@ -1023,64 +1021,7 @@ public final class Endpoints
 			return System.currentTimeMillis() - lastWikiPriceFetch.get() > WikiPrice.WIKI_PRICE_CACHE_DURATION_MS;
 		}
 
-		/**
-		 * Fetch market dumps from the API asynchronously
-		 */
-		public void getDumpsAsync(String sortBy, int minProfit, int limit,
-		                          Consumer<DumpEvent[]> onSuccess,
-		                          Consumer<String> onError)
-		{
-			transport.ensureAuthenticatedAsync().thenAccept(authSuccess ->
-			{
-				if (!authSuccess)
-				{
-					if (onError != null)
-					{
-						onError.accept("Authentication required");
-					}
-					return;
-				}
 
-				// Build query parameters
-				HttpUrl.Builder urlBuilder = HttpUrl.parse(transport.getApiUrl() + "/dumps").newBuilder();
-				if (sortBy != null && !sortBy.isEmpty())
-				{
-					urlBuilder.addQueryParameter("sort_by", sortBy);
-				}
-				if (minProfit > 0)
-				{
-					urlBuilder.addQueryParameter("min_profit", String.valueOf(minProfit));
-				}
-				if (limit > 0)
-				{
-					urlBuilder.addQueryParameter("limit", String.valueOf(limit));
-				}
-
-				Request request = transport.withAuthGet(urlBuilder.build());
-
-				transport.executeAsync(request,
-					body ->
-					{
-						DumpsResponse response = gson.fromJson(body, DumpsResponse.class);
-						if (onSuccess != null)
-						{
-							onSuccess.accept(response != null ? response.dumps : new DumpEvent[0]);
-						}
-						return null;
-					},
-					onError,
-					true // Retry on 401
-				);
-			});
-		}
-
-		/**
-		 * Fetch market dumps with default parameters (recency sort, no min profit, limit 50)
-		 */
-		public void getDumpsAsync(Consumer<DumpEvent[]> onSuccess, Consumer<String> onError)
-		{
-			getDumpsAsync("recency", 0, 50, onSuccess, onError);
-		}
 
 		/**
 		 * Fetch the 24h daily trading volume for a single item.
