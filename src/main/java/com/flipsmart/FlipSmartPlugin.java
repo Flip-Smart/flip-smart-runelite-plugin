@@ -151,8 +151,6 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private ConfigManager configManager;
 
-	@Inject
-	private DumpAlertService dumpAlertService;
 
 	@Inject
 	private OfflineSyncService offlineSyncService;
@@ -861,7 +859,6 @@ public class FlipSmartPlugin extends Plugin
 			grandExchangeTracker, offerStore);
 
 		// Start dump alert service
-		dumpAlertService.start();
 
 		// Sync webhook config to backend if configured
 		webhookSyncService.syncIfChanged();
@@ -1051,7 +1048,6 @@ public class FlipSmartPlugin extends Plugin
 		scheduler.stopAllOneShotTimers();
 
 		// Stop dump alert service
-		dumpAlertService.stop();
 
 		// Stop auto-recommend service and timer
 		scheduler.stopAutoRecommendRefreshTimer();
