@@ -114,9 +114,12 @@ public class ActiveFlipsSnapshotPushService
 		{
 			previous.cancel(false);
 		}
-		if (scheduler != null)
+		synchronized (this)
 		{
-			scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+			if (scheduler != null)
+			{
+				scheduler.shutdownNow(); // NOPMD DoNotUseThreads
+			}
 		}
 	}
 

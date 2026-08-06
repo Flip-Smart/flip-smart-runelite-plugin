@@ -103,7 +103,7 @@ public class TransactionLoggerTest
     {
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(7, 2, 1515, "Yew logs", false, 100, 300, 1700000000000L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 0, 0));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 0, 0, 1));
         TransactionRequest req = capture();
         assertEquals(1515, req.itemId);
         assertFalse(req.isBuy);
@@ -117,7 +117,7 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
             .withFill(2, 4_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L, 1));
         TransactionRequest req = capture();
         assertEquals(2, req.quantity);
         assertEquals(2_000_000, req.pricePerItem);
@@ -164,7 +164,7 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(77, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
             .withFill(2, 4_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 2, 4_000_000L, 1));
         TransactionRequest req = capture();
         assertEquals(Long.valueOf(77), req.offerId);
     }
@@ -174,8 +174,8 @@ public class TransactionLoggerTest
     {
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 1, 1L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COLLECTED, r, 0, 0));
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.NONE, r, 0, 0));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COLLECTED, r, 0, 0, 1));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.NONE, r, 0, 0, 1));
         verifyNoTransactionRecorded();
     }
 
@@ -188,7 +188,7 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 2_000_000, 1700000000000L)
             .withFill(1, 2_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 1, 2_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.PLACED, r, 1, 2_000_000L, 1));
         List<TransactionRequest> reqs = captureAll();
         assertEquals(1, reqs.size());
         assertEquals(1, reqs.get(0).quantity);
@@ -201,7 +201,7 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 2_000_000, 1700000000000L)
             .withFill(1, 2_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        OfferEvent e = new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 1, 2_000_000L);
+        OfferEvent e = new OfferEvent(OfferTransition.Kind.FILLED_DELTA, r, 1, 2_000_000L, 1);
         logger.onOfferEvent(e);
         logger.onOfferEvent(e);
         assertEquals(1, captureAll().size());
@@ -217,11 +217,11 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord first = OfferRecord.newOffer(8, 3, 11926, ITEM_NAME, true, 6, 4_000_000, 1700000000000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, first, 2, 8_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, first, 2, 8_000_000L, 1));
 
         OfferRecord reDetected = OfferRecord.newOffer(12, 3, 11926, ITEM_NAME, true, 6, 4_000_000, 1700000200000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000200500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, reDetected, 2, 8_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, reDetected, 2, 8_000_000L, 1));
 
         assertEquals(1, captureAll().size());
     }
@@ -236,11 +236,11 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord slot3 = OfferRecord.newOffer(100, 3, 11926, ITEM_NAME, true, 4, 4_000_000, 1700000000000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot3, 2, 8_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot3, 2, 8_000_000L, 1));
 
         OfferRecord slot5 = OfferRecord.newOffer(200, 5, 11926, ITEM_NAME, true, 4, 4_000_000, 1700000000000L)
             .withFill(2, 8_000_000L, OfferState.PARTIAL_FILL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot5, 2, 8_000_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, slot5, 2, 8_000_000L, 1));
 
         assertEquals(2, captureAll().size());
     }
@@ -250,7 +250,7 @@ public class TransactionLoggerTest
     {
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "x", true, 5, 1, 1L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.REJECTED, r, 0, 0));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.REJECTED, r, 0, 0, 1));
         verifyNoTransactionRecorded();
     }
 
@@ -260,7 +260,7 @@ public class TransactionLoggerTest
         TransactionLogger logger = newLogger(RSN);
         OfferRecord r = OfferRecord.newOffer(5, 3, 4151, "Abyssal whip", true, 5, 2_000_000, 1700000000000L)
             .withFill(3, 4_500L, OfferState.CANCELLED_PARTIAL, 1700000000500L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.CANCELLED, r, 3, 4_500L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.CANCELLED, r, 3, 4_500L, 1));
         TransactionRequest req = capture();
         assertEquals(3, req.quantity);
         assertEquals(1500, req.pricePerItem);
@@ -277,19 +277,19 @@ public class TransactionLoggerTest
 
         OfferRecord buyLow = OfferRecord.newOffer(1, 0, itemId, "Abyssal whip", true, 5, 1_000, 1L)
             .withFill(5, 5_000L, OfferState.FILLED, 2L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buyLow, 5, 5_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buyLow, 5, 5_000L, 1));
 
         OfferRecord sellLow = OfferRecord.newOffer(2, 1, itemId, "Abyssal whip", false, 5, 1_200, 3L)
             .withFill(5, 6_000L, OfferState.FILLED, 4L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sellLow, 5, 6_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sellLow, 5, 6_000L, 1));
 
         OfferRecord buyHigh = OfferRecord.newOffer(3, 0, itemId, "Abyssal whip", true, 5, 1_500, 5L)
             .withFill(5, 7_500L, OfferState.FILLED, 6L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buyHigh, 5, 7_500L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buyHigh, 5, 7_500L, 1));
 
         OfferRecord sellHigh = OfferRecord.newOffer(4, 1, itemId, "Abyssal whip", false, 5, 1_700, 7L)
             .withFill(5, 8_500L, OfferState.FILLED, 8L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sellHigh, 5, 8_500L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sellHigh, 5, 8_500L, 1));
 
         List<TransactionRequest> reqs = captureAll();
         assertEquals(4, reqs.size());
@@ -308,10 +308,10 @@ public class TransactionLoggerTest
 
         OfferRecord firstFill = OfferRecord.newOffer(1, 0, itemId, "Abyssal whip", true, 5, 1_000, 1L)
             .withFill(2, 2_000L, OfferState.PARTIAL_FILL, 2L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, firstFill, 2, 2_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.FILLED_DELTA, firstFill, 2, 2_000L, 1));
 
         OfferRecord secondFill = firstFill.withFill(5, 5_000L, OfferState.FILLED, 3L);
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, secondFill, 3, 3_000L));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, secondFill, 3, 3_000L, 1));
 
         List<TransactionRequest> reqs = captureAll();
         assertEquals(2, reqs.size());
@@ -328,7 +328,7 @@ public class TransactionLoggerTest
         TransactionLogger firstSession = newLogger(RSN);
         OfferRecord buy = OfferRecord.newOffer(1, 0, itemId, "Abyssal whip", true, 5, 1_000, 1L)
             .withFill(5, 5_000L, OfferState.FILLED, 2L);
-        firstSession.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buy, 5, 5_000L));
+        firstSession.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, buy, 5, 5_000L, 1));
         Integer openCycleId = captureAll().get(0).roundTripId;
 
         // Simulate a plugin restart: persist + restore the ledger, exactly as
@@ -345,7 +345,7 @@ public class TransactionLoggerTest
 
         OfferRecord sell = OfferRecord.newOffer(2, 1, itemId, "Abyssal whip", false, 5, 1_200, 10L)
             .withFill(5, 6_000L, OfferState.FILLED, 11L);
-        secondSession.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sell, 5, 6_000L));
+        secondSession.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, sell, 5, 6_000L, 1));
 
         TransactionRequest sellReq = capture();
         assertEquals("the id opened before the relog is preserved after restoring the ledger",

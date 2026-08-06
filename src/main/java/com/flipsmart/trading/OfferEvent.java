@@ -15,11 +15,6 @@ public final class OfferEvent
      *  with its successor's identity. */
     public final int slotGeneration;
 
-    public OfferEvent(OfferTransition.Kind kind, OfferRecord record, int newlyFilledQuantity, long newlySpent)
-    {
-        this(kind, record, newlyFilledQuantity, newlySpent, 0);
-    }
-
     public OfferEvent(OfferTransition.Kind kind, OfferRecord record, int newlyFilledQuantity, long newlySpent,
         int slotGeneration)
     {

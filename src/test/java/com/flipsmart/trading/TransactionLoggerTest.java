@@ -56,7 +56,7 @@ public class TransactionLoggerTest
 
     private void deliverFill(OfferRecord r, int newlyFilled, long newlySpent)
     {
-        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, r, newlyFilled, newlySpent));
+        logger.onOfferEvent(new OfferEvent(OfferTransition.Kind.COMPLETED, r, newlyFilled, newlySpent, 1));
     }
 
     private List<TransactionRequest> sentRequests(int expectedCount)
