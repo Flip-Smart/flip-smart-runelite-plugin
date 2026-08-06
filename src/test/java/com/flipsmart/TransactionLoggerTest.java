@@ -384,29 +384,32 @@ public class TransactionLoggerTest
     @Test
     public void consecutiveOrdersInOneSlotSendDistinctGenerations()
     {
+        final int waterOrbId = 571;
+        final int natureRuneId = 561;
+
         OfferStore store = new OfferStore();
         store.addListener(newLogger(RSN)::onOfferEvent);
 
-        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, 571,
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, waterOrbId,
             "Water orb", 10, 1736, 0, 0L), 1700000000000L);
-        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, 571,
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, waterOrbId,
             "Water orb", 10, 1736, 10, 17360L), 1700000001000L);
-        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.EMPTY, 571,
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.EMPTY, waterOrbId,
             "Water orb", 0, 0, 0, 0L), 1700000002000L);
-        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, 561,
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BUYING, natureRuneId,
             "Nature rune", 10, 200, 0, 0L), 1700000003000L);
-        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, 561,
+        store.apply(OfferEventMapper.toSignal(0, GrandExchangeOfferState.BOUGHT, natureRuneId,
             "Nature rune", 10, 200, 10, 2000L), 1700000004000L);
 
         Integer firstOrder = null;
         Integer secondOrder = null;
         for (TransactionRequest req : captureAll())
         {
-            if (req.itemId == 571)
+            if (req.itemId == waterOrbId)
             {
                 firstOrder = req.slotGeneration;
             }
-            else if (req.itemId == 561)
+            else if (req.itemId == natureRuneId)
             {
                 secondOrder = req.slotGeneration;
             }
