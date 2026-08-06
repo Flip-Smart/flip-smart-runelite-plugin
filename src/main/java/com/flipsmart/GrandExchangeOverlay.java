@@ -173,10 +173,6 @@ public class GrandExchangeOverlay extends Overlay
 	}
 	
 	/**
-	 * Render the full-size overlay (original layout).
-	 */
-
-	/**
 	 * Panel background, border and centred drop-shadowed title, shared by the collapsed
 	 * header and both overlay layouts. Compact draws a single border and the small font;
 	 * the other two double the border and use bold. Sets the font, so callers needing
@@ -202,6 +198,9 @@ public class GrandExchangeOverlay extends Overlay
 		graphics.drawString(OVERLAY_TITLE, titleX, titleBaselineY);
 	}
 
+	/**
+	 * Render the full-size overlay (original layout).
+	 */
 	private Dimension renderFull(Graphics2D graphics, GrandExchangeOffer[] offers)
 	{
 		int textWidth = 200;
