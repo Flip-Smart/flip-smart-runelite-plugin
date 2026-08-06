@@ -136,4 +136,22 @@ public class ActiveFlipsSnapshotPushServiceTest
 		service.scheduleSnapshotPush(() -> null);
 		verify(apiClient, after(2500).never()).pushActiveFlipsSnapshotAsync(any(), any());
 	}
+
+	/**
+	 * Mirrors the TradeStationSlotPushService regression: the service is a singleton and RuneLite
+	 * reuses the plugin instance across disable/enable, so a scheduler terminated by shutdown()
+	 * stayed terminated for the life of the client. Every snapshot push after a plugin toggle was
+	 * then rejected and swallowed, so the website's Active Flips mirror silently stopped updating.
+	 * Observed in-game on 2026-08-05, after the sibling service had already been fixed.
+	 */
+	@Test
+	public void scheduleAfterShutdownRebuildsTheExecutorInsteadOfBeingRejected()
+	{
+		service.shutdown();
+
+		service.scheduleSnapshotPush(() -> List.of(flip(4151, 0)));
+
+		// Must actually run on a rebuilt executor, not merely fail quietly in the catch block.
+		verify(apiClient, timeout(5000).times(1)).pushActiveFlipsSnapshotAsync(eq(RSN), any());
+	}
 }

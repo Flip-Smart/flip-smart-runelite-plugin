@@ -826,6 +826,7 @@ public final class Dtos
 		public final String idempotencyKey;
 		public final Long offerId;
 		public final Integer roundTripId;
+		public final Integer slotGeneration;
 
 		private TransactionRequest(Builder builder)
 		{
@@ -841,6 +842,7 @@ public final class Dtos
 			this.idempotencyKey = builder.idempotencyKey;
 			this.offerId = builder.offerId;
 			this.roundTripId = builder.roundTripId;
+			this.slotGeneration = builder.slotGeneration;
 		}
 
 		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
@@ -862,6 +864,7 @@ public final class Dtos
 			private String idempotencyKey;
 			private Long offerId;
 			private Integer roundTripId;
+			private Integer slotGeneration;
 
 			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
 			{
@@ -879,6 +882,7 @@ public final class Dtos
 			public Builder idempotencyKey(String key) { this.idempotencyKey = key; return this; }
 			public Builder offerId(Long offerId) { this.offerId = offerId; return this; }
 			public Builder roundTripId(Integer roundTripId) { this.roundTripId = roundTripId; return this; }
+			public Builder slotGeneration(Integer generation) { this.slotGeneration = generation; return this; }
 
 			public TransactionRequest build() { return new TransactionRequest(this); }
 		}
