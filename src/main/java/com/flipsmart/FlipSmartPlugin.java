@@ -687,8 +687,14 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public OfferCompetitiveness calculateCompetitiveness(int itemId, int price, boolean isBuy)
 	{
-		// Try to get real-time wiki prices first
+		// A stale pair beats a fresh single price here. instaSell and instaBuy answer
+		// different questions for buys and sells; one blended number answers neither,
+		// so switching to it mid-offer can flip the verdict on an unchanged offer.
 		WikiPrice wikiPrice = apiClient.getWikiPrice(itemId);
+		if (wikiPrice == null)
+		{
+			wikiPrice = apiClient.getLastKnownWikiPrice(itemId);
+		}
 
 		if (wikiPrice != null)
 		{
@@ -696,7 +702,7 @@ public class FlipSmartPlugin extends Plugin
 			return compareOfferPrice(price, targetPrice, isBuy);
 		}
 
-		// Fallback to GE guide price if real-time prices unavailable.
+		// Guide price only when we have never held a real pair for this item.
 		// getItemPrice requires the client thread — return UNKNOWN if called off-thread.
 		if (!client.isClientThread())
 		{

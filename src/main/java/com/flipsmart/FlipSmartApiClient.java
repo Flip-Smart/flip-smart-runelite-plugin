@@ -357,6 +357,11 @@ public class FlipSmartApiClient
 		return marketData.getWikiPrice(itemId);
 	}
 
+	public WikiPrice getLastKnownWikiPrice(int itemId)
+	{
+		return marketData.getLastKnownWikiPrice(itemId);
+	}
+
 	public void fetchWikiPrices()
 	{
 		marketData.fetchWikiPrices();
