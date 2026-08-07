@@ -232,20 +232,16 @@ public class GrandExchangeOverlay extends Overlay
 			
 			Color statusColor = getStatusColor(state, isBuy);
 
-			// Draw compact icon
-			if (config.showGEItemIcons())
+			AsyncBufferedImage itemImage = itemManager.getImage(itemId);
+			if (itemImage != null && itemImage.getWidth() > 0)
 			{
-				AsyncBufferedImage itemImage = itemManager.getImage(itemId);
-				if (itemImage != null && itemImage.getWidth() > 0)
-				{
-					int iconX = x + PADDING + COMPACT_ICON_X_OFFSET;
-					int iconY = currentY - COMPACT_ICON_SIZE + COMPACT_ICON_Y_OFFSET;
-					graphics.drawImage(itemImage, iconX, iconY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, null);
-				}
+				int iconX = x + PADDING + COMPACT_ICON_X_OFFSET;
+				int iconY = currentY - COMPACT_ICON_SIZE + COMPACT_ICON_Y_OFFSET;
+				graphics.drawImage(itemImage, iconX, iconY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, null);
 			}
 
 			// Draw item name with B/S indicator
-			int textX = x + PADDING + (config.showGEItemIcons() ? COMPACT_ICON_SIZE : 0);
+			int textX = x + PADDING + COMPACT_ICON_SIZE;
 			String displayText = (isBuy ? "B: " : "S: ") + itemName;
 			graphics.setColor(Color.BLACK);
 			graphics.drawString(displayText, textX + 1, currentY + 1);

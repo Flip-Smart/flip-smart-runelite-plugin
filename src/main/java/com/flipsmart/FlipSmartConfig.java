@@ -246,30 +246,6 @@ public interface FlipSmartConfig extends Config
 	}
 
 
-	@ConfigItem(
-		keyName = "showGEItemNames",
-		name = "Show Item Names",
-		description = "Display item names in the Exchange Viewer (Full mode only)",
-		section = displaySection,
-		position = 2
-	)
-	default boolean showGEItemNames()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "showGEItemIcons",
-		name = "Show Item Icons",
-		description = "Display item icons in the Exchange Viewer",
-		section = displaySection,
-		position = 3
-	)
-	default boolean showGEItemIcons()
-	{
-		return true;
-	}
-
 
 	@ConfigItem(
 		keyName = "showOfferTimers",
