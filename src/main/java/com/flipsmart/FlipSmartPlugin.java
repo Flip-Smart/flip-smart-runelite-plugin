@@ -30,7 +30,6 @@ import com.google.gson.Gson;
 import com.google.inject.Provides;
 import java.awt.Point;
 import java.awt.Rectangle;
-import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -77,8 +76,6 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.input.KeyManager;
-import net.runelite.client.input.MouseListener;
-import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientUI;
@@ -145,8 +142,6 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private net.runelite.client.game.ItemManager itemManager;
 
-	@Inject
-	private MouseManager mouseManager;
 
 	@Inject
 	private ConfigManager configManager;
@@ -809,7 +804,6 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.add(flipAssistOverlay);
 		overlayManager.add(inventoryHighlightOverlay);
 		clientThread.invoke(geSlotDecorator::reconcile);
-		mouseManager.registerMouseListener(overlayMouseListener);
 
 		// Initialize Flip Assist input listener for hotkey support
 		flipAssistInputListener = new FlipAssistInputListener(client, clientThread, config, flipAssistOverlay);
@@ -1018,7 +1012,6 @@ public class FlipSmartPlugin extends Plugin
 		overlayManager.remove(flipAssistOverlay);
 		overlayManager.remove(inventoryHighlightOverlay);
 		clientThread.invoke(geSlotDecorator::shutDownRevert);
-		mouseManager.unregisterMouseListener(overlayMouseListener);
 		
 		// Unregister Flip Assist input listener
 		if (flipAssistInputListener != null)
@@ -2553,71 +2546,6 @@ public class FlipSmartPlugin extends Plugin
 		return new PlayerSession();
 	}
 
-	// Mouse listener for GE overlay clicks
-	private final MouseListener overlayMouseListener = new MouseListener()
-	{
-		@Override
-		public MouseEvent mouseClicked(MouseEvent e)
-		{
-			// Get the overlay bounds
-			Rectangle overlayBounds = geOverlay.getBounds();
-			if (overlayBounds == null)
-			{
-				return e;
-			}
-			
-			// Convert absolute click to relative coordinates
-			Point relativeClick = new Point(
-				e.getX() - overlayBounds.x,
-				e.getY() - overlayBounds.y
-			);
-			
-			// Check if click is on the collapse button
-			Rectangle buttonBounds = geOverlay.getCollapseButtonBounds();
-			if (buttonBounds.contains(relativeClick))
-			{
-				geOverlay.toggleCollapse();
-				e.consume();
-			}
-			
-			return e;
-		}
-		
-		@Override
-		public MouseEvent mousePressed(MouseEvent e)
-		{
-			return e;
-		}
-		
-		@Override
-		public MouseEvent mouseReleased(MouseEvent e)
-		{
-			return e;
-		}
-		
-		@Override
-		public MouseEvent mouseEntered(MouseEvent e)
-		{
-			return e;
-		}
-		
-		@Override
-		public MouseEvent mouseExited(MouseEvent e)
-		{
-			return e;
-		}
-		
-		@Override
-		public MouseEvent mouseDragged(MouseEvent e)
-		{
-			return e;
-		}
-		
-		@Override
-		public MouseEvent mouseMoved(MouseEvent e)
-		{
-			return e;
-		}
-	};
+
 }
 

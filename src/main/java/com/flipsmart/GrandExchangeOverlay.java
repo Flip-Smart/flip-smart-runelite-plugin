@@ -33,7 +33,6 @@ import static net.runelite.client.ui.overlay.OverlayManager.OPTION_CONFIGURE;
 public class GrandExchangeOverlay extends Overlay
 {
 	private static final DecimalFormat PERCENTAGE_FORMAT = new DecimalFormat("0");
-	private static final DecimalFormat PRICE_FORMAT = new DecimalFormat("#,###");
 	
 	// String constants
 	private static final String OVERLAY_TITLE = "Exchange Viewer";
@@ -46,18 +45,10 @@ public class GrandExchangeOverlay extends Overlay
 	private static final Color COLOR_CANCELLED = new Color(200, 100, 0); // Orange
 	private static final Color COLOR_BACKGROUND = new Color(62, 53, 41); // Dark brown (GE style)
 	private static final Color COLOR_BORDER = new Color(0, 0, 0); // Black
-	private static final Color COLOR_TEXT = new Color(255, 255, 255); // White
 	private static final Color COLOR_TITLE = new Color(255, 215, 0); // Gold
 	
-	private static final Color COLOR_DIVIDER = new Color(90, 80, 65); // Brown divider
-	private static final Color COLOR_PROGRESS_BG = new Color(40, 35, 28); // Dark progress bar background
-	private static final Color COLOR_PROGRESS_BORDER = new Color(20, 18, 15); // Progress bar border
 
 	private static final int PADDING = 8;
-	private static final int LINE_HEIGHT = 17;
-	private static final int ICON_SIZE = 32;
-	private static final int PROGRESS_BAR_WIDTH = 60;
-	private static final int PROGRESS_BAR_HEIGHT = 14;
 	private static final int MAX_ITEM_NAME_LENGTH = 12;
 	
 	// Compact mode constants
@@ -65,18 +56,6 @@ public class GrandExchangeOverlay extends Overlay
 	private static final int COMPACT_ICON_SIZE = 18;
 
 	// Layout spacing constants
-	/** Extra padding added to collapsed header height */
-	private static final int COLLAPSED_EXTRA_PADDING = 4;
-	/** Spacing between offer dividers in height calculation */
-	private static final int DIVIDER_SPACING = 8;
-	/** Vertical padding after the title text */
-	private static final int TITLE_BOTTOM_PADDING = 4;
-	/** Y offset adjustment before drawing divider line */
-	private static final int DIVIDER_Y_OFFSET_BEFORE = -11;
-	/** Y offset adjustment after drawing divider line */
-	private static final int DIVIDER_Y_OFFSET_AFTER = 19;
-	/** Y offset for icon positioning above progress bar */
-	private static final int ICON_STACK_Y_OFFSET = 24;
 
 	// Compact mode spacing constants
 	/** Extra Y spacing after title in compact mode */
@@ -90,9 +69,6 @@ public class GrandExchangeOverlay extends Overlay
 	private final FlipSmartConfig config;
 	private final ItemManager itemManager;
 
-	private boolean isCollapsed = false;
-	@Getter
-	private Rectangle collapseButtonBounds = new Rectangle();
 
 	@Inject
 	private GrandExchangeOverlay(Client client, FlipSmartConfig config, ItemManager itemManager)
@@ -161,15 +137,7 @@ public class GrandExchangeOverlay extends Overlay
 		graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
 		graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 		
-		// Render based on display size mode
-		switch (config.exchangeViewerSize())
-		{
-			case COMPACT:
-				return renderCompact(graphics, offers);
-			case FULL:
-			default:
-				return renderFull(graphics, offers);
-		}
+		return renderCompact(graphics, offers);
 	}
 	
 	/**
@@ -198,194 +166,6 @@ public class GrandExchangeOverlay extends Overlay
 		graphics.drawString(OVERLAY_TITLE, titleX, titleBaselineY);
 	}
 
-	/**
-	 * Render the full-size overlay (original layout).
-	 */
-	private Dimension renderFull(Graphics2D graphics, GrandExchangeOffer[] offers)
-	{
-		int textWidth = 200;
-		int totalWidth = textWidth + (PADDING * 2);
-		
-		int x = 0;
-		int y = 0;
-		int currentY = y + PADDING + LINE_HEIGHT;
-		
-		// If collapsed, only show the header
-		if (isCollapsed)
-		{
-			int collapsedHeight = LINE_HEIGHT + (PADDING * 2) + COLLAPSED_EXTRA_PADDING;
-			
-			drawPanelChrome(graphics, x, y, totalWidth, collapsedHeight, currentY, false);
-			// Set collapse button bounds for the entire header area
-			collapseButtonBounds = new Rectangle(x, y, totalWidth, collapsedHeight);
-			
-			return new Dimension(totalWidth, collapsedHeight);
-		}
-		
-		// Count lines to calculate height (not collapsed)
-		int lineCount = 1; // Title
-		boolean hasActiveOffers = false;
-		int dividerCount = 0;
-		
-		for (int i = 0; i < offers.length; i++)
-		{
-			GrandExchangeOffer offer = offers[i];
-			if (offer.getState() == GrandExchangeOfferState.EMPTY)
-			{
-				continue;
-			}
-			
-			hasActiveOffers = true;
-			lineCount++; // Slot line
-			if (config.showGEItemNames()) lineCount++; // Item name line
-			lineCount++; // Progress bar line (always present now)
-			
-			// Check if there's another non-empty slot for divider
-			boolean needsDivider = false;
-			for (int nextSlot = i + 1; nextSlot < offers.length; nextSlot++)
-			{
-				if (offers[nextSlot].getState() != GrandExchangeOfferState.EMPTY)
-				{
-					needsDivider = true;
-					break;
-				}
-			}
-			if (needsDivider)
-			{
-				dividerCount++;
-			}
-		}
-		
-		if (!hasActiveOffers)
-		{
-			lineCount++; // "No offers" message
-		}
-		
-		int totalHeight = (lineCount * LINE_HEIGHT) + (PADDING * 2);
-		totalHeight += dividerCount * DIVIDER_SPACING;
-		totalHeight += TITLE_BOTTOM_PADDING;
-		drawPanelChrome(graphics, x, y, totalWidth, totalHeight, currentY, false);
-		// Set collapse button bounds for the title area
-		collapseButtonBounds = new Rectangle(x, y, totalWidth, LINE_HEIGHT + PADDING);
-		
-		currentY += LINE_HEIGHT;
-		currentY += TITLE_BOTTOM_PADDING;
-		
-		// Reset to regular font for content
-		graphics.setFont(FontManager.getRunescapeFont());
-		
-		// Render each slot
-		for (int slot = 0; slot < offers.length; slot++)
-		{
-			GrandExchangeOffer offer = offers[slot];
-			
-			if (offer.getState() == GrandExchangeOfferState.EMPTY)
-			{
-				continue;
-			}
-			
-			// Get offer details
-			GrandExchangeOfferState state = offer.getState();
-			int itemId = offer.getItemId();
-			int quantitySold = offer.getQuantitySold();
-			int totalQuantity = offer.getTotalQuantity();
-			int price = offer.getPrice();
-			
-			boolean isBuy = OfferSignal.isBuyState(state);
-			
-			double percentage = totalQuantity > 0 ? (quantitySold * 100.0) / totalQuantity : 0;
-			String itemName = ItemUtils.getItemName(itemManager, itemId);
-
-			// Determine status color based on offer state
-			Color statusColor = getStatusColor(state, isBuy);
-			
-			// Draw divider BEFORE this item (except for first visible)
-			if (slot > 0)
-			{
-				boolean previousWasVisible = false;
-				for (int prevSlot = slot - 1; prevSlot >= 0; prevSlot--)
-				{
-					if (offers[prevSlot].getState() != GrandExchangeOfferState.EMPTY)
-					{
-						previousWasVisible = true;
-						break;
-					}
-				}
-				
-				if (previousWasVisible)
-				{
-					currentY += DIVIDER_Y_OFFSET_BEFORE;
-					
-					graphics.setColor(COLOR_DIVIDER);
-					int dividerX1 = x + PADDING;
-					int dividerX2 = x + textWidth + PADDING;
-					graphics.drawLine(dividerX1, currentY, dividerX2, currentY);
-
-					currentY += DIVIDER_Y_OFFSET_AFTER;
-				}
-			}
-			
-			// Line 1: Slot label
-			String slotLabel = (slot + 1) + ". " + (isBuy ? "Buy" : "Sell");
-			graphics.setColor(Color.BLACK);
-			graphics.drawString(slotLabel, x + PADDING + 1, currentY + 1);
-			graphics.setColor(isBuy ? COLOR_BUY : COLOR_SELL);
-			graphics.drawString(slotLabel, x + PADDING, currentY);
-
-			currentY += LINE_HEIGHT;
-			
-			// Line 2: Item name
-			if (config.showGEItemNames())
-			{
-				graphics.setColor(Color.BLACK);
-				graphics.drawString(itemName, x + PADDING + 1, currentY + 1);
-				graphics.setColor(COLOR_TEXT);
-				graphics.drawString(itemName, x + PADDING, currentY);
-				currentY += LINE_HEIGHT;
-			}
-			
-			// Line 3: Details/Progress bar line
-			String detailText = quantitySold + "/" + totalQuantity + " @ " + PRICE_FORMAT.format(price) + " gp";
-			graphics.setColor(Color.BLACK);
-			graphics.drawString(detailText, x + PADDING + 1, currentY + 1);
-			graphics.setColor(COLOR_TEXT);
-			graphics.drawString(detailText, x + PADDING, currentY);
-			
-			// Draw progress bar
-			int progressBarX = x + textWidth - PROGRESS_BAR_WIDTH + PADDING + 2;
-			int progressBarY = currentY - PROGRESS_BAR_HEIGHT + 2;
-			
-			drawProgressBar(graphics, progressBarX, progressBarY, PROGRESS_BAR_WIDTH, PROGRESS_BAR_HEIGHT, percentage, statusColor);
-			
-			// Draw icon stacked on top of progress bar
-			if (config.showGEItemIcons())
-			{
-				AsyncBufferedImage itemImage = itemManager.getImage(itemId);
-				if (itemImage != null)
-				{
-					BufferedImage icon = itemImage;
-					if (icon.getWidth() > 0)
-					{
-						int iconX = progressBarX + (PROGRESS_BAR_WIDTH - ICON_SIZE) / 2;
-						int iconY = progressBarY - ICON_SIZE / 2 + PROGRESS_BAR_HEIGHT / 2 - ICON_STACK_Y_OFFSET;
-						graphics.drawImage(icon, iconX, iconY, ICON_SIZE, ICON_SIZE, null);
-					}
-				}
-			}
-			
-			currentY += LINE_HEIGHT;
-		}
-		
-		// No offers message
-		if (!hasActiveOffers)
-		{
-			graphics.setColor(COLOR_EMPTY);
-			drawCenteredString(graphics, NO_OFFERS_MESSAGE, x, currentY, totalWidth);
-		}
-		
-		return new Dimension(totalWidth, totalHeight);
-	}
-	
 	/**
 	 * Render the compact (mini) overlay - shows item name and percentage only.
 	 */
@@ -421,8 +201,6 @@ public class GrandExchangeOverlay extends Overlay
 		// Draw background
 		drawPanelChrome(graphics, x, y, totalWidth, totalHeight, currentY, true);
 		FontMetrics metrics = graphics.getFontMetrics();
-		// Set collapse button bounds
-		collapseButtonBounds = new Rectangle(x, y, totalWidth, totalHeight);
 		
 		currentY += COMPACT_LINE_HEIGHT + COMPACT_TITLE_SPACING;
 		
@@ -454,20 +232,16 @@ public class GrandExchangeOverlay extends Overlay
 			
 			Color statusColor = getStatusColor(state, isBuy);
 
-			// Draw compact icon
-			if (config.showGEItemIcons())
+			AsyncBufferedImage itemImage = itemManager.getImage(itemId);
+			if (itemImage != null && itemImage.getWidth() > 0)
 			{
-				AsyncBufferedImage itemImage = itemManager.getImage(itemId);
-				if (itemImage != null && itemImage.getWidth() > 0)
-				{
-					int iconX = x + PADDING + COMPACT_ICON_X_OFFSET;
-					int iconY = currentY - COMPACT_ICON_SIZE + COMPACT_ICON_Y_OFFSET;
-					graphics.drawImage(itemImage, iconX, iconY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, null);
-				}
+				int iconX = x + PADDING + COMPACT_ICON_X_OFFSET;
+				int iconY = currentY - COMPACT_ICON_SIZE + COMPACT_ICON_Y_OFFSET;
+				graphics.drawImage(itemImage, iconX, iconY, COMPACT_ICON_SIZE, COMPACT_ICON_SIZE, null);
 			}
 
 			// Draw item name with B/S indicator
-			int textX = x + PADDING + (config.showGEItemIcons() ? COMPACT_ICON_SIZE : 0);
+			int textX = x + PADDING + COMPACT_ICON_SIZE;
 			String displayText = (isBuy ? "B: " : "S: ") + itemName;
 			graphics.setColor(Color.BLACK);
 			graphics.drawString(displayText, textX + 1, currentY + 1);
@@ -496,44 +270,6 @@ public class GrandExchangeOverlay extends Overlay
 		return new Dimension(totalWidth, totalHeight);
 	}
 	
-	/**
-	 * Draw a progress bar with the given parameters.
-	 */
-	private void drawProgressBar(Graphics2D graphics, int x, int y, int width, int height, double percentage, Color fillColor)
-	{
-		// Background
-		graphics.setColor(COLOR_PROGRESS_BG);
-		graphics.fillRect(x, y, width, height);
-		
-		// Border
-		graphics.setColor(COLOR_PROGRESS_BORDER);
-		graphics.drawRect(x, y, width, height);
-		
-		// Fill
-		int fillWidth = (int) (width * (percentage / 100.0));
-		if (fillWidth > 0)
-		{
-			graphics.setColor(fillColor);
-			graphics.fillRect(x + 1, y + 1, fillWidth - 1, height - 2);
-		}
-		
-		// Percentage text centered
-		String progressText = PERCENTAGE_FORMAT.format(percentage) + "%";
-		Font originalFont = graphics.getFont();
-		graphics.setFont(FontManager.getRunescapeSmallFont());
-		
-		FontMetrics fm = graphics.getFontMetrics();
-		int progressTextWidth = fm.stringWidth(progressText);
-		int textX = x + (width - progressTextWidth) / 2;
-		int textY = y + height - 2;
-		
-		graphics.setColor(Color.BLACK);
-		graphics.drawString(progressText, textX + 1, textY + 1);
-		graphics.setColor(Color.WHITE);
-		graphics.drawString(progressText, textX, textY);
-		
-		graphics.setFont(originalFont);
-	}
 	
 	/**
 	 * Get the status color for an offer state.
@@ -563,14 +299,6 @@ public class GrandExchangeOverlay extends Overlay
 		g.drawString(text, textX, y);
 	}
 
-	public void toggleCollapse()
-	{
-		isCollapsed = !isCollapsed;
-	}
 	
-	public boolean isCollapsed()
-	{
-		return isCollapsed;
-	}
 	
 }

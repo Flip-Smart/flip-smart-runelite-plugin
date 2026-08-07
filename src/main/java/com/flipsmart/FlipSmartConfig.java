@@ -245,41 +245,6 @@ public interface FlipSmartConfig extends Config
 		return false;
 	}
 
-	@ConfigItem(
-		keyName = "exchangeViewerSize",
-		name = "Display Size",
-		description = "Size of the Exchange Viewer overlay",
-		section = displaySection,
-		position = 1
-	)
-	default ExchangeViewerSize exchangeViewerSize()
-	{
-		return ExchangeViewerSize.FULL;
-	}
-
-	@ConfigItem(
-		keyName = "showGEItemNames",
-		name = "Show Item Names",
-		description = "Display item names in the Exchange Viewer (Full mode only)",
-		section = displaySection,
-		position = 2
-	)
-	default boolean showGEItemNames()
-	{
-		return true;
-	}
-
-	@ConfigItem(
-		keyName = "showGEItemIcons",
-		name = "Show Item Icons",
-		description = "Display item icons in the Exchange Viewer",
-		section = displaySection,
-		position = 3
-	)
-	default boolean showGEItemIcons()
-	{
-		return true;
-	}
 
 
 	@ConfigItem(
@@ -596,27 +561,4 @@ public interface FlipSmartConfig extends Config
 			return displayName;
 		}
 	}
-
-	// ============================================
-	// Exchange Viewer Display Size Enum
-	// ============================================
-	enum ExchangeViewerSize
-	{
-		FULL("Full"),
-		COMPACT("Compact");
-
-		private final String displayName;
-
-		ExchangeViewerSize(String displayName)
-		{
-			this.displayName = displayName;
-		}
-
-		@Override
-		public String toString()
-		{
-			return displayName;
-		}
-	}
 }
-
