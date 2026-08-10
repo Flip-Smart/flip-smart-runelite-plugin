@@ -758,6 +758,11 @@ public final class Dtos
 		// copy in sync by hand.
 		public static final long WIKI_PRICE_CACHE_DURATION_MS = 60_000; // 1 minute cache
 
+		// Refresh ahead of expiry. When the two were equal a refetch could only begin
+		// once entries had already gone stale, so every minute there was a window where
+		// competitiveness was decided on a different basis and slot borders flipped.
+		public static final long WIKI_PRICE_REFRESH_INTERVAL_MS = 45_000;
+
 		public final int instaBuy;   // High price - what buyers pay to instant-buy
 		public final int instaSell;  // Low price - what sellers receive when instant-selling
 		public final long fetchedAt;

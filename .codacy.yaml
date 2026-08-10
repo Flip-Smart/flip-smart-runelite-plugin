@@ -29,3 +29,12 @@ exclude_paths:
   - "**/*.gif"
   - "**/*.ico"
   - "**/*.svg"
+
+engines:
+  pmd:
+    exclude_paths:
+      # setAccessible() on a private field is the idiomatic JUnit/Mockito
+      # mechanism for constructor-less field injection in tests; PMD's
+      # AvoidAccessibilityAlteration rule is a production-code security
+      # check that doesn't understand test doubles.
+      - "src/test/**"

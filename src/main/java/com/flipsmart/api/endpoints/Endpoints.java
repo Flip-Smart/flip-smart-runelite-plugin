@@ -912,13 +912,24 @@ public final class Endpoints
 		}
 
 		/**
+		 * Last known price for this item even if it has aged out, or null if we have
+		 * never held one. Callers that must compare a buy against insta-sell and a sell
+		 * against insta-buy want this: a minute-old pair still answers that question,
+		 * whereas a single blended price cannot answer it at all.
+		 */
+		public WikiPrice getLastKnownWikiPrice(int itemId)
+		{
+			return wikiPriceCache.get(itemId);
+		}
+
+		/**
 		 * Fetch all wiki prices from the API and update the cache.
 		 * This is rate-limited to once per minute.
 		 */
 		public void fetchWikiPrices()
 		{
 			long now = System.currentTimeMillis();
-			if (now - lastWikiPriceFetch.get() < WikiPrice.WIKI_PRICE_CACHE_DURATION_MS)
+			if (now - lastWikiPriceFetch.get() < WikiPrice.WIKI_PRICE_REFRESH_INTERVAL_MS)
 			{
 				return;
 			}
@@ -1018,7 +1029,7 @@ public final class Endpoints
 		 */
 		public boolean needsWikiPriceRefresh()
 		{
-			return System.currentTimeMillis() - lastWikiPriceFetch.get() > WikiPrice.WIKI_PRICE_CACHE_DURATION_MS;
+			return System.currentTimeMillis() - lastWikiPriceFetch.get() > WikiPrice.WIKI_PRICE_REFRESH_INTERVAL_MS;
 		}
 
 

@@ -75,6 +75,11 @@ public class GeSlotWidgetDecorator
     // slot index -> the state-text widget's original x position, captured before nudging it right
     private final Map<Integer, Integer> vanillaTextX = new HashMap<>();
 
+    // slot index -> the last tint we could actually decide, with the offer facts behind it.
+    // Held across an undecidable tick so the border stays put instead of dropping to vanilla;
+    // the facts stop a new offer in a recycled slot inheriting its predecessor's colour.
+    private final Map<Integer, DecidedTint> lastDecidedTint = new HashMap<>();
+
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin,
         SpriteManager spriteManager)
@@ -194,6 +199,7 @@ public class GeSlotWidgetDecorator
             GrandExchangeOffer offer = offers[slot];
             if (offer.getState() == GrandExchangeOfferState.EMPTY)
             {
+                lastDecidedTint.remove(slot);
                 revertBorder(slot, slotWidget);
                 revertStateText(slot, slotWidget);
                 continue;
@@ -297,19 +303,50 @@ public class GeSlotWidgetDecorator
             revertBorder(slot, slotWidget);
             return;
         }
+        int itemId = offer.getItemId();
+        int price = offer.getPrice();
+        boolean buy = OfferSignal.isBuyState(offer.getState());
+
         // Tint from the live slot rather than the tracked record: the check needs only item,
         // price and direction, so a gap in the store costs the timer but never the border.
         java.util.Optional<SlotBorderTint> tint = SlotBorderTint.forOffer(
-            plugin.calculateCompetitiveness(
-                offer.getItemId(), offer.getPrice(), OfferSignal.isBuyState(offer.getState())),
-            config.colorblindMode());
+            plugin.calculateCompetitiveness(itemId, price, buy), config.colorblindMode());
         if (tint.isPresent())
         {
+            lastDecidedTint.put(slot, new DecidedTint(tint.get(), itemId, price, buy));
             applyBorder(slot, slotWidget, tint.get());
+            return;
+        }
+
+        DecidedTint held = lastDecidedTint.get(slot);
+        if (held != null && held.describes(itemId, price, buy))
+        {
+            applyBorder(slot, slotWidget, held.tint);
         }
         else
         {
             revertBorder(slot, slotWidget);
+        }
+    }
+
+    private static final class DecidedTint
+    {
+        private final SlotBorderTint tint;
+        private final int itemId;
+        private final int price;
+        private final boolean buy;
+
+        DecidedTint(SlotBorderTint tint, int itemId, int price, boolean buy)
+        {
+            this.tint = tint;
+            this.itemId = itemId;
+            this.price = price;
+            this.buy = buy;
+        }
+
+        boolean describes(int otherItemId, int otherPrice, boolean otherBuy)
+        {
+            return itemId == otherItemId && price == otherPrice && buy == otherBuy;
         }
     }
 
@@ -337,5 +374,6 @@ public class GeSlotWidgetDecorator
         vanillaBorderIds.clear();
         vanillaTextAlignment.clear();
         vanillaTextX.clear();
+        lastDecidedTint.clear();
     }
 }
