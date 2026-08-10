@@ -690,11 +690,7 @@ public class FlipSmartPlugin extends Plugin
 		// A stale pair beats a fresh single price here. instaSell and instaBuy answer
 		// different questions for buys and sells; one blended number answers neither,
 		// so switching to it mid-offer can flip the verdict on an unchanged offer.
-		WikiPrice wikiPrice = apiClient.getWikiPrice(itemId);
-		if (wikiPrice == null)
-		{
-			wikiPrice = apiClient.getLastKnownWikiPrice(itemId);
-		}
+		WikiPrice wikiPrice = apiClient.getLastKnownWikiPrice(itemId);
 
 		if (wikiPrice != null)
 		{

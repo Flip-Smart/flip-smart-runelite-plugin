@@ -59,7 +59,6 @@ public class CompetitivenessPriceBasisTest
     @Test
     public void anAgedOutPair_isPreferredOverTheGuidePrice()
     {
-        when(apiClient.getWikiPrice(WHIP)).thenReturn(null);
         when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(new WikiPrice(INSTA_BUY, INSTA_SELL));
 
         assertEquals(FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE,
@@ -70,12 +69,9 @@ public class CompetitivenessPriceBasisTest
     @Test
     public void aFreshPairAndAnAgedOutPair_agreeOnTheSameOffer()
     {
-        when(apiClient.getWikiPrice(WHIP)).thenReturn(new WikiPrice(INSTA_BUY, INSTA_SELL));
+        when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(new WikiPrice(INSTA_BUY, INSTA_SELL));
 
         FlipSmartPlugin.OfferCompetitiveness fresh = plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true);
-
-        when(apiClient.getWikiPrice(WHIP)).thenReturn(null);
-        when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(new WikiPrice(INSTA_BUY, INSTA_SELL));
 
         assertEquals(fresh, plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true));
     }
@@ -83,7 +79,6 @@ public class CompetitivenessPriceBasisTest
     @Test
     public void theGuidePriceIsStillUsedWhenNoPairWasEverHeld()
     {
-        when(apiClient.getWikiPrice(WHIP)).thenReturn(null);
         when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(null);
 
         assertEquals(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE,
