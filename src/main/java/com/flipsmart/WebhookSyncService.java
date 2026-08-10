@@ -78,8 +78,9 @@ public class WebhookSyncService
 	}
 
 	/**
-	 * Pull webhook config from backend and update plugin config if needed.
-	 * Called once on login to ensure parity between web dashboard and plugin.
+	 * Pull webhook config from backend and update plugin config if needed, to keep the web
+	 * dashboard and the plugin in parity. Fires on every LOGGED_IN transition, so a world hop
+	 * or reconnect re-runs it — not once per session.
 	 */
 	public void pullFromBackend()
 	{

@@ -1367,9 +1367,9 @@ public final class Endpoints
 		/**
 		 * Execute a simple webhook API call with standard success/error callback wiring.
 		 */
-		private void executeWebhookCall(Request request, String action, Runnable onSuccess, Consumer<String> onError)
+		private void executeWebhookCall(Request.Builder request, String action, Runnable onSuccess, Consumer<String> onError)
 		{
-			transport.executeAsync(
+			transport.executeAuthenticatedAsync(
 				request,
 				jsonData -> {
 					log.debug("Webhook {} succeeded", action);
@@ -1385,8 +1385,7 @@ public final class Endpoints
 					{
 						onError.accept(error);
 					}
-				},
-				true
+				}
 			);
 		}
 
@@ -1407,10 +1406,9 @@ public final class Endpoints
 			jsonBody.addProperty("notify_flip_suggestion", notifySuggestion);
 			jsonBody.addProperty("enabled", true);
 
-			Request request = new Request.Builder()
+			Request.Builder request = new Request.Builder()
 				.url(String.format("%s%s", transport.getApiUrl(), WEBHOOK_BASE_PATH))
-				.put(RequestBody.create(JSON, jsonBody.toString()))
-				.build();
+				.put(RequestBody.create(JSON, jsonBody.toString()));
 
 			executeWebhookCall(request, "update", onSuccess, onError);
 		}
@@ -1424,12 +1422,11 @@ public final class Endpoints
 			Consumer<String> onError
 		)
 		{
-			Request request = new Request.Builder()
+			Request.Builder request = new Request.Builder()
 				.url(String.format("%s%s/url", transport.getApiUrl(), WEBHOOK_BASE_PATH))
-				.get()
-				.build();
+				.get();
 
-			transport.executeAsync(
+			transport.executeAuthenticatedAsync(
 				request,
 				jsonData -> {
 					log.debug("Webhook fetch succeeded");
@@ -1457,8 +1454,7 @@ public final class Endpoints
 							onError.accept(error);
 						}
 					}
-				},
-				true
+				}
 			);
 		}
 
@@ -1467,10 +1463,9 @@ public final class Endpoints
 		 */
 		public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
 		{
-			Request request = new Request.Builder()
+			Request.Builder request = new Request.Builder()
 				.url(String.format("%s%s", transport.getApiUrl(), WEBHOOK_BASE_PATH))
-				.delete()
-				.build();
+				.delete();
 
 			executeWebhookCall(request, "delete", onSuccess, onError);
 		}
