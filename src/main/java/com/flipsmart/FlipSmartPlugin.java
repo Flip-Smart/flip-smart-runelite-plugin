@@ -1145,6 +1145,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		pushFinalCapitalSnapshot();
 		session.onLogout();
+		webhookSyncService.onLogout();
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
 		persistAutoRecommendState();
