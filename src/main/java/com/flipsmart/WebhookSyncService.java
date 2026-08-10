@@ -31,6 +31,7 @@ public class WebhookSyncService
 	private boolean lastSyncedNotifySale = false;
 	private boolean lastSyncedNotifySuggestion = false;
 	private String lastPulledBackendUrl = null;
+	private boolean pulledThisSession;
 
 	@Inject
 	public WebhookSyncService(
@@ -78,8 +79,9 @@ public class WebhookSyncService
 	}
 
 	/**
-	 * Pull webhook config from backend and update plugin config if needed.
-	 * Called once on login to ensure parity between web dashboard and plugin.
+	 * Pull webhook config from backend and update plugin config if needed, to keep the web
+	 * dashboard and the plugin in parity. Fires on every LOGGED_IN transition, so a world hop
+	 * or reconnect re-runs it — not once per session.
 	 */
 	public void pullFromBackend()
 	{
@@ -89,6 +91,14 @@ public class WebhookSyncService
 			return;
 		}
 
+		// The answer cannot change without the player leaving the world, and most accounts have
+		// no webhook at all, so re-asking on every hop was the bulk of this endpoint's traffic.
+		if (pulledThisSession)
+		{
+			return;
+		}
+		pulledThisSession = true;
+
 		apiClient.fetchWebhookConfigAsync(
 			webhookConfig -> applyBackendConfig(
 				extractUrl(webhookConfig),
@@ -96,8 +106,20 @@ public class WebhookSyncService
 				extractNotifySuggestion(webhookConfig)
 			),
 			() -> log.debug("No webhook configured on backend"),
-			error -> log.warn("Failed to pull webhook config from backend: {}", error)
+			error -> {
+				pulledThisSession = false;
+				log.warn("Failed to pull webhook config from backend: {}", error);
+			}
 		);
+	}
+
+	/**
+	 * Allow the next login to pull again. Called from the logout transition only, which a world
+	 * hop does not pass through, so a hop reuses the pulled answer and a genuine relog refreshes it.
+	 */
+	public void onLogout()
+	{
+		pulledThisSession = false;
 	}
 
 	/**

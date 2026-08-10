@@ -150,10 +150,48 @@ public class WebhookSyncServiceTest
 		verifyNoInteractions(apiClient);
 	}
 
+	private void stubFetchFailing()
+	{
+		doAnswer(inv -> {
+			Consumer<String> onError = inv.getArgument(2);
+			onError.accept("Error 500");
+			return null;
+		}).when(apiClient).fetchWebhookConfigAsync(any(), any(), any());
+	}
+
+	/**
+	 * pullFromBackend runs on every LOGGED_IN transition, so a world hop re-entered it. The
+	 * answer cannot change without leaving the world, and most accounts have no webhook at
+	 * all, so those repeats were the bulk of the endpoint's traffic.
+	 */
 	@Test
-	public void repeatedPullsEachRequireExplicitInvocation()
+	public void aSecondPullInTheSameSessionIsSuppressed()
 	{
 		stubFetchReturning(WEBHOOK_URL_1, false, false);
+		service.pullFromBackend();
+		service.pullFromBackend();
+		verify(apiClient, times(1)).fetchWebhookConfigAsync(any(), any(), any());
+	}
+
+	/**
+	 * A genuine relog passes through the logout transition; a world hop does not. This is what
+	 * keeps dashboard-side config changes reachable without restarting the client.
+	 */
+	@Test
+	public void aPullAfterLogoutFetchesAgain()
+	{
+		stubFetchReturning(WEBHOOK_URL_1, false, false);
+		service.pullFromBackend();
+		service.onLogout();
+		service.pullFromBackend();
+		verify(apiClient, times(2)).fetchWebhookConfigAsync(any(), any(), any());
+	}
+
+	/** A transient failure must not latch the suppression until the next relog. */
+	@Test
+	public void aFailedPullIsRetriedOnTheNextTransition()
+	{
+		stubFetchFailing();
 		service.pullFromBackend();
 		service.pullFromBackend();
 		verify(apiClient, times(2)).fetchWebhookConfigAsync(any(), any(), any());

@@ -1367,10 +1367,10 @@ public final class Endpoints
 		/**
 		 * Execute a simple webhook API call with standard success/error callback wiring.
 		 */
-		private void executeWebhookCall(Request request, String action, Runnable onSuccess, Consumer<String> onError)
+		private void executeWebhookCall(Request.Builder requestBuilder, String action, Runnable onSuccess, Consumer<String> onError)
 		{
-			transport.executeAsync(
-				request,
+			transport.executeAuthenticatedAsync(
+				requestBuilder,
 				jsonData -> {
 					log.debug("Webhook {} succeeded", action);
 					if (onSuccess != null)
@@ -1385,8 +1385,7 @@ public final class Endpoints
 					{
 						onError.accept(error);
 					}
-				},
-				true
+				}
 			);
 		}
 
@@ -1407,12 +1406,11 @@ public final class Endpoints
 			jsonBody.addProperty("notify_flip_suggestion", notifySuggestion);
 			jsonBody.addProperty("enabled", true);
 
-			Request request = new Request.Builder()
+			Request.Builder requestBuilder = new Request.Builder()
 				.url(String.format("%s%s", transport.getApiUrl(), WEBHOOK_BASE_PATH))
-				.put(RequestBody.create(JSON, jsonBody.toString()))
-				.build();
+				.put(RequestBody.create(JSON, jsonBody.toString()));
 
-			executeWebhookCall(request, "update", onSuccess, onError);
+			executeWebhookCall(requestBuilder, "update", onSuccess, onError);
 		}
 
 		/**
@@ -1424,13 +1422,12 @@ public final class Endpoints
 			Consumer<String> onError
 		)
 		{
-			Request request = new Request.Builder()
+			Request.Builder requestBuilder = new Request.Builder()
 				.url(String.format("%s%s/url", transport.getApiUrl(), WEBHOOK_BASE_PATH))
-				.get()
-				.build();
+				.get();
 
-			transport.executeAsync(
-				request,
+			transport.executeAuthenticatedAsync(
+				requestBuilder,
 				jsonData -> {
 					log.debug("Webhook fetch succeeded");
 					JsonObject webhookConfig = gson.fromJson(jsonData, JsonObject.class);
@@ -1457,8 +1454,7 @@ public final class Endpoints
 							onError.accept(error);
 						}
 					}
-				},
-				true
+				}
 			);
 		}
 
@@ -1467,12 +1463,11 @@ public final class Endpoints
 		 */
 		public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
 		{
-			Request request = new Request.Builder()
+			Request.Builder requestBuilder = new Request.Builder()
 				.url(String.format("%s%s", transport.getApiUrl(), WEBHOOK_BASE_PATH))
-				.delete()
-				.build();
+				.delete();
 
-			executeWebhookCall(request, "delete", onSuccess, onError);
+			executeWebhookCall(requestBuilder, "delete", onSuccess, onError);
 		}
 	}
 
