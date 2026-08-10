@@ -3,6 +3,7 @@ package com.flipsmart;
 import com.flipsmart.api.dto.Dtos.HistoryBackfillEntry;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.trading.OfferStore;
+import com.flipsmart.util.GeTax;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -468,7 +469,7 @@ public class GEHistoryService
 		Long found = null;
 		for (OfferRecord o : candidates)
 		{
-			if (o.getItemId() == itemId && o.isBuy() == isBuy && o.getPrice() == pricePerItem)
+			if (o.getItemId() == itemId && o.isBuy() == isBuy && priceMatches(o, itemId, isBuy, pricePerItem))
 			{
 				if (found != null && found.longValue() != o.getOfferId())
 				{
@@ -478,6 +479,20 @@ public class GEHistoryService
 			}
 		}
 		return found;
+	}
+
+	/**
+	 * History reports a sell at its net price while the offer holds the listed one, so comparing
+	 * them directly never matches a taxed sell. Both forms are accepted; a row that fits two
+	 * different offers still resolves to null via the ambiguity check above.
+	 */
+	private static boolean priceMatches(OfferRecord o, int itemId, boolean isBuy, int historyPrice)
+	{
+		if (o.getPrice() == historyPrice)
+		{
+			return true;
+		}
+		return !isBuy && o.getPrice() - GeTax.taxFor(itemId, o.getPrice()) == historyPrice;
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
