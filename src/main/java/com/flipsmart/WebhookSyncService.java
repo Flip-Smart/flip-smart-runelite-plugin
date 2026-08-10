@@ -31,7 +31,7 @@ public class WebhookSyncService
 	private boolean lastSyncedNotifySale = false;
 	private boolean lastSyncedNotifySuggestion = false;
 	private String lastPulledBackendUrl = null;
-	private boolean pulledThisSession = false;
+	private boolean pulledThisSession;
 
 	@Inject
 	public WebhookSyncService(
