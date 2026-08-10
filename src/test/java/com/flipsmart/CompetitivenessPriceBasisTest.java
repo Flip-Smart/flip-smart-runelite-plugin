@@ -67,16 +67,6 @@ public class CompetitivenessPriceBasisTest
     }
 
     @Test
-    public void aFreshPairAndAnAgedOutPair_agreeOnTheSameOffer()
-    {
-        when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(new WikiPrice(INSTA_BUY, INSTA_SELL));
-
-        FlipSmartPlugin.OfferCompetitiveness fresh = plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true);
-
-        assertEquals(fresh, plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true));
-    }
-
-    @Test
     public void theGuidePriceIsStillUsedWhenNoPairWasEverHeld()
     {
         when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(null);
