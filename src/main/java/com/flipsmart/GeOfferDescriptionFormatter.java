@@ -40,12 +40,16 @@ public final class GeOfferDescriptionFormatter
 	 * @param wikiInstaBuy Wiki high price (what buyers pay to insta-buy right
 	 *                     now — the price-to-match for fast fills), or
 	 *                     {@code null}/0 when unknown — line omitted then.
+	 * @param limitResetMillis Milliseconds until the 4h buy limit resets, or
+	 *                     {@code null}/&le;0 when the item has not been bought
+	 *                     inside the window — line omitted then.
 	 * @return RuneScript-formatted description string. Lines separated by
 	 *         {@code <br>}. Daily Volume line is always present (rendering
-	 *         "N/A" when needed); the other two lines are conditionally
+	 *         "N/A" when needed); the other three lines are conditionally
 	 *         appended.
 	 */
-	public static String formatBuyDescription(Integer dailyVolume, Integer buyLimit, Integer wikiInstaBuy)
+	public static String formatBuyDescription(
+		Integer dailyVolume, Integer buyLimit, Integer wikiInstaBuy, Long limitResetMillis)
 	{
 		StringBuilder sb = new StringBuilder();
 		sb.append(formatDailyVolumeLine(dailyVolume));
@@ -58,6 +62,11 @@ public final class GeOfferDescriptionFormatter
 		if (wikiInstaBuy != null && wikiInstaBuy > 0)
 		{
 			sb.append("<br>").append(formatWikiInstaBuyLine(wikiInstaBuy));
+		}
+
+		if (limitResetMillis != null && limitResetMillis > 0)
+		{
+			sb.append("<br>").append(formatLimitResetLine(limitResetMillis));
 		}
 
 		return sb.toString();
@@ -78,6 +87,16 @@ public final class GeOfferDescriptionFormatter
 	{
 		return colorTag(COLOR_LABEL) + "Wiki insta-buy: </col>"
 			+ colorTag(COLOR_WHITE) + formatExact(wikiInstaBuy) + " gp</col>";
+	}
+
+	/** {@code H:mm} remaining, matching the stock GE plugin's limit-reset format. */
+	static String formatLimitResetLine(long millisRemaining)
+	{
+		long totalMinutes = millisRemaining / 60_000L;
+		return colorTag(COLOR_LABEL) + "Limit resets in: </col>"
+			+ colorTag(COLOR_WHITE)
+			+ String.format(Locale.ROOT, "%d:%02d", totalMinutes / 60, totalMinutes % 60)
+			+ "</col>";
 	}
 
 	/**

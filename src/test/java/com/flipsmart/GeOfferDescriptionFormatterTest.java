@@ -32,6 +32,62 @@ public class GeOfferDescriptionFormatterTest
 		assertTrue("taxable profit is post-tax", out.contains("+96 gp"));
 	}
 
+	// ---------------------------------------------------------------------
+	// Buy-limit cooldown line (#1115)
+	// ---------------------------------------------------------------------
+
+	private static final long MINUTE_MS = 60_000L;
+	private static final long HOUR_MS = 60 * MINUTE_MS;
+
+	@Test
+	public void buyDescriptionShowsCooldownWhenTheItemWasBoughtInsideTheWindow()
+	{
+		String out = GeOfferDescriptionFormatter.formatBuyDescription(
+			1000, 15, 500_000, 3 * HOUR_MS + 42 * MINUTE_MS);
+
+		assertTrue("cooldown line should render H:mm remaining",
+			out.contains("Limit resets in: </col><col=ffffff>3:42</col>"));
+		// AC2 — the cooldown sits underneath the buy limit and wiki insta-buy lines.
+		assertTrue("cooldown must be the last line",
+			out.indexOf("Limit resets in") > out.indexOf("Wiki insta-buy"));
+		assertTrue("wiki insta-buy must still follow the buy limit",
+			out.indexOf("Wiki insta-buy") > out.indexOf("Buy limit"));
+	}
+
+	@Test
+	public void buyDescriptionOmitsCooldownWhenNothingWasBoughtInTheWindow()
+	{
+		// AC5 — no purchase inside 4h means the caller passes null and no line renders.
+		String out = GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000, null);
+
+		assertTrue("no cooldown line without a recorded purchase",
+			!out.contains("Limit resets in"));
+		assertTrue("the other lines are unaffected", out.contains("Buy limit"));
+	}
+
+	@Test
+	public void buyDescriptionOmitsCooldownOnceTheWindowHasElapsed()
+	{
+		// A stale/expired reset time must not render "0:00" or a negative duration.
+		assertTrue("elapsed window renders nothing",
+			!GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000, 0L)
+				.contains("Limit resets in"));
+		assertTrue("negative remaining renders nothing",
+			!GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000, -5_000L)
+				.contains("Limit resets in"));
+	}
+
+	@Test
+	public void cooldownMinutesAreZeroPaddedAndTruncatedNotRounded()
+	{
+		// Matches DurationFormatUtils "H:mm": 1h05m, and 59s of a minute is dropped.
+		assertEquals("<col=ffb83f>Limit resets in: </col><col=ffffff>1:05</col>",
+			GeOfferDescriptionFormatter.formatLimitResetLine(HOUR_MS + 5 * MINUTE_MS + 59_000L));
+		assertEquals("sub-minute remainder truncates to 0:00",
+			"<col=ffb83f>Limit resets in: </col><col=ffffff>0:00</col>",
+			GeOfferDescriptionFormatter.formatLimitResetLine(30_000L));
+	}
+
 	@Test
 	public void exemptListItemShowsNoTaxAndPreTaxProfit()
 	{

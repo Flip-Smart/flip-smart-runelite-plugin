@@ -222,6 +222,10 @@ public class EventRouter
 
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged offerEvent)
 	{
+		if (geOfferDescriptionService != null)
+		{
+			geOfferDescriptionService.recordBuyLimitWindow(offerEvent.getOffer());
+		}
 		// Delegated back to the plugin: the body builds GrandExchangeTracker.OfferContext,
 		// a package-private nested type, so it stays in the com.flipsmart package.
 		plugin.onGrandExchangeOfferChangedHandler(offerEvent);

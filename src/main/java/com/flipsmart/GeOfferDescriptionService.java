@@ -16,11 +16,14 @@ import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.ItemStats;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -61,6 +64,19 @@ public class GeOfferDescriptionService
 	private static final int DETAILS_DESC_LEFT_SHIFT_PX = 10;
 	private final Set<Integer> shiftedDescIds = new HashSet<>();
 
+	// When each item's 4h buy limit resets, recorded per RS profile off the first
+	// unit bought. The stock Grand Exchange plugin keeps the same record, so its
+	// copy is read as a fallback — but it can be switched off, and then only ours
+	// exists. Both are consulted; whichever expires later wins.
+	private static final String OUR_CONFIG_GROUP = "flipsmart";
+	private static final String GE_CONFIG_GROUP = "grandexchange";
+	private static final String BUY_LIMIT_KEY_PREFIX = "buylimit.";
+
+	// Snapshotted per item and held until the GE is reopened, so the per-frame
+	// description rebuild does not deserialize the stored Instant every frame.
+	private int cachedLimitResetItemId = -1;
+	private Instant cachedLimitReset;
+
 	// Slot the user explicitly clicked to open the offer-status panel.
 	// GE_SELECTEDSLOT tracks the *hovered* slot tile rather than the open
 	// panel, so we capture clicks via onMenuOptionClicked instead.
@@ -73,6 +89,7 @@ public class GeOfferDescriptionService
 	private final FlipSmartPlugin plugin;
 	private final ItemManager itemManager;
 	private final FlipAssistOverlay flipAssistOverlay;
+	private final ConfigManager configManager;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -81,7 +98,8 @@ public class GeOfferDescriptionService
 		FlipSmartApiClient apiClient,
 		FlipSmartPlugin plugin,
 		ItemManager itemManager,
-		FlipAssistOverlay flipAssistOverlay)
+		FlipAssistOverlay flipAssistOverlay,
+		ConfigManager configManager)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
@@ -89,6 +107,7 @@ public class GeOfferDescriptionService
 		this.plugin = plugin;
 		this.itemManager = itemManager;
 		this.flipAssistOverlay = flipAssistOverlay;
+		this.configManager = configManager;
 	}
 
 	// ---------------------------------------------------------------------
@@ -186,6 +205,7 @@ public class GeOfferDescriptionService
 	public void onGeOffersWidgetLoaded()
 	{
 		lastClickedSlot = -1;
+		cachedLimitResetItemId = -1;
 	}
 
 	// ---------------------------------------------------------------------
@@ -462,7 +482,80 @@ public class GeOfferDescriptionService
 		}
 
 		return GeOfferDescriptionFormatter.formatBuyDescription(
-			dailyVolume, lookupBuyLimit(itemId), lookupWikiInstaBuy(itemId));
+			dailyVolume, lookupBuyLimit(itemId), lookupWikiInstaBuy(itemId),
+			lookupLimitResetMillis(itemId));
+	}
+
+	/**
+	 * Milliseconds until the item's 4h buy limit resets, or {@code null} when
+	 * nothing was bought inside the window. The stored value is snapshotted per
+	 * item; the remaining time is still derived from the current clock, so an
+	 * open panel stays truthful without re-reading config each frame.
+	 */
+	Long lookupLimitResetMillis(int itemId)
+	{
+		if (cachedLimitResetItemId != itemId)
+		{
+			cachedLimitReset = readStoredLimitReset(itemId);
+			cachedLimitResetItemId = itemId;
+		}
+		if (cachedLimitReset == null)
+		{
+			return null;
+		}
+		long remaining = Duration.between(Instant.now(), cachedLimitReset).toMillis();
+		return remaining > 0 ? remaining : null;
+	}
+
+	private Instant readStoredLimitReset(int itemId)
+	{
+		Instant ours = readLimitReset(OUR_CONFIG_GROUP, itemId);
+		Instant stock = readLimitReset(GE_CONFIG_GROUP, itemId);
+		return ours == null || (stock != null && stock.isAfter(ours)) ? stock : ours;
+	}
+
+	private Instant readLimitReset(String group, int itemId)
+	{
+		try
+		{
+			return (Instant) configManager.getRSProfileConfiguration(
+				group, BUY_LIMIT_KEY_PREFIX + itemId, Instant.class);
+		}
+		catch (Exception e)
+		{
+			return null;
+		}
+	}
+
+	/**
+	 * Opens the 4h window on the first unit bought, matching the stock plugin's
+	 * rule so the two records agree. An already-running window is left alone —
+	 * later fills on the same offer must not push the reset back.
+	 */
+	public void recordBuyLimitWindow(GrandExchangeOffer offer)
+	{
+		if (offer == null)
+		{
+			return;
+		}
+		GrandExchangeOfferState state = offer.getState();
+		if (state != GrandExchangeOfferState.BOUGHT
+			&& !(state == GrandExchangeOfferState.BUYING && offer.getQuantitySold() > 0))
+		{
+			return;
+		}
+		int itemId = offer.getItemId();
+		Instant existing = readStoredLimitReset(itemId);
+		if (existing != null && existing.isAfter(Instant.now()))
+		{
+			return;
+		}
+		configManager.setRSProfileConfiguration(
+			OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, Instant.now().plus(Duration.ofHours(4)));
+		if (cachedLimitResetItemId == itemId)
+		{
+			cachedLimitResetItemId = -1;
+		}
 	}
 
 	private void refreshSetupBuyDescription(int itemId)
