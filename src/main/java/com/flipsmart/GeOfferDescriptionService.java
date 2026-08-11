@@ -90,6 +90,7 @@ public class GeOfferDescriptionService
 	private final ItemManager itemManager;
 	private final FlipAssistOverlay flipAssistOverlay;
 	private final ConfigManager configManager;
+	private final FlipSmartConfig config;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -99,7 +100,8 @@ public class GeOfferDescriptionService
 		FlipSmartPlugin plugin,
 		ItemManager itemManager,
 		FlipAssistOverlay flipAssistOverlay,
-		ConfigManager configManager)
+		ConfigManager configManager,
+		FlipSmartConfig config)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
@@ -108,6 +110,7 @@ public class GeOfferDescriptionService
 		this.itemManager = itemManager;
 		this.flipAssistOverlay = flipAssistOverlay;
 		this.configManager = configManager;
+		this.config = config;
 	}
 
 	// ---------------------------------------------------------------------
@@ -116,6 +119,7 @@ public class GeOfferDescriptionService
 
 	public boolean onScriptCallbackEvent(ScriptCallbackEvent event)
 	{
+		if (!config.showGeItemInfo()) return false;
 		String name = event.getEventName();
 		if (EVENT_BUY_EXAMINE.equals(name))
 		{
@@ -175,6 +179,7 @@ public class GeOfferDescriptionService
 
 	public void onSetupBuildScriptPostFired()
 	{
+		if (!config.showGeItemInfo()) return;
 		hideAndTransparent(InterfaceID.GeOffers.SETUP_GRAPHIC4);
 		hideAndTransparent(InterfaceID.GeOffers.SETUP_FEE);
 	}
@@ -214,6 +219,9 @@ public class GeOfferDescriptionService
 
 	public void onBeforeRender(BeforeRender event)
 	{
+		// Ceasing the per-frame write is the whole revert: Jagex's own script
+		// repaints the description on the next panel build.
+		if (!config.showGeItemInfo()) return;
 		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
 		Widget detailsDesc = client.getWidget(InterfaceID.GeOffers.DETAILS_DESC);
 		if (setupDesc == null && detailsDesc == null)
@@ -562,6 +570,8 @@ public class GeOfferDescriptionService
 	{
 		clientThread.invoke(() ->
 		{
+			// The volume fetch can land after the player switches the override off.
+			if (!config.showGeItemInfo()) return;
 			if (client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH) != itemId)
 			{
 				return;

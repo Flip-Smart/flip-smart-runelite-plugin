@@ -245,7 +245,17 @@ public interface FlipSmartConfig extends Config
 		return false;
 	}
 
-
+	@ConfigItem(
+		keyName = "showGeItemInfo",
+		name = "Show Item Info",
+		description = "Show breakeven, tax and profit on the GE offer screen",
+		section = displaySection,
+		position = 1
+	)
+	default boolean showGeItemInfo()
+	{
+		return true;
+	}
 
 	@ConfigItem(
 		keyName = "showOfferTimers",
