@@ -169,6 +169,51 @@ public class GEHistoryServiceTest
 		assertEquals(Long.valueOf(42), GEHistoryService.matchOfferId(Arrays.asList(same, same), 28924, false, 384));
 	}
 
+	/**
+	 * GE History reports the NET price on a sell; the offer holds the LISTED price. Matching the
+	 * two directly means a taxed sell can never resolve its offer, so every sell row falls through
+	 * to the backend's item-level path where distinct orders share one key. Measured on the dev
+	 * DB before this fix: 351 of 351 sell backfill rows had a null offer_id (buys, untaxed, 85%).
+	 */
+	@Test
+	public void matchOfferId_sellMatchesOnTheNetPriceHistoryActuallyReports()
+	{
+		// Steel cannonball listed at 290; 2% tax floors to 5, so History shows 285.
+		List<OfferRecord> candidates = Collections.singletonList(offer(42, 2, false, 11000, 290));
+		assertEquals(Long.valueOf(42), GEHistoryService.matchOfferId(candidates, 2, false, 285));
+	}
+
+	/** The listed price must keep matching — tax-exempt items report it unchanged. */
+	@Test
+	public void matchOfferId_sellStillMatchesOnTheListedPriceWhenUntaxed()
+	{
+		List<OfferRecord> candidates = Collections.singletonList(offer(42, 2, false, 100, 40));
+		assertEquals(Long.valueOf(42), GEHistoryService.matchOfferId(candidates, 2, false, 40));
+	}
+
+	/** Buys are never taxed, so a net-price allowance must not loosen them. */
+	@Test
+	public void matchOfferId_buyIsUnaffectedByTheNetPriceAllowance()
+	{
+		List<OfferRecord> candidates = Collections.singletonList(offer(42, 2, true, 11000, 290));
+		assertNull(GEHistoryService.matchOfferId(candidates, 2, true, 285));
+		assertEquals(Long.valueOf(42), GEHistoryService.matchOfferId(candidates, 2, true, 290));
+	}
+
+	/**
+	 * The conservative contract holds: if one offer's listed price and another's net price both
+	 * land on the History row, that is genuine ambiguity and must stay unresolved rather than
+	 * guess. A wrong offer_id is worse than none.
+	 */
+	@Test
+	public void matchOfferId_listedAndNetPriceCollisionIsStillAmbiguous()
+	{
+		List<OfferRecord> candidates = Arrays.asList(
+			offer(42, 2, false, 11000, 290),   // net 285
+			offer(43, 2, false, 5000, 285));   // listed 285
+		assertNull(GEHistoryService.matchOfferId(candidates, 2, false, 285));
+	}
+
 	// ----- prompt de-nag: only prompt when GE data is genuinely missing (#759) -----
 
 	private ChatMessageManager chatMessageManager;
