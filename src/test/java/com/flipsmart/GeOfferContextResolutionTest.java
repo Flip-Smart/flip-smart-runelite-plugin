@@ -9,6 +9,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import org.junit.Test;
 
@@ -65,7 +66,8 @@ public class GeOfferContextResolutionTest
 			mock(FlipSmartApiClient.class),
 			mock(FlipSmartPlugin.class),
 			mock(ItemManager.class),
-			overlay);
+			overlay,
+			mock(ConfigManager.class));
 	}
 
 	/** Puts an in-flight offer for {@code itemId} on {@code slot} and selects that slot. */
