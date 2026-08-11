@@ -283,9 +283,14 @@ public class GeSlotWidgetDecorator
         int color = timerColor(complete);
 
         Widget timer = timerWidget(slot, slotWidget, stateText);
-        if (timer.isHidden() || timer.getTextColor() != color || !elapsed.equals(timer.getText()))
+        // Re-checked every pass, not just at creation: the slot can report width 0 while the
+        // interface is still building, and a timer left at that width would never draw.
+        int width = Math.max(0, slotWidget.getWidth() - TIMER_INSET_X);
+        if (timer.isHidden() || timer.getOriginalWidth() != width
+            || timer.getTextColor() != color || !elapsed.equals(timer.getText()))
         {
             timer.setHidden(false);
+            timer.setOriginalWidth(width);
             timer.setTextColor(color);
             timer.setText(elapsed);
             timer.revalidate();

@@ -98,6 +98,24 @@ public class GeSlotStateTextLayoutTest
             timer.widget.getText().matches("\\d+:\\d{2}"));
     }
 
+    /**
+     * The slot reports width 0 while the interface is still building. A timer created inside that
+     * window must adopt the real width on a later pass instead of staying invisible for good.
+     */
+    @Test
+    public void aTimerCreatedBeforeTheSlotHasAWidthRecoversOnTheNextPass()
+    {
+        when(slotWidget.getWidth()).thenReturn(0);
+        decorator.applyStateText(SLOT, slotWidget, offer(GrandExchangeOfferState.BUYING), running());
+        assertEquals("nothing to draw into yet", 0, timer.widget.getOriginalWidth());
+
+        when(slotWidget.getWidth()).thenReturn(SLOT_WIDTH);
+        decorator.applyStateText(SLOT, slotWidget, offer(GrandExchangeOfferState.BUYING), running());
+
+        assertEquals("timer adopts the slot's width once the slot has one",
+            SLOT_WIDTH - 4, timer.widget.getOriginalWidth());
+    }
+
     /** The label carries the bare state word — the timer is no longer glued onto it. */
     @Test
     public void labelDoesNotCarryTheTimerText()
