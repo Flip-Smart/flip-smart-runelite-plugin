@@ -116,6 +116,20 @@ public class BuyLimitWindowTest
 	}
 
 	@Test
+	public void aWindowTheStockPluginAlreadyOpenedIsNotRestarted()
+	{
+		// Cold start: we were installed mid-window, so only the stock plugin has a
+		// record. Minting our own here would report a fresh 4h against a window
+		// with one hour left — the GE does not extend on later purchases.
+		stubStored(OUR_GROUP, null);
+		stubStored(STOCK_GROUP, Instant.now().plus(Duration.ofHours(1)));
+
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 5));
+
+		verify(configManager, never()).setRSProfileConfiguration(any(), any(), any());
+	}
+
+	@Test
 	public void anExpiredWindowIsReopenedByTheNextPurchase()
 	{
 		stubStored(OUR_GROUP, Instant.now().minus(Duration.ofMinutes(1)));

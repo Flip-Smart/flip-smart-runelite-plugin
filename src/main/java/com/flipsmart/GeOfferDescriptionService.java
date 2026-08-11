@@ -206,7 +206,6 @@ public class GeOfferDescriptionService
 	{
 		lastClickedSlot = -1;
 		cachedLimitResetItemId = -1;
-		cachedLimitReset = null;
 	}
 
 	// ---------------------------------------------------------------------
@@ -546,7 +545,7 @@ public class GeOfferDescriptionService
 			return;
 		}
 		int itemId = offer.getItemId();
-		Instant existing = readLimitReset(OUR_CONFIG_GROUP, itemId);
+		Instant existing = readStoredLimitReset(itemId);
 		if (existing != null && existing.isAfter(Instant.now()))
 		{
 			return;
