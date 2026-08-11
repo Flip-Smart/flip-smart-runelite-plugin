@@ -67,7 +67,8 @@ public class GeOfferContextResolutionTest
 			mock(FlipSmartPlugin.class),
 			mock(ItemManager.class),
 			overlay,
-			mock(ConfigManager.class));
+			mock(ConfigManager.class),
+			mock(FlipSmartConfig.class));
 	}
 
 	/** Puts an in-flight offer for {@code itemId} on {@code slot} and selects that slot. */

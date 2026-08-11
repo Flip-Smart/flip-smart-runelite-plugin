@@ -53,7 +53,8 @@ public class BuyLimitWindowTest
 			mock(FlipSmartPlugin.class),
 			mock(ItemManager.class),
 			mock(FlipAssistOverlay.class),
-			configManager);
+			configManager,
+			mock(FlipSmartConfig.class));
 	}
 
 	private static GrandExchangeOffer offer(GrandExchangeOfferState state, int quantitySold)
