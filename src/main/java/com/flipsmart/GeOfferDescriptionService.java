@@ -68,7 +68,6 @@ public class GeOfferDescriptionService
 	// unit bought. The stock Grand Exchange plugin keeps the same record, so its
 	// copy is read as a fallback — but it can be switched off, and then only ours
 	// exists. Both are consulted; whichever expires later wins.
-	static final Duration BUY_LIMIT_WINDOW = Duration.ofHours(4);
 	private static final String OUR_CONFIG_GROUP = "flipsmart";
 	private static final String GE_CONFIG_GROUP = "grandexchange";
 	private static final String BUY_LIMIT_KEY_PREFIX = "buylimit.";
@@ -513,11 +512,7 @@ public class GeOfferDescriptionService
 	{
 		Instant ours = readLimitReset(OUR_CONFIG_GROUP, itemId);
 		Instant stock = readLimitReset(GE_CONFIG_GROUP, itemId);
-		if (ours == null)
-		{
-			return stock;
-		}
-		return (stock == null || ours.isAfter(stock)) ? ours : stock;
+		return ours == null || (stock != null && stock.isAfter(ours)) ? stock : ours;
 	}
 
 	private Instant readLimitReset(String group, int itemId)
@@ -540,7 +535,13 @@ public class GeOfferDescriptionService
 	 */
 	public void recordBuyLimitWindow(GrandExchangeOffer offer)
 	{
-		if (offer == null || !hasBoughtAtLeastOneUnit(offer))
+		if (offer == null)
+		{
+			return;
+		}
+		GrandExchangeOfferState state = offer.getState();
+		if (state != GrandExchangeOfferState.BOUGHT
+			&& !(state == GrandExchangeOfferState.BUYING && offer.getQuantitySold() > 0))
 		{
 			return;
 		}
@@ -550,26 +551,12 @@ public class GeOfferDescriptionService
 		{
 			return;
 		}
-		try
+		configManager.setRSProfileConfiguration(
+			OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, Instant.now().plus(Duration.ofHours(4)));
+		if (cachedLimitResetItemId == itemId)
 		{
-			configManager.setRSProfileConfiguration(
-				OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, Instant.now().plus(BUY_LIMIT_WINDOW));
-			if (cachedLimitResetItemId == itemId)
-			{
-				cachedLimitResetItemId = -1;
-			}
+			cachedLimitResetItemId = -1;
 		}
-		catch (Exception e)
-		{
-			log.debug("Could not record buy limit window for {}: {}", itemId, e.getMessage());
-		}
-	}
-
-	static boolean hasBoughtAtLeastOneUnit(GrandExchangeOffer offer)
-	{
-		GrandExchangeOfferState state = offer.getState();
-		return state == GrandExchangeOfferState.BOUGHT
-			|| (state == GrandExchangeOfferState.BUYING && offer.getQuantitySold() > 0);
 	}
 
 	private void refreshSetupBuyDescription(int itemId)

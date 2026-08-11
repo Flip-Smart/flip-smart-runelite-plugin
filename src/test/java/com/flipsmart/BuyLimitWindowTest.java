@@ -8,11 +8,11 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
 
-import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
@@ -187,8 +187,18 @@ public class BuyLimitWindowTest
 	}
 
 	@Test
-	public void theWindowIsFourHoursLong()
+	public void theRecordedResetIsFourHoursFromTheFirstFill()
 	{
-		assertEquals(Duration.ofHours(4), GeOfferDescriptionService.BUY_LIMIT_WINDOW);
+		// Asserting the value actually written, not that a 4h constant equals 4h.
+		Instant before = Instant.now();
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 1));
+
+		ArgumentCaptor<Object> written = ArgumentCaptor.forClass(Object.class);
+		verify(configManager).setRSProfileConfiguration(eq(OUR_GROUP), eq(KEY), written.capture());
+
+		Instant reset = (Instant) written.getValue();
+		long minutesOut = Duration.between(before, reset).toMinutes();
+		assertTrue("reset should land ~4h out, got " + minutesOut + "m",
+			minutesOut >= 239 && minutesOut <= 240);
 	}
 }
