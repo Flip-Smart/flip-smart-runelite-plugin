@@ -283,24 +283,11 @@ public class GeSlotWidgetDecorator
         int color = timerColor(complete);
 
         Widget timer = timerWidget(slot, slotWidget, stateText);
-        boolean changed = false;
-        if (timer.isHidden())
+        if (timer.isHidden() || timer.getTextColor() != color || !elapsed.equals(timer.getText()))
         {
             timer.setHidden(false);
-            changed = true;
-        }
-        if (!elapsed.equals(timer.getText()))
-        {
-            timer.setText(elapsed);
-            changed = true;
-        }
-        if (timer.getTextColor() != color)
-        {
             timer.setTextColor(color);
-            changed = true;
-        }
-        if (changed)
-        {
+            timer.setText(elapsed);
             timer.revalidate();
         }
     }
@@ -333,8 +320,8 @@ public class GeSlotWidgetDecorator
      */
     private Widget timerWidget(int slot, Widget slotWidget, Widget stateText)
     {
-        Widget cached = timerWidgets.get(slot);
-        if (isAttached(slotWidget, cached))
+        Widget cached = attachedTimer(slot, slotWidget);
+        if (cached != null)
         {
             return cached;
         }
@@ -344,9 +331,12 @@ public class GeSlotWidgetDecorator
         created.setTextShadowed(stateText.getTextShadowed());
         created.setYTextAlignment(stateText.getYTextAlignment());
         created.setXTextAlignment(WidgetTextAlignment.RIGHT);
-        created.setOriginalX(vanillaTextX.getOrDefault(slot, stateText.getOriginalX()));
+        // The vanilla label auto-sizes and reports originalWidth 0, so the timer's box has to span
+        // the slot itself: right-aligned inside it, a longer duration grows leftward from a fixed
+        // right edge instead of pushing into the neighbouring slot.
+        created.setOriginalX(0);
         created.setOriginalY(stateText.getOriginalY());
-        created.setOriginalWidth(Math.max(0, stateText.getOriginalWidth() - TIMER_INSET_X));
+        created.setOriginalWidth(Math.max(0, slotWidget.getWidth() - TIMER_INSET_X));
         created.setOriginalHeight(stateText.getOriginalHeight());
         created.revalidate();
         timerWidgets.put(slot, created);
@@ -355,8 +345,8 @@ public class GeSlotWidgetDecorator
 
     private void hideTimer(int slot, Widget slotWidget)
     {
-        Widget timer = timerWidgets.get(slot);
-        if (!isAttached(slotWidget, timer) || timer.isHidden())
+        Widget timer = attachedTimer(slot, slotWidget);
+        if (timer == null || timer.isHidden())
         {
             return;
         }
@@ -365,25 +355,23 @@ public class GeSlotWidgetDecorator
         timer.revalidate();
     }
 
-    private static boolean isAttached(Widget parent, Widget child)
+    // Our child survived the last slot rebuild only if it is still among the parent's children.
+    // An orphaned reference means "build a fresh one", not "give up".
+    private Widget attachedTimer(int slot, Widget slotWidget)
     {
-        if (child == null)
+        Widget cached = timerWidgets.get(slot);
+        Widget[] children = cached == null ? null : slotWidget.getChildren();
+        if (children != null)
         {
-            return false;
-        }
-        Widget[] children = parent.getChildren();
-        if (children == null)
-        {
-            return false;
-        }
-        for (Widget candidate : children)
-        {
-            if (candidate == child)
+            for (Widget candidate : children)
             {
-                return true;
+                if (candidate == cached)
+                {
+                    return cached;
+                }
             }
         }
-        return false;
+        return null;
     }
 
     void revertStateText(int slot, Widget slotWidget)

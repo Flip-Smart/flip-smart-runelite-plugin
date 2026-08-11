@@ -33,7 +33,12 @@ import static org.mockito.Mockito.when;
 public class GeSlotStateTextLayoutTest
 {
     private static final int SLOT = 0;
-    private static final int LABEL_BOX_WIDTH = 115;
+    private static final int SLOT_WIDTH = 115;
+
+    // The live client reports originalWidth 0 for the state text — it auto-sizes to its content.
+    // Stubbing a real width here once hid a bug where the timer inherited a zero-width box and
+    // never rendered, so this must stay 0.
+    private static final int VANILLA_LABEL_WIDTH = 0;
     private static final int LABEL_BOX_HEIGHT = 25;
     private static final int VANILLA_LABEL_X = 0;
 
@@ -49,10 +54,11 @@ public class GeSlotStateTextLayoutTest
             mock(FlipSmartPlugin.class), mock(SpriteManager.class));
 
         // Vanilla state text is centred; the decorator left-aligns it while timers are on.
-        label = new FakeText(VANILLA_LABEL_X, LABEL_BOX_WIDTH, WidgetTextAlignment.CENTER);
+        label = new FakeText(VANILLA_LABEL_X, VANILLA_LABEL_WIDTH, WidgetTextAlignment.CENTER);
         timer = new FakeText(0, 0, WidgetTextAlignment.LEFT);
 
         slotWidget = mock(Widget.class);
+        when(slotWidget.getWidth()).thenReturn(SLOT_WIDTH);
         when(slotWidget.getChild(GeSlotWidgetDecorator.STATE_TEXT_CHILD)).thenReturn(label.widget);
         when(slotWidget.createChild(WidgetType.TEXT)).thenAnswer(i ->
         {
@@ -87,7 +93,7 @@ public class GeSlotStateTextLayoutTest
         assertEquals(WidgetTextAlignment.RIGHT, timer.widget.getXTextAlignment());
         int timerBoxRightEdge = timer.widget.getOriginalX() + timer.widget.getOriginalWidth();
         assertEquals("timer's right edge is anchored just inside the slot's right border",
-            VANILLA_LABEL_X + LABEL_BOX_WIDTH - 4, timerBoxRightEdge);
+            SLOT_WIDTH - 4, timerBoxRightEdge);
         assertTrue("timer should render a duration, was " + timer.widget.getText(),
             timer.widget.getText().matches("\\d+:\\d{2}"));
     }
