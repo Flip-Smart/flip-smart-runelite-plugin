@@ -469,7 +469,7 @@ public class GEHistoryService
 		Long found = null;
 		for (OfferRecord o : candidates)
 		{
-			if (o.getItemId() == itemId && o.isBuy() == isBuy && priceMatches(o, itemId, isBuy, pricePerItem))
+			if (o.getItemId() == itemId && o.isBuy() == isBuy && priceMatches(o, pricePerItem))
 			{
 				if (found != null && found.longValue() != o.getOfferId())
 				{
@@ -486,13 +486,13 @@ public class GEHistoryService
 	 * them directly never matches a taxed sell. Both forms are accepted; a row that fits two
 	 * different offers still resolves to null via the ambiguity check above.
 	 */
-	private static boolean priceMatches(OfferRecord o, int itemId, boolean isBuy, int historyPrice)
+	private static boolean priceMatches(OfferRecord o, int historyPrice)
 	{
 		if (o.getPrice() == historyPrice)
 		{
 			return true;
 		}
-		return !isBuy && o.getPrice() - GeTax.taxFor(itemId, o.getPrice()) == historyPrice;
+		return !o.isBuy() && o.getPrice() - GeTax.taxFor(o.getItemId(), o.getPrice()) == historyPrice;
 	}
 
 	private void backfillOfflineFills(List<GEHistoryEntry> entries)
