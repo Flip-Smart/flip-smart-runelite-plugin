@@ -174,6 +174,22 @@ public final class PanelFormat
 		return String.format(FORMAT_PROFIT_COST, profitText, formatGP(totalCost));
 	}
 
+	/** Which side of the flip a card is showing, coloured to match the price row. */
+	public static String actionBuyingHtml()
+	{
+		return actionHtml(HEX_PRICE_LOW, "Buying");
+	}
+
+	public static String actionSellingHtml()
+	{
+		return actionHtml(HEX_PRICE_HIGH, "Selling");
+	}
+
+	private static String actionHtml(String hex, String action)
+	{
+		return htmlRow("Action: " + bold(coloured(hex, action)));
+	}
+
 	/** Top "live" price row: market low (blue) | market high (orange), both bold; label stays plain. */
 	public static String livePriceHtml(int low, int high)
 	{
