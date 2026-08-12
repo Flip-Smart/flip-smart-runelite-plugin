@@ -9,6 +9,7 @@ import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
+import net.runelite.api.widgets.WidgetType;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.util.ImageUtil;
 
@@ -49,10 +50,18 @@ public class GeSlotWidgetDecorator
     // Blend strength for the item-box fill: 0.5 keeps it light so the native texture shows through.
     private static final double TINT_STRENGTH = 0.5;
 
-    // "Buy"/"Sell"/"Empty" state-text child. We left-align it, nudge it a few px off the border,
-    // and append the color-tagged timer after the label.
+    // "Buy"/"Sell"/"Empty" state-text child. We left-align it and pull it tight to the slot's
+    // left border; the timer lives in its own child so the two never push each other around.
     static final int STATE_TEXT_CHILD = 16;
-    private static final int STATE_TEXT_INSET_X = 12;
+    private static final int STATE_TEXT_INSET_X = 4;
+
+    // The timer child is right-aligned inside the label's box less this padding, so a longer
+    // duration extends leftward and its right edge never crosses into the neighbouring slot.
+    private static final int TIMER_INSET_X = 4;
+
+    private static final int TIMER_COLOR_RUNNING = 0xFFFFFF;
+    private static final int TIMER_COLOR_COMPLETE = 0x4CBB17;
+    private static final int TIMER_COLOR_COMPLETE_COLORBLIND = 0x0066CC;
 
     // Custom sprite-id namespace: high base to avoid colliding with game sprite ids.
     private static final int CUSTOM_SPRITE_BASE = 0x7F00_0000;
@@ -72,13 +81,16 @@ public class GeSlotWidgetDecorator
     // slot index -> the state-text widget's original x-alignment, captured before left-aligning it
     private final Map<Integer, Integer> vanillaTextAlignment = new HashMap<>();
 
-    // slot index -> the state-text widget's original x position, captured before nudging it right
+    // slot index -> the state-text widget's original x position, captured before nudging it
     private final Map<Integer, Integer> vanillaTextX = new HashMap<>();
 
     // slot index -> the last tint we could actually decide, with the offer facts behind it.
     // Held across an undecidable tick so the border stays put instead of dropping to vanilla;
     // the facts stop a new offer in a recycled slot inheriting its predecessor's colour.
     private final Map<Integer, DecidedTint> lastDecidedTint = new HashMap<>();
+
+    // slot index -> the timer child we appended, reused until the client rebuilds the slot
+    private final Map<Integer, Widget> timerWidgets = new HashMap<>();
 
     @Inject
     GeSlotWidgetDecorator(Client client, FlipSmartConfig config, FlipSmartPlugin plugin,
@@ -181,7 +193,6 @@ public class GeSlotWidgetDecorator
     {
         boolean bordersOn = config.highlightSlotBorders();
         boolean timersOn = config.showOfferTimers();
-        boolean decorate = bordersOn || timersOn;
 
         GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
         if (offers == null)
@@ -205,13 +216,12 @@ public class GeSlotWidgetDecorator
                 continue;
             }
 
-            // The record is needed for the timer only — the client cannot say when an offer was
-            // placed — so a missing one degrades to a bare label, not a bare slot.
-            OfferRecord tracked = plugin.getOfferStore().bySlot(slot);
             reconcileBorder(slotWidget, slot, offer, bordersOn);
-            if (decorate)
+            if (timersOn)
             {
-                applyStateText(slot, slotWidget, offer, tracked, timersOn);
+                // The record is needed for the timer only — the client cannot say when an offer
+                // was placed — so a missing one degrades to a bare label, not a bare slot.
+                applyStateText(slot, slotWidget, offer, plugin.getOfferStore().bySlot(slot));
             }
             else
             {
@@ -220,7 +230,7 @@ public class GeSlotWidgetDecorator
         }
     }
 
-    void applyStateText(int slot, Widget slotWidget, GrandExchangeOffer offer, OfferRecord tracked, boolean timersOn)
+    void applyStateText(int slot, Widget slotWidget, GrandExchangeOffer offer, OfferRecord tracked)
     {
         Widget text = slotWidget.getChild(STATE_TEXT_CHILD);
         if (text == null)
@@ -243,40 +253,136 @@ public class GeSlotWidgetDecorator
             changed = true;
         }
 
-        String desired = stateTextFor(offer, tracked, timersOn);
-        if (!desired.equals(text.getText()))
+        String label = OfferSignal.isBuyState(offer.getState()) ? "Buy" : "Sell";
+        if (!label.equals(text.getText()))
         {
-            text.setText(desired);
+            text.setText(label);
             changed = true;
         }
         if (changed)
         {
             text.revalidate();
         }
+
+        applyTimer(slot, slotWidget, text, offer, tracked);
     }
 
-    private String stateTextFor(GrandExchangeOffer offer, OfferRecord tracked, boolean timersOn)
+    private void applyTimer(int slot, Widget slotWidget, Widget stateText, GrandExchangeOffer offer,
+                            OfferRecord tracked)
     {
-        String label = OfferSignal.isBuyState(offer.getState()) ? "Buy" : "Sell";
         long lastActivity = tracked == null ? 0L : tracked.getEffectiveLastActivityAtMillis();
-        if (!timersOn || tracked == null || lastActivity <= 0)
+        if (lastActivity <= 0)
         {
-            return label;
+            hideTimer(slot, slotWidget);
+            return;
         }
 
         boolean complete = offer.getState() == GrandExchangeOfferState.BOUGHT
             || offer.getState() == GrandExchangeOfferState.SOLD;
-        String timer = complete && tracked.getCompletedAtMillis() > 0
-            ? TimeUtils.formatFrozenElapsedTime(lastActivity, tracked.getCompletedAtMillis())
-            : TimeUtils.formatElapsedTime(lastActivity);
-        String colorHex = complete
-            ? (config.colorblindMode() ? "0066cc" : "4cbb17")
-            : "ffffff";
-        return GeSlotStateText.build(label, timer, colorHex);
+        String elapsed = elapsedLabel(complete, lastActivity, tracked);
+        int color = timerColor(complete);
+
+        Widget timer = timerWidget(slot, slotWidget, stateText);
+        // Re-checked every pass, not just at creation: the slot can report width 0 while the
+        // interface is still building, and a timer left at that width would never draw.
+        int width = Math.max(0, slotWidget.getWidth() - TIMER_INSET_X);
+        if (timer.isHidden() || timer.getOriginalWidth() != width
+            || timer.getTextColor() != color || !elapsed.equals(timer.getText()))
+        {
+            timer.setHidden(false);
+            timer.setOriginalWidth(width);
+            timer.setTextColor(color);
+            timer.setText(elapsed);
+            timer.revalidate();
+        }
+    }
+
+    // A finished offer freezes at how long it was open. Measuring from last activity would
+    // always read 0:00, since completing an offer is itself the last activity. Records
+    // persisted before creation time was tracked fall back to that degenerate reading.
+    private static String elapsedLabel(boolean complete, long lastActivity, OfferRecord tracked)
+    {
+        if (!complete || tracked.getCompletedAtMillis() <= 0)
+        {
+            return TimeUtils.formatElapsedTime(lastActivity);
+        }
+        long openedAt = tracked.getCreatedAtMillis() > 0 ? tracked.getCreatedAtMillis() : lastActivity;
+        return TimeUtils.formatFrozenElapsedTime(openedAt, tracked.getCompletedAtMillis());
+    }
+
+    private int timerColor(boolean complete)
+    {
+        if (!complete)
+        {
+            return TIMER_COLOR_RUNNING;
+        }
+        return config.colorblindMode() ? TIMER_COLOR_COMPLETE_COLORBLIND : TIMER_COLOR_COMPLETE;
+    }
+
+    /**
+     * The timer's own child, created on demand. The client discards appended children whenever it
+     * rebuilds the slot, so an orphaned reference means "build a fresh one", not "give up".
+     */
+    private Widget timerWidget(int slot, Widget slotWidget, Widget stateText)
+    {
+        Widget cached = attachedTimer(slot, slotWidget);
+        if (cached != null)
+        {
+            return cached;
+        }
+
+        Widget created = slotWidget.createChild(WidgetType.TEXT);
+        created.setFontId(stateText.getFontId());
+        created.setTextShadowed(stateText.getTextShadowed());
+        created.setYTextAlignment(stateText.getYTextAlignment());
+        created.setXTextAlignment(WidgetTextAlignment.RIGHT);
+        // The vanilla label auto-sizes and reports originalWidth 0, so the timer's box has to span
+        // the slot itself: right-aligned inside it, a longer duration grows leftward from a fixed
+        // right edge instead of pushing into the neighbouring slot.
+        created.setOriginalX(0);
+        created.setOriginalY(stateText.getOriginalY());
+        created.setOriginalWidth(Math.max(0, slotWidget.getWidth() - TIMER_INSET_X));
+        created.setOriginalHeight(stateText.getOriginalHeight());
+        created.revalidate();
+        timerWidgets.put(slot, created);
+        return created;
+    }
+
+    private void hideTimer(int slot, Widget slotWidget)
+    {
+        Widget timer = attachedTimer(slot, slotWidget);
+        if (timer == null || timer.isHidden())
+        {
+            return;
+        }
+        timer.setText("");
+        timer.setHidden(true);
+        timer.revalidate();
+    }
+
+    // Our child survived the last slot rebuild only if it is still among the parent's children.
+    // An orphaned reference means "build a fresh one", not "give up".
+    private Widget attachedTimer(int slot, Widget slotWidget)
+    {
+        Widget cached = timerWidgets.get(slot);
+        Widget[] children = cached == null ? null : slotWidget.getChildren();
+        if (children != null)
+        {
+            for (Widget candidate : children)
+            {
+                if (candidate == cached)
+                {
+                    return cached;
+                }
+            }
+        }
+        return null;
     }
 
     void revertStateText(int slot, Widget slotWidget)
     {
+        hideTimer(slot, slotWidget);
+
         Integer alignment = vanillaTextAlignment.get(slot);
         if (alignment == null)
         {
@@ -287,11 +393,20 @@ public class GeSlotWidgetDecorator
         {
             return;
         }
-        text.setXTextAlignment(alignment);
+        boolean changed = false;
+        if (text.getXTextAlignment() != alignment)
+        {
+            text.setXTextAlignment(alignment);
+            changed = true;
+        }
         Integer originalX = vanillaTextX.get(slot);
         if (originalX != null && text.getOriginalX() != originalX)
         {
             text.setOriginalX(originalX);
+            changed = true;
+        }
+        if (changed)
+        {
             text.revalidate();
         }
     }
@@ -375,5 +490,6 @@ public class GeSlotWidgetDecorator
         vanillaTextAlignment.clear();
         vanillaTextX.clear();
         lastDecidedTint.clear();
+        timerWidgets.clear();
     }
 }
