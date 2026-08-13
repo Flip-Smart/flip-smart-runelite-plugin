@@ -1026,7 +1026,8 @@ public class GrandExchangeTracker
 		Integer rec = flip.getRecommendedSellPrice();
 		if (sane(rec, mkt)) return rec;
 		Integer s = SmartSellPricer.calculateSmartSellPrice(flip, mkt);
-		return sane(s, mkt) ? s : mkt != null && mkt > 0 ? mkt : null;
+		if (sane(s, mkt)) return s;
+		return mkt != null && mkt > 0 ? mkt : null;
 	}
 
 	private static boolean sane(Integer c, Integer mkt)
