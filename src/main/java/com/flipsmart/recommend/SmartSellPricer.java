@@ -22,9 +22,6 @@ public final class SmartSellPricer
 	private static final int HIGH_VALUE_THRESHOLD = 250_000_000;
 	private static final int HIGH_VALUE_TIME_MINUTES = 30;
 
-	/** A sell below this share of the live market price is corrupt, not a loss-cut. */
-	private static final double MIN_PLAUSIBLE_MARKET_FRACTION = 0.2;
-
 	private SmartSellPricer()
 	{
 		// Utility class - prevent instantiation
@@ -61,9 +58,8 @@ public final class SmartSellPricer
 	 * Formula: minSellPrice = buyPrice / (1 - taxRate)
 	 * Adding 1gp ensures a small profit.
 	 *
-	 * @return {@code 0} when {@code buyPrice} is non-positive. A missing cost basis is
-	 *         not a free position — it has no computable breakeven, and reading it as
-	 *         one yields 1gp, a price the player can act on and lose the position at.
+	 * @return {@code 0} when {@code buyPrice} is non-positive. A missing cost basis is not a
+	 *         free position: it has no computable breakeven, and reading it as one yields 1gp.
 	 */
 	public static int calculateMinProfitableSellPrice(int buyPrice)
 	{
@@ -78,23 +74,7 @@ public final class SmartSellPricer
 	}
 
 	/**
-	 * Last line of defence before a sell price reaches the player: a price this far under
-	 * the live market cannot have come from a real basis or a real target, whatever path
-	 * produced it. Cutting losses is legitimate and stays well above the bound.
-	 *
-	 * @return {@code false} whenever {@code marketPrice} is unknown — there is nothing to judge against.
-	 */
-	public static boolean isImplausibleSellPrice(int sellPrice, Integer marketPrice)
-	{
-		if (marketPrice == null || marketPrice <= 0)
-		{
-			return false;
-		}
-		return sellPrice <= 0 || sellPrice < marketPrice * MIN_PLAUSIBLE_MARKET_FRACTION;
-	}
-
-	/**
-	 * Resolve the price to offer the player, or {@code null} when no source knows one.
+	 * Resolve the sell price to show, or {@code null} when no source knows one.
 	 *
 	 * <p>Returning null is deliberate: callers must drop the prompt rather than surface a
 	 * fabricated number. Every price this returns traces to the player's own basis, the
@@ -103,26 +83,23 @@ public final class SmartSellPricer
 	public static Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice)
 	{
 		int buyPrice = flip.getAverageBuyPrice();
-		Integer recommended = flip.getRecommendedSellPrice();
-
 		if (buyPrice <= 0)
 		{
-			if (recommended != null && recommended > 0)
+			Integer target = flip.getRecommendedSellPrice();
+			if (target != null && target > 0)
 			{
-				return recommended;
+				return target;
 			}
-			boolean haveMarket = currentMarketPrice != null && currentMarketPrice > 0;
-			if (log.isWarnEnabled())
-				log.warn("No cost basis for item {} ({}); falling back to market {}",
-					flip.getItemId(), flip.getItemName(), haveMarket ? currentMarketPrice : "(unknown)");
-			return haveMarket ? currentMarketPrice : null;
+			log.warn("No cost basis for item {} ({}); falling back to market",
+				flip.getItemId(), flip.getItemName());
+			return currentMarketPrice != null && currentMarketPrice > 0 ? currentMarketPrice : null;
 		}
 
 		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
 
-		if (recommended != null && recommended >= minProfitablePrice)
+		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
 		{
-			return recommended;
+			return flip.getRecommendedSellPrice();
 		}
 
 		if (currentMarketPrice != null && currentMarketPrice >= minProfitablePrice)
@@ -130,9 +107,9 @@ public final class SmartSellPricer
 			return minProfitablePrice;
 		}
 
-		if (recommended != null)
+		if (flip.getRecommendedSellPrice() != null)
 		{
-			return recommended;
+			return flip.getRecommendedSellPrice();
 		}
 
 		return minProfitablePrice;

@@ -4,9 +4,7 @@ import com.flipsmart.domain.flip.ActiveFlip;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
 
 /**
  * A flip whose cost basis has gone missing must never be priced as if the basis were
@@ -73,23 +71,6 @@ public class SmartSellPricerLostBasisTest
 		assertEquals(Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
 	}
 
-	@Test
-	public void aOneGpSellIsImplausibleAgainstARealMarketPrice()
-	{
-		assertTrue(SmartSellPricer.isImplausibleSellPrice(1, MARKET_PRICE));
-	}
 
-	@Test
-	public void cuttingLossesBelowMarketIsStillPlausible()
-	{
-		assertFalse("a 10% loss-cut is a legitimate exit, not a corrupt price",
-			SmartSellPricer.isImplausibleSellPrice(8_000_000, MARKET_PRICE));
-	}
 
-	@Test
-	public void noSellPriceIsImplausibleWhenTheMarketIsUnknown()
-	{
-		assertFalse("without a market reference there is nothing to judge against",
-			SmartSellPricer.isImplausibleSellPrice(1, null));
-	}
 }

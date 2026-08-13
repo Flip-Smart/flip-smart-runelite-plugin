@@ -84,9 +84,6 @@ public class GrandExchangeTracker
 	private BiConsumer<Integer, Boolean> onOrderSubmitted;
 	@Setter
 	private IntFunction<Integer> displayedSellPriceProvider;
-	// Live market reference, used to screen out sell prices no real basis could have produced.
-	@Setter
-	private IntFunction<Integer> marketPriceProvider;
 	@Setter
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 	// Cost basis straight from the offer store, so a manual exit can be priced without
@@ -1012,30 +1009,6 @@ public class GrandExchangeTracker
 	}
 
 	/**
-	 * Resolve the sell price to prompt, in the same order of authority the panel uses:
-	 * the price already on screen, then the original target, then whatever the pricer can
-	 * derive. Each candidate is screened against the live market, so a corrupt value
-	 * cached upstream cannot outrank a sound one further down the list.
-	 *
-	 * @return {@code null} when no candidate survives and the market is unknown. Callers
-	 *         must drop the prompt rather than invent a number to show.
-	 */
-	static Integer resolveSellFocusPrice(Integer panel, ActiveFlip flip, Integer mkt)
-	{
-		if (sane(panel, mkt)) return panel;
-		Integer rec = flip.getRecommendedSellPrice();
-		if (sane(rec, mkt)) return rec;
-		Integer s = SmartSellPricer.calculateSmartSellPrice(flip, mkt);
-		if (sane(s, mkt)) return s;
-		return mkt != null && mkt > 0 ? mkt : null;
-	}
-
-	private static boolean sane(Integer c, Integer mkt)
-	{
-		return c != null && c > 0 && !SmartSellPricer.isImplausibleSellPrice(c, mkt);
-	}
-
-	/**
 	 * Resolve the sell quantity to prompt. Inventory is a hard ceiling — the
 	 * player can never sell more than they hold — so an over-counted API value
 	 * is clamped down to inventory. When inventory is unknown (0) we trust the
@@ -1056,18 +1029,31 @@ public class GrandExchangeTracker
 
 	private void setFocusForSell(ActiveFlip flip, int inventoryFallbackCount)
 	{
+		int sellPrice;
+
 		Integer panelPrice = displayedSellPriceProvider != null
 			? displayedSellPriceProvider.apply(flip.getItemId()) : null;
-		Integer marketPrice = marketPriceProvider != null
-			? marketPriceProvider.apply(flip.getItemId()) : null;
 
-		Integer resolved = resolveSellFocusPrice(panelPrice, flip, marketPrice);
-		if (resolved == null)
+		if (panelPrice != null && panelPrice > 0)
 		{
-			if (log.isWarnEnabled()) log.warn("No sourceable sell price for {} — leaving Flip Assist unfocused", flip.getItemName());
-			return;
+			sellPrice = panelPrice;
+			log.debug("Using panel's displayed sell price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
-		int sellPrice = resolved;
+		else if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() > 0)
+		{
+			sellPrice = flip.getRecommendedSellPrice();
+			log.debug("Using backend recommended sell price for {}: {} gp", flip.getItemName(), sellPrice);
+		}
+		else
+		{
+			sellPrice = SmartSellPricer.calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
+			if (sellPrice <= 0)
+			{
+				log.warn("No cost basis or target for {} — leaving Flip Assist unfocused", flip.getItemName());
+				return;
+			}
+			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
+		}
 
 		int apiQuantity = flip.getTotalQuantity();
 		int sellQuantity = resolveSellQuantity(apiQuantity, inventoryFallbackCount);
