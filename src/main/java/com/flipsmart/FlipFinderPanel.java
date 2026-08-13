@@ -3896,11 +3896,12 @@ public class FlipFinderPanel extends PluginPanel
 		CardRows rows = new CardRows(CardRow.values());
 		JLabel buyLimitLabel = rows.get(CardRow.BUY_LIMIT);
 
-		rows.addTo(detailsPanel, CardRow.BUY_SELL, CardRow.LIVE_MARGIN, CardRow.TAX);
+		rows.addTo(detailsPanel, CardRow.ACTION, CardRow.BUY_SELL, CardRow.LIVE_MARGIN, CardRow.TAX);
 		// Divider separates the "live" block from the position-reference block
 		addCardDivider(detailsPanel);
 		rows.addTo(detailsPanel, CardRow.CURRENT_PROFIT, CardRow.MAX_POTENTIAL, CardRow.QTY,
 			CardRow.LIQUIDITY, CardRow.RISK);
+		rows.set(CardRow.ACTION, PanelFormat.actionSellingHtml());
 
 		// Array indirection: the refresh closure needs the header panels before createItemHeaderPanels produces them.
 		HeaderPanels[] headerHolder = new HeaderPanels[1];
@@ -4020,6 +4021,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private enum CardRow
 	{
+		ACTION("Action: ...", Color.WHITE, false),
 		BUY_SELL("Live Price: ...", Color.WHITE, false),
 		LIVE_MARGIN("Live Margin: ...", Color.WHITE, false),
 		TAX("Tax: ...", COLOR_TEXT_GRAY, true),
@@ -4290,13 +4292,14 @@ public class FlipFinderPanel extends PluginPanel
 
 		// --- Top "live" block ---
 		// No Current Profit row — nothing has sold yet on a pending buy.
-		CardRows rows = new CardRows(CardRow.BUY_SELL, CardRow.LIVE_MARGIN, CardRow.TAX,
+		CardRows rows = new CardRows(CardRow.ACTION, CardRow.BUY_SELL, CardRow.LIVE_MARGIN, CardRow.TAX,
 			CardRow.MAX_POTENTIAL, CardRow.QTY, CardRow.LIQUIDITY, CardRow.RISK, CardRow.BUY_LIMIT);
 		JLabel buyLimitLabel = rows.get(CardRow.BUY_LIMIT);
 
-		rows.addTo(detailsPanel, CardRow.BUY_SELL, CardRow.LIVE_MARGIN, CardRow.TAX);
+		rows.addTo(detailsPanel, CardRow.ACTION, CardRow.BUY_SELL, CardRow.LIVE_MARGIN, CardRow.TAX);
 		addCardDivider(detailsPanel);
 		rows.addTo(detailsPanel, CardRow.MAX_POTENTIAL, CardRow.QTY, CardRow.LIQUIDITY, CardRow.RISK);
+		rows.set(CardRow.ACTION, PanelFormat.actionBuyingHtml());
 
 		// Header with refresh + corner buy-limit, matching the active-flip cards
 		Runnable refreshCard = () ->
