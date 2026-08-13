@@ -971,12 +971,12 @@ public class GrandExchangeTracker
 			return;
 		}
 
-		if (setFocus)
+		// A miss here is usually transient (cold wiki cache, store not yet rehydrated), so
+		// leave the bounded tick-retry armed rather than dropping the prompt for good.
+		if (!setFocus || setFocusForSell(matchingFlip, inventoryCount))
 		{
-			setFocusForSell(matchingFlip, inventoryCount);
+			clearPendingSellFocus();
 		}
-		// The flip resolved — stop any manual tick-retry re-issuing the lookup.
-		clearPendingSellFocus();
 
 		// Sync inventory-corrected quantity to API if inventory has more
 		if (inventoryCount > matchingFlip.getTotalQuantity() && inventoryCount > 0 && rsn != null)
@@ -1027,7 +1027,7 @@ public class GrandExchangeTracker
 		return Math.min(apiQuantity, inventoryCount);
 	}
 
-	private void setFocusForSell(ActiveFlip flip, int inventoryFallbackCount)
+	private boolean setFocusForSell(ActiveFlip flip, int inventoryFallbackCount)
 	{
 		int sellPrice;
 
@@ -1050,7 +1050,7 @@ public class GrandExchangeTracker
 			if (sellPrice <= 0)
 			{
 				log.warn("No cost basis or target for {} — leaving Flip Assist unfocused", flip.getItemName());
-				return;
+				return false;
 			}
 			log.debug("Using calculated min profitable price for {}: {} gp", flip.getItemName(), sellPrice);
 		}
@@ -1073,6 +1073,7 @@ public class GrandExchangeTracker
 		}
 		log.debug("Auto-focused on active flip for sell: {} @ {} gp (qty: api={}, inv={}, using={})",
 			flip.getItemName(), sellPrice, apiQuantity, inventoryFallbackCount, sellQuantity);
+	return true;
 	}
 
 	/**
