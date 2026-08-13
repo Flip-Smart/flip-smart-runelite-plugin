@@ -3653,7 +3653,11 @@ public class FlipFinderPanel extends PluginPanel
 				
 				// Calculate smart sell price
 				Integer smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
-				int sellPrice = smartSellPrice != null ? smartSellPrice : SmartSellPricer.calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
+				if (smartSellPrice == null || smartSellPrice <= 0)
+				{
+					return;
+				}
+				int sellPrice = smartSellPrice;
 				
 				// Cache this price for future use
 				displayedSellPrices.put(flip.getItemId(), sellPrice);
@@ -4192,7 +4196,9 @@ public class FlipFinderPanel extends PluginPanel
 		}
 
 		Integer computedPrice = SmartSellPricer.calculateSmartSellPrice(flip, high);
-		if (isValidPrice(computedPrice) && session != null)
+		// With no basis the price is a live-market reading, not a target. Persisting it would
+		// pin this instant's market for the session and outrank the real breakeven once it returns.
+		if (isValidPrice(computedPrice) && session != null && flip.getAverageBuyPrice() > 0)
 		{
 			session.setRecommendedPrice(flip.getItemId(), computedPrice);
 		}
