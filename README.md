@@ -38,8 +38,7 @@ A dedicated sidebar panel with three tabs to help you flip smarter:
 - See pending GE buy orders that haven't filled yet
 - Right-click to dismiss flips you no longer want to track
 
-<img width="249" height="701" alt="Screenshot 2026-01-13 at 11 46 35 PM" src="https://github.com/user-attachments/assets/2f5778da-1cbe-406a-a8e1-4f42e7817e50" />
-
+<img width="462" height="692" alt="image" src="https://github.com/user-attachments/assets/fb038383-a225-481e-9e69-1e3701cd3022" />
 
 #### **Completed Flips**
 - View your completed flip history
@@ -47,7 +46,7 @@ A dedicated sidebar panel with three tabs to help you flip smarter:
 - Track your flipping performance over time
 - Click to expand and see flip duration and GE tax paid
   
-<img width="234" height="656" alt="Screenshot 2026-01-13 at 11 47 54 PM" src="https://github.com/user-attachments/assets/2abdf570-1d18-4acc-a82c-7d32d959c1f4" />
+<img width="558" height="1264" alt="image" src="https://github.com/user-attachments/assets/2067724a-0f60-4b80-a32b-437058e5dc1c" />
 
 
 ### 📊 Exchange Viewer Overlay
