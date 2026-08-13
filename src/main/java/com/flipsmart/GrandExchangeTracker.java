@@ -1022,22 +1022,30 @@ public class GrandExchangeTracker
 	 */
 	static Integer resolveSellFocusPrice(Integer panelPrice, ActiveFlip flip, Integer marketPrice)
 	{
-		Integer[] candidates = {
-			panelPrice,
-			flip.getRecommendedSellPrice(),
-			SmartSellPricer.calculateSmartSellPrice(flip, marketPrice),
-		};
-
-		for (Integer candidate : candidates)
+		if (isSaneSellCandidate(panelPrice, marketPrice))
 		{
-			if (candidate != null && candidate > 0
-				&& !SmartSellPricer.isImplausibleSellPrice(candidate, marketPrice))
-			{
-				return candidate;
-			}
+			return panelPrice;
+		}
+
+		Integer recommended = flip.getRecommendedSellPrice();
+		if (isSaneSellCandidate(recommended, marketPrice))
+		{
+			return recommended;
+		}
+
+		Integer smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, marketPrice);
+		if (isSaneSellCandidate(smartSellPrice, marketPrice))
+		{
+			return smartSellPrice;
 		}
 
 		return marketPrice != null && marketPrice > 0 ? marketPrice : null;
+	}
+
+	private static boolean isSaneSellCandidate(Integer candidate, Integer marketPrice)
+	{
+		return candidate != null && candidate > 0
+			&& !SmartSellPricer.isImplausibleSellPrice(candidate, marketPrice);
 	}
 
 	/**
