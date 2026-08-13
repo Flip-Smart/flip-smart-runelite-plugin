@@ -13,6 +13,7 @@ import com.flipsmart.InventoryHighlightOverlay;
 import com.flipsmart.ManualAdjustmentTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.exit.ExitTradesController;
 import com.flipsmart.trading.OfferStore;
@@ -215,6 +216,10 @@ public class ServiceWiring
 		grandExchangeTracker.setDisplayedSellPriceProvider(itemId -> plugin.getFlipFinderPanel() != null ? plugin.getFlipFinderPanel().getDisplayedSellPrice(itemId) : null);
 		grandExchangeTracker.setOneShotScheduler(plugin::scheduleOneShot);
 		grandExchangeTracker.setBuyBasisProvider(plugin::buyBasisForItem);
+		grandExchangeTracker.setMarketPriceProvider(itemId -> {
+			WikiPrice market = plugin.getWikiPrice(itemId);
+			return market != null && market.instaBuy > 0 ? market.instaBuy : null;
+		});
 
 		geHistoryService.setOnBackfillComplete(() -> {
 			if (plugin.getFlipFinderPanel() != null)

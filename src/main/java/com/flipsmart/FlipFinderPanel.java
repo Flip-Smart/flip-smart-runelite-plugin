@@ -3651,13 +3651,17 @@ public class FlipFinderPanel extends PluginPanel
 					}
 				}
 				
-				// Calculate smart sell price
-				Integer smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
-				int sellPrice = smartSellPrice != null ? smartSellPrice : SmartSellPricer.calculateMinProfitableSellPrice(flip.getAverageBuyPrice());
-				
+				Integer sellPrice = SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
+				if (sellPrice == null || SmartSellPricer.isImplausibleSellPrice(sellPrice, currentMarketPrice))
+				{
+					log.warn("No sourceable sell price for {} (basis {}) — leaving Flip Assist unfocused",
+						flip.getItemName(), flip.getAverageBuyPrice());
+					return;
+				}
+
 				// Cache this price for future use
 				displayedSellPrices.put(flip.getItemId(), sellPrice);
-				
+
 				// Create focused flip for selling with offset applied
 				FocusedFlip newFocus = FocusedFlip.forSell(
 					flip.getItemId(),
