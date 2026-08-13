@@ -1069,7 +1069,10 @@ public class GrandExchangeTracker
 		Integer resolved = resolveSellFocusPrice(panelPrice, flip, marketPrice);
 		if (resolved == null)
 		{
-			log.warn("No sourceable sell price for {} — leaving Flip Assist unfocused", flip.getItemName());
+			if (log.isWarnEnabled())
+			{
+				log.warn("No sourceable sell price for {} — leaving Flip Assist unfocused", flip.getItemName());
+			}
 			return;
 		}
 		int sellPrice = resolved;

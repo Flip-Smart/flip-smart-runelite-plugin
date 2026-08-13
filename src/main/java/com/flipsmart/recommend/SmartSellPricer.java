@@ -112,8 +112,11 @@ public final class SmartSellPricer
 				return recommended;
 			}
 			boolean haveMarket = currentMarketPrice != null && currentMarketPrice > 0;
-			log.warn("No cost basis for item {} ({}); falling back to market {}",
-				flip.getItemId(), flip.getItemName(), haveMarket ? currentMarketPrice : "(unknown)");
+			if (log.isWarnEnabled())
+			{
+				log.warn("No cost basis for item {} ({}); falling back to market {}",
+					flip.getItemId(), flip.getItemName(), haveMarket ? currentMarketPrice : "(unknown)");
+			}
 			return haveMarket ? currentMarketPrice : null;
 		}
 
