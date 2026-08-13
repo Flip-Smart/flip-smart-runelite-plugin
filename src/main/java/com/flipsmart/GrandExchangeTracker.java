@@ -1020,32 +1020,18 @@ public class GrandExchangeTracker
 	 * @return {@code null} when no candidate survives and the market is unknown. Callers
 	 *         must drop the prompt rather than invent a number to show.
 	 */
-	static Integer resolveSellFocusPrice(Integer panelPrice, ActiveFlip flip, Integer marketPrice)
+	static Integer resolveSellFocusPrice(Integer panel, ActiveFlip flip, Integer mkt)
 	{
-		if (isSaneSellCandidate(panelPrice, marketPrice))
-		{
-			return panelPrice;
-		}
-
-		Integer recommended = flip.getRecommendedSellPrice();
-		if (isSaneSellCandidate(recommended, marketPrice))
-		{
-			return recommended;
-		}
-
-		Integer smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, marketPrice);
-		if (isSaneSellCandidate(smartSellPrice, marketPrice))
-		{
-			return smartSellPrice;
-		}
-
-		return marketPrice != null && marketPrice > 0 ? marketPrice : null;
+		if (sane(panel, mkt)) return panel;
+		Integer rec = flip.getRecommendedSellPrice();
+		if (sane(rec, mkt)) return rec;
+		Integer s = SmartSellPricer.calculateSmartSellPrice(flip, mkt);
+		return sane(s, mkt) ? s : mkt != null && mkt > 0 ? mkt : null;
 	}
 
-	private static boolean isSaneSellCandidate(Integer candidate, Integer marketPrice)
+	private static boolean sane(Integer c, Integer mkt)
 	{
-		return candidate != null && candidate > 0
-			&& !SmartSellPricer.isImplausibleSellPrice(candidate, marketPrice);
+		return c != null && c > 0 && !SmartSellPricer.isImplausibleSellPrice(c, mkt);
 	}
 
 	/**
@@ -1077,10 +1063,7 @@ public class GrandExchangeTracker
 		Integer resolved = resolveSellFocusPrice(panelPrice, flip, marketPrice);
 		if (resolved == null)
 		{
-			if (log.isWarnEnabled())
-			{
-				log.warn("No sourceable sell price for {} — leaving Flip Assist unfocused", flip.getItemName());
-			}
+			if (log.isWarnEnabled()) log.warn("No sourceable sell price for {} — leaving Flip Assist unfocused", flip.getItemName());
 			return;
 		}
 		int sellPrice = resolved;
