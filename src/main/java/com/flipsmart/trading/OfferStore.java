@@ -82,25 +82,28 @@ public final class OfferStore
             // occupant here so the transition below mints a fresh record for the new order.
             // Only live directional states trigger this: EMPTY and CANCELLED legitimately target
             // the existing record (collect terminalises it; a cancel finalises its residual).
-            if (current != null
+            boolean staleOccupant = current != null
                 && !current.getState().isTerminal()
                 && isLiveDirectional(signal.geState)
-                && (current.getItemId() != signal.itemId || current.isBuy() != signal.isBuy()))
+                && (current.getItemId() != signal.itemId || current.isBuy() != signal.isBuy());
+
+            if (staleOccupant)
             {
                 byOfferId.put(current.getOfferId(), current.withSlot(null));
                 slotToOfferId.remove(signal.slot);
-                current = null;
             }
 
-            long idForNew = current == null ? nextOfferId : current.getOfferId();
-            t = OfferStateMachine.decide(current, signal, idForNew, now);
+            OfferRecord effectiveCurrent = staleOccupant ? null : current;
+
+            long idForNew = effectiveCurrent == null ? nextOfferId : effectiveCurrent.getOfferId();
+            t = OfferStateMachine.decide(effectiveCurrent, signal, idForNew, now);
 
             if (t.kind == OfferTransition.Kind.REJECTED || t.kind == OfferTransition.Kind.NONE || t.record == null)
             {
                 return t;
             }
 
-            if (current == null)
+            if (effectiveCurrent == null)
             {
                 nextOfferId = Math.max(nextOfferId, t.record.getOfferId() + 1);
             }
