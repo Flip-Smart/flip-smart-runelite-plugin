@@ -128,6 +128,28 @@ public class OfferStoreTest
     }
 
     @Test
+    public void mismatchedCancelOnOccupiedSlot_evictsStaleRecordWithoutMintingPhantom()
+    {
+        // A missed EMPTY leaves a stale record in the slot. The next signal observed for that
+        // slot is a CANCEL for a different item, never a live directional state. The stale
+        // record must still be evicted rather than have the mismatched cancel's data stamped
+        // onto it, and no phantom record should be minted purely from observing a cancellation.
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 10, 10), NOW); // FILLED, uncollected
+
+        store.apply(sig(0, GrandExchangeOfferState.CANCELLED_SELL, 5678, 3, 5), NOW); // mismatched cancel
+
+        assertNull("no phantom offer minted from a bare cancellation", store.bySlot(0));
+        OfferRecord stale = store.forItem(1234).get(0);
+        assertEquals("the stale record's state is untouched by the mismatched cancel",
+            OfferState.FILLED, stale.getState());
+        assertEquals("the stale record's fills are left intact", 10, stale.getFilledQuantity());
+        assertTrue("item 5678 must not gain a record from a bare cancel signal",
+            store.forItem(5678).isEmpty());
+    }
+
+    @Test
     public void sameItemInTwoSlots_keepsTwoDistinctOffers()
     {
         OfferStore store = new OfferStore();
