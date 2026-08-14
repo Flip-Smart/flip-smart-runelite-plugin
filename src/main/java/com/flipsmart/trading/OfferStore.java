@@ -5,6 +5,8 @@ import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.domain.offer.OfferTransition;
 
+import net.runelite.api.GrandExchangeOfferState;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -72,6 +74,24 @@ public final class OfferStore
             Long currentId = slotToOfferId.get(signal.slot);
             OfferRecord current = currentId == null ? null : byOfferId.get(currentId);
 
+            // A live buy/sell signal only belongs to the slot's record if it is the SAME order:
+            // same item and same direction. A different item or side means the slot turned over
+            // without us observing the collect (an offline/mobile collect, or a missed EMPTY),
+            // so the record still sitting in the slot is stale. Feeding the signal into it would
+            // stamp the new offer's fills — and its price — onto the old item. Evict the stale
+            // occupant here so the transition below mints a fresh record for the new order.
+            // Only live directional states trigger this: EMPTY and CANCELLED legitimately target
+            // the existing record (collect terminalises it; a cancel finalises its residual).
+            if (current != null
+                && !current.getState().isTerminal()
+                && isLiveDirectional(signal.geState)
+                && (current.getItemId() != signal.itemId || current.isBuy() != signal.isBuy()))
+            {
+                byOfferId.put(current.getOfferId(), current.withSlot(null));
+                slotToOfferId.remove(signal.slot);
+                current = null;
+            }
+
             long idForNew = current == null ? nextOfferId : current.getOfferId();
             t = OfferStateMachine.decide(current, signal, idForNew, now);
 
@@ -118,6 +138,19 @@ public final class OfferStore
             l.accept(event);
         }
         return t;
+    }
+
+    /**
+     * A GE state that reports a live, directional offer (a placement or a fill), as opposed to
+     * EMPTY (collected/absent) or a cancellation. Only these carry an item and side that must
+     * match the slot's tracked order.
+     */
+    private static boolean isLiveDirectional(GrandExchangeOfferState state)
+    {
+        return state == GrandExchangeOfferState.BUYING
+            || state == GrandExchangeOfferState.SELLING
+            || state == GrandExchangeOfferState.BOUGHT
+            || state == GrandExchangeOfferState.SOLD;
     }
 
     /** Live offer currently occupying {@code slot} (0–7), or {@code null} if the slot is empty. */

@@ -3,7 +3,9 @@ package com.flipsmart;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.domain.offer.OfferState;
+import com.flipsmart.trading.OfferEvent;
 import com.flipsmart.trading.OfferStore;
+import com.flipsmart.domain.offer.OfferTransition;
 import net.runelite.api.GrandExchangeOfferState;
 import org.junit.Test;
 
@@ -51,6 +53,78 @@ public class OfferStoreTest
             2, store.allRecords().size());
         assertNotEquals(store.forItem(1234).get(0).getOfferId(),
             store.forItem(5678).get(0).getOfferId());
+    }
+
+    @Test
+    public void differentItemOnOccupiedSlot_mintsFreshRecordAndLeavesStaleUntouched()
+    {
+        // A FILLED buy is collected off-plugin (mobile, or a "Collect all" whose EMPTY we
+        // never observe), so its record stays non-terminal with its slot intact. The slot is
+        // then reused by a DIFFERENT item. The incoming signal must never be applied to the
+        // stale record — doing so stamps the new offer's fills onto the old item (#1248).
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 10, 10), NOW); // FILLED, uncollected
+        long staleOfferId = store.bySlot(0).getOfferId();
+
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 5678, 0, 5), NOW); // slot reused, no EMPTY
+
+        assertEquals("slot now holds the new item's record", 5678, store.bySlot(0).getItemId());
+        assertNotEquals("the new offer must not inherit the stale record's id",
+            staleOfferId, store.bySlot(0).getOfferId());
+
+        OfferRecord stale = store.forItem(1234).get(0);
+        assertEquals("the stale record's fills are left intact", 10, stale.getFilledQuantity());
+    }
+
+    @Test
+    public void staleSlotReuse_emitsFillEventForNewItemNotStaleOne()
+    {
+        // The event carries what reaches the backend as a transaction. A fill on a reused slot
+        // must be attributed to the new item — never to the stale record whose collect we missed.
+        OfferStore store = new OfferStore();
+        List<OfferEvent> fills = new ArrayList<>();
+        store.addListener(e -> {
+            if (e.kind == OfferTransition.Kind.FILLED_DELTA
+                || e.kind == OfferTransition.Kind.COMPLETED
+                || e.kind == OfferTransition.Kind.PLACED)
+            {
+                fills.add(e);
+            }
+        });
+
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 10, 10), NOW); // FILLED, uncollected
+        fills.clear();
+
+        store.apply(sig(0, GrandExchangeOfferState.SELLING, 5678, 0, 5), NOW); // slot reused, new item
+        store.apply(sig(0, GrandExchangeOfferState.SOLD, 5678, 5, 5), NOW);     // it fills
+
+        assertFalse("the new item's fill was emitted", fills.isEmpty());
+        for (OfferEvent e : fills)
+        {
+            assertEquals("no fill may be attributed to the stale item 1234",
+                5678, e.record.getItemId());
+        }
+    }
+
+    @Test
+    public void oppositeDirectionOnOccupiedSlot_mintsFreshRecord()
+    {
+        // Same slot, same item, but the collected buy is relisted as a SELL and we missed the
+        // EMPTY between them. Direction distinguishes the two offers; the sell must be its own
+        // record, not a mutation of the buy that would corrupt the buy's cost basis.
+        OfferStore store = new OfferStore();
+        store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), NOW);
+        store.apply(sig(0, GrandExchangeOfferState.BOUGHT, 1234, 10, 10), NOW); // FILLED buy, uncollected
+
+        store.apply(sig(0, GrandExchangeOfferState.SELLING, 1234, 0, 10), NOW); // relisted as sell
+
+        assertFalse("slot now holds a sell offer", store.bySlot(0).isBuy());
+        assertEquals("buy and sell are two distinct records", 2, store.forItem(1234).size());
+        OfferRecord buy = store.forItem(1234).stream()
+            .filter(OfferRecord::isBuy).findFirst().orElseThrow(AssertionError::new);
+        assertEquals("the collected buy keeps its fills", 10, buy.getFilledQuantity());
     }
 
     @Test
