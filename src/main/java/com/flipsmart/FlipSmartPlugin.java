@@ -407,9 +407,8 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Buy cost basis for {@code itemId} derived from the offer store: the most-recent buy
-	 * record with a fill, falling back to any buy record when nothing has filled yet.
-	 * Null when the store holds no buy record for the item.
+	 * Buy cost basis for the round trip currently open on {@code itemId}. The ledger prices it; the
+	 * offer store only identifies it. Null when the store holds no buy record for the item.
 	 */
 	public AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
 	{
@@ -421,62 +420,7 @@ public class FlipSmartPlugin extends Plugin
 				buys.add(r);
 			}
 		}
-		OfferRecord bestFilled = mostRecentFilledBuy(buys);
-		OfferRecord best = bestFilled != null ? bestFilled : mostRecentBuy(buys);
-		if (best == null)
-		{
-			return null;
-		}
-		return new AwaitingSaleLots.BuyBasis(best.getItemName(), avgBuyPrice(best), firstBuyTimeIso(best));
-	}
-
-	/** Most recently active buy record in {@code buys}, or {@code null} when the list is empty. */
-	private static OfferRecord mostRecentBuy(
-		List<OfferRecord> buys)
-	{
-		OfferRecord best = null;
-		for (OfferRecord r : buys)
-		{
-			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
-			{
-				best = r;
-			}
-		}
-		return best;
-	}
-
-	/** Most recently active buy record in {@code buys} that has at least one filled unit. */
-	private static OfferRecord mostRecentFilledBuy(
-		List<OfferRecord> buys)
-	{
-		OfferRecord best = null;
-		for (OfferRecord r : buys)
-		{
-			if (r.getFilledQuantity() <= 0)
-			{
-				continue;
-			}
-			if (best == null || r.getEffectiveLastActivityAtMillis() > best.getEffectiveLastActivityAtMillis())
-			{
-				best = r;
-			}
-		}
-		return best;
-	}
-
-	private static int avgBuyPrice(OfferRecord best)
-	{
-		return best.getSpent() > 0 && best.getFilledQuantity() > 0
-			? (int) (best.getSpent() / best.getFilledQuantity())
-			: best.getPrice();
-	}
-
-	private static String firstBuyTimeIso(OfferRecord best)
-	{
-		long firstBuyMillis = best.getCreatedAtMillis() > 0
-			? best.getCreatedAtMillis()
-			: best.getEffectiveLastActivityAtMillis();
-		return firstBuyMillis > 0 ? java.time.Instant.ofEpochMilli(firstBuyMillis).toString() : null;
+		return AwaitingSaleLots.resolveBuyBasis(buys, getCycleBasisForItem(itemId));
 	}
 
 	/**
