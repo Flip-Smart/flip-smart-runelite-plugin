@@ -83,7 +83,6 @@ public final class OfferStore
             // Only live directional states trigger this: EMPTY and CANCELLED legitimately target
             // the existing record (collect terminalises it; a cancel finalises its residual).
             boolean staleOccupant = current != null
-                && !current.getState().isTerminal()
                 && isLiveDirectional(signal.geState)
                 && (current.getItemId() != signal.itemId || current.isBuy() != signal.isBuy());
 
