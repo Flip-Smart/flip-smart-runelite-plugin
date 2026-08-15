@@ -1166,7 +1166,11 @@ public class FlipSmartPlugin extends Plugin
 
 		apiClient.fetchWikiPrices();
 
-		apiClient.fetchEntitlementsAsync(getCurrentRsnSafe().orElse(null)).thenAccept(isPremium -> {
+		// Proactively renew a stale token on login so a valid session is restored (or a
+		// re-login prompted) before the entitlements call, rather than lazily on first use.
+		apiClient.ensureAuthenticatedAsync()
+			.thenCompose(authed -> apiClient.fetchEntitlementsAsync(getCurrentRsnSafe().orElse(null)))
+			.thenAccept(isPremium -> {
 			log.debug("User premium status: {}", isPremium);
 			if (flipFinderPanel != null)
 			{

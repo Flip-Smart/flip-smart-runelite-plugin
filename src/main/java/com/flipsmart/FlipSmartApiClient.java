@@ -129,6 +129,11 @@ public class FlipSmartApiClient
 		return transport.refreshAccessTokenAsync();
 	}
 
+	public CompletableFuture<Boolean> ensureAuthenticatedAsync()
+	{
+		return transport.ensureAuthenticatedAsync();
+	}
+
 	public void setRefreshToken(String token)
 	{
 		transport.setRefreshToken(token);
