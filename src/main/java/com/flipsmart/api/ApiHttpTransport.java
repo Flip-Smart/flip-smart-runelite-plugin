@@ -852,6 +852,9 @@ public class ApiHttpTransport
 			isPremium = true;
 			isRsnBlocked = false;
 		}
+		// Re-arm the prompt so a fresh failure on the next login isn't suppressed
+		// by a stale flag from before this logout.
+		authFailureNotified.set(false);
 	}
 
 

@@ -69,6 +69,23 @@ public class ApiHttpTransportAuthFailureTest
 	}
 
 	@Test
+	public void logoutRearmsPromptForNextFailureEpisode() throws Exception
+	{
+		AtomicInteger prompts = new AtomicInteger();
+		transport.setOnAuthFailure(prompts::incrementAndGet);
+
+		assertNull(transport.executeAuthenticatedAsync(authRequest(), body -> body).get());
+		assertEquals(1, prompts.get());
+
+		transport.clearAuth();
+
+		// A fresh failure episode after logout must prompt again, not stay
+		// suppressed by the flag from the previous episode.
+		assertNull(transport.executeAuthenticatedAsync(authRequest(), body -> body).get());
+		assertEquals(2, prompts.get());
+	}
+
+	@Test
 	public void transientRefreshFailureDoesNotPrompt() throws Exception
 	{
 		AtomicInteger prompts = new AtomicInteger();
