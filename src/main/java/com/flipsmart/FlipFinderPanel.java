@@ -1442,6 +1442,9 @@ public class FlipFinderPanel extends PluginPanel
 		sessionProfitBase = SessionStats.computeBase(currentCompletedFlips,
 			OpenPositions.derive(projectedActiveFlips(), plugin::getLiveSellFilledQuantity),
 			sessionClock.startMs());
+		log.debug("Session P&L recompute: {} completed flips, sessionStart={}, realised={}, unrealised={}",
+			currentCompletedFlips.size(), sessionClock.startMs(),
+			sessionProfitBase.realisedProfit, sessionProfitBase.unrealisedProfit);
 		renderSessionStats();
 	}
 

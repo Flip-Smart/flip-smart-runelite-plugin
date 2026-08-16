@@ -789,7 +789,7 @@ public class FlipSmartPlugin extends Plugin
 		manualAdjustmentTracker = serviceWiring.initializeManualAdjustmentTracker(this, config, flipAssistOverlay,
 			geSlotOverlay, inventoryHighlightOverlay, session, grandExchangeTracker, activeOfferAdvisorService, offerStore);
 		grandExchangeTracker.setOfferStore(offerStore);
-		serviceWiring.wireTransactionLogger(this, session, offerStore, roundTripLedger);
+		serviceWiring.wireTransactionLogger(this, session, offerStore, roundTripLedger, refreshCoalescer);
 		serviceWiring.wireGrandExchangeTrackerCallbacks(this, grandExchangeTracker, autoRecommendService, geHistoryService,
 			offerStore, refreshCoalescer);
 

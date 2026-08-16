@@ -32,6 +32,11 @@ public final class TransactionLogger
     private final Supplier<Optional<String>> rsnSupplier;
     private final RoundTripLedger roundTripLedger;
 
+    // Fired after a sell fill's push resolves (the backend pairs the flip within that
+    // request), so session P&L can refresh off the just-recorded completed flip rather
+    // than waiting for the next timer poll.
+    private Runnable onSellRecorded;
+
     private final Set<String> seenKeys = Collections.synchronizedSet(
         Collections.newSetFromMap(
             new LinkedHashMap<String, Boolean>()
@@ -56,6 +61,11 @@ public final class TransactionLogger
         this.session = session;
         this.rsnSupplier = rsnSupplier;
         this.roundTripLedger = roundTripLedger;
+    }
+
+    public void setOnSellRecorded(Runnable callback)
+    {
+        this.onSellRecorded = callback;
     }
 
     public void onOfferEvent(OfferEvent e)
@@ -142,7 +152,12 @@ public final class TransactionLogger
             // what that slot already absorbed, and the basis has to describe the same items.
             roundTripLedger.recordBuyBasis(rsn, r.getItemId(), fill.foldedQuantity, pricePerItem);
         }
-        apiClient.recordTransactionAsync(baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).slotGeneration(slotGeneration).build());
+        java.util.concurrent.CompletableFuture<Void> sent = apiClient.recordTransactionAsync(
+            baseBuilder(r, newlyFilled, pricePerItem, rsn, key).roundTripId(fill.roundTripId).slotGeneration(slotGeneration).build());
+        if (!r.isBuy() && onSellRecorded != null)
+        {
+            sent.thenRun(onSellRecorded);
+        }
     }
 
     /**

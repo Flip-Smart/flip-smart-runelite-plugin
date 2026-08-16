@@ -120,4 +120,17 @@ public class TransactionLoggerTest
         List<TransactionRequest> sent = sentRequests(4);
         assertEquals("all four fills across two slots forwarded", 4, sent.size());
     }
+
+    @Test
+    public void sellFill_firesSessionRefreshCallback_butBuyDoesNot()
+    {
+        int[] fired = {0};
+        logger.setOnSellRecorded(() -> fired[0]++);
+
+        deliverFill(completed(1L, 0, true, 10, 100, 1_000L), 10, 1_000L);
+        assertEquals("a buy fill does not refresh session P&L", 0, fired[0]);
+
+        deliverFill(completed(2L, 0, false, 10, 110, 2_000L), 10, 1_100L);
+        assertEquals("a sell fill refreshes session P&L once the push resolves", 1, fired[0]);
+    }
 }
