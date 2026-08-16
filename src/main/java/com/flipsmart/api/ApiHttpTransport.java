@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import lombok.Getter;
@@ -80,6 +81,9 @@ public class ApiHttpTransport
 
 	// Coalesce concurrent authenticateAsync() calls into a single attempt
 	private volatile CompletableFuture<Boolean> pendingAuthFuture = null;
+
+	// Guards the re-login prompt so a burst of failed requests raises it once, not once per call
+	private final AtomicBoolean authFailureNotified = new AtomicBoolean(false);
 
 	public ApiHttpTransport(OkHttpClient httpClient, Gson gson, FlipSmartConfig config)
 	{
@@ -321,8 +325,16 @@ public class ApiHttpTransport
 			return CompletableFuture.completedFuture(true);
 		}
 
-		// Token is missing or expired, authenticate
-		return authenticateAsync();
+		// Token is missing or expired, authenticate. If that fails terminally,
+		// surface it so the UI can prompt a re-login instead of failing silently.
+		return authenticateAsync().thenApply(success ->
+		{
+			if (!success)
+			{
+				notifyAuthFailure();
+			}
+			return success;
+		});
 	}
 
 	/**
@@ -539,6 +551,9 @@ public class ApiHttpTransport
 			// wrongly treats a user with web/other-rsn premium as premium on a free rsn. Premium
 			// is sourced solely from the flip-finder payload (subscription.tier), which is per-rsn.
 		}
+
+		// A fresh token means any prior terminal failure is resolved; re-arm the prompt.
+		authFailureNotified.set(false);
 
 		// Notify outside of lock to avoid potential deadlocks
 		if (newRefreshToken != null && onRefreshTokenChanged != null)
@@ -837,6 +852,9 @@ public class ApiHttpTransport
 			isPremium = true;
 			isRsnBlocked = false;
 		}
+		// Re-arm the prompt so a fresh failure on the next login isn't suppressed
+		// by a stale flag from before this logout.
+		authFailureNotified.set(false);
 	}
 
 
@@ -845,9 +863,24 @@ public class ApiHttpTransport
 	 */
 	private void notifyAuthFailure()
 	{
-		if (onAuthFailure != null)
+		boolean recoverable;
+		synchronized (authLock)
 		{
-			onAuthFailure.run();
+			recoverable = refreshToken != null && !refreshToken.isEmpty();
+		}
+		// A retained refresh token means the failure is transient (e.g. a 5xx) and the
+		// next attempt can recover on its own — don't prompt. Only when no credential
+		// remains is the session truly dead. compareAndSet keeps it to one prompt until
+		// the next successful auth resets the flag.
+		if (recoverable || !authFailureNotified.compareAndSet(false, true))
+		{
+			return;
+		}
+		log.warn("FlipSmart session expired and could not be renewed; prompting re-login");
+		Runnable callback = onAuthFailure;
+		if (callback != null)
+		{
+			callback.run();
 		}
 	}
 
