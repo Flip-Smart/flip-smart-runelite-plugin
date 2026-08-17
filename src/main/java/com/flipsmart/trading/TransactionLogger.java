@@ -35,7 +35,7 @@ public final class TransactionLogger
     // Fired after a sell fill's push resolves (the backend pairs the flip within that
     // request), so session P&L can refresh off the just-recorded completed flip rather
     // than waiting for the next timer poll.
-    private Runnable onSellRecorded;
+    private volatile Runnable onSellRecorded;
 
     private final Set<String> seenKeys = Collections.synchronizedSet(
         Collections.newSetFromMap(
