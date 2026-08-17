@@ -178,10 +178,11 @@ public class ServiceWiring
 	 * to, so every state change the tracker applies is recorded exactly once.
 	 */
 	public void wireTransactionLogger(FlipSmartPlugin plugin, PlayerSession session, OfferStore offerStore,
-		RoundTripLedger roundTripLedger)
+		RoundTripLedger roundTripLedger, PanelRefreshCoalescer refreshCoalescer)
 	{
 		TransactionLogger logger = new TransactionLogger(
 			plugin.getApiClient(), session, plugin::getCurrentRsnSafe, roundTripLedger);
+		logger.setOnSellRecorded(() -> refreshCoalescer.requestSoon(true));
 		offerStore.addListener(logger::onOfferEvent);
 	}
 

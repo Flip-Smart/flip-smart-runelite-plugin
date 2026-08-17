@@ -166,6 +166,49 @@ public class PanelRefreshCoalescerTest
 	}
 
 	@Test
+	public void requestSoonFiresAfterShortWindow()
+	{
+		coalescer.requestSoon(true);
+		assertEquals(1, scheduler.delays.size());
+		assertEquals(PanelRefreshCoalescer.FAST_QUIET_WINDOW_MS, (int) scheduler.delays.get(0));
+
+		now = PanelRefreshCoalescer.FAST_QUIET_WINDOW_MS;
+		scheduler.fire();
+
+		assertEquals(1, fullRefreshes);
+		assertEquals(0, activeFlipsRefreshes);
+	}
+
+	@Test
+	public void fastRequestShortensAnOpenSlowWindow()
+	{
+		coalescer.request(true);
+		now = 1_000;
+		coalescer.requestSoon(true);
+
+		// The slow window's one-shot fires; the fast join shrank the quiet window, so
+		// sinceLast (4000) already exceeds it and the refresh fires instead of rescheduling.
+		now = 5_000;
+		scheduler.fire();
+
+		assertEquals(1, fullRefreshes);
+	}
+
+	@Test
+	public void quietWindowResetsToDefaultAfterFastCycle()
+	{
+		coalescer.requestSoon(true);
+		now = PanelRefreshCoalescer.FAST_QUIET_WINDOW_MS;
+		scheduler.fire();
+		assertEquals(1, fullRefreshes);
+
+		// A later ordinary request must use the full window again, not the fast one.
+		now = 20_000;
+		coalescer.request(true);
+		assertEquals(PanelRefreshCoalescer.QUIET_WINDOW_MS, (int) scheduler.delays.get(1));
+	}
+
+	@Test
 	public void fullFlagResetsBetweenWindows()
 	{
 		coalescer.request(true);
