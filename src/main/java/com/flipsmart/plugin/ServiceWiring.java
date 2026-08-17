@@ -182,7 +182,7 @@ public class ServiceWiring
 	{
 		TransactionLogger logger = new TransactionLogger(
 			plugin.getApiClient(), session, plugin::getCurrentRsnSafe, roundTripLedger);
-		logger.setOnSellRecorded(() -> refreshCoalescer.request(true));
+		logger.setOnSellRecorded(() -> refreshCoalescer.requestSoon(true));
 		offerStore.addListener(logger::onOfferEvent);
 	}
 

@@ -17,6 +17,9 @@ import java.util.function.LongSupplier;
 public class PanelRefreshCoalescer
 {
 	public static final int QUIET_WINDOW_MS = 5_000;
+	// A completed flip changes session P&L, which the user watches update live; that refresh
+	// wants a much shorter quiet window than a burst of routine offer events does.
+	public static final int FAST_QUIET_WINDOW_MS = 750;
 	public static final int MAX_WAIT_MS = 10_000;
 
 	private final BiConsumer<Integer, Runnable> oneShotScheduler;
@@ -28,6 +31,9 @@ public class PanelRefreshCoalescer
 	private boolean fullRequested;
 	private long firstRequestAt;
 	private long lastRequestAt;
+	// The quiet window for the pending cycle. The fastest request in a cycle wins, so a
+	// completed-flip refresh riding an open offer-event window still fires promptly.
+	private int quietWindowMs = QUIET_WINDOW_MS;
 
 	public PanelRefreshCoalescer(BiConsumer<Integer, Runnable> oneShotScheduler, LongSupplier clock,
 		Runnable fullRefresh, Runnable activeFlipsRefresh)
@@ -41,6 +47,18 @@ public class PanelRefreshCoalescer
 	/** Request a refresh when the current window closes, opening one if needed. */
 	public void request(boolean full)
 	{
+		request(full, QUIET_WINDOW_MS);
+	}
+
+	/** As {@link #request} but with the short quiet window, for a refresh the user watches live. */
+	public void requestSoon(boolean full)
+	{
+		request(full, FAST_QUIET_WINDOW_MS);
+	}
+
+	private void request(boolean full, int quietMs)
+	{
+		int scheduleMs;
 		synchronized (this)
 		{
 			long now = clock.getAsLong();
@@ -48,12 +66,15 @@ public class PanelRefreshCoalescer
 			fullRequested |= full;
 			if (windowOpen)
 			{
+				quietWindowMs = Math.min(quietWindowMs, quietMs);
 				return;
 			}
 			windowOpen = true;
 			firstRequestAt = now;
+			quietWindowMs = quietMs;
+			scheduleMs = quietMs;
 		}
-		oneShotScheduler.accept(QUIET_WINDOW_MS, this::onTimerFire);
+		oneShotScheduler.accept(scheduleMs, this::onTimerFire);
 	}
 
 	private void onTimerFire()
@@ -65,15 +86,16 @@ public class PanelRefreshCoalescer
 			long now = clock.getAsLong();
 			long sinceLast = now - lastRequestAt;
 			long sinceFirst = now - firstRequestAt;
-			if (sinceLast >= QUIET_WINDOW_MS || sinceFirst >= MAX_WAIT_MS)
+			if (sinceLast >= quietWindowMs || sinceFirst >= MAX_WAIT_MS)
 			{
 				action = fullRequested ? fullRefresh : activeFlipsRefresh;
 				windowOpen = false;
 				fullRequested = false;
+				quietWindowMs = QUIET_WINDOW_MS;
 			}
 			else
 			{
-				nextDelayMs = (int) Math.max(1, Math.min(QUIET_WINDOW_MS - sinceLast, MAX_WAIT_MS - sinceFirst));
+				nextDelayMs = (int) Math.max(1, Math.min(quietWindowMs - sinceLast, MAX_WAIT_MS - sinceFirst));
 			}
 		}
 		if (action != null)
