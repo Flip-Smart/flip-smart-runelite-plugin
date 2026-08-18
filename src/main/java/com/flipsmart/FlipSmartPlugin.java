@@ -2295,6 +2295,16 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Flip item IDs collected into inventory. Exit Trades seeds sell targets from these so a
+	 * fully-collected position with no live GE slot still prompts a sell; the controller filters to
+	 * items actually held via getExitInventoryQty.
+	 */
+	public List<Integer> getExitHeldSellItemIds()
+	{
+		return session != null ? new ArrayList<>(session.getCollectedItemIds()) : Collections.emptyList();
+	}
+
+	/**
 	 * Backend-computed exit sell price for {@code itemId} (the advisor's exit-at-breakeven,
 	 * stored in the session), used as the source of truth for breakeven mode. 0 when unknown.
 	 */

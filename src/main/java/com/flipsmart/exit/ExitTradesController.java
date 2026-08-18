@@ -7,12 +7,15 @@ import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
 import java.util.function.IntUnaryOperator;
+import java.util.function.Supplier;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -25,6 +28,7 @@ import lombok.extern.slf4j.Slf4j;
 public final class ExitTradesController
 {
 	private static final int GE_SLOTS = 8;
+	private static final int NO_SLOT = -1; // slot-less target: stock held in inventory, no live GE offer
 
 	private final OfferStore offerStore;
 	@Setter
@@ -35,6 +39,10 @@ public final class ExitTradesController
 	private IntFunction<WikiPrice> wikiPriceSupplier = itemId -> null;
 	@Setter
 	private IntUnaryOperator inventoryQtySupplier = itemId -> 0;
+	@Setter
+	private IntFunction<String> itemNameSupplier = itemId -> "";
+	@Setter
+	private Supplier<List<Integer>> heldSellItemIdsSupplier = Collections::emptyList;
 	@Setter
 	private Consumer<FocusedFlip> onFocusTarget = f -> { };
 	@Setter
@@ -90,8 +98,43 @@ public final class ExitTradesController
 				? ExitSlotTarget.forBuy(slot, r.getItemId(), r.getItemName(), basis)
 				: ExitSlotTarget.sell(slot, r.getItemId(), r.getItemName(), basis));
 		}
+		int slotTargets = targets.size();
+		seedHeldInventory();
 		active = !targets.isEmpty();
-		log.debug("Exit Trades started: mode={} occupiedSlots={}", mode, targets.size());
+		log.debug("Exit Trades started: mode={} slots={} inventoryHeld={}",
+			mode, slotTargets, targets.size() - slotTargets);
+	}
+
+	/**
+	 * Seed sell targets for stock already collected into inventory with no live GE slot.
+	 * Without this a fully-collected position builds an empty slot queue and silently no-ops, so the
+	 * exit prompt never fires until an unrelated action advances the queue.
+	 */
+	private void seedHeldInventory()
+	{
+		Set<Integer> alreadyQueued = new HashSet<>();
+		for (ExitSlotTarget t : targets)
+		{
+			alreadyQueued.add(t.getItemId());
+		}
+		for (int itemId : heldSellItemIdsSupplier.get())
+		{
+			if (!alreadyQueued.add(itemId))
+			{
+				continue; // already covered by a live slot (or a duplicate id)
+			}
+			int held = inventoryQtySupplier.applyAsInt(itemId);
+			if (held <= 0)
+			{
+				continue; // collected set is stale — nothing actually in inventory
+			}
+			int basis = buyBasisSupplier.applyAsInt(itemId);
+			ExitSlotTarget target = ExitSlotTarget.sell(NO_SLOT, itemId, itemNameSupplier.apply(itemId), basis);
+			target.setPhase(ExitPhase.CANCELLED_HOLDING);
+			target.setHeldQuantity(held);
+			targets.add(target);
+			log.debug("Exit Trades: seeded inventory-held sell target item {} qty {}", itemId, held);
+		}
 	}
 
 

@@ -104,6 +104,8 @@ public class ServiceWiring
 		controller.setBackendSellPriceSupplier(plugin::getExitBackendSellPrice);
 		controller.setWikiPriceSupplier(plugin::getWikiPrice);
 		controller.setInventoryQtySupplier(plugin::getExitInventoryQty);
+		controller.setItemNameSupplier(plugin::getItemName);
+		controller.setHeldSellItemIdsSupplier(plugin::getExitHeldSellItemIds);
 		controller.setOnFocusTarget(flipAssistOverlay::setFocusedFlip);
 		controller.setOnStatusMessage(flipAssistOverlay::setAutoStatusMessage);
 		controller.setOnHighlightSlotForItem(plugin::highlightSlotForItem);
