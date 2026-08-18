@@ -256,8 +256,11 @@ public final class ExitTradesController
 					{
 						// Cancelled-sell stock now in inventory: re-list it rather than finishing.
 						t.setPhase(ExitPhase.CANCELLED_HOLDING);
-						log.debug("Exit Trades: slot {} item {} cancelled-sell stock collected -> CANCELLED_HOLDING",
-							t.getSlot(), t.getItemId());
+						if (log.isDebugEnabled())
+						{
+							log.debug("Exit Trades: slot {} item {} cancelled-sell stock collected -> CANCELLED_HOLDING",
+								t.getSlot(), t.getItemId());
+						}
 						return true;
 					}
 					t.setPhase(ExitPhase.DONE);
@@ -277,8 +280,11 @@ public final class ExitTradesController
 						int unsold = Math.max(0, record.getTotalQuantity() - record.getFilledQuantity());
 						t.setHeldQuantity(unsold);
 						t.setPhase(ExitPhase.AWAITING_COLLECT);
-						log.debug("Exit Trades: slot {} item {} sell cancelled — {} unsold -> AWAITING_COLLECT",
-							t.getSlot(), t.getItemId(), unsold);
+						if (log.isDebugEnabled())
+						{
+							log.debug("Exit Trades: slot {} item {} sell cancelled — {} unsold -> AWAITING_COLLECT",
+								t.getSlot(), t.getItemId(), unsold);
+						}
 					}
 					return true;
 				}
@@ -382,8 +388,11 @@ public final class ExitTradesController
 					t.setPhase(ExitPhase.AWAITING_COLLECT);
 				}
 				boolean cancelledStock = t.getHeldQuantity() > 0;
-				log.debug("Exit Trades: prompt collect ({}) slot {} item {}",
-					cancelledStock ? "cancelled" : "profit", t.getSlot(), t.getItemId());
+				if (log.isDebugEnabled())
+				{
+					log.debug("Exit Trades: prompt collect ({}) slot {} item {}",
+						cancelledStock ? "cancelled" : "profit", t.getSlot(), t.getItemId());
+				}
 				onStatusMessage.accept("Exit Trades: collect the "
 					+ (cancelledStock ? "cancelled " : "profit for ") + t.getItemName(), t.getItemId());
 				return;
@@ -410,7 +419,10 @@ public final class ExitTradesController
 		{
 			onFocusTarget.accept(null);
 			onClearHighlights.run();
-			log.debug("Exit Trades: prompt collect (cancelled sell, slot freed) item {}", t.getItemId());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Exit Trades: prompt collect (cancelled sell, slot freed) item {}", t.getItemId());
+			}
 			onStatusMessage.accept("Exit Trades: collect the cancelled " + t.getItemName(), t.getItemId());
 			return;
 		}
