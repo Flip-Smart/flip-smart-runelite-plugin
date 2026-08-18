@@ -252,6 +252,14 @@ public final class ExitTradesController
 				}
 				if (record.getState() == OfferState.COLLECTED)
 				{
+					if (t.getHeldQuantity() > 0)
+					{
+						// Cancelled-sell stock now in inventory: re-list it rather than finishing.
+						t.setPhase(ExitPhase.CANCELLED_HOLDING);
+						log.debug("Exit Trades: slot {} item {} cancelled-sell stock collected -> CANCELLED_HOLDING",
+							t.getSlot(), t.getItemId());
+						return true;
+					}
 					t.setPhase(ExitPhase.DONE);
 					log.debug("Exit Trades: slot {} item {} sell profit collected -> DONE",
 						t.getSlot(), t.getItemId());
@@ -260,10 +268,18 @@ public final class ExitTradesController
 				if (record.getState() == OfferState.CANCELLED_EMPTY
 					|| record.getState() == OfferState.CANCELLED_PARTIAL)
 				{
-					// Player cancelled the sell to modify it; stock is now in inventory. Re-surface so
-					// the prompt stays locked to re-listing this item (never falls back to a buy).
-					log.debug("Exit Trades: slot {} item {} sell cancelled — re-surfacing sell prompt",
-						t.getSlot(), t.getItemId());
+					// Player cancelled the sell to re-price it. Unsold stock goes to the GE collection
+					// box and must be collected before it can be re-listed (confirmed in-game), so mirror
+					// the buy path: await the collect, then re-list. Capturing the unsold quantity also
+					// distinguishes this from a sold-out sell when the collect lands.
+					if (t.getPhase() != ExitPhase.AWAITING_COLLECT)
+					{
+						int unsold = Math.max(0, record.getTotalQuantity() - record.getFilledQuantity());
+						t.setHeldQuantity(unsold);
+						t.setPhase(ExitPhase.AWAITING_COLLECT);
+						log.debug("Exit Trades: slot {} item {} sell cancelled — {} unsold -> AWAITING_COLLECT",
+							t.getSlot(), t.getItemId(), unsold);
+					}
 					return true;
 				}
 			}
@@ -357,15 +373,19 @@ public final class ExitTradesController
 				|| live.getFilledQuantity() >= live.getTotalQuantity();
 			if (sold)
 			{
-				// Already sold on its own: collect the profit, nothing to re-list.
+				// Sold on its own (collect the profit) or cancelled with unsold stock (collect it to
+				// re-list). Either way the collect must happen before the slot frees.
 				onFocusTarget.accept(null);
 				onHighlightSlotForItem.accept(t.getItemId());
 				if (t.getPhase() != ExitPhase.AWAITING_COLLECT)
 				{
 					t.setPhase(ExitPhase.AWAITING_COLLECT);
 				}
-				log.debug("Exit Trades: prompt collect-profit slot {} item {}", t.getSlot(), t.getItemId());
-				onStatusMessage.accept("Exit Trades: collect the profit for " + t.getItemName(), t.getItemId());
+				boolean cancelledStock = t.getHeldQuantity() > 0;
+				log.debug("Exit Trades: prompt collect ({}) slot {} item {}",
+					cancelledStock ? "cancelled" : "profit", t.getSlot(), t.getItemId());
+				onStatusMessage.accept("Exit Trades: collect the "
+					+ (cancelledStock ? "cancelled " : "profit for ") + t.getItemName(), t.getItemId());
 				return;
 			}
 			// Still listed: re-list at the exit price — unless it's already at it.
@@ -380,6 +400,18 @@ public final class ExitTradesController
 			}
 			modifyingActiveOffer = true; // offer owns its slot; suppress the empty-slot sell glow
 			surfaceSell(t, price, Math.max(1, live.getTotalQuantity()), true);
+			return;
+		}
+
+		// Cancelled sell whose slot already freed: the unsold stock sits in the GE collection box, not
+		// inventory. Keep prompting the collect — do NOT fall through to the held-in-inventory check,
+		// which reads 0 (nothing in inventory yet) and would wrongly mark the target done.
+		if (!t.isBuy() && t.getPhase() == ExitPhase.AWAITING_COLLECT)
+		{
+			onFocusTarget.accept(null);
+			onClearHighlights.run();
+			log.debug("Exit Trades: prompt collect (cancelled sell, slot freed) item {}", t.getItemId());
+			onStatusMessage.accept("Exit Trades: collect the cancelled " + t.getItemName(), t.getItemId());
 			return;
 		}
 

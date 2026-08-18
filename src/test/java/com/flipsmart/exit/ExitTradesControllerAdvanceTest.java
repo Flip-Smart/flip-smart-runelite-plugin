@@ -85,6 +85,42 @@ public class ExitTradesControllerAdvanceTest
 	}
 
 	@Test
+	public void cancelledSellAwaitsCollectThenHoldsThenDone()
+	{
+		seed(0, 561, false);
+		controller.start(ExitTradesMode.INSTANT);
+		// Player cancels the live sell to re-price it. Unsold stock goes to the GE collection box
+		// (confirmed in-game #1274) — it must be collected before it can be re-listed.
+		controller.onOfferChanged(rec(0, 561, false, 0, OfferState.CANCELLED_EMPTY));
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
+		assertEquals(10, controller.getTargets().get(0).getHeldQuantity()); // all 10 unsold
+		assertEquals(1, controller.actedCount());
+
+		// Collect the unsold stock into inventory. Unlike a sold-out sell (which is DONE on collect),
+		// a cancelled sell still has stock to re-list, so it becomes a holding target.
+		controller.onOfferChanged(rec(0, 561, false, 0, OfferState.COLLECTED));
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+
+		// Re-list the held stock at the exit price -> done.
+		controller.onOfferChanged(rec(0, 561, false, 0, OfferState.NEW));
+		assertEquals(ExitPhase.DONE, controller.getTargets().get(0).getPhase());
+	}
+
+	@Test
+	public void cancelledPartialSellCapturesUnsoldQtyThenHolds()
+	{
+		seed(0, 561, false);
+		controller.start(ExitTradesMode.INSTANT);
+		// 4 of 10 sold before cancel; the 6 unsold go to the collection box.
+		controller.onOfferChanged(rec(0, 561, false, 4, OfferState.CANCELLED_PARTIAL));
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
+		assertEquals(6, controller.getTargets().get(0).getHeldQuantity());
+
+		controller.onOfferChanged(rec(0, 561, false, 4, OfferState.COLLECTED));
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+	}
+
+	@Test
 	public void buyCancelWithNoStockGoesDone()
 	{
 		seed(1, 4151, true);
