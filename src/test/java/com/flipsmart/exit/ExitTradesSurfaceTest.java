@@ -51,6 +51,51 @@ public class ExitTradesSurfaceTest
 		store.importRecords(new java.util.ArrayList<>());
 	}
 
+	private OfferRecord rec(int slot, int itemId, boolean buy, int filled, com.flipsmart.domain.offer.OfferState state)
+	{
+		return OfferRecord.newOffer(9000L + slot, slot, itemId, "Item", buy, 1000, 100, 1L)
+			.withFill(filled, 0L, state, 2L);
+	}
+
+	@Test
+	public void cancelledSellWithFreedSlotPromptsCollectNotSkip()
+	{
+		seed(0, 561, false, 1000);
+		controller.start(ExitTradesMode.INSTANT);
+		// Cancel the live sell: unsold stock lands in the GE collection box, not inventory (#1274).
+		controller.onOfferChanged(rec(0, 561, false, 0, com.flipsmart.domain.offer.OfferState.CANCELLED_EMPTY));
+		clearStore();  // slot freed while the stock waits in the collection box
+		inventory = 0; // nothing in inventory yet — it must be collected first
+
+		controller.surfaceCurrent();
+
+		// Must prompt a collect and hold the target, not read inventory==0 and drop it.
+		assertEquals(ExitPhase.AWAITING_COLLECT, controller.getTargets().get(0).getPhase());
+		assertFalse(completed.get());
+		assertTrue(lastStatus.get().toLowerCase(Locale.ROOT).contains("collect"));
+	}
+
+	@Test
+	public void cancelledSellAfterCollectPromptsRelist()
+	{
+		seed(0, 561, false, 1000);
+		controller.start(ExitTradesMode.INSTANT);
+		controller.onOfferChanged(rec(0, 561, false, 0, com.flipsmart.domain.offer.OfferState.CANCELLED_EMPTY));
+		// Player collects: the unsold stock is now in inventory.
+		controller.onOfferChanged(rec(0, 561, false, 0, com.flipsmart.domain.offer.OfferState.COLLECTED));
+		assertEquals(ExitPhase.CANCELLED_HOLDING, controller.getTargets().get(0).getPhase());
+		clearStore();
+		inventory = 1000;
+
+		controller.surfaceCurrent();
+
+		FocusedFlip f = lastFocus.get();
+		assertNotNull(f);
+		assertTrue(f.isSelling());
+		assertEquals(561, f.getItemId());
+		assertEquals(1000, f.getCurrentStepQuantity());
+	}
+
 	@Test
 	public void sellTargetSurfacesInstantSellFocus()
 	{
