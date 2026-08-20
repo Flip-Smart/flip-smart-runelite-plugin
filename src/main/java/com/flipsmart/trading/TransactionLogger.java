@@ -37,6 +37,9 @@ public final class TransactionLogger
     // than waiting for the next timer poll.
     private volatile Runnable onSellRecorded;
 
+    // Tags recorded transactions with the player's active flip timeframe; defaults to untagged.
+    private volatile Supplier<String> timeframeSupplier = () -> null;
+
     private final Set<String> seenKeys = Collections.synchronizedSet(
         Collections.newSetFromMap(
             new LinkedHashMap<String, Boolean>()
@@ -66,6 +69,11 @@ public final class TransactionLogger
     public void setOnSellRecorded(Runnable callback)
     {
         this.onSellRecorded = callback;
+    }
+
+    public void setTimeframeSupplier(Supplier<String> supplier)
+    {
+        this.timeframeSupplier = supplier;
     }
 
     public void onOfferEvent(OfferEvent e)
@@ -205,7 +213,8 @@ public final class TransactionLogger
             .rsn(rsn)
             .totalQuantity(r.getTotalQuantity())
             .idempotencyKey(key)
-            .offerId(r.getOfferId());
+            .offerId(r.getOfferId())
+            .timeframe(timeframeSupplier.get());
     }
 
     /**

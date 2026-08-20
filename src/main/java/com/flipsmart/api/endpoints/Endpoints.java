@@ -1272,6 +1272,10 @@ public final class Endpoints
 			{
 				jsonBody.addProperty("slot_generation", request.slotGeneration);
 			}
+			if (request.timeframe != null)
+			{
+				jsonBody.addProperty("timeframe", request.timeframe);
+			}
 
 			RequestBody body = RequestBody.create(JSON, jsonBody.toString());
 

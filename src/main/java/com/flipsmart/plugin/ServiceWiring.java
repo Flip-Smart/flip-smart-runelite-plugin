@@ -179,12 +179,16 @@ public class ServiceWiring
 	 * recording path. It must subscribe to the same OfferStore instance the tracker writes
 	 * to, so every state change the tracker applies is recorded exactly once.
 	 */
-	public void wireTransactionLogger(FlipSmartPlugin plugin, PlayerSession session, OfferStore offerStore,
-		RoundTripLedger roundTripLedger, PanelRefreshCoalescer refreshCoalescer)
+	public void wireTransactionLogger(FlipSmartPlugin plugin, FlipSmartConfig config, PlayerSession session,
+		OfferStore offerStore, RoundTripLedger roundTripLedger, PanelRefreshCoalescer refreshCoalescer)
 	{
 		TransactionLogger logger = new TransactionLogger(
 			plugin.getApiClient(), session, plugin::getCurrentRsnSafe, roundTripLedger);
 		logger.setOnSellRecorded(() -> refreshCoalescer.requestSoon(true));
+		logger.setTimeframeSupplier(() -> {
+			FlipSmartConfig.FlipTimeframe tf = config.flipTimeframe();
+			return tf != null && tf.isTimeframeBased() ? tf.getApiValue() : null;
+		});
 		offerStore.addListener(logger::onOfferEvent);
 	}
 
