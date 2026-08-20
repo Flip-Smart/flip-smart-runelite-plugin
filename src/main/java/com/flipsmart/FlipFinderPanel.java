@@ -2871,7 +2871,7 @@ public class FlipFinderPanel extends PluginPanel
 		int displaySellPrice = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
 		int displayMargin = displaySellPrice - displayBuyPrice;
 		int geTax = GeTax.taxFor(rec.getItemId(), displaySellPrice);
-		long displayProfit = (long) (displayMargin - geTax) * rec.getRecommendedQuantity();
+		long displayProfit = ((long) displayMargin - geTax) * rec.getRecommendedQuantity();
 		long displayCost = (long) displayBuyPrice * rec.getRecommendedQuantity();
 		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
 
