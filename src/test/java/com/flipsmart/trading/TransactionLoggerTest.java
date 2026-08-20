@@ -87,6 +87,22 @@ public class TransactionLoggerTest
     }
 
     @Test
+    public void timeframeSupplier_tagsRecordedTransactions()
+    {
+        logger.setTimeframeSupplier(() -> "12h");
+        deliverFill(completed(1L, 0, true, 10, 100, 1_000L), 10, 1_000L);
+        assertEquals("configured timeframe is tagged on the transaction",
+            "12h", sentRequests(1).get(0).timeframe);
+    }
+
+    @Test
+    public void noTimeframeSupplier_leavesTransactionUntagged()
+    {
+        deliverFill(completed(1L, 0, true, 10, 100, 1_000L), 10, 1_000L);
+        assertEquals("untagged by default", null, sentRequests(1).get(0).timeframe);
+    }
+
+    @Test
     public void genuineRepeatRoundTrip_forwardsEveryFill()
     {
         // buy -> sell (closes) -> genuine new buy (opens next cycle) -> sell (closes) on the same slot.
