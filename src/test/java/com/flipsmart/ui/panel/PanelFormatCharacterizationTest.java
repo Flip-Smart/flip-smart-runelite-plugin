@@ -60,14 +60,27 @@ public class PanelFormatCharacterizationTest
 
 	/**
 	 * formatGP itself takes a long and handles values past Integer.MAX_VALUE correctly.
-	 * The saturation risk tracked by #961 lives at the CALL SITES that narrow to int
-	 * (see formatVolumeText and formatProfitCostText below), not in this method.
+	 * The remaining risk tracked by #961 lived at the totals CALL SITES; formatProfitCostText
+	 * (below) now takes long, and its caller widens margin*qty and buyPrice*qty to long before
+	 * multiplying, so a large-quantity flip no longer overflows int into a garbage total.
 	 */
 	@Test
 	public void formatGpHandlesValuesBeyondIntegerRange()
 	{
 		assertEquals("2147.5M", PanelFormat.formatGP(2_147_483_647L));
 		assertEquals("2147.5M", PanelFormat.formatGP(2_147_483_648L));
+	}
+
+	/**
+	 * Regression for #961: a profit/cost total above Integer.MAX_VALUE must render its true
+	 * magnitude, not a saturated or int-overflowed value. Narrowing 3B to int would wrap to a
+	 * negative number ("-1294.9M"); the long path renders the real figure.
+	 */
+	@Test
+	public void formatProfitCostTextRendersTotalsBeyondIntegerRange()
+	{
+		assertEquals("Profit: 3000.0M | Cost: 5000.0M",
+			PanelFormat.formatProfitCostText(3_000_000_000L, 5_000_000_000L));
 	}
 
 	@Test

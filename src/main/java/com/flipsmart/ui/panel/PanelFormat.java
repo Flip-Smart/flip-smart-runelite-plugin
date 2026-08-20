@@ -166,7 +166,7 @@ public final class PanelFormat
 	/**
 	 * Format profit and cost text for display
 	 */
-	public static String formatProfitCostText(int totalProfit, int totalCost)
+	public static String formatProfitCostText(long totalProfit, long totalCost)
 	{
 		String profitText = Math.abs(totalProfit) >= 1000
 			? formatGP(totalProfit)
