@@ -74,6 +74,16 @@ public class GpUtilsTest
 	}
 
 	@Test
+	public void formatsValuesBeyondIntegerRangeWithoutSaturating()
+	{
+		// #961: a total above Integer.MAX_VALUE must render its real magnitude, not cap at ~2.1B.
+		assertEquals("3000.0M", GpUtils.formatGP(3_000_000_000L));
+		assertEquals("3000.0M", GpUtils.formatGPSigned(3_000_000_000L));
+		assertEquals("-3000.0M", GpUtils.formatGPSigned(-3_000_000_000L));
+		assertEquals("3,000,000,000", GpUtils.formatGPExact(3_000_000_000L));
+	}
+
+	@Test
 	public void rejectsBlankInput()
 	{
 		assertFalse(GpUtils.parseGp("").isPresent());
