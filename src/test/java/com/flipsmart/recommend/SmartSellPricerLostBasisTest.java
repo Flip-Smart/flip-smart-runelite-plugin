@@ -71,6 +71,30 @@ public class SmartSellPricerLostBasisTest
 		assertEquals(Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
 	}
 
+	@Test
+	public void smartSellPriceKeepsRecommendationThatClearsBreakeven()
+	{
+		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 9_000_000), MARKET_PRICE);
 
+		assertEquals("a recommendation at or above breakeven outranks the market price",
+			Integer.valueOf(9_000_000), price);
+	}
 
+	@Test
+	public void smartSellPriceKeepsRecommendationWhenUnderwaterAndMarketIsUnviable()
+	{
+		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 7_000_000), null);
+
+		assertEquals("with no viable market, an underwater recommendation is still the last known target",
+			Integer.valueOf(7_000_000), price);
+	}
+
+	@Test
+	public void smartSellPriceFallsBackToBreakevenWhenOnlyBasisIsKnown()
+	{
+		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, null), null);
+
+		assertEquals("no recommendation and no market leaves breakeven as the floor",
+			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
+	}
 }
