@@ -113,7 +113,7 @@ public final class SmartSellPricer
 		{
 			return minProfitablePrice;
 		}
-		return recommended != null ? recommended : minProfitablePrice;
+		return isPositive(recommended) ? recommended : minProfitablePrice;
 	}
 
 	private static boolean isPositive(Integer value)
