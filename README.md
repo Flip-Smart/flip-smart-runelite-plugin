@@ -1,14 +1,8 @@
 # FlipSmart RuneLite Plugin
 
-A RuneLite plugin that helps you find profitable items to flip in the Grand Exchange and automatically tracks your flipping progress.
+A RuneLite plugin that recommends profitable items to flip in the Grand Exchange and automatically tracks your flipping progress.
 
-## 🔐 Authentication Required
-
-This plugin requires a **FlipSmart account** to use. You'll need to:
-
-1. Create an account on [FlipSmart](https://flipsmart.net)
-2. Log in through the plugin's **Flip Finder panel** in the RuneLite sidebar
-3. Your credentials are securely stored after login
+Sign up and log in through the plugin's **Flip Finder panel** in the RuneLite sidebar to get started. 
 
 Without authentication, the plugin will not function.
 
@@ -285,8 +279,7 @@ Access settings via the RuneLite configuration panel (wrench icon) → "FlipSmar
 - Desktop notifications follow your RuneLite notification settings unless you override them
 
 ## 🌐 Web Dashboard
-
-For advanced features beyond the plugin, visit [flipsmart.net](https://flipsmart.net):
+You can find a link to our website in the plugin side panel.
 
 - **Detailed price graphs** with historical trends
 - **Portfolio analytics** across all your accounts
