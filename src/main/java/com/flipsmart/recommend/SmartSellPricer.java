@@ -85,33 +85,44 @@ public final class SmartSellPricer
 		int buyPrice = flip.getAverageBuyPrice();
 		if (buyPrice <= 0)
 		{
-			Integer target = flip.getRecommendedSellPrice();
-			if (target != null && target > 0)
-			{
-				return target;
-			}
-			log.warn("No cost basis for item {} ({}); falling back to market",
-				flip.getItemId(), flip.getItemName());
-			return currentMarketPrice != null && currentMarketPrice > 0 ? currentMarketPrice : null;
+			return priceWithoutBasis(flip, currentMarketPrice);
 		}
+		return priceFromBasis(flip, currentMarketPrice, calculateMinProfitableSellPrice(buyPrice));
+	}
 
-		int minProfitablePrice = calculateMinProfitableSellPrice(buyPrice);
-
-		if (flip.getRecommendedSellPrice() != null && flip.getRecommendedSellPrice() >= minProfitablePrice)
+	private static Integer priceWithoutBasis(ActiveFlip flip, Integer currentMarketPrice)
+	{
+		Integer target = flip.getRecommendedSellPrice();
+		if (isPositive(target))
 		{
-			return flip.getRecommendedSellPrice();
+			return target;
 		}
+		log.warn("No cost basis for item {} ({}); falling back to market",
+			flip.getItemId(), flip.getItemName());
+		return isPositive(currentMarketPrice) ? currentMarketPrice : null;
+	}
 
-		if (currentMarketPrice != null && currentMarketPrice >= minProfitablePrice)
+	private static Integer priceFromBasis(ActiveFlip flip, Integer currentMarketPrice, int minProfitablePrice)
+	{
+		Integer recommended = flip.getRecommendedSellPrice();
+		if (atLeast(recommended, minProfitablePrice))
+		{
+			return recommended;
+		}
+		if (atLeast(currentMarketPrice, minProfitablePrice))
 		{
 			return minProfitablePrice;
 		}
+		return isPositive(recommended) ? recommended : minProfitablePrice;
+	}
 
-		if (flip.getRecommendedSellPrice() != null)
-		{
-			return flip.getRecommendedSellPrice();
-		}
+	private static boolean isPositive(Integer value)
+	{
+		return value != null && value > 0;
+	}
 
-		return minProfitablePrice;
+	private static boolean atLeast(Integer value, int threshold)
+	{
+		return value != null && value >= threshold;
 	}
 }
