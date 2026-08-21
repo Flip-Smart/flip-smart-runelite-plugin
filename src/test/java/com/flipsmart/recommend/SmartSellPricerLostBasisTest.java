@@ -97,4 +97,13 @@ public class SmartSellPricerLostBasisTest
 		assertEquals("no recommendation and no market leaves breakeven as the floor",
 			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
 	}
+
+	@Test
+	public void smartSellPriceRejectsANonPositiveRecommendation()
+	{
+		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 0), null);
+
+		assertEquals("a non-positive recommendation is not a price; breakeven is the floor",
+			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
+	}
 }
