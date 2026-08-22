@@ -1,9 +1,6 @@
 package com.flipsmart.recommend;
 
 import com.flipsmart.domain.flip.ActiveFlip;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
 import lombok.extern.slf4j.Slf4j;
 
 /**
