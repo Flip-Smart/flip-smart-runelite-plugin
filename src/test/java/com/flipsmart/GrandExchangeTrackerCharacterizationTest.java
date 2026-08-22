@@ -356,6 +356,45 @@ public class GrandExchangeTrackerCharacterizationTest
 	}
 
 	// ==================================================================
+	// Regression (#1223) — a flip's stock that has already been SOLD away
+	// must not be carried into a later same-item collect. Flip A buys 10,
+	// sells all 10 (inventory back to 0), then flip B buys 5. Only B's 5
+	// are currently held, so the collected total must read 5, not the raw
+	// historical buy sum (A's 10 + B's 5 = 15).
+	// Mutation check: reverting the tracked-quantity helper to sum buy
+	// fills only (dropping the sell subtraction) yields 15.
+	// ==================================================================
+	@Test
+	public void regression1223_soldStockNotCarriedIntoLaterCollect()
+	{
+		int[] inventory = {0};
+		when(activeFlipTracker.getInventoryCountForItem(anyInt()))
+			.thenAnswer(invocation -> inventory[0]);
+
+		// Flip A: buy 10, filled, collected. Inventory now holds 10.
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 10, 100, 10, 1000));
+		inventory[0] = 10;
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 100, 0, 0));
+		assertEquals("flip A collected 10", 10, session.getCollectedQuantity(ITEM_A));
+
+		// Sell all 10 in the same slot; inventory drops back to 0.
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 10, 150, 0, 0));
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.SOLD, ITEM_A, NAME_A, 10, 150, 10, 1500));
+		inventory[0] = 0;
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 150, 0, 0));
+
+		// Flip B: buy 5 more of the SAME item, filled, collected. Only these 5 are held.
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 5, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 5, 100, 5, 500));
+		inventory[0] = 5;
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 5, 100, 0, 0));
+
+		assertEquals("only flip B's 5 units are currently held; A's sold-off 10 must not carry over",
+			5, session.getCollectedQuantity(ITEM_A));
+	}
+
+	// ==================================================================
 	// Scenario 1 — Happy buy: placed -> partial(+4) -> complete(10).
 	// Each fill recorded exactly once; no double count.
 	// ==================================================================

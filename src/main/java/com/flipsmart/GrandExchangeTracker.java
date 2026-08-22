@@ -371,7 +371,7 @@ public class GrandExchangeTracker
 	private void handleCollectedBuyOffer(OfferRecord collectedOffer)
 	{
 		int itemId = collectedOffer.getItemId();
-		int trackedFills = collectedBuyFillsForItem(itemId);
+		int trackedFills = netTrackedQuantityForItem(itemId);
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
 		int collectedQty = trackedFills;
 
@@ -412,25 +412,27 @@ public class GrandExchangeTracker
 	}
 
 	/**
-	 * Fills held for {@code itemId}, summed across the store's terminal buy records. Aggregating
-	 * distinct offers keeps two flips of the same item from overwriting each other, and recomputing
-	 * from source each collect keeps a re-collected offer counted exactly once.
+	 * Net quantity of {@code itemId} our own terminal records account for: completed buy fills
+	 * minus completed sell fills. Subtracting sells keeps a same-item buy/sell/rebuy sequence
+	 * from carrying an already-sold-off flip's quantity into a later collect. Aggregating
+	 * distinct offers keeps two flips of the same item from overwriting each other, and
+	 * recomputing from source each collect keeps a re-collected offer counted exactly once.
 	 */
-	private int collectedBuyFillsForItem(int itemId)
+	private int netTrackedQuantityForItem(int itemId)
 	{
 		if (offerStore == null)
 		{
 			return 0;
 		}
-		int total = 0;
+		int net = 0;
 		for (OfferRecord r : offerStore.forItem(itemId))
 		{
-			if (r != null && r.isBuy() && r.getState().isTerminal())
+			if (r != null && r.getState().isTerminal())
 			{
-				total += r.getFilledQuantity();
+				net += r.isBuy() ? r.getFilledQuantity() : -r.getFilledQuantity();
 			}
 		}
-		return total;
+		return Math.max(0, net);
 	}
 
 	private void handleCollectedSellOffer(OfferRecord collectedOffer)
