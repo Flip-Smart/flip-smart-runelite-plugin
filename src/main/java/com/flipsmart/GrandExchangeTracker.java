@@ -370,21 +370,28 @@ public class GrandExchangeTracker
 
 	private void handleCollectedBuyOffer(OfferRecord collectedOffer)
 	{
-		int inventoryCount = activeFlipTracker.getInventoryCountForItem(collectedOffer.getItemId());
-		int trackedFills = collectedOffer.getFilledQuantity();
+		int itemId = collectedOffer.getItemId();
+		int trackedFills = collectedBuyFillsForItem(itemId);
+		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
 		int collectedQty = trackedFills;
 
-		if (inventoryCount > trackedFills)
+		// Inventory above the fills our own records account for was filled while the plugin
+		// wasn't tracking (an offline completion). Only that surplus can belong to this offer,
+		// bounded by its remaining capacity, so units of the same item still held from an earlier
+		// flip — already inside trackedFills — are never re-attributed to this collect.
+		int unattributed = inventoryCount - trackedFills;
+		if (unattributed > 0)
 		{
-			collectedQty = Math.min(inventoryCount, collectedOffer.getTotalQuantity());
-			log.debug("Order for {} may have completed offline - tracked {} fills but have {} in inventory. Using {} as collected quantity.",
+			int room = Math.max(0, collectedOffer.getTotalQuantity() - collectedOffer.getFilledQuantity());
+			collectedQty = trackedFills + Math.min(unattributed, room);
+			log.debug("Order for {} may have completed offline - records account for {} fills, {} in inventory. Using {} as collected quantity.",
 				collectedOffer.getItemName(), trackedFills, inventoryCount, collectedQty);
 
 			String rsn = getRsn().orElse(null);
 			if (rsn != null)
 			{
 				apiClient.syncActiveFlipAsync(
-					collectedOffer.getItemId(),
+					itemId,
 					collectedOffer.getItemName(),
 					collectedQty,
 					collectedOffer.getTotalQuantity(),
@@ -398,7 +405,29 @@ public class GrandExchangeTracker
 
 		log.debug("Buy offer collected from GE: {} x{} - tracking until sold",
 			collectedOffer.getItemName(), collectedQty);
-		session.addCollectedItem(collectedOffer.getItemId(), collectedQty);
+		session.addCollectedItem(itemId, collectedQty);
+	}
+
+	/**
+	 * Fills held for {@code itemId}, summed across the store's terminal buy records. Aggregating
+	 * distinct offers keeps two flips of the same item from overwriting each other, and recomputing
+	 * from source each collect keeps a re-collected offer counted exactly once.
+	 */
+	private int collectedBuyFillsForItem(int itemId)
+	{
+		if (offerStore == null)
+		{
+			return 0;
+		}
+		int total = 0;
+		for (OfferRecord r : offerStore.forItem(itemId))
+		{
+			if (r != null && r.isBuy() && r.getState().isTerminal())
+			{
+				total += r.getFilledQuantity();
+			}
+		}
+		return total;
 	}
 
 	private void handleCollectedSellOffer(OfferRecord collectedOffer)

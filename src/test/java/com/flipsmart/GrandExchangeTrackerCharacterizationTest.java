@@ -297,6 +297,65 @@ public class GrandExchangeTrackerCharacterizationTest
 	}
 
 	// ==================================================================
+	// Regression (#1223) — two DISTINCT flips of the same item must
+	// aggregate, not overwrite. Inventory left at 0 so the offline-fill
+	// path is off and this isolates the collected-total accounting: the
+	// item's collected quantity is the SUM of both flips' fills.
+	// Mutation check: reverting handleCollectedBuyOffer to read the single
+	// offer's filled qty makes the second collect overwrite, yielding 5.
+	// ==================================================================
+	@Test
+	public void regression1223_twoDistinctFlipsSameItem_aggregatesNotOverwrites()
+	{
+		// Flip A on slot 0: buy 10, fully filled, collected.
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 10, 100, 10, 1000));
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 100, 0, 0));
+		assertEquals("flip A collected", 10, session.getCollectedQuantity(ITEM_A));
+
+		// Flip B on slot 1: another 5 of the SAME item, fully filled, collected.
+		tracker.handleOfferChanged(ctx(1, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 5, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(1, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 5, 100, 5, 500));
+		tracker.handleOfferChanged(ctx(1, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 5, 100, 0, 0));
+
+		assertEquals("both flips aggregate: 10 + 5, not overwritten to 5",
+			15, session.getCollectedQuantity(ITEM_A));
+	}
+
+	// ==================================================================
+	// Regression (#1223) — a prior flip's stock already in inventory must
+	// not be borrowed by a later same-item collect. Flip A's 10 units sit
+	// in inventory; flip B (total 8, only 5 tracked-filled) then collects.
+	// The offer's collected qty must be the true aggregate (15), NOT the
+	// old inventory-min figure (min(inventory 15, B.total 8) = 8), which
+	// both under-counted the holding AND mis-synced B as an offline fill.
+	// ==================================================================
+	@Test
+	public void regression1223_priorStackInInventory_notBorrowedByLaterCollect()
+	{
+		int[] inventory = {0};
+		when(activeFlipTracker.getInventoryCountForItem(anyInt()))
+			.thenAnswer(invocation -> inventory[0]);
+
+		// Flip A: buy 10, filled, collected. Its 10 units are now in inventory.
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 10, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 10, 100, 10, 1000));
+		inventory[0] = 10;
+		tracker.handleOfferChanged(ctx(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 10, 100, 0, 0));
+		assertEquals("flip A collected 10", 10, session.getCollectedQuantity(ITEM_A));
+
+		// Flip B: order for 8, only 5 filled, then collected. B's 5 land on top
+		// of A's 10, so inventory reads 15 at B's collect.
+		tracker.handleOfferChanged(ctx(1, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 8, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(1, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 8, 100, 5, 500));
+		inventory[0] = 15;
+		tracker.handleOfferChanged(ctx(1, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 8, 100, 0, 0));
+
+		assertEquals("aggregate is A's 10 + B's 5, not B.total-capped 8",
+			15, session.getCollectedQuantity(ITEM_A));
+	}
+
+	// ==================================================================
 	// Scenario 1 — Happy buy: placed -> partial(+4) -> complete(10).
 	// Each fill recorded exactly once; no double count.
 	// ==================================================================
