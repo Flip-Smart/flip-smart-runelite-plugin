@@ -384,8 +384,11 @@ public class GrandExchangeTracker
 		{
 			int room = Math.max(0, collectedOffer.getTotalQuantity() - collectedOffer.getFilledQuantity());
 			collectedQty = trackedFills + Math.min(unattributed, room);
-			log.debug("Order for {} may have completed offline - records account for {} fills, {} in inventory. Using {} as collected quantity.",
-				collectedOffer.getItemName(), trackedFills, inventoryCount, collectedQty);
+			if (log.isDebugEnabled())
+			{
+				log.debug("Order for {} may have completed offline - records account for {} fills, {} in inventory. Using {} as collected quantity.",
+					collectedOffer.getItemName(), trackedFills, inventoryCount, collectedQty);
+			}
 
 			String rsn = getRsn().orElse(null);
 			if (rsn != null)
