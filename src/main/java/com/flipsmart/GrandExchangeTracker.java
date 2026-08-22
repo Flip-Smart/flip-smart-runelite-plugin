@@ -399,7 +399,6 @@ public class GrandExchangeTracker
 			}
 		}
 
-		log.debug("Collected buy {} x{}", collectedOffer.getItemName(), collectedQty);
 		session.addCollectedItem(itemId, collectedQty);
 	}
 
