@@ -375,20 +375,13 @@ public class GrandExchangeTracker
 		int inventoryCount = activeFlipTracker.getInventoryCountForItem(itemId);
 		int collectedQty = trackedFills;
 
-		// Inventory above the fills our own records account for was filled while the plugin
-		// wasn't tracking (an offline completion). Only that surplus can belong to this offer,
-		// bounded by its remaining capacity, so units of the same item still held from an earlier
-		// flip — already inside trackedFills — are never re-attributed to this collect.
+		// Inventory beyond what our records account for was filled offline; attribute only that
+		// surplus here, so an earlier same-item flip's still-held stock is never re-counted.
 		int unattributed = inventoryCount - trackedFills;
 		if (unattributed > 0)
 		{
 			int room = Math.max(0, collectedOffer.getTotalQuantity() - collectedOffer.getFilledQuantity());
 			collectedQty = trackedFills + Math.min(unattributed, room);
-			if (log.isDebugEnabled())
-			{
-				log.debug("Order for {} may have completed offline - records account for {} fills, {} in inventory. Using {} as collected quantity.",
-					collectedOffer.getItemName(), trackedFills, inventoryCount, collectedQty);
-			}
 
 			String rsn = getRsn().orElse(null);
 			if (rsn != null)
@@ -406,24 +399,17 @@ public class GrandExchangeTracker
 			}
 		}
 
-		log.debug("Buy offer collected from GE: {} x{} - tracking until sold",
-			collectedOffer.getItemName(), collectedQty);
+		log.debug("Collected buy {} x{}", collectedOffer.getItemName(), collectedQty);
 		session.addCollectedItem(itemId, collectedQty);
 	}
 
 	/**
-	 * Net quantity of {@code itemId} our own terminal records account for: completed buy fills
-	 * minus completed sell fills. Subtracting sells keeps a same-item buy/sell/rebuy sequence
-	 * from carrying an already-sold-off flip's quantity into a later collect. Aggregating
-	 * distinct offers keeps two flips of the same item from overwriting each other, and
-	 * recomputing from source each collect keeps a re-collected offer counted exactly once.
+	 * Net terminal quantity of {@code itemId}: completed buy fills minus completed sell fills.
+	 * Summing distinct offers aggregates two same-item flips instead of overwriting, nets out
+	 * already-sold stock, and counts a re-collected offer exactly once.
 	 */
 	private int netTrackedQuantityForItem(int itemId)
 	{
-		if (offerStore == null)
-		{
-			return 0;
-		}
 		int net = 0;
 		for (OfferRecord r : offerStore.forItem(itemId))
 		{
