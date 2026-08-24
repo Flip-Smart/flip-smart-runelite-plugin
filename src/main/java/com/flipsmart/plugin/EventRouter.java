@@ -87,6 +87,20 @@ public class EventRouter
 			return;
 		}
 
+		if ("showFlipFinder".equals(configChanged.getKey()))
+		{
+			// Add/remove the sidebar panel live so the toggle takes effect without a
+			// plugin or client restart.
+			if (config.showFlipFinder())
+			{
+				plugin.showFlipFinderPanel();
+			}
+			else
+			{
+				plugin.hideFlipFinderPanel();
+			}
+		}
+
 		if ("enableAutoRecommend".equals(configChanged.getKey()) && plugin.getFlipFinderPanel() != null)
 		{
 			plugin.getFlipFinderPanel().setAutoRecommendVisible(config.enableAutoRecommend());
