@@ -1043,6 +1043,87 @@ public class OfflineSyncPersistenceTest
 			store.bySlot(0).getEffectiveLastActivityAtMillis());
 	}
 
+	/**
+	 * A sell that completes while offline must decrement the round-trip ledger's held quantity the
+	 * same way a live sell fill would, so a full liquidation closes the cycle. Without this the held
+	 * count never returns to zero, the cycle never closes, and its cost basis blends buys the player
+	 * has already sold — the overstated GE breakeven a user reported.
+	 */
+	@Test
+	public void offlineCollectedSellClosesTheRoundTripCycle()
+	{
+		// A buy of 10 counted live: held = 10, cycle 1 open.
+		ledger.recordFill("Zezima", 555, true, 10);
+		assertEquals(10, ledger.heldQuantity("Zezima", 555));
+		int cycleBefore = ledger.peekRoundTripId("Zezima", 555);
+
+		// A sell of all 10 that completed while offline.
+		stageCompletedOfflineSell(555);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		assertEquals("offline sell must decrement held to zero", 0, ledger.heldQuantity("Zezima", 555));
+		assertEquals("a full liquidation must close the cycle", cycleBefore + 1,
+			(int) ledger.peekRoundTripId("Zezima", 555));
+	}
+
+	/**
+	 * The decrement is applied exactly once. Terminalising the offered record is the guard — a second
+	 * login over the now-terminal sell must not re-decrement held or run the cycle away.
+	 */
+	@Test
+	public void offlineCollectedSellDecrementsHeldExactlyOnce()
+	{
+		ledger.recordFill("Zezima", 555, true, 10);
+		stageCompletedOfflineSell(555);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+		int cycleAfterFirst = ledger.peekRoundTripId("Zezima", 555);
+
+		service.syncOfflineFills();
+
+		assertEquals("held stays zero across a second sync", 0, ledger.heldQuantity("Zezima", 555));
+		assertEquals("the cycle must not advance a second time", cycleAfterFirst,
+			(int) ledger.peekRoundTripId("Zezima", 555));
+	}
+
+	/**
+	 * Mirrors the live QA path exactly: the held position and the offline sell both arrive as
+	 * PERSISTED blobs (ledger restored from config, sell restored from the persisted offers), rather
+	 * than being built in-memory. Proves the decrement fires against an imported ledger entry.
+	 */
+	@Test
+	public void offlineCollectedSell_fromPersistedBlobs_closesCycle()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+
+		// Held 3 of item 555, cycle 1 — as if restored from a previous session's ledger.
+		configStore.put("roundTripLedger_Zezima",
+			"{\"555\":{\"heldQuantity\":3,\"cycleId\":1,\"boughtQuantity\":3,\"boughtSpent\":2991,\"absorbedBySlotDir\":{}}}");
+
+		// A FILLED (non-terminal) sell of all 3 that completed offline, persisted into the offers blob.
+		OfferRecord sell = OfferRecord.newOffer(999300888L, 0, 555, "i555", false, 3, 1000, 1000L)
+			.withFill(3, 2000L, OfferState.FILLED, 2000L);
+		configStore.put("persistedOffers_Zezima", new Gson().toJson(java.util.Collections.singletonList(sell)));
+
+		// Import the ledger from config (preload), exactly as login does.
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+		service.preloadPersistedOffers();
+		assertEquals("sanity: ledger imported held=3", 3, ledger.heldQuantity("Zezima", 555));
+
+		// Now the offline sync classifies the sell and (with the fix) decrements.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		service.syncOfflineFills();
+
+		assertEquals("offline sell must decrement the imported held to zero", 0,
+			ledger.heldQuantity("Zezima", 555));
+		assertEquals("full liquidation must close the imported cycle", 2,
+			(int) ledger.peekRoundTripId("Zezima", 555));
+	}
+
 	private static GrandExchangeOffer geOffer(int itemId, GrandExchangeOfferState state, int total, int price)
 	{
 		GrandExchangeOffer o = mock(GrandExchangeOffer.class);
