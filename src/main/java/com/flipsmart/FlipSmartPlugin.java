@@ -804,6 +804,19 @@ public class FlipSmartPlugin extends Plugin
 
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
+
+		// Reconcile the initial game state. If the plugin is enabled while the player is
+		// already logged in (mid-session enable, or a plugin-hub update reload), the
+		// LOGGED_IN event fired before we subscribed, so handleLoggedInState() would never
+		// run and the panel would show a stale "Log in to RuneScape" prompt until the next
+		// relog or world hop. Run it once here on the client thread, guarded on live state.
+		clientThread.invoke(() ->
+		{
+			if (client.getGameState() == GameState.LOGGED_IN)
+			{
+				handleLoggedInState();
+			}
+		});
 	}
 
 	public void highlightSlotForItem(int itemId)
@@ -1720,6 +1733,41 @@ public class FlipSmartPlugin extends Plugin
 
 		clientToolbar.addNavigation(flipFinderNavButton);
 		log.debug("Flip Finder panel initialized");
+	}
+
+	// Idempotent add. Reflects current login state so a mid-session enable does not show
+	// a stale "logged out" body while the player is already in-game.
+	public void showFlipFinderPanel()
+	{
+		if (flipFinderNavButton != null)
+		{
+			return;
+		}
+		initializeFlipFinderPanel();
+		if (session.isLoggedIntoRunescape())
+		{
+			flipFinderPanel.updatePremiumStatus();
+			flipFinderPanel.refresh();
+		}
+		else
+		{
+			flipFinderPanel.showLoggedOutOfGameState();
+		}
+	}
+
+	// Idempotent remove. Nulls both handles so a later showFlipFinderPanel() rebuilds cleanly.
+	public void hideFlipFinderPanel()
+	{
+		if (flipFinderNavButton != null)
+		{
+			clientToolbar.removeNavigation(flipFinderNavButton);
+			flipFinderNavButton = null;
+		}
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.shutdown();
+			flipFinderPanel = null;
+		}
 	}
 
 	/**
