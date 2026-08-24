@@ -1089,6 +1089,41 @@ public class OfflineSyncPersistenceTest
 			(int) ledger.peekRoundTripId("Zezima", 555));
 	}
 
+	/**
+	 * Mirrors the live QA path exactly: the held position and the offline sell both arrive as
+	 * PERSISTED blobs (ledger restored from config, sell restored from the persisted offers), rather
+	 * than being built in-memory. Proves the decrement fires against an imported ledger entry.
+	 */
+	@Test
+	public void offlineCollectedSell_fromPersistedBlobs_closesCycle()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		when(session.isOfflineSyncCompleted()).thenReturn(false);
+
+		// Held 3 of item 555, cycle 1 — as if restored from a previous session's ledger.
+		configStore.put("roundTripLedger_Zezima",
+			"{\"555\":{\"heldQuantity\":3,\"cycleId\":1,\"boughtQuantity\":3,\"boughtSpent\":2991,\"absorbedBySlotDir\":{}}}");
+
+		// A FILLED (non-terminal) sell of all 3 that completed offline, persisted into the offers blob.
+		OfferRecord sell = OfferRecord.newOffer(999300888L, 0, 555, "i555", false, 3, 1000, 1000L)
+			.withFill(3, 2000L, OfferState.FILLED, 2000L);
+		configStore.put("persistedOffers_Zezima", new Gson().toJson(java.util.Collections.singletonList(sell)));
+
+		// Import the ledger from config (preload), exactly as login does.
+		when(client.getGrandExchangeOffers()).thenReturn(null);
+		service.preloadPersistedOffers();
+		assertEquals("sanity: ledger imported held=3", 3, ledger.heldQuantity("Zezima", 555));
+
+		// Now the offline sync classifies the sell and (with the fix) decrements.
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		service.syncOfflineFills();
+
+		assertEquals("offline sell must decrement the imported held to zero", 0,
+			ledger.heldQuantity("Zezima", 555));
+		assertEquals("full liquidation must close the imported cycle", 2,
+			(int) ledger.peekRoundTripId("Zezima", 555));
+	}
+
 	private static GrandExchangeOffer geOffer(int itemId, GrandExchangeOfferState state, int total, int price)
 	{
 		GrandExchangeOffer o = mock(GrandExchangeOffer.class);
