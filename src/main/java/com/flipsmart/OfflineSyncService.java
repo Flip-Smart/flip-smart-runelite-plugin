@@ -692,11 +692,18 @@ public class OfflineSyncService
 		//
 		// Each offline-collected record is an offer whose slot is gone on login. This is the
 		// sole path that registers a History backfill.
+		String ledgerRsn = resolvePersistenceRsn();
 		for (OfferRecord record : plan.offlineCollected)
 		{
 			if (!record.isBuy() || record.getFilledQuantity() > 0)
 			{
 				geHistoryService.registerOfflineFill(record.getItemId());
+			}
+			// An offline-collected sell never reached recordFill, so held never fell and the cycle
+			// stayed open, blending already-sold buys into the basis. terminaliseOffered guards once.
+			if (!record.isBuy() && record.getFilledQuantity() > 0 && ledgerRsn != null)
+			{
+				roundTripLedger.recordFill(ledgerRsn, record.getItemId(), false, record.getFilledQuantity());
 			}
 		}
 		// Offered once, so terminalise. A freshness cutoff could not tell "already offered" from
