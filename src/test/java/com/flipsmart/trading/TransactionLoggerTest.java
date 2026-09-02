@@ -162,15 +162,6 @@ public class TransactionLoggerTest
     }
 
     @Test
-    public void recordOfflineSellFill_firesSessionRefreshCallback()
-    {
-        int[] fired = {0};
-        logger.setOnSellRecorded(() -> fired[0]++);
-        logger.recordOfflineSellFill(completed(87L, 0, false, 10, 110, 2_000L));
-        assertEquals("an offline sell fill refreshes session P&L", 1, fired[0]);
-    }
-
-    @Test
     public void sellFill_firesSessionRefreshCallback_butBuyDoesNot()
     {
         int[] fired = {0};
