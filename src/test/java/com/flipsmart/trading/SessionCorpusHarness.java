@@ -181,7 +181,8 @@ final class SessionCorpusHarness
 				mock(GEHistoryService.class),
 				store,
 				env.itemManager,
-				new RoundTripLedger());
+				new RoundTripLedger(),
+				mock(TransactionLogger.class));
 		}
 	}
 

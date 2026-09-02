@@ -227,4 +227,34 @@ public final class TransactionLogger
         long cumulative = type == Type.PLACE ? 0 : r.getFilledQuantity();
         return rsn + ":" + r.getOfferId() + ":" + r.getCreatedAtMillis() + ":" + type + ":" + cumulative;
     }
+
+    /**
+     * Emit a live FILL for a sell that completed while the player was offline and whose
+     * GE slot no longer exists at login, so it never reached {@link #onOfferEvent}. The
+     * ledger fill is recorded separately by the offline-sync caller, so this only sends
+     * the transaction. The deterministic key lets the backend floor a later History
+     * backfill for the same offer, so the two never double-count.
+     */
+    public void recordOfflineSellFill(OfferRecord r)
+    {
+        if (r.isBuy() || r.getFilledQuantity() <= 0)
+        {
+            return;
+        }
+        String rsn = rsnSupplier.get().orElse(null);
+        String key = idempotencyKey(rsn, r, Type.FILL);
+        Integer roundTripId = roundTripLedger.peekRoundTripId(rsn, r.getItemId());
+        if (alreadySent(key, normalizedDedupKey(rsn, roundTripId, r, Type.FILL)))
+        {
+            return;
+        }
+        int qty = r.getFilledQuantity();
+        int pricePerItem = (int) Math.round((double) r.getSpent() / qty);
+        java.util.concurrent.CompletableFuture<Void> sent = apiClient.recordTransactionAsync(
+            baseBuilder(r, qty, pricePerItem, rsn, key).roundTripId(roundTripId).build());
+        if (onSellRecorded != null)
+        {
+            sent.thenRun(onSellRecorded);
+        }
+    }
 }

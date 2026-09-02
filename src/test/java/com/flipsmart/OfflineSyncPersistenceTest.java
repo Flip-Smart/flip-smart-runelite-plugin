@@ -3,6 +3,7 @@ package com.flipsmart;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
+import com.flipsmart.trading.TransactionLogger;
 import com.google.gson.Gson;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
@@ -22,6 +23,7 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import org.mockito.ArgumentCaptor;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -50,6 +52,7 @@ public class OfflineSyncPersistenceTest
 	private ActiveFlipTracker activeFlipTracker;
 	private OfflineSyncService service;
 	private com.flipsmart.trading.RoundTripLedger ledger;
+	private TransactionLogger transactionLogger;
 	private ItemManager itemManager;
 	private Map<String, String> configStore;
 	/** Retries the last scheduled sync spent waiting before it resolved. */
@@ -112,6 +115,7 @@ public class OfflineSyncPersistenceTest
 		ledger = new com.flipsmart.trading.RoundTripLedger();
 		activeFlipTracker = mock(ActiveFlipTracker.class);
 		itemManager = mock(ItemManager.class);
+		transactionLogger = mock(TransactionLogger.class);
 
 		service = new OfflineSyncService(
 			session,
@@ -123,7 +127,8 @@ public class OfflineSyncPersistenceTest
 			geHistoryService,
 			store,
 			itemManager,
-			ledger);
+			ledger,
+			transactionLogger);
 		service.clock = () -> fakeNow;
 	}
 
@@ -150,6 +155,27 @@ public class OfflineSyncPersistenceTest
 	 * prompted for anyway — and on every login, because a set pruned to empty never
 	 * cleared its own persisted blob.</p>
 	 */
+	/**
+	 * A sell that completed while offline and whose GE slot is gone at login is offline-collected —
+	 * it never reaches the live fill path. It must still emit a live FILL so the completed flip is
+	 * recorded without depending on the player opening the History tab.
+	 */
+	@Test
+	public void offlineCollectedSellEmitsLiveFill()
+	{
+		stageCompletedOfflineSell(385);
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+
+		service.syncOfflineFills();
+
+		ArgumentCaptor<OfferRecord> cap = ArgumentCaptor.forClass(OfferRecord.class);
+		verify(transactionLogger, times(1)).recordOfflineSellFill(cap.capture());
+		OfferRecord emitted = cap.getValue();
+		assertFalse("must be a sell", emitted.isBuy());
+		assertEquals(385, emitted.getItemId());
+		assertEquals(10, emitted.getFilledQuantity());
+	}
+
 	@Test
 	public void prunedCollectedItemDoesNotRegisterHistoryBackfill()
 	{
