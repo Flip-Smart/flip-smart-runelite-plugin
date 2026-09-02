@@ -227,4 +227,25 @@ public final class TransactionLogger
         long cumulative = type == Type.PLACE ? 0 : r.getFilledQuantity();
         return rsn + ":" + r.getOfferId() + ":" + r.getCreatedAtMillis() + ":" + type + ":" + cumulative;
     }
+
+    /**
+     * Emit the live FILL an offline-completed sell never sent — its GE slot was gone at
+     * login, so it bypassed {@link #onOfferEvent}. Fired once per record by offline sync
+     * (the ledger fill is recorded there); the deterministic key lets the backend floor a
+     * later History backfill for the same offer, so the two never double-count.
+     */
+    public void recordOfflineSellFill(OfferRecord r)
+    {
+        if (r.isBuy() || r.getFilledQuantity() <= 0)
+        {
+            return;
+        }
+        String rsn = rsnSupplier.get().orElse(null);
+        int qty = r.getFilledQuantity();
+        int pricePerItem = (int) Math.round((double) r.getSpent() / qty);
+        Integer roundTripId = roundTripLedger.peekRoundTripId(rsn, r.getItemId());
+        apiClient.recordTransactionAsync(
+            baseBuilder(r, qty, pricePerItem, rsn, idempotencyKey(rsn, r, Type.FILL))
+                .roundTripId(roundTripId).build());
+    }
 }

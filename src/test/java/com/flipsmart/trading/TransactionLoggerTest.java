@@ -19,6 +19,7 @@ import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -135,6 +136,29 @@ public class TransactionLoggerTest
 
         List<TransactionRequest> sent = sentRequests(4);
         assertEquals("all four fills across two slots forwarded", 4, sent.size());
+    }
+
+    @Test
+    public void recordOfflineSellFill_postsFillWithDeterministicKey()
+    {
+        OfferRecord sell = completed(87L, 0, false, 10, 110, 2_000L);
+        logger.recordOfflineSellFill(sell);
+
+        TransactionRequest t = sentRequests(1).get(0);
+        assertEquals("must be a sell", false, t.isBuy);
+        assertEquals("full offline-collected quantity", 10, t.quantity);
+        assertEquals("price from spent / filled", 110, t.pricePerItem);
+        assertEquals("canonical FILL idempotency key",
+            TransactionLogger.idempotencyKey(RSN, sell, TransactionLogger.Type.FILL), t.idempotencyKey);
+    }
+
+    @Test
+    public void recordOfflineSellFill_ignoresBuyAndZeroFill()
+    {
+        logger.recordOfflineSellFill(completed(1L, 0, true, 10, 100, 1_000L));
+        logger.recordOfflineSellFill(
+            OfferRecord.newOffer(2L, 0, ITEM, "Abyssal whip", false, 10, 110, 2_000L));
+        verify(apiClient, never()).recordTransactionAsync(any(TransactionRequest.class));
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.flipsmart.trading.OfferEventMapper;
 import com.flipsmart.trading.OfferReconciler;
 import com.flipsmart.trading.OfferStore;
 import com.flipsmart.trading.RoundTripLedger;
+import com.flipsmart.trading.TransactionLogger;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.lang.reflect.Type;
@@ -103,6 +104,7 @@ public class OfflineSyncService
 	private final OfferStore offerStore;
 	private final ItemManager itemManager;
 	private final RoundTripLedger roundTripLedger;
+	private final TransactionLogger transactionLogger;
 
 	/** Callback invoked after sync is complete (for scheduling post-sync tasks) */
 	@Setter
@@ -119,7 +121,8 @@ public class OfflineSyncService
 		GEHistoryService geHistoryService,
 		OfferStore offerStore,
 		ItemManager itemManager,
-		RoundTripLedger roundTripLedger)
+		RoundTripLedger roundTripLedger,
+		TransactionLogger transactionLogger)
 	{
 		this.session = session;
 		this.configManager = configManager;
@@ -131,6 +134,7 @@ public class OfflineSyncService
 		this.offerStore = offerStore;
 		this.itemManager = itemManager;
 		this.roundTripLedger = roundTripLedger;
+		this.transactionLogger = transactionLogger;
 	}
 
 	/**
@@ -704,6 +708,9 @@ public class OfflineSyncService
 			if (!record.isBuy() && record.getFilledQuantity() > 0 && ledgerRsn != null)
 			{
 				roundTripLedger.recordFill(ledgerRsn, record.getItemId(), false, record.getFilledQuantity());
+				// Emit the live FILL the offline sell never sent, so the flip records without the
+				// player opening History. The deterministic key lets a later backfill floor it out.
+				transactionLogger.recordOfflineSellFill(record);
 			}
 		}
 		// Offered once, so terminalise. A freshness cutoff could not tell "already offered" from
