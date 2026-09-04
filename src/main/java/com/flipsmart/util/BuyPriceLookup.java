@@ -103,6 +103,12 @@ public final class BuyPriceLookup
 		{
 			return null;
 		}
+		List<OfferRecord> buys = filterBuys(offerRecords, itemId);
+		return heldQuantity <= 0 ? calculateSimpleAverage(buys) : calculateWeightedAverageForHolding(buys, heldQuantity);
+	}
+
+	private static List<OfferRecord> filterBuys(List<OfferRecord> offerRecords, int itemId)
+	{
 		List<OfferRecord> buys = new ArrayList<>();
 		for (OfferRecord r : offerRecords)
 		{
@@ -111,17 +117,23 @@ public final class BuyPriceLookup
 				buys.add(r);
 			}
 		}
-		if (heldQuantity <= 0)
+		return buys;
+	}
+
+	private static Integer calculateSimpleAverage(List<OfferRecord> buys)
+	{
+		long spent = 0;
+		long filled = 0;
+		for (OfferRecord r : buys)
 		{
-			long spent = 0;
-			long filled = 0;
-			for (OfferRecord r : buys)
-			{
-				spent += r.getSpent();
-				filled += r.getFilledQuantity();
-			}
-			return filled > 0 ? (int) Math.round(spent / (double) filled) : null;
+			spent += r.getSpent();
+			filled += r.getFilledQuantity();
 		}
+		return filled > 0 ? (int) Math.round(spent / (double) filled) : null;
+	}
+
+	private static Integer calculateWeightedAverageForHolding(List<OfferRecord> buys, int heldQuantity)
+	{
 		buys.sort(Comparator.comparingLong(OfferRecord::getOfferId).reversed());
 		double spent = 0;
 		long filled = 0;
