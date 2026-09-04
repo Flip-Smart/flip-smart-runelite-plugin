@@ -398,6 +398,17 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Quantity of {@code itemId} the ledger currently observes the player to hold, or 0 when none
+	 * (or unknown). Bounds the offer-records buy-price fallback to the units still held so it
+	 * cannot average across a lot already sold.
+	 */
+	public int getHeldQuantityForItem(int itemId)
+	{
+		return roundTripLedger == null
+			? 0 : roundTripLedger.heldQuantity(getCurrentRsnSafe().orElse(null), itemId);
+	}
+
+	/**
 	 * Local OfferStore records for an item — the fallback source for the recorded
 	 * buy price when the backend-sourced active-flips snapshot is empty.
 	 */
@@ -2090,7 +2101,8 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return BuyPriceLookup.findAverageBuyPriceWithFallback(
 				getCurrentActiveFlips(), getCycleBasisForItem(offer.getItemId()),
-				offerStore.forItem(offer.getItemId()), offer.getItemId());
+				offerStore.forItem(offer.getItemId()), offer.getItemId(),
+				getHeldQuantityForItem(offer.getItemId()));
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{
