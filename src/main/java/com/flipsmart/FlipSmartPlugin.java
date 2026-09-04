@@ -397,11 +397,7 @@ public class FlipSmartPlugin extends Plugin
 			? null : roundTripLedger.currentBasis(getCurrentRsnSafe().orElse(null), itemId);
 	}
 
-	/**
-	 * Quantity of {@code itemId} the ledger currently observes the player to hold, or 0 when none
-	 * (or unknown). Bounds the offer-records buy-price fallback to the units still held so it
-	 * cannot average across a lot already sold.
-	 */
+	/** Quantity of {@code itemId} the ledger currently observes the player to hold, or 0 if unknown. */
 	public int getHeldQuantityForItem(int itemId)
 	{
 		return roundTripLedger == null

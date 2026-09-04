@@ -41,12 +41,7 @@ public final class BuyPriceLookup
 		return null;
 	}
 
-	/**
-	 * Resolve the recorded average buy price with no held-quantity hint — the offer-records
-	 * fallback averages every recorded buy for the item. Retained for callers that cannot cheaply
-	 * supply the held quantity; prefer the overload below, which scopes the fallback to the units
-	 * still held so it cannot average across a lot already sold.
-	 */
+	/** Convenience overload with no held-quantity hint; the records fallback averages every buy. */
 	public static Integer findAverageBuyPriceWithFallback(
 		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId)
 	{
@@ -54,22 +49,11 @@ public final class BuyPriceLookup
 	}
 
 	/**
-	 * Resolve the recorded average buy price, in descending order of authority.
-	 *
-	 * <p>The backend-sourced active-flips snapshot wins when present. It can be empty for reasons
-	 * unrelated to whether the player holds the item — a refresh race, the free-tier trim, or a
-	 * plain gap — and when it is, breakeven and profit used to render "?" despite the buy sitting
-	 * locally.</p>
-	 *
-	 * <p>{@code cycleBasis} is the ledger's average for the currently-open round trip. It comes
-	 * next because it is scoped to the position the player actually holds: a cycle closes when
-	 * holdings return to zero, taking its basis with it.</p>
-	 *
-	 * <p>The offer records are the last resort. The store never evicts, so they outlive the flip
-	 * they belong to and — averaged wholesale — describe stock already sold. {@code
-	 * heldQuantity} (from the ledger) bounds the fallback to the most-recent buys making up the
-	 * units still held; a non-positive value means the holding is unknown (cold start / pre-ledger),
-	 * where every record is the only basis available.</p>
+	 * Resolve the recorded average buy price, in descending order of authority: the backend
+	 * active-flips snapshot, then the ledger's open-cycle basis, then the offer-record fallback.
+	 * The record store never evicts, so it can describe stock already sold; {@code heldQuantity}
+	 * (from the ledger) bounds the fallback to the most-recent buys covering what's still held.
+	 * Non-positive means the holding is unknown (cold start / pre-ledger), so every record counts.
 	 *
 	 * @return the average buy price, or {@code null} if no source knows the item.
 	 */
@@ -90,12 +74,9 @@ public final class BuyPriceLookup
 	}
 
 	/**
-	 * Quantity-weighted average buy price for the item's filled buy offers. When {@code
-	 * heldQuantity} is positive, only the most-recent buys (highest {@code offerId} first — ids are
-	 * monotonic) covering that many units are counted, pro-rating the lot that straddles the
-	 * boundary, so the basis describes the stock still held rather than positions already sold. A
-	 * non-positive {@code heldQuantity} averages every recorded buy. {@code null} when none carry a
-	 * fill. Sells and other items are ignored.
+	 * Quantity-weighted average buy price for the item's filled buy offers, scoped to the
+	 * most-recent buys (by monotonic offerId) covering {@code heldQuantity} when positive and
+	 * pro-rating the boundary lot, else every recorded buy. {@code null} when none carry a fill.
 	 */
 	static Integer averageBuyPriceFromOffers(List<OfferRecord> offerRecords, int itemId, int heldQuantity)
 	{
