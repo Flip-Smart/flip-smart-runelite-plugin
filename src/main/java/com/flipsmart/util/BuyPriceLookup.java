@@ -74,62 +74,46 @@ public final class BuyPriceLookup
 	}
 
 	/**
-	 * Quantity-weighted average buy price for the item's filled buy offers, scoped to the
-	 * most-recent buys (by monotonic offerId) covering {@code heldQuantity} when positive and
-	 * pro-rating the boundary lot, else every recorded buy. {@code null} when none carry a fill.
+	 * Quantity-weighted average buy price for the item's filled buy offers, walking the most-recent
+	 * buys first (by monotonic offerId). A positive {@code heldQuantity} stops once that many units
+	 * are covered, pro-rating the lot that straddles the boundary, so the basis describes the stock
+	 * still held rather than positions already sold; a non-positive value counts every recorded buy.
+	 * {@code null} when none carry a fill. Sells and other items are ignored.
 	 */
 	static Integer averageBuyPriceFromOffers(List<OfferRecord> offerRecords, int itemId, int heldQuantity)
 	{
-		if (offerRecords == null)
-		{
-			return null;
-		}
-		List<OfferRecord> buys = filterBuys(offerRecords, itemId);
-		return heldQuantity <= 0 ? calculateSimpleAverage(buys) : calculateWeightedAverageForHolding(buys, heldQuantity);
-	}
-
-	private static List<OfferRecord> filterBuys(List<OfferRecord> offerRecords, int itemId)
-	{
-		List<OfferRecord> buys = new ArrayList<>();
-		for (OfferRecord r : offerRecords)
-		{
-			if (r != null && r.isBuy() && r.getItemId() == itemId && r.getFilledQuantity() > 0)
-			{
-				buys.add(r);
-			}
-		}
-		return buys;
-	}
-
-	private static Integer calculateSimpleAverage(List<OfferRecord> buys)
-	{
-		long spent = 0;
-		long filled = 0;
-		for (OfferRecord r : buys)
-		{
-			spent += r.getSpent();
-			filled += r.getFilledQuantity();
-		}
-		return filled > 0 ? (int) Math.round(spent / (double) filled) : null;
-	}
-
-	private static Integer calculateWeightedAverageForHolding(List<OfferRecord> buys, int heldQuantity)
-	{
+		List<OfferRecord> buys = filledBuys(offerRecords, itemId);
 		buys.sort(Comparator.comparingLong(OfferRecord::getOfferId).reversed());
+		long remaining = heldQuantity > 0 ? heldQuantity : Long.MAX_VALUE;
 		double spent = 0;
 		long filled = 0;
-		int remaining = heldQuantity;
 		for (OfferRecord r : buys)
 		{
 			if (remaining <= 0)
 			{
 				break;
 			}
-			int take = Math.min(r.getFilledQuantity(), remaining);
+			long take = Math.min(r.getFilledQuantity(), remaining);
 			spent += r.getSpent() * (take / (double) r.getFilledQuantity());
 			filled += take;
 			remaining -= take;
 		}
-		return filled > 0 ? (int) Math.round(spent / (double) filled) : null;
+		return filled > 0 ? (int) Math.round(spent / filled) : null;
+	}
+
+	private static List<OfferRecord> filledBuys(List<OfferRecord> offerRecords, int itemId)
+	{
+		List<OfferRecord> buys = new ArrayList<>();
+		if (offerRecords != null)
+		{
+			for (OfferRecord r : offerRecords)
+			{
+				if (r != null && r.isBuy() && r.getItemId() == itemId && r.getFilledQuantity() > 0)
+				{
+					buys.add(r);
+				}
+			}
+		}
+		return buys;
 	}
 }
