@@ -79,50 +79,6 @@ public class FlipAssistInputListener implements KeyListener
 		currentInputType.set(inputType);
 	}
 
-	// Cached input text from VarClientStr, updated via event from FlipSmartPlugin.
-	// Used on the EDT to gate hotkey consumption in the GE item-search dialog: we
-	// only consume when the search box is empty or the user-typed text is a prefix
-	// of the focused item name. Otherwise the player is searching for a different
-	// item and the hotkey character must reach the search field (#616).
-	private final AtomicReference<String> currentInputText = new AtomicReference<>("");
-
-	/**
-	 * Update the cached input text. Called from FlipSmartPlugin on VarClientStrChanged.
-	 */
-	public void updateInputText(String inputText)
-	{
-		currentInputText.set(inputText == null ? "" : inputText);
-	}
-
-	/**
-	 * EDT-side gate: should the hotkey be consumed in the GE item-search dialog?
-	 * True when the search box is empty or what's typed is a prefix of the focused
-	 * item — i.e. the player is going for the focused item, so the hotkey character
-	 * should be suppressed rather than typed into the box.
-	 */
-	private boolean searchTextMatchesFocusedItem(FocusedFlip focusedFlip)
-	{
-		return searchTextMatchesItem(currentInputText.get(), focusedFlip.getItemName());
-	}
-
-	/**
-	 * Pure prefix check used by {@link #searchTextMatchesFocusedItem}. Empty or null
-	 * search text matches (player hasn't narrowed yet); otherwise the item name must
-	 * start with the typed text, case-insensitively and trimmed.
-	 */
-	static boolean searchTextMatchesItem(String searchText, String itemName)
-	{
-		if (searchText == null || searchText.isEmpty())
-		{
-			return true;
-		}
-		if (itemName == null)
-		{
-			return false;
-		}
-		return itemName.toLowerCase().trim().startsWith(searchText.toLowerCase().trim());
-	}
-
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
@@ -170,23 +126,12 @@ public class FlipAssistInputListener implements KeyListener
 			handledKeyPressedEvent.set(e);
 			e.consume();
 			clientThread.invoke(() -> handleHotkeyOnClientThread(focusedFlip));
-			return;
 		}
 
-		// GE item search: selection happens via the injected "FlipSmart item" row
-		// (player click or the game's native Enter), NOT the hotkey — the Plugin
-		// Hub forbids selecting on the player's behalf. We still consume the hotkey
-		// here so its character doesn't leak into the search box, but only when the
-		// player is clearly going for the focused item (empty box or a prefix of the
-		// item name). If they're typing a different item, let the character through
-		// so search still works (#616).
-		if (cachedInputType == INPUT_TYPE_GE_ITEM_SEARCH
-			&& searchTextMatchesFocusedItem(focusedFlip))
-		{
-			handledKeyPressedEvent.set(e);
-			e.consume();
-			// Intentionally no action — the player selects via the injected row.
-		}
+		// On the GE item-search screen the hotkey must NOT be consumed: the player is
+		// typing an item name and its letters (e.g. the "E" in "Rune arrows") have to
+		// reach the search box. Item selection happens via the injected "FlipSmart
+		// item" row, not the hotkey.
 	}
 
 	/**
