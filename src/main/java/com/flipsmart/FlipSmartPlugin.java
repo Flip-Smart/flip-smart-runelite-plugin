@@ -61,7 +61,6 @@ import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
-import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.api.gameval.InterfaceID;
@@ -1593,28 +1592,6 @@ public class FlipSmartPlugin extends Plugin
 			{
 				clientThread.invokeLater(geSearchSuggestion::showSuggestedItemInSearch);
 			}
-		}
-	}
-
-	@Subscribe
-	public void onVarClientStrChanged(VarClientStrChanged event)
-	{
-		eventRouter.onVarClientStrChanged(event);
-	}
-
-	/**
-	 * VarClientStr handler body. Kept on the plugin because it touches the
-	 * plugin-private {@code flipAssistInputListener} created during startUp. The
-	 * router delegates straight here.
-	 */
-	public void onVarClientStrChangedHandler(VarClientStrChanged event)
-	{
-		// Keep the listener's cached search text fresh so its EDT-side consume
-		// gate (suppressing the stray hotkey char in GE item search) can compare
-		// what's typed against the focused item name.
-		if (event.getIndex() == FlipAssistInputListener.VARCLIENT_INPUT_TEXT && flipAssistInputListener != null)
-		{
-			flipAssistInputListener.updateInputText(client.getVarcStrValue(FlipAssistInputListener.VARCLIENT_INPUT_TEXT));
 		}
 	}
 

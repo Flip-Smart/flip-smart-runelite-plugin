@@ -24,7 +24,6 @@ import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
-import net.runelite.api.events.VarClientStrChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.api.gameval.InterfaceID;
@@ -35,14 +34,14 @@ import net.runelite.client.events.ConfigChanged;
 /**
  * Routes RuneLite EventBus events to the appropriate collaborators.
  *
- * The 13 {@code @Subscribe} methods stay physically on {@link FlipSmartPlugin}
+ * The {@code @Subscribe} methods stay physically on {@link FlipSmartPlugin}
  * (RuneLite scans the registered plugin object for them) but are reduced to thin
  * stubs that delegate here. The handler bodies that depend only on injected
  * collaborators and already-exposed plugin hooks were moved verbatim into this
- * class. A handful of handlers ({@code onGameTick}, {@code onVarClientIntChanged},
- * {@code onVarClientStrChanged}) remain coupled to plugin-private mutable state
- * set during startUp; for those, the router delegates straight back to the plugin
- * so the behavior and ordering are preserved exactly.
+ * class. A couple of handlers ({@code onGameTick}, {@code onVarClientIntChanged})
+ * remain coupled to plugin-private mutable state set during startUp; for those,
+ * the router delegates straight back to the plugin so the behavior and ordering
+ * are preserved exactly.
  */
 public class EventRouter
 {
@@ -248,11 +247,6 @@ public class EventRouter
 	public void onVarClientIntChanged(VarClientIntChanged event)
 	{
 		plugin.onVarClientIntChangedHandler(event);
-	}
-
-	public void onVarClientStrChanged(VarClientStrChanged event)
-	{
-		plugin.onVarClientStrChangedHandler(event);
 	}
 
 	public void onWidgetLoaded(WidgetLoaded event)
