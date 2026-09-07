@@ -64,6 +64,7 @@ import net.runelite.api.events.VarClientIntChanged;
 import net.runelite.api.events.WidgetLoaded;
 import net.runelite.api.events.WorldChanged;
 import net.runelite.api.gameval.InterfaceID;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
@@ -1080,7 +1081,7 @@ public class FlipSmartPlugin extends Plugin
 
 		grandExchangeTracker.retryPendingSellFocusTick();
 
-		releaseOfferLockIfSetupClosed();
+		maintainOfferLockForSetup();
 
 		// Heal transient auto-mode blanks within ~1s instead of waiting for the next GE offer
 		// event. Cheap, deterministic, deduped, and gated on the offer-screen lock internally.
@@ -1090,18 +1091,41 @@ public class FlipSmartPlugin extends Plugin
 		}
 	}
 
-	private void releaseOfferLockIfSetupClosed()
+	/**
+	 * Keep the offer-screen lock in sync with the GE setup panel each tick: acquire it
+	 * the moment the panel is visible (before the item is searched, so a refresh can't
+	 * swap the recommendation), and release it once the panel closes. Symmetric
+	 * on the same {@code SETUP_DESC} signal the release already trusted.
+	 */
+	private void maintainOfferLockForSetup()
 	{
-		if (autoRecommendService == null || autoRecommendService.getLockedItemId() == null)
+		if (autoRecommendService == null)
 		{
 			return;
 		}
 		Widget setupDesc = client.getWidget(InterfaceID.GeOffers.SETUP_DESC);
-		if (setupDesc == null || setupDesc.isHidden())
+		boolean setupOpen = setupDesc != null && !setupDesc.isHidden();
+		if (setupOpen)
+		{
+			if (autoRecommendService.getLockedItemId() == null)
+			{
+				int selectedItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
+				autoRecommendService.acquireOfferLockForOpenSetup(selectedItemId, getFocusedFlipItemId());
+			}
+			return;
+		}
+		if (autoRecommendService.getLockedItemId() != null)
 		{
 			autoRecommendService.releaseOfferLock();
 			autoRecommendService.refreshFocusAfterUnlock();
 		}
+	}
+
+	/** Item id of the current Flip Assist recommendation, or {@code null} if none. */
+	public Integer getFocusedFlipItemId()
+	{
+		FocusedFlip focused = flipAssistOverlay != null ? flipAssistOverlay.getFocusedFlip() : null;
+		return focused != null ? focused.getItemId() : null;
 	}
 
 	public void handleLogoutState()

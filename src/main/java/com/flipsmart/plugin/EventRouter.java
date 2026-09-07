@@ -199,9 +199,13 @@ public class EventRouter
 		}
 
 		int openItemId = client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH);
-		if (openItemId > 0 && plugin.getAutoRecommendService() != null)
+
+		// Lock the recommendation as soon as the setup panel builds — the selected
+		// item if one is already chosen, otherwise the focused recommendation, so a
+		// refresh can't swap it during the empty-open to search window.
+		if (plugin.getAutoRecommendService() != null)
 		{
-			plugin.getAutoRecommendService().acquireOfferLock(openItemId);
+			plugin.getAutoRecommendService().acquireOfferLockForOpenSetup(openItemId, plugin.getFocusedFlipItemId());
 		}
 
 		int offerType = client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE);
