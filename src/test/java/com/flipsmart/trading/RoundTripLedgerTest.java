@@ -354,6 +354,20 @@ public class RoundTripLedgerTest
     }
 
     @Test
+    public void seedColdStart_seedsBasisNotJustHeld()
+    {
+        // A seeded position must carry its cost basis, or currentBasis is null and breakeven falls
+        // to the offer-records fallback that pools across already-sold lots (#1350).
+        OfferRecord liveBuy = OfferRecord.newOffer(1L, 0, ITEM, "Abyssal whip", true, 50, 1_000, 1_000L)
+            .withFill(30, 30_000L, OfferState.PARTIAL_FILL, 1_500L);
+
+        ledger.seedColdStart(RSN, Collections.singletonList(liveBuy));
+
+        assertEquals("seeded basis is the per-item average of the seed buys",
+            Integer.valueOf(1_000), ledger.currentBasis(RSN, ITEM));
+    }
+
+    @Test
     public void seedColdStart_isNoOpWhenLedgerAlreadyHasState()
     {
         ledger.recordFill(RSN, ITEM, true, 5);

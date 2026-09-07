@@ -32,8 +32,13 @@ public class BuyPriceLookupTest
 
     private static OfferRecord buy(int itemId, int filled, long spent)
     {
+        return buy(itemId, filled, spent, 1L);
+    }
+
+    private static OfferRecord buy(int itemId, int filled, long spent, long offerId)
+    {
         int price = filled > 0 ? (int) (spent / filled) : 0;
-        return OfferRecord.newOffer(1L, 0, itemId, "i" + itemId, true, filled, price, 0L)
+        return OfferRecord.newOffer(offerId, 0, itemId, "i" + itemId, true, filled, price, 0L)
             .withFill(filled, spent, OfferState.PARTIAL_FILL, 0L);
     }
 
@@ -107,5 +112,50 @@ public class BuyPriceLookupTest
     {
         assertNull(BuyPriceLookup.findAverageBuyPriceWithFallback(
             Collections.emptyList(), null, Collections.emptyList(), 536));
+    }
+
+    /**
+     * #1350: the offer store never evicts, so a fully-sold older lot still sits in the records.
+     * When the ledger has a held quantity but no cycle basis (e.g. a cold-start seed sets held
+     * without a basis), the fallback must weigh only the most-recent buys that make up the units
+     * still held — not average across a position already liquidated.
+     */
+    @Test
+    public void fallbackScopedToHeld_excludesFullySoldOlderLot()
+    {
+        OfferRecord olderSold = buy(565, 25000, 25000L * 342, 10L);
+        OfferRecord newerHeld = buy(565, 19500, 19500L * 328, 20L);
+
+        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+            Collections.emptyList(), null, asList(olderSold, newerHeld), 565, 19500);
+
+        assertEquals("only the held 328 lot counts", Integer.valueOf(328), p);
+    }
+
+    @Test
+    public void fallbackScopedToHeld_proRatesAcrossTheBoundaryLot()
+    {
+        OfferRecord older = buy(565, 25000, 25000L * 342, 10L);
+        OfferRecord newer = buy(565, 19500, 19500L * 328, 20L);
+
+        // Hold 30000: all 19500 of the newer lot + 10500 of the older. (19500*328 + 10500*342)/30000 = 333.
+        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+            Collections.emptyList(), null, asList(older, newer), 565, 30000);
+
+        assertEquals(Integer.valueOf(333), p);
+    }
+
+    @Test
+    public void fallbackHeldUnknown_averagesAllRecords()
+    {
+        // heldQuantity 0 — ledger has never seen the item (genuine cold start). All records remain
+        // the last resort: (25000*342 + 19500*328)/44500 = 336.
+        OfferRecord a = buy(565, 25000, 25000L * 342, 10L);
+        OfferRecord b = buy(565, 19500, 19500L * 328, 20L);
+
+        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+            Collections.emptyList(), null, asList(a, b), 565, 0);
+
+        assertEquals(Integer.valueOf(336), p);
     }
 }

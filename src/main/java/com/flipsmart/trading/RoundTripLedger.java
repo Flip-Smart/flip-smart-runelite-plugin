@@ -401,7 +401,13 @@ public final class RoundTripLedger
             {
                 continue;
             }
-            seeded.computeIfAbsent(r.getItemId(), k -> new Entry(0, INITIAL_CYCLE_ID)).heldQuantity += r.getFilledQuantity();
+            Entry e = seeded.computeIfAbsent(r.getItemId(), k -> new Entry(0, INITIAL_CYCLE_ID));
+            e.heldQuantity += r.getFilledQuantity();
+            // Seed the cost basis too, not just the quantity. A seeded position with no basis
+            // leaves currentBasis null, which sends breakeven to the never-evicted offer-records
+            // fallback that averages across already-sold lots.
+            e.boughtQuantity += r.getFilledQuantity();
+            e.boughtSpent += r.getSpent();
         }
         return seeded;
     }

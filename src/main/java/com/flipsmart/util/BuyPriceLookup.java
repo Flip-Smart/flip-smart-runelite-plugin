@@ -2,6 +2,8 @@ package com.flipsmart.util;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.offer.OfferRecord;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -39,27 +41,25 @@ public final class BuyPriceLookup
 		return null;
 	}
 
+	/** Convenience overload with no held-quantity hint; the records fallback averages every buy. */
+	public static Integer findAverageBuyPriceWithFallback(
+		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId)
+	{
+		return findAverageBuyPriceWithFallback(activeFlips, cycleBasis, offerRecords, itemId, 0);
+	}
+
 	/**
-	 * Resolve the recorded average buy price, in descending order of authority.
-	 *
-	 * <p>The backend-sourced active-flips snapshot wins when present. It can be empty for reasons
-	 * unrelated to whether the player holds the item — a refresh race, the free-tier trim, or a
-	 * plain gap — and when it is, breakeven and profit used to render "?" despite the buy sitting
-	 * locally.</p>
-	 *
-	 * <p>{@code cycleBasis} is the ledger's average for the currently-open round trip. It comes
-	 * next because it is scoped to the position the player actually holds: a cycle closes when
-	 * holdings return to zero, taking its basis with it.</p>
-	 *
-	 * <p>The offer records are the last resort. They carry the same cost basis but the store
-	 * never evicts, so they outlive the flip they belong to and can average across positions
-	 * already sold — the reason the cycle basis is preferred over them rather than the other way
-	 * round. They still matter for a client whose ledger has not yet observed a fill.</p>
+	 * Resolve the recorded average buy price, in descending order of authority: the backend
+	 * active-flips snapshot, then the ledger's open-cycle basis, then the offer-record fallback.
+	 * The record store never evicts, so it can describe stock already sold; {@code heldQuantity}
+	 * (from the ledger) bounds the fallback to the most-recent buys covering what's still held.
+	 * Non-positive means the holding is unknown (cold start / pre-ledger), so every record counts.
 	 *
 	 * @return the average buy price, or {@code null} if no source knows the item.
 	 */
 	public static Integer findAverageBuyPriceWithFallback(
-		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId)
+		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId,
+		int heldQuantity)
 	{
 		Integer fromFlips = findAverageBuyPrice(activeFlips, itemId);
 		if (fromFlips != null)
@@ -70,29 +70,50 @@ public final class BuyPriceLookup
 		{
 			return cycleBasis;
 		}
-		return averageBuyPriceFromOffers(offerRecords, itemId);
+		return averageBuyPriceFromOffers(offerRecords, itemId, heldQuantity);
 	}
 
 	/**
-	 * Quantity-weighted average buy price across the item's filled buy offers,
-	 * or {@code null} when none carry a fill. Sells and other items are ignored.
+	 * Quantity-weighted average buy price for the item's filled buy offers, walking the most-recent
+	 * buys first (by monotonic offerId). A positive {@code heldQuantity} stops once that many units
+	 * are covered, pro-rating the lot that straddles the boundary, so the basis describes the stock
+	 * still held rather than positions already sold; a non-positive value counts every recorded buy.
+	 * {@code null} when none carry a fill. Sells and other items are ignored.
 	 */
-	static Integer averageBuyPriceFromOffers(List<OfferRecord> offerRecords, int itemId)
+	static Integer averageBuyPriceFromOffers(List<OfferRecord> offerRecords, int itemId, int heldQuantity)
 	{
-		if (offerRecords == null)
-		{
-			return null;
-		}
-		long spent = 0;
+		List<OfferRecord> buys = filledBuys(offerRecords, itemId);
+		buys.sort(Comparator.comparingLong(OfferRecord::getOfferId).reversed());
+		long remaining = heldQuantity > 0 ? heldQuantity : Long.MAX_VALUE;
+		double spent = 0;
 		long filled = 0;
-		for (OfferRecord r : offerRecords)
+		for (OfferRecord r : buys)
 		{
-			if (r != null && r.isBuy() && r.getItemId() == itemId && r.getFilledQuantity() > 0)
+			if (remaining <= 0)
 			{
-				spent += r.getSpent();
-				filled += r.getFilledQuantity();
+				break;
+			}
+			long take = Math.min(r.getFilledQuantity(), remaining);
+			spent += r.getSpent() * (take / (double) r.getFilledQuantity());
+			filled += take;
+			remaining -= take;
+		}
+		return filled > 0 ? (int) Math.round(spent / filled) : null;
+	}
+
+	private static List<OfferRecord> filledBuys(List<OfferRecord> offerRecords, int itemId)
+	{
+		List<OfferRecord> buys = new ArrayList<>();
+		if (offerRecords != null)
+		{
+			for (OfferRecord r : offerRecords)
+			{
+				if (r != null && r.isBuy() && r.getItemId() == itemId && r.getFilledQuantity() > 0)
+				{
+					buys.add(r);
+				}
 			}
 		}
-		return filled > 0 ? (int) Math.round(spent / (double) filled) : null;
+		return buys;
 	}
 }
