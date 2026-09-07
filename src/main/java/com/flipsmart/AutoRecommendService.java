@@ -3091,6 +3091,28 @@ public class AutoRecommendService
 		log.debug("Auto-recommend: offer-screen lock acquired for item {}", itemId);
 	}
 
+	/**
+	 * Item the offer-screen lock should target for an open setup panel: the selected
+	 * item if the player has already chosen one, otherwise the currently-focused
+	 * recommendation, so the lock holds from the moment the panel opens — before the
+	 * item is searched — and a refresh can't swap the recommendation under the player
+	 * under the player. Returns 0 (nothing to lock) when neither is available.
+	 */
+	static int resolveOfferLockTarget(int selectedItemId, Integer focusedItemId)
+	{
+		if (selectedItemId > 0)
+		{
+			return selectedItemId;
+		}
+		return focusedItemId != null && focusedItemId > 0 ? focusedItemId : 0;
+	}
+
+	/** Acquire the offer-screen lock for an open setup panel (see {@link #resolveOfferLockTarget}). */
+	public void acquireOfferLockForOpenSetup(int selectedItemId, Integer focusedItemId)
+	{
+		acquireOfferLock(resolveOfferLockTarget(selectedItemId, focusedItemId));
+	}
+
 	/** Clear the offer-screen lock. No-op if not held. */
 	public void releaseOfferLock()
 	{
