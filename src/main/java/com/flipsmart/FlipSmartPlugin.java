@@ -3,8 +3,11 @@ package com.flipsmart;
 import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
 import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
 import com.flipsmart.api.dto.Dtos.OfferAdviceResult;
+import com.flipsmart.api.dto.Dtos.PriceTargetResponse;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
 import com.flipsmart.api.dto.Dtos.WikiPrice;
+import com.flipsmart.v9.V9FlipState;
+import com.flipsmart.v9.V9FlipStateStore;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.ActiveFlipItemIds;
 import com.flipsmart.domain.flip.ActiveFlipProjection;
@@ -204,6 +207,8 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	@Getter
 	private PlayerSession session;
+
+	private V9FlipStateStore v9FlipStateStore;
 
 	// Timer / one-shot ownership extracted into PluginScheduler
 	private final PluginScheduler scheduler = new PluginScheduler();
@@ -1137,6 +1142,7 @@ public class FlipSmartPlugin extends Plugin
 		geHistoryService.reset();
 		persistAutoRecommendState();
 		persistExitTradesState();
+		v9Store().persist(configManager, session.getRsn());
 		geSlotDecorator.revertAll();
 
 		// Stop auto-recommend on logout
@@ -1240,6 +1246,7 @@ public class FlipSmartPlugin extends Plugin
 
 		restoreAutoRecommendState();
 		restoreExitTradesState();
+		v9Store().restore(configManager, session.getRsn());
 
 		// Start the refresh timer if not already running (needed for manual adjustment checks)
 		if (!scheduler.isAutoRecommendRefreshTimerRunning())
@@ -1588,6 +1595,10 @@ public class FlipSmartPlugin extends Plugin
 			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
+		if (apiClient.isV9Enabled())
+		{
+			captureV9BuyBasis(itemId, quantitySold, spent, price, totalQuantity, state);
+		}
 		pushActiveFlipsSnapshot();
 	}
 
@@ -2270,6 +2281,149 @@ public class FlipSmartPlugin extends Plugin
 			.append("Refreshed overnight sell price for " + itemName + " to ")
 			.append(ChatColorType.HIGHLIGHT)
 			.append(GpUtils.formatGPWithSuffix(freshSellPrice))
+			.append(ChatColorType.NORMAL)
+			.append(".")
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(message)
+			.build());
+	}
+
+	private V9FlipStateStore v9Store()
+	{
+		if (v9FlipStateStore == null)
+		{
+			v9FlipStateStore = new V9FlipStateStore(gson);
+		}
+		return v9FlipStateStore;
+	}
+
+	private static boolean isV9Timeframe(FlipSmartConfig.FlipTimeframe tf)
+	{
+		return tf == FlipSmartConfig.FlipTimeframe.THIRTY_MINS
+			|| tf == FlipSmartConfig.FlipTimeframe.TWO_HOURS
+			|| tf == FlipSmartConfig.FlipTimeframe.FOUR_HOURS;
+	}
+
+	private void captureV9BuyBasis(int itemId, int quantitySold, int spent, int price, int totalQuantity,
+		GrandExchangeOfferState state)
+	{
+		if (state != GrandExchangeOfferState.BOUGHT)
+		{
+			return;
+		}
+		FlipSmartConfig.FlipTimeframe tf = config.flipTimeframe();
+		if (!isV9Timeframe(tf))
+		{
+			return;
+		}
+		int buyPrice = quantitySold > 0 ? (int) Math.round((double) spent / quantitySold) : price;
+		if (buyPrice <= 0 || totalQuantity <= 0)
+		{
+			return;
+		}
+		V9FlipState fs = new V9FlipState();
+		fs.setItemId(itemId);
+		fs.setTimeframe(tf.getApiValue());
+		fs.setBuyPrice(buyPrice);
+		fs.setTotalQty(totalQuantity);
+		fs.setRemainingQty(totalQuantity);
+		fs.setLadderRung(0);
+		fs.setSavedAtMillis(System.currentTimeMillis());
+		PlayerSession sess = getSession();
+		Integer target = sess != null ? sess.getRecommendedPrice(itemId) : null;
+		if (target != null && target > 0)
+		{
+			fs.setOriginalTarget(target);
+		}
+		v9Store().put(fs);
+	}
+
+	public void maybeSuggestV9FirstListing(int itemId)
+	{
+		if (!apiClient.isV9Enabled())
+		{
+			return;
+		}
+		if (!isV9Timeframe(config.flipTimeframe()))
+		{
+			return;
+		}
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		V9FlipState state = v9Store().get(itemId);
+		if (state == null || state.getBuyPrice() <= 0)
+		{
+			return;
+		}
+		Integer originalSell = sess.getRecommendedPrice(itemId);
+		if (originalSell == null || originalSell <= 0)
+		{
+			return;
+		}
+		final int originalTarget = originalSell;
+		apiClient.getFirstListingAsync(itemId, state.getBuyPrice(), originalTarget, sess.getRsn())
+			.thenAccept(resp ->
+			{
+				if (resp == null || resp.getListingSellPrice() == null || resp.getListingSellPrice() <= 0)
+				{
+					return;
+				}
+				clientThread.invokeLater(() -> applyV9FirstListing(itemId, resp, originalTarget));
+			})
+			.exceptionally(ex ->
+			{
+				if (log.isDebugEnabled())
+				{
+					log.debug("v9 first-listing suggestion failed for {}: {}", itemId, ex.getMessage());
+				}
+				return null;
+			});
+	}
+
+	private void applyV9FirstListing(int itemId, PriceTargetResponse resp, int originalTarget)
+	{
+		PlayerSession sess = getSession();
+		if (sess == null)
+		{
+			return;
+		}
+		int listing = resp.getListingSellPrice();
+		sess.setRecommendedPrice(itemId, listing);
+		if (flipFinderPanel != null)
+		{
+			flipFinderPanel.setDisplayedSellPrice(itemId, listing);
+		}
+		if (grandExchangeTracker != null)
+		{
+			grandExchangeTracker.refreshSellFocus(itemId);
+		}
+		V9FlipState state = v9Store().get(itemId);
+		if (state != null)
+		{
+			state.setScenario(resp.getScenario());
+			state.setScenarioBMid(resp.getScenarioBMid());
+			state.setOriginalTarget(originalTarget);
+			state.setListingTimestampMs(System.currentTimeMillis());
+			v9Store().put(state);
+		}
+		notifyV9FirstListing(itemId, listing);
+	}
+
+	private void notifyV9FirstListing(int itemId, int listingSellPrice)
+	{
+		String itemName = itemManager.getItemComposition(itemId).getName();
+		String message = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[FlipSmart] ")
+			.append(ChatColorType.NORMAL)
+			.append("Suggested first-listing sell price for " + itemName + " is ")
+			.append(ChatColorType.HIGHLIGHT)
+			.append(GpUtils.formatGPWithSuffix(listingSellPrice))
 			.append(ChatColorType.NORMAL)
 			.append(".")
 			.build();

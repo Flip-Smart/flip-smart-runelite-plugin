@@ -17,6 +17,8 @@ import com.flipsmart.api.dto.Dtos.FlipStatisticsResponse;
 import com.flipsmart.api.dto.Dtos.HistoryBackfillEntry;
 import com.flipsmart.api.dto.Dtos.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
+import com.flipsmart.api.dto.Dtos.PriceTargetResponse;
+import com.flipsmart.api.dto.Dtos.ReadjustmentResponse;
 import com.flipsmart.api.dto.Dtos.PluginSyncResponse;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckResponse;
@@ -1160,6 +1162,45 @@ public final class Endpoints
 			Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, SellPriceCheckResponse.class));
+		}
+	}
+
+	/**
+	 * V9 short-timeframe price-target endpoints: first-listing sell suggestion and the
+	 * stateless re-adjustment ladder calc. Pricing/scenario math stays server-side.
+	 */
+	@Slf4j
+	public static class PriceTargetEndpoints
+	{
+		private final ApiHttpTransport transport;
+
+		public PriceTargetEndpoints(ApiHttpTransport transport)
+		{
+			this.transport = transport;
+		}
+
+		public CompletableFuture<PriceTargetResponse> getFirstListingAsync(int itemId, int buyPrice, int originalSellPrice, String rsn)
+		{
+			StringBuilder url = new StringBuilder(transport.getApiUrl())
+				.append("/price-targets/").append(itemId)
+				.append("?buy_price=").append(buyPrice)
+				.append("&original_sell_price=").append(originalSellPrice);
+			if (rsn != null && !rsn.isEmpty())
+			{
+				url.append("&rsn=").append(urlEncode(rsn));
+			}
+			Request.Builder requestBuilder = new Request.Builder().url(url.toString()).get();
+			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
+				transport.parse(jsonData, PriceTargetResponse.class));
+		}
+
+		public CompletableFuture<ReadjustmentResponse> postReadjustmentAsync(int itemId, JsonObject body)
+		{
+			String url = String.format("%s/price-targets/%d/readjustment", transport.getApiUrl(), itemId);
+			RequestBody rb = RequestBody.create(JSON, body.toString());
+			Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
+				transport.parse(jsonData, ReadjustmentResponse.class));
 		}
 	}
 

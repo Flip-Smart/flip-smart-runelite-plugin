@@ -679,6 +679,48 @@ public final class Dtos
 	}
 
 	/**
+	 * Response from GET /price-targets/{id}. When the first-listing params (buy_price +
+	 * original_sell_price) are supplied, the listing_* / scenario fields are populated;
+	 * otherwise they are null. scenario is "A" | "B" | "C" and drives the re-adjustment
+	 * ladder; scenario_b_mid is only set for scenario B.
+	 */
+	@Data
+	public static class PriceTargetResponse
+	{
+		@SerializedName("recommended_buy_price")
+		private int recommendedBuyPrice;
+
+		@SerializedName("recommended_sell_price")
+		private int recommendedSellPrice;
+
+		@SerializedName("listing_sell_price")
+		private Integer listingSellPrice;
+
+		@SerializedName("listing_strategy")
+		private String listingStrategy;
+
+		private String scenario;
+
+		@SerializedName("scenario_b_mid")
+		private Integer scenarioBMid;
+	}
+
+	/**
+	 * Response from POST /price-targets/{id}/readjustment. action is
+	 * "relist" | "prompt_sell" | "bypass_to_ladder2"; listing_price is null only for a bypass.
+	 */
+	@Data
+	public static class ReadjustmentResponse
+	{
+		private String action;
+
+		@SerializedName("listing_price")
+		private Integer listingPrice;
+
+		private String disposition;
+	}
+
+	/**
 	 * Data class for transaction request parameters (use Builder to construct)
 	 */
 	public static class TransactionRequest
