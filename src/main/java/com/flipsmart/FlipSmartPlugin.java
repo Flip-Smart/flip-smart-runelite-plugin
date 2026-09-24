@@ -2637,22 +2637,22 @@ public class FlipSmartPlugin extends Plugin
 	private String formatV9LadderMessage(int itemId, String action, int listingPrice, String disposition)
 	{
 		String item = itemManager.getItemComposition(itemId).getName();
-		String price = GpUtils.formatGPWithSuffix(listingPrice);
+		String at = item + " at " + GpUtils.formatGPWithSuffix(listingPrice);
 		String tag = disposition == null ? "" : disposition;
 		switch (tag)
 		{
 			case "profit":
-				return "Market's up — relist " + item + " at " + price + ".";
+				return "Market's up — relist " + at + ".";
 			case "breakeven":
-				return "Relist " + item + " at " + price + " to break even.";
+				return "Relist " + at + " to break even.";
 			case "reduced":
-				return "Take the smaller win — sell " + item + " at " + price + ".";
+				return "Take the smaller win — sell " + at + ".";
 			case "dump":
-				return "Dump " + item + " at " + price + " to cap your loss.";
+				return "Dump " + at + " to cap your loss.";
 			case "loss":
-				return "Cut it — sell " + item + " at " + price + ".";
+				return "Cut it — sell " + at + ".";
 			default:
-				return ("relist".equals(action) ? "Relist " : "Sell ") + item + " at " + price + ".";
+				return ("relist".equals(action) ? "Relist " : "Sell ") + at + ".";
 		}
 	}
 
