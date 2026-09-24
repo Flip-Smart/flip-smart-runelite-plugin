@@ -2442,16 +2442,14 @@ public class FlipSmartPlugin extends Plugin
 
 	private void notifyV9FirstListing(int itemId, int listingSellPrice)
 	{
-		String itemName = itemManager.getItemComposition(itemId).getName();
+		long profit = v9TradeProfit(itemId, listingSellPrice);
+		String disposition = profit > 0 ? "profit" : (profit < 0 ? "loss" : "breakeven");
+		String detail = v9PromptCopy(itemId, disposition, listingSellPrice, true);
 		String message = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
 			.append("[FlipSmart] ")
 			.append(ChatColorType.NORMAL)
-			.append("Suggested first-listing sell price for " + itemName + " is ")
-			.append(ChatColorType.HIGHLIGHT)
-			.append(GpUtils.formatGPWithSuffix(listingSellPrice))
-			.append(ChatColorType.NORMAL)
-			.append(".")
+			.append(detail)
 			.build();
 		chatMessageManager.queue(QueuedMessage.builder()
 			.type(ChatMessageType.CONSOLE)
@@ -2611,7 +2609,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				grandExchangeTracker.refreshSellFocus(itemId);
 			}
-			String message = formatV9LadderMessage(itemId, action, listingPrice, resp.getDisposition());
+			String message = v9PromptCopy(itemId, resp.getDisposition(), listingPrice, false);
 			if (flipAssistOverlay != null)
 			{
 				flipAssistOverlay.setAutoStatusMessage(message, itemId);
@@ -2634,25 +2632,39 @@ public class FlipSmartPlugin extends Plugin
 	// Player-facing re-adjustment copy, composed from the backend's terse disposition tag
 	// (profit/breakeven/reduced/dump/loss) + the item and price. DRAFT wording — pending
 	// Scapenomics sign-off (#1309/#1351).
-	private String formatV9LadderMessage(int itemId, String action, int listingPrice, String disposition)
+	// After-tax profit/loss on the whole trade if the remaining units sell at this price
+	// (same shape as the backend's trade_total: realized + remaining projection).
+	private long v9TradeProfit(int itemId, int price)
 	{
-		String item = itemManager.getItemComposition(itemId).getName();
-		String at = item + " at " + GpUtils.formatGPWithSuffix(listingPrice);
-		String tag = disposition == null ? "" : disposition;
-		switch (tag)
+		V9FlipState s = v9Store().get(itemId);
+		if (s == null)
 		{
-			case "profit":
-				return "Market's up — relist " + at + ".";
+			return 0L;
+		}
+		int tax = GeTax.taxFor(itemId, price);
+		return s.getRealizedProfit() + (long) (price - s.getBuyPrice() - tax) * s.getRemainingQty();
+	}
+
+	// Player-facing prompt copy (Scapenomics, #1309). firstListing chooses the verb for
+	// profit/reduced: "Sell" the first time, "Relist" when adjusting an existing offer.
+	private String v9PromptCopy(int itemId, String disposition, int price, boolean firstListing)
+	{
+		String at = itemManager.getItemComposition(itemId).getName() + " at " + GpUtils.formatGPWithSuffix(price);
+		long profit = v9TradeProfit(itemId, price);
+		String signed = (profit >= 0 ? "+" : "-") + GpUtils.formatGPWithSuffix(Math.abs(profit));
+		String verb = firstListing ? "Sell" : "Relist";
+		switch (disposition == null ? "" : disposition)
+		{
 			case "breakeven":
-				return "Relist " + at + " to break even.";
-			case "reduced":
-				return "Take the smaller win — sell " + at + ".";
+				return "Relist " + at + " (breakeven)";
 			case "dump":
-				return "Dump " + at + " to cap your loss.";
+				return "Exit " + at + " to cap loss";
 			case "loss":
-				return "Cut it — sell " + at + ".";
+				return "Sell " + at + " (" + signed + ")";
+			case "profit":
+			case "reduced":
 			default:
-				return ("relist".equals(action) ? "Relist " : "Sell ") + at + ".";
+				return verb + " " + at + " (" + signed + ")";
 		}
 	}
 
