@@ -2610,16 +2610,17 @@ public class FlipSmartPlugin extends Plugin
 			{
 				grandExchangeTracker.refreshSellFocus(itemId);
 			}
-			if (flipAssistOverlay != null && resp.getDisposition() != null)
+			String message = formatV9LadderMessage(itemId, action, listingPrice, resp.getDisposition());
+			if (flipAssistOverlay != null)
 			{
-				flipAssistOverlay.setAutoStatusMessage(resp.getDisposition(), itemId);
+				flipAssistOverlay.setAutoStatusMessage(message, itemId);
 			}
 			OfferRecord live = findLiveOfferForItem(itemId);
 			if (geSlotOverlay != null && live != null && live.getSlot() != null)
 			{
 				geSlotOverlay.setAdjustmentHighlight(live.getSlot(), listingPrice);
 			}
-			notifyV9Readjustment(itemId, listingPrice, resp.getDisposition());
+			notifyV9Readjustment(message);
 		}
 		state.setLadderRung(rung);
 		if (rung == 1)
@@ -2629,12 +2630,33 @@ public class FlipSmartPlugin extends Plugin
 		v9Store().put(state);
 	}
 
-	private void notifyV9Readjustment(int itemId, int listingPrice, String disposition)
+	// Player-facing re-adjustment copy, composed from the backend's terse disposition tag
+	// (profit/breakeven/reduced/dump/loss) + the item and price. DRAFT wording — pending
+	// Scapenomics sign-off (#1309/#1351).
+	private String formatV9LadderMessage(int itemId, String action, int listingPrice, String disposition)
 	{
-		String itemName = itemManager.getItemComposition(itemId).getName();
-		String detail = disposition != null && !disposition.isEmpty()
-			? disposition
-			: "re-list " + itemName + " at " + GpUtils.formatGPWithSuffix(listingPrice);
+		String item = itemManager.getItemComposition(itemId).getName();
+		String price = GpUtils.formatGPWithSuffix(listingPrice);
+		String tag = disposition == null ? "" : disposition;
+		switch (tag)
+		{
+			case "profit":
+				return "Market's up — relist " + item + " at " + price + ".";
+			case "breakeven":
+				return "Relist " + item + " at " + price + " to break even.";
+			case "reduced":
+				return "Take the smaller win — sell " + item + " at " + price + ".";
+			case "dump":
+				return "Dump " + item + " at " + price + " to cap your loss.";
+			case "loss":
+				return "Cut it — sell " + item + " at " + price + ".";
+			default:
+				return ("relist".equals(action) ? "Relist " : "Sell ") + item + " at " + price + ".";
+		}
+	}
+
+	private void notifyV9Readjustment(String detail)
+	{
 		String message = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
 			.append("[FlipSmart] ")
