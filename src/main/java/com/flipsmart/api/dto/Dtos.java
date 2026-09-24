@@ -698,7 +698,7 @@ public final class Dtos
 			this.quantity = builder.quantity;
 			this.pricePerItem = builder.pricePerItem;
 			this.geSlot = builder.geSlot;
-			this.recommendedSellPrice = builder.recommendedSellPrice;
+			this.recommendedSellPrice = builder.recommendedSellPriceValue;
 			this.rsn = builder.rsn;
 			this.totalQuantity = builder.totalQuantity;
 			this.idempotencyKey = builder.idempotencyKey;
@@ -721,7 +721,7 @@ public final class Dtos
 			private final int quantity;
 			private final long pricePerItem;
 			private Integer geSlot;
-			private Long recommendedSellPrice;
+			private Long recommendedSellPriceValue;
 			private String rsn;
 			private Integer totalQuantity;
 			private String idempotencyKey;
@@ -740,7 +740,7 @@ public final class Dtos
 			}
 
 			public Builder geSlot(Integer geSlot) { this.geSlot = geSlot; return this; }
-			public Builder recommendedSellPrice(Long price) { this.recommendedSellPrice = price; return this; }
+			public Builder recommendedSellPrice(Long price) { this.recommendedSellPriceValue = price; return this; }
 			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
 			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
 			public Builder idempotencyKey(String key) { this.idempotencyKey = key; return this; }
