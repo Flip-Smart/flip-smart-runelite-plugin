@@ -10,12 +10,12 @@ public final class OfferSignal
     public final int itemId;
     public final String itemName;
     public final int totalQuantity;
-    public final int price;
+    public final long price;
     public final int quantitySold;   // cumulative, as reported by the client
     public final long spent;         // cumulative, as reported by the client
 
     public OfferSignal(int slot, GrandExchangeOfferState geState, int itemId, String itemName,
-                       int totalQuantity, int price, int quantitySold, long spent)
+                       int totalQuantity, long price, int quantitySold, long spent)
     {
         this.slot = slot;
         this.geState = geState;

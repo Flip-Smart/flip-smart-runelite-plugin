@@ -13,7 +13,7 @@ import static org.junit.Assert.assertNull;
  */
 public class SmartSellPricerLostBasisTest
 {
-	private static final int MARKET_PRICE = 8_925_470;
+	private static final long MARKET_PRICE = 8_925_470L;
 
 	private static ActiveFlip flip(int averageBuyPrice, Integer recommendedSellPrice)
 	{
@@ -21,7 +21,7 @@ public class SmartSellPricerLostBasisTest
 		f.setItemId(1234);
 		f.setItemName("Blood moon tassets");
 		f.setAverageBuyPrice(averageBuyPrice);
-		f.setRecommendedSellPrice(recommendedSellPrice);
+		f.setRecommendedSellPrice(recommendedSellPrice == null ? null : recommendedSellPrice.longValue());
 		return f;
 	}
 
@@ -41,19 +41,19 @@ public class SmartSellPricerLostBasisTest
 	@Test
 	public void smartSellPriceFallsBackToMarketWhenBasisIsLost()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(0, null), MARKET_PRICE);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(0, null), MARKET_PRICE);
 
 		assertEquals("with no basis and no target, the market price is the only sane answer",
-			Integer.valueOf(MARKET_PRICE), price);
+			Long.valueOf(MARKET_PRICE), price);
 	}
 
 	@Test
 	public void smartSellPriceKeepsTheOriginalTargetWhenBasisIsLost()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(0, 9_100_000), MARKET_PRICE);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(0, 9_100_000), MARKET_PRICE);
 
 		assertEquals("the original recommendation outranks the market fallback",
-			Integer.valueOf(9_100_000), price);
+			Long.valueOf(9_100_000), price);
 	}
 
 	@Test
@@ -66,44 +66,44 @@ public class SmartSellPricerLostBasisTest
 	@Test
 	public void smartSellPriceIsUnchangedForAHealthyFlip()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, null), MARKET_PRICE);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, null), MARKET_PRICE);
 
-		assertEquals(Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
+		assertEquals(Long.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
 	}
 
 	@Test
 	public void smartSellPriceKeepsRecommendationThatClearsBreakeven()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 9_000_000), MARKET_PRICE);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 9_000_000), MARKET_PRICE);
 
 		assertEquals("a recommendation at or above breakeven outranks the market price",
-			Integer.valueOf(9_000_000), price);
+			Long.valueOf(9_000_000), price);
 	}
 
 	@Test
 	public void smartSellPriceKeepsRecommendationWhenUnderwaterAndMarketIsUnviable()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 7_000_000), null);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 7_000_000), null);
 
 		assertEquals("with no viable market, an underwater recommendation is still the last known target",
-			Integer.valueOf(7_000_000), price);
+			Long.valueOf(7_000_000), price);
 	}
 
 	@Test
 	public void smartSellPriceFallsBackToBreakevenWhenOnlyBasisIsKnown()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, null), null);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, null), null);
 
 		assertEquals("no recommendation and no market leaves breakeven as the floor",
-			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
+			Long.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
 	}
 
 	@Test
 	public void smartSellPriceRejectsANonPositiveRecommendation()
 	{
-		Integer price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 0), null);
+		Long price = SmartSellPricer.calculateSmartSellPrice(flip(8_000_000, 0), null);
 
 		assertEquals("a non-positive recommendation is not a price; breakeven is the floor",
-			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
+			Long.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(8_000_000)), price);
 	}
 }

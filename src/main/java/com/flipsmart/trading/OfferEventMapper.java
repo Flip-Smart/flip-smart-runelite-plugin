@@ -15,7 +15,7 @@ public final class OfferEventMapper
         int itemId,
         String itemName,
         int totalQuantity,
-        int price,
+        long price,
         int quantitySold,
         long spent)
     {

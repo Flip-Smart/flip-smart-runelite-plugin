@@ -1,5 +1,6 @@
 package com.flipsmart.trading;
 
+import com.flipsmart.GpAnswer;
 import com.flipsmart.ActiveFlipTracker;
 import com.flipsmart.GEHistoryService;
 import com.flipsmart.OfflineSyncService;
@@ -260,9 +261,9 @@ final class SessionCorpusHarness
 				.thenReturn(GrandExchangeOfferState.valueOf(s.get("state").getAsString()));
 			when(offer.getItemId()).thenReturn(s.get("item_id").getAsInt());
 			when(offer.getTotalQuantity()).thenReturn(s.get("total").getAsInt());
-			when(offer.getPrice()).thenReturn(s.get("price").getAsInt());
+			when(offer.getPrice()).thenAnswer(GpAnswer.gp(s.get("price").getAsLong()));
 			when(offer.getQuantitySold()).thenReturn(s.get("sold").getAsInt());
-			when(offer.getSpent()).thenReturn(s.get("spent").getAsInt());
+			when(offer.getSpent()).thenAnswer(GpAnswer.gp(s.get("spent").getAsLong()));
 			slots[s.get("slot").getAsInt()] = offer;
 		}
 		return slots;

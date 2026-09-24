@@ -16,10 +16,10 @@ public class PriceTargetResponseTest
 		String json = "{\"recommended_buy_price\":100,\"recommended_sell_price\":120,"
 			+ "\"listing_sell_price\":115,\"listing_strategy\":\"mid\",\"scenario\":\"B\",\"scenario_b_mid\":114}";
 		PriceTargetResponse r = gson.fromJson(json, PriceTargetResponse.class);
-		assertEquals(Integer.valueOf(115), r.getListingSellPrice());
+		assertEquals(Long.valueOf(115), r.getListingSellPrice());
 		assertEquals("mid", r.getListingStrategy());
 		assertEquals("B", r.getScenario());
-		assertEquals(Integer.valueOf(114), r.getScenarioBMid());
+		assertEquals(Long.valueOf(114), r.getScenarioBMid());
 	}
 
 	@Test

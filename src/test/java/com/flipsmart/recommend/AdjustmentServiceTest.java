@@ -116,9 +116,9 @@ public class AdjustmentServiceTest
 		assertTrue(svc.buyPricesEmpty());
 
 		svc.putBuyPrice(11, 250);
-		assertEquals(Integer.valueOf(250), svc.getBuyPrice(11));
-		assertEquals(Integer.valueOf(250), svc.getBuyPriceOrDefault(11, 9));
-		assertEquals("absent item falls back to the default", Integer.valueOf(9), svc.getBuyPriceOrDefault(99, 9));
+		assertEquals(Long.valueOf(250), svc.getBuyPrice(11));
+		assertEquals(Long.valueOf(250), svc.getBuyPriceOrDefault(11, 9));
+		assertEquals("absent item falls back to the default", Long.valueOf(9), svc.getBuyPriceOrDefault(99, 9));
 		assertNull(svc.getBuyPrice(99));
 		assertFalse(svc.buyPricesEmpty());
 
@@ -132,11 +132,11 @@ public class AdjustmentServiceTest
 		AdjustmentService svc = new AdjustmentService();
 		svc.putBuyPrice(11, 250);
 
-		Map<Integer, Integer> snap = svc.buyPricesSnapshot();
-		snap.put(12, 999);
+		Map<Integer, Long> snap = svc.buyPricesSnapshot();
+		snap.put(12, 999L);
 
 		assertNull("mutating the snapshot must not leak into the service", svc.getBuyPrice(12));
-		assertEquals(Integer.valueOf(250), svc.getBuyPrice(11));
+		assertEquals(Long.valueOf(250), svc.getBuyPrice(11));
 	}
 
 	@Test
@@ -145,14 +145,14 @@ public class AdjustmentServiceTest
 		AdjustmentService svc = new AdjustmentService();
 		svc.putBuyPrice(11, 250);
 
-		Map<Integer, Integer> more = new HashMap<>();
-		more.put(12, 300);
-		more.put(13, 400);
+		Map<Integer, Long> more = new HashMap<>();
+		more.put(12, 300L);
+		more.put(13, 400L);
 		svc.putAllBuyPrices(more);
 
-		assertEquals(Integer.valueOf(250), svc.getBuyPrice(11));
-		assertEquals(Integer.valueOf(300), svc.getBuyPrice(12));
-		assertEquals(Integer.valueOf(400), svc.getBuyPrice(13));
+		assertEquals(Long.valueOf(250), svc.getBuyPrice(11));
+		assertEquals(Long.valueOf(300), svc.getBuyPrice(12));
+		assertEquals(Long.valueOf(400), svc.getBuyPrice(13));
 	}
 
 	// ---- lifecycle ----

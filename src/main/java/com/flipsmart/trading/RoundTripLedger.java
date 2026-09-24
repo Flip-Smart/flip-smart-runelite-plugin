@@ -240,7 +240,7 @@ public final class RoundTripLedger
      * <p>A non-positive price contributes nothing — a placement row carries no price, and folding
      * it in would drag the average toward zero.</p>
      */
-    public void recordBuyBasis(String rsn, int itemId, int quantity, int pricePerItem)
+    public void recordBuyBasis(String rsn, int itemId, int quantity, long pricePerItem)
     {
         if (rsn == null || rsn.isEmpty() || quantity <= 0 || pricePerItem <= 0)
         {
@@ -250,7 +250,7 @@ public final class RoundTripLedger
         {
             Entry e = entryFor(rsn, itemId);
             e.boughtQuantity += quantity;
-            e.boughtSpent += (long) quantity * pricePerItem;
+            e.boughtSpent += quantity * pricePerItem;
         }
     }
 
@@ -275,7 +275,7 @@ public final class RoundTripLedger
      * no priced buys. Because a closed cycle's basis is cleared, this can never average across a
      * position the player has already liquidated.
      */
-    public Integer currentBasis(String rsn, int itemId)
+    public Long currentBasis(String rsn, int itemId)
     {
         if (rsn == null || rsn.isEmpty())
         {
@@ -288,7 +288,7 @@ public final class RoundTripLedger
             {
                 return null;
             }
-            return (int) Math.round(e.boughtSpent / (double) e.boughtQuantity);
+            return Math.round(e.boughtSpent / (double) e.boughtQuantity);
         }
     }
 

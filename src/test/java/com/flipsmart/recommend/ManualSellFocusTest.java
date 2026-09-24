@@ -19,13 +19,13 @@ public class ManualSellFocusTest
 	@Test
 	public void prefersThePanelDisplayedPrice()
 	{
-		assertEquals(Integer.valueOf(120), ManualSellFocus.resolveSellPrice(120, 110, 100));
+		assertEquals(Long.valueOf(120), ManualSellFocus.resolveSellPrice(120L, 110L, 100));
 	}
 
 	@Test
 	public void fallsBackToTheSessionRecommendedPriceWhenThePanelHasNone()
 	{
-		assertEquals(Integer.valueOf(110), ManualSellFocus.resolveSellPrice(null, 110, 100));
+		assertEquals(Long.valueOf(110), ManualSellFocus.resolveSellPrice(null, 110L, 100));
 	}
 
 	@Test
@@ -34,17 +34,17 @@ public class ManualSellFocusTest
 		// The free-tier regression: no backend flip, no cached price — the buy basis in
 		// the offer store is enough to price the exit.
 		assertEquals(
-			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(100)),
+			Long.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(100)),
 			ManualSellFocus.resolveSellPrice(null, null, 100));
 	}
 
 	@Test
 	public void treatsNonPositivePricesAsAbsent()
 	{
-		assertEquals(Integer.valueOf(110), ManualSellFocus.resolveSellPrice(0, 110, 100));
+		assertEquals(Long.valueOf(110), ManualSellFocus.resolveSellPrice(0L, 110L, 100));
 		assertEquals(
-			Integer.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(100)),
-			ManualSellFocus.resolveSellPrice(-1, 0, 100));
+			Long.valueOf(SmartSellPricer.calculateMinProfitableSellPrice(100)),
+			ManualSellFocus.resolveSellPrice(-1L, 0L, 100));
 	}
 
 	@Test
@@ -59,7 +59,7 @@ public class ManualSellFocusTest
 		// A basis-derived price must clear the 2% GE tax, else the "fix" would hand the
 		// player a guaranteed loss instead of no price at all.
 		int basis = 1_000_000;
-		Integer resolved = ManualSellFocus.resolveSellPrice(null, null, basis);
+		Long resolved = ManualSellFocus.resolveSellPrice(null, null, basis);
 		assertEquals(true, resolved != null && resolved * 0.98 > basis);
 	}
 }

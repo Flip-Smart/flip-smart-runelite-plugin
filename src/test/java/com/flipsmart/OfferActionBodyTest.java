@@ -21,9 +21,9 @@ public class OfferActionBodyTest
 			.listedPrice(1000)
 			.listedQuantity(10)
 			.filledQuantity(0)
-			.currentMarketHigh(1080)
-			.currentMarketLow(1020)
-			.userAvgBuyPrice(990)
+			.currentMarketHigh(1080L)
+			.currentMarketLow(1020L)
+			.userAvgBuyPrice(990L)
 			.build();
 
 		JsonObject body = FlipSmartApiClient.buildOfferActionBody(req);
@@ -66,7 +66,7 @@ public class OfferActionBodyTest
 		OfferAdviceRequest req = OfferAdviceRequest.builder()
 			.itemId(4151).pool("mid_vol").side("buy").stage("initial")
 			.listedAtMillis(1781035200000L).listedPrice(100000).listedQuantity(10).filledQuantity(5)
-			.originalMargin(10000).previousPositionMargin(9000)
+			.originalMargin(10000L).previousPositionMargin(9000L)
 			.consecutiveMarginDecreases(1).cumulativeMarginReductionPct(0.1)
 			.build();
 		JsonObject body = FlipSmartApiClient.buildOfferActionBody(req);

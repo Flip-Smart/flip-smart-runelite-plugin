@@ -210,7 +210,7 @@ public class FlipAssistInputListener implements KeyListener
 	 * Set the current input field value and refresh the display.
 	 * MUST be called on client thread.
 	 */
-	private void setInputValue(int value)
+	private void setInputValue(long value)
 	{
 		String valueStr = String.valueOf(value);
 		client.setVarcStrValue(VARCLIENT_INPUT_TEXT, valueStr);
@@ -318,7 +318,7 @@ public class FlipAssistInputListener implements KeyListener
 		String quantityText = (quantityWidget != null && !quantityWidget.isHidden()) ? quantityWidget.getText() : null;
 		
 		// Parse quantity from text (e.g., "6,000" -> 6000)
-		int currentQuantity = GpUtils.parseDigits(quantityText);
+		long currentQuantity = GpUtils.parseDigits(quantityText);
 		
 		// If quantity has been set (> 1, since default is often 1) and we're in an input,
 		// user is probably now setting price

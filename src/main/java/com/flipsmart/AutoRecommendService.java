@@ -202,7 +202,7 @@ public class AutoRecommendService
 
 	// Provider for the panel's displayed (smart) sell price — preferred over session's stored price
 	@Setter
-	private volatile IntFunction<Integer> displayedSellPriceProvider;
+	private volatile IntFunction<Long> displayedSellPriceProvider;
 
 	// Last overlay message sent — readable by the overlay as a fallback when the
 	// async callback result gets lost due to race conditions
@@ -241,7 +241,7 @@ public class AutoRecommendService
 
 		// Buy prices stored when buy orders were placed — used as cost basis for sell adjustments.
 		// Persisted because backend doesn't track the exact price the user paid.
-		Map<Integer, Integer> buyPrices;
+		Map<Integer, Long> buyPrices;
 	}
 
 	public AutoRecommendService(FlipSmartConfig config, FlipSmartPlugin plugin, OfferStore offerStore)
@@ -502,7 +502,7 @@ public class AutoRecommendService
 		// Don't re-show sell overlay if this item already has an active sell order — unless the
 		// advisor has a pending reprice, in which case surface the new price on the setup screen
 		// immediately instead of blanking until the old offer clears.
-		Integer resellPrice = staleOffers.getResellPrice(itemId);
+		Long resellPrice = staleOffers.getResellPrice(itemId);
 		boolean repricePending = resellPrice != null && resellPrice > 0;
 		if (offerStore.hasActiveSellOfferForItem(itemId) && !repricePending)
 		{
@@ -511,7 +511,7 @@ public class AutoRecommendService
 			// returning blank — the price lives in session state, so there's no need to wait for
 			// a later event/tick. Off-screen we still bail, to avoid re-surfacing a listed sell.
 			boolean setupScreenOpen = java.util.Objects.equals(queue.getLockedItemId(), itemId);
-			Integer knownPrice = resolveBestSellPrice(itemId);
+			Long knownPrice = resolveBestSellPrice(itemId);
 			if (setupScreenOpen && knownPrice != null && knownPrice > 0)
 			{
 				int qty = resolveRepriceQuantity(itemId);
@@ -535,7 +535,7 @@ public class AutoRecommendService
 			return SellFocusResult.FOCUSED;
 		}
 
-		Integer sellPrice = resolveBestSellPrice(itemId);
+		Long sellPrice = resolveBestSellPrice(itemId);
 		if (sellPrice == null || sellPrice <= 0)
 		{
 			// Try to recover sell price from recommendation queue
@@ -786,7 +786,7 @@ public class AutoRecommendService
 			// directly, mirroring handleBuyCollected — instead of advancing to a new buy for the
 			// freed slot (where the resolver's S2 empty-slot buy would outrank the S3 re-list).
 			PlayerSession session = plugin.getSession();
-			Integer sellPrice = session != null ? session.getRecommendedPrice(itemId) : null;
+			Long sellPrice = session != null ? session.getRecommendedPrice(itemId) : null;
 			if (session != null && session.getCollectedItemIds().contains(itemId) && sellPrice != null && sellPrice > 0)
 			{
 				log.debug("Auto-recommend: Sell modified/returned for {} - re-listing", itemName);
@@ -816,7 +816,7 @@ public class AutoRecommendService
 
 		ensureSellPriceAvailable(itemId);
 		boolean isCollected = session.getCollectedItemIds().contains(itemId);
-		Integer sellPrice = session.getRecommendedPrice(itemId);
+		Long sellPrice = session.getRecommendedPrice(itemId);
 		// Collecting must not downgrade a partial-cancel (S1 list) to a completed-buy (S3),
 		// or the resolver lets an empty-slot buy (S2) outrank listing the held items.
 		CollectOrigin priorOrigin = session.getCollectOrigin(itemId);
@@ -1372,7 +1372,7 @@ public class AutoRecommendService
 	 * When the timer expires, checkAdjustmentTimers() will prompt the user
 	 * to adjust the price if the recommendation has changed.
 	 */
-	private void scheduleAdjustmentTimer(int itemId, int itemPrice)
+	private void scheduleAdjustmentTimer(int itemId, long itemPrice)
 	{
 		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
@@ -1383,7 +1383,7 @@ public class AutoRecommendService
 	/**
 	 * Reset the adjustment timer for an item (e.g., after a partial fill).
 	 */
-	public synchronized void resetAdjustmentTimer(int itemId, int itemPrice)
+	public synchronized void resetAdjustmentTimer(int itemId, long itemPrice)
 	{
 		if (!active || !adjustments.hasBuyDeadline(itemId))
 		{
@@ -1498,7 +1498,7 @@ public class AutoRecommendService
 		String itemName = offer.getItemName();
 
 		// Get buy price (cost basis) for breakeven calculation
-		Integer costBasis = adjustments.getBuyPriceOrDefault(itemId, offer.getPrice());
+		Long costBasis = adjustments.getBuyPriceOrDefault(itemId, offer.getPrice());
 
 		log.debug("Auto-recommend: Checking buy adjustment for {} (price={}, {}min elapsed)",
 			itemName, offer.getPrice(), minutesSince);
@@ -1675,7 +1675,7 @@ public class AutoRecommendService
 
 	private void scheduleMissingSellTimer(OfferRecord offer, long now)
 	{
-		Integer buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
+		Long buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		SellAdjustmentState state = new SellAdjustmentState(
@@ -1743,11 +1743,11 @@ public class AutoRecommendService
 
 	private void renderStaleOfferPrompt(OfferRecord offer)
 	{
-		Integer resellPrice = staleOffers.getResellPrice(offer.getItemId());
+		Long resellPrice = staleOffers.getResellPrice(offer.getItemId());
 		String overlayMsg;
 		if (resellPrice != null)
 		{
-			Integer net = staleOffers.getResellNet(offer.getItemId());
+			Long net = staleOffers.getResellNet(offer.getItemId());
 			String netSuffix = net == null ? ""
 				: String.format(" (%s%s)", net >= 0 ? "+" : "-", GpUtils.formatGP(Math.abs(net)));
 			// AC2 exit → cancel & re-sell; a priced buy prompt is the competitive buy
@@ -2011,7 +2011,7 @@ public class AutoRecommendService
 	 * uses the advised price. Idempotent — addToStaleQueue dedupes by item, and the price
 	 * map is refreshed on each poll.
 	 */
-	public synchronized void surfaceAdvisorResell(OfferRecord offer, int newPrice, Integer netProfitEstimate)
+	public synchronized void surfaceAdvisorResell(OfferRecord offer, long newPrice, Long netProfitEstimate)
 	{
 		surfaceAdvisorPrompt(offer, newPrice, netProfitEstimate, false);
 	}
@@ -2022,7 +2022,7 @@ public class AutoRecommendService
 	 * deliberately skips the session recommended price so the listing takes the no-offset
 	 * path. The statement order here reproduces both original methods exactly.
 	 */
-	private void surfaceAdvisorPrompt(OfferRecord offer, int price, Integer netProfitEstimate, boolean exit)
+	private void surfaceAdvisorPrompt(OfferRecord offer, long price, Long netProfitEstimate, boolean exit)
 	{
 		if (offer == null)
 		{
@@ -2061,7 +2061,7 @@ public class AutoRecommendService
 	 * an exit so the prompt reads "Cancel & re-sell" rather than "Adjust buy". Deliberately does
 	 * NOT set the session recommended price — that would flow through the offset-applying focus.
 	 */
-	public synchronized void surfaceAdvisorExitResell(OfferRecord offer, int resellPrice, Integer netProfitEstimate)
+	public synchronized void surfaceAdvisorExitResell(OfferRecord offer, long resellPrice, Long netProfitEstimate)
 	{
 		surfaceAdvisorPrompt(offer, resellPrice, netProfitEstimate, true);
 	}
@@ -2107,7 +2107,7 @@ public class AutoRecommendService
 		}
 
 		// Get the buy price (cost basis) — stored when the buy was placed
-		Integer buyPrice = adjustments.getBuyPrice(itemId);
+		Long buyPrice = adjustments.getBuyPrice(itemId);
 		if (buyPrice == null)
 		{
 			// Fallback: try recommendation queue
@@ -2291,7 +2291,7 @@ public class AutoRecommendService
 
 		if (response.isReadjustSell() && response.getRecommendedPrice() != null)
 		{
-			int newPrice = response.getRecommendedPrice();
+			long newPrice = response.getRecommendedPrice();
 			state.adjustmentCount++;
 
 			log.debug("Auto-recommend: Sell adjustment for {} — {} → {} gp (adj#{})",
@@ -2348,7 +2348,7 @@ public class AutoRecommendService
 			}
 
 			// Get buy price from stored prices or fall back to sell price
-			Integer buyPrice = adjustments.getBuyPrice(offer.getItemId());
+			Long buyPrice = adjustments.getBuyPrice(offer.getItemId());
 			if (buyPrice == null)
 			{
 				buyPrice = offer.getPrice();
@@ -2623,7 +2623,7 @@ public class AutoRecommendService
 	 */
 	private void focusSellForItem(int itemId, String itemName, int quantity)
 	{
-		Integer sellPrice = resolveBestSellPrice(itemId);
+		Long sellPrice = resolveBestSellPrice(itemId);
 
 		if (sellPrice == null || sellPrice <= 0)
 		{
@@ -2665,7 +2665,7 @@ public class AutoRecommendService
 		int sellableItemId = findNextSellableCollectedItem();
 		if (sellableItemId >= 0)
 		{
-			Integer sellPrice = resolveBestSellPrice(sellableItemId);
+			Long sellPrice = resolveBestSellPrice(sellableItemId);
 
 			if (sellPrice != null && sellPrice > 0)
 			{
@@ -2806,7 +2806,7 @@ public class AutoRecommendService
 
 	private boolean hasSellPrice(int itemId)
 	{
-		Integer price = resolveBestSellPrice(itemId);
+		Long price = resolveBestSellPrice(itemId);
 		return price != null && price > 0;
 	}
 
@@ -2884,10 +2884,10 @@ public class AutoRecommendService
 	 * placement, survives queue cycling), falling back to the live queue for a freshly-recommended
 	 * item not yet placed. Null when unknown (advisor then falls back to its existing behavior).
 	 */
-	public synchronized Integer getOriginalMargin(int itemId)
+	public synchronized Long getOriginalMargin(int itemId)
 	{
 		PlayerSession sess = plugin.getSession();
-		Integer persisted = sess == null ? null : sess.getOriginalMargin(itemId);
+		Long persisted = sess == null ? null : sess.getOriginalMargin(itemId);
 		if (persisted != null)
 		{
 			return persisted;
@@ -2902,17 +2902,17 @@ public class AutoRecommendService
 	 * adjustment) and is what the Flip Assist prompt reads. The panel's displayed
 	 * price is only a fallback for items the session hasn't seen yet.
 	 */
-	private Integer resolveBestSellPrice(int itemId)
+	private Long resolveBestSellPrice(int itemId)
 	{
-		Integer sessionPrice = plugin.getSession().getRecommendedPrice(itemId);
+		Long sessionPrice = plugin.getSession().getRecommendedPrice(itemId);
 		if (sessionPrice != null && sessionPrice > 0)
 		{
 			return sessionPrice;
 		}
-		IntFunction<Integer> provider = displayedSellPriceProvider;
+		IntFunction<Long> provider = displayedSellPriceProvider;
 		if (provider != null)
 		{
-			Integer smartPrice = provider.apply(itemId);
+			Long smartPrice = provider.apply(itemId);
 			if (smartPrice != null && smartPrice > 0)
 			{
 				return smartPrice;
@@ -3027,7 +3027,7 @@ public class AutoRecommendService
 	 * Create a buy FocusedFlip, invoke the focus callback, and update status text.
 	 * Centralizes the repeated pattern of showing a buy overlay with a status message.
 	 */
-	private void focusBuyOverlay(int itemId, String itemName, int buyPrice, int quantity, int sellPrice, String statusMsg)
+	private void focusBuyOverlay(int itemId, String itemName, long buyPrice, int quantity, long sellPrice, String statusMsg)
 	{
 		if (exitSuppressesBuys())
 		{
@@ -3235,7 +3235,7 @@ public class AutoRecommendService
 				{
 					continue;
 				}
-				Integer resolvedPrice = resolveBestSellPrice(itemId);
+				Long resolvedPrice = resolveBestSellPrice(itemId);
 				if (resolvedPrice == null || resolvedPrice <= 0)
 				{
 					// The sell price hasn't resolved yet (e.g. a transient wiki-price timeout).

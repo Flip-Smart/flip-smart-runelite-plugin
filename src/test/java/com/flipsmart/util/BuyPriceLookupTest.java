@@ -45,12 +45,12 @@ public class BuyPriceLookupTest
     @Test
     public void activeFlipPresent_usesFlipPrice_ignoresFallback()
     {
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
             Collections.singletonList(flip(536, 3284)),
             null,
             Collections.singletonList(buy(536, 100, 100L * 9999)),
             536);
-        assertEquals(Integer.valueOf(3284), p);
+        assertEquals(Long.valueOf(3284), p);
     }
 
     /**
@@ -63,19 +63,19 @@ public class BuyPriceLookupTest
     {
         List<OfferRecord> staleRecords = asList(buy(536, 1000, 1000L * 9999), buy(536, 1000, 1000L * 8888));
 
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
-            Collections.emptyList(), 3284, staleRecords, 536);
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+            Collections.emptyList(), 3284L, staleRecords, 536);
 
-        assertEquals(Integer.valueOf(3284), p);
+        assertEquals(Long.valueOf(3284), p);
     }
 
     @Test
     public void activeFlipStillOutranksTheCycleBasis()
     {
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
-            Collections.singletonList(flip(536, 3284)), 9999, Collections.emptyList(), 536);
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+            Collections.singletonList(flip(536, 3284)), 9999L, Collections.emptyList(), 536);
 
-        assertEquals("the backend snapshot stays authoritative", Integer.valueOf(3284), p);
+        assertEquals("the backend snapshot stays authoritative", Long.valueOf(3284), p);
     }
 
     @Test
@@ -83,10 +83,10 @@ public class BuyPriceLookupTest
     {
         // A client whose ledger has not seen a fill for this item yet — e.g. the buy happened
         // before this build shipped. The records remain the last resort.
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
             Collections.emptyList(), null, Collections.singletonList(buy(536, 1000, 1000L * 3284)), 536);
 
-        assertEquals(Integer.valueOf(3284), p);
+        assertEquals(Long.valueOf(3284), p);
     }
 
     @Test
@@ -94,8 +94,8 @@ public class BuyPriceLookupTest
     {
         // (3000*3284 + 1000*3300) / 4000 = 3288
         List<OfferRecord> offers = asList(buy(536, 3000, 3000L * 3284), buy(536, 1000, 1000L * 3300));
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(Collections.emptyList(), null, offers, 536);
-        assertEquals(Integer.valueOf(3288), p);
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(Collections.emptyList(), null, offers, 536);
+        assertEquals(Long.valueOf(3288), p);
     }
 
     @Test
@@ -103,8 +103,8 @@ public class BuyPriceLookupTest
     {
         OfferRecord otherItem = buy(999, 500, 500L * 100);
         List<OfferRecord> offers = asList(buy(536, 1000, 1000L * 3284), otherItem);
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(Collections.emptyList(), null, offers, 536);
-        assertEquals(Integer.valueOf(3284), p);
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(Collections.emptyList(), null, offers, 536);
+        assertEquals(Long.valueOf(3284), p);
     }
 
     @Test
@@ -126,10 +126,10 @@ public class BuyPriceLookupTest
         OfferRecord olderSold = buy(565, 25000, 25000L * 342, 10L);
         OfferRecord newerHeld = buy(565, 19500, 19500L * 328, 20L);
 
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
             Collections.emptyList(), null, asList(olderSold, newerHeld), 565, 19500);
 
-        assertEquals("only the held 328 lot counts", Integer.valueOf(328), p);
+        assertEquals("only the held 328 lot counts", Long.valueOf(328), p);
     }
 
     @Test
@@ -139,10 +139,10 @@ public class BuyPriceLookupTest
         OfferRecord newer = buy(565, 19500, 19500L * 328, 20L);
 
         // Hold 30000: all 19500 of the newer lot + 10500 of the older. (19500*328 + 10500*342)/30000 = 333.
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
             Collections.emptyList(), null, asList(older, newer), 565, 30000);
 
-        assertEquals(Integer.valueOf(333), p);
+        assertEquals(Long.valueOf(333), p);
     }
 
     @Test
@@ -153,9 +153,9 @@ public class BuyPriceLookupTest
         OfferRecord a = buy(565, 25000, 25000L * 342, 10L);
         OfferRecord b = buy(565, 19500, 19500L * 328, 20L);
 
-        Integer p = BuyPriceLookup.findAverageBuyPriceWithFallback(
+        Long p = BuyPriceLookup.findAverageBuyPriceWithFallback(
             Collections.emptyList(), null, asList(a, b), 565, 0);
 
-        assertEquals(Integer.valueOf(336), p);
+        assertEquals(Long.valueOf(336), p);
     }
 }

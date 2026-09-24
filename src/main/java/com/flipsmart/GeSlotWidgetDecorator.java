@@ -419,7 +419,7 @@ public class GeSlotWidgetDecorator
             return;
         }
         int itemId = offer.getItemId();
-        int price = offer.getPrice();
+        long price = offer.getPrice();
         boolean buy = OfferSignal.isBuyState(offer.getState());
 
         // Tint from the live slot rather than the tracked record: the check needs only item,
@@ -448,10 +448,10 @@ public class GeSlotWidgetDecorator
     {
         private final SlotBorderTint tint;
         private final int itemId;
-        private final int price;
+        private final long price;
         private final boolean buy;
 
-        DecidedTint(SlotBorderTint tint, int itemId, int price, boolean buy)
+        DecidedTint(SlotBorderTint tint, int itemId, long price, boolean buy)
         {
             this.tint = tint;
             this.itemId = itemId;
@@ -459,7 +459,7 @@ public class GeSlotWidgetDecorator
             this.buy = buy;
         }
 
-        boolean describes(int otherItemId, int otherPrice, boolean otherBuy)
+        boolean describes(int otherItemId, long otherPrice, boolean otherBuy)
         {
             return itemId == otherItemId && price == otherPrice && buy == otherBuy;
         }

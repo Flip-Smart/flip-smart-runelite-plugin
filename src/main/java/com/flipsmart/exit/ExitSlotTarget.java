@@ -11,13 +11,13 @@ public final class ExitSlotTarget
 	private final int itemId;
 	private final String itemName;
 	private final boolean buy;
-	private final int buyBasis;
+	private final long buyBasis;
 	@Setter
 	private ExitPhase phase;
 	@Setter
 	private int heldQuantity; // stock bought from a cancelled/filled buy, remembered across the collect lag
 
-	private ExitSlotTarget(int slot, int itemId, String itemName, boolean buy, int buyBasis, ExitPhase phase)
+	private ExitSlotTarget(int slot, int itemId, String itemName, boolean buy, long buyBasis, ExitPhase phase)
 	{
 		this.slot = slot;
 		this.itemId = itemId;
@@ -27,12 +27,12 @@ public final class ExitSlotTarget
 		this.phase = phase;
 	}
 
-	public static ExitSlotTarget sell(int slot, int itemId, String itemName, int buyBasis)
+	public static ExitSlotTarget sell(int slot, int itemId, String itemName, long buyBasis)
 	{
 		return new ExitSlotTarget(slot, itemId, itemName, false, buyBasis, ExitPhase.PENDING);
 	}
 
-	public static ExitSlotTarget forBuy(int slot, int itemId, String itemName, int buyBasis)
+	public static ExitSlotTarget forBuy(int slot, int itemId, String itemName, long buyBasis)
 	{
 		return new ExitSlotTarget(slot, itemId, itemName, true, buyBasis, ExitPhase.PENDING_CANCEL);
 	}

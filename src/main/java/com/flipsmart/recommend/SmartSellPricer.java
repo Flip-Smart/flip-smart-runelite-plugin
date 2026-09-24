@@ -1,6 +1,7 @@
 package com.flipsmart.recommend;
 
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.util.GeTax;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -52,22 +53,19 @@ public final class SmartSellPricer
 	/**
 	 * Calculate the minimum profitable sell price for an active flip.
 	 * This is the price that would result in zero profit after tax.
-	 * Formula: minSellPrice = buyPrice / (1 - taxRate)
+	 * Formula: minSellPrice = min(buyPrice / (1 - taxRate), buyPrice + tax cap)
 	 * Adding 1gp ensures a small profit.
 	 *
 	 * @return {@code 0} when {@code buyPrice} is non-positive. A missing cost basis is not a
 	 *         free position: it has no computable breakeven, and reading it as one yields 1gp.
 	 */
-	public static int calculateMinProfitableSellPrice(int buyPrice)
+	public static long calculateMinProfitableSellPrice(long buyPrice)
 	{
 		if (buyPrice <= 0)
 		{
 			return 0;
 		}
-		// GE tax is 2%, so to break even: sellPrice * 0.98 = buyPrice
-		// sellPrice = buyPrice / 0.98
-		// Add 1gp to ensure profit
-		return (int) Math.ceil(buyPrice / 0.98) + 1;
+		return Math.min((long) Math.ceil(buyPrice / 0.98), buyPrice + GeTax.GE_TAX_CAP) + 1;
 	}
 
 	/**
@@ -77,9 +75,9 @@ public final class SmartSellPricer
 	 * fabricated number. Every price this returns traces to the player's own basis, the
 	 * original recommendation, or live market data.</p>
 	 */
-	public static Integer calculateSmartSellPrice(ActiveFlip flip, Integer currentMarketPrice)
+	public static Long calculateSmartSellPrice(ActiveFlip flip, Long currentMarketPrice)
 	{
-		int buyPrice = flip.getAverageBuyPrice();
+		long buyPrice = flip.getAverageBuyPrice();
 		if (buyPrice <= 0)
 		{
 			return priceWithoutBasis(flip, currentMarketPrice);
@@ -87,9 +85,9 @@ public final class SmartSellPricer
 		return priceFromBasis(flip, currentMarketPrice, calculateMinProfitableSellPrice(buyPrice));
 	}
 
-	private static Integer priceWithoutBasis(ActiveFlip flip, Integer currentMarketPrice)
+	private static Long priceWithoutBasis(ActiveFlip flip, Long currentMarketPrice)
 	{
-		Integer target = flip.getRecommendedSellPrice();
+		Long target = flip.getRecommendedSellPrice();
 		if (isPositive(target))
 		{
 			return target;
@@ -99,9 +97,9 @@ public final class SmartSellPricer
 		return isPositive(currentMarketPrice) ? currentMarketPrice : null;
 	}
 
-	private static Integer priceFromBasis(ActiveFlip flip, Integer currentMarketPrice, int minProfitablePrice)
+	private static Long priceFromBasis(ActiveFlip flip, Long currentMarketPrice, long minProfitablePrice)
 	{
-		Integer recommended = flip.getRecommendedSellPrice();
+		Long recommended = flip.getRecommendedSellPrice();
 		if (atLeast(recommended, minProfitablePrice))
 		{
 			return recommended;
@@ -113,12 +111,12 @@ public final class SmartSellPricer
 		return isPositive(recommended) ? recommended : minProfitablePrice;
 	}
 
-	private static boolean isPositive(Integer value)
+	private static boolean isPositive(Long value)
 	{
 		return value != null && value > 0;
 	}
 
-	private static boolean atLeast(Integer value, int threshold)
+	private static boolean atLeast(Long value, long threshold)
 	{
 		return value != null && value >= threshold;
 	}

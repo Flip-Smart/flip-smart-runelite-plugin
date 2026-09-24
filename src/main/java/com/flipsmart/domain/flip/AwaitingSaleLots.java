@@ -22,11 +22,11 @@ public final class AwaitingSaleLots
     public static final class BuyBasis
     {
         public final String itemName;
-        public final int avgBuyPrice;
+        public final long avgBuyPrice;
         /** ISO-8601 time of that buy; null when unknown. Time-scopes the card's realized P&L. */
         public final String firstBuyTimeIso;
 
-        public BuyBasis(String itemName, int avgBuyPrice, String firstBuyTimeIso)
+        public BuyBasis(String itemName, long avgBuyPrice, String firstBuyTimeIso)
         {
             this.itemName = itemName;
             this.avgBuyPrice = avgBuyPrice;
@@ -46,7 +46,7 @@ public final class AwaitingSaleLots
      * that bought nothing carries a price the player asked for, never one they paid, so it leaves
      * the basis unknown for callers to resolve elsewhere.</p>
      */
-    public static BuyBasis resolveBuyBasis(List<OfferRecord> buys, Integer cycleBasis)
+    public static BuyBasis resolveBuyBasis(List<OfferRecord> buys, Long cycleBasis)
     {
         if (buys == null || buys.isEmpty())
         {
@@ -58,7 +58,7 @@ public final class AwaitingSaleLots
         {
             return null;
         }
-        int price = cycleBasis != null && cycleBasis > 0 ? cycleBasis : avgBuyPrice(bestFilled);
+        long price = cycleBasis != null && cycleBasis > 0 ? cycleBasis : avgBuyPrice(bestFilled);
         return new BuyBasis(identity.getItemName(), price, firstBuyTimeIso(identity));
     }
 
@@ -92,10 +92,10 @@ public final class AwaitingSaleLots
         return best;
     }
 
-    private static int avgBuyPrice(OfferRecord filled)
+    private static long avgBuyPrice(OfferRecord filled)
     {
         return filled != null && filled.getSpent() > 0 && filled.getFilledQuantity() > 0
-            ? (int) (filled.getSpent() / filled.getFilledQuantity())
+            ? filled.getSpent() / filled.getFilledQuantity()
             : 0;
     }
 
@@ -125,7 +125,7 @@ public final class AwaitingSaleLots
                 continue;
             }
             lots.add(new AwaitingSaleLot(itemId, basis.itemName, qty, basis.avgBuyPrice,
-                (long) basis.avgBuyPrice * qty, basis.firstBuyTimeIso));
+                basis.avgBuyPrice * qty, basis.firstBuyTimeIso));
         }
         return lots;
     }

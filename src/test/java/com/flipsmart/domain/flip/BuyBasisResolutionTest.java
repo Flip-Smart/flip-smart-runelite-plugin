@@ -29,11 +29,11 @@ public class BuyBasisResolutionTest
 	/** The 8/7 buy, whose flip closed on 8/10 — still sitting in the store on 8/12. */
 	private static final int STALE_CLOSED_CYCLE_BASIS = 19_138_141;
 	/** The 8/12 buy the player actually held. */
-	private static final int OPEN_CYCLE_BASIS = 18_971_135;
+	private static final long OPEN_CYCLE_BASIS = 18_971_135;
 	/** A soulreaper axe offer listed on 8/10 that never bought a single item. */
 	private static final int NEVER_FILLED_LISTED_PRICE = 426_136_723;
 
-	private static OfferRecord filledBuy(int price, int filled, long activityMillis)
+	private static OfferRecord filledBuy(long price, int filled, long activityMillis)
 	{
 		return OfferRecord.newOffer(activityMillis, 0, BRACELET, BRACELET_NAME, true, filled, price, 0L)
 			.withCreatedAtMillis(activityMillis)
@@ -134,7 +134,7 @@ public class BuyBasisResolutionTest
 	{
 		List<OfferRecord> buys = Collections.singletonList(filledBuy(1_000, 5, 1_000L));
 
-		AwaitingSaleLots.BuyBasis basis = AwaitingSaleLots.resolveBuyBasis(buys, 0);
+		AwaitingSaleLots.BuyBasis basis = AwaitingSaleLots.resolveBuyBasis(buys, 0L);
 
 		assertNotNull(basis);
 		assertEquals(1_000, basis.avgBuyPrice);

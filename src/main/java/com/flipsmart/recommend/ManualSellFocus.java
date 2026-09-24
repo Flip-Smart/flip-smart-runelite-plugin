@@ -22,8 +22,8 @@ public final class ManualSellFocus
 	 * @param sessionRecommendedPrice recommendation cached for this item, if any
 	 * @param averageBuyPrice         cost basis from the offer store; 0 when unknown
 	 */
-	public static Integer resolveSellPrice(Integer panelPrice, Integer sessionRecommendedPrice,
-										   int averageBuyPrice)
+	public static Long resolveSellPrice(Long panelPrice, Long sessionRecommendedPrice,
+										   long averageBuyPrice)
 	{
 		if (panelPrice != null && panelPrice > 0)
 		{

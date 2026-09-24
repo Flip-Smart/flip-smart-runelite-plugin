@@ -22,11 +22,11 @@ public class GeOfferDescriptionFormatterTest
 	{
 		// Buy 100, sell 200, qty 1: tax = floor(200 * 0.02) = 4/item.
 		String out = GeOfferDescriptionFormatter.formatSellDescription(
-			ABYSSAL_WHIP_ID, 100, 200, 1);
+			ABYSSAL_WHIP_ID, 100L, 200, 1);
 
 		assertTrue("taxable item should show non-zero tax", out.contains("Tax applied: </col>4 gp"));
 		// Breakeven must sit above the buy price to cover tax.
-		int breakeven = GeOfferDescriptionFormatter.calculateBreakevenPrice(ABYSSAL_WHIP_ID, 100);
+		long breakeven = GeOfferDescriptionFormatter.calculateBreakevenPrice(ABYSSAL_WHIP_ID, 100);
 		assertTrue("taxable breakeven should exceed buy price", breakeven > 100);
 		// Profit = 200 - 100 - 4 = 96 (post-tax).
 		assertTrue("taxable profit is post-tax", out.contains("+96 gp"));
@@ -43,7 +43,7 @@ public class GeOfferDescriptionFormatterTest
 	public void buyDescriptionShowsCooldownWhenTheItemWasBoughtInsideTheWindow()
 	{
 		String out = GeOfferDescriptionFormatter.formatBuyDescription(
-			1000, 15, 500_000, 3 * HOUR_MS + 42 * MINUTE_MS);
+			1000, 15, 500_000L, 3 * HOUR_MS + 42 * MINUTE_MS);
 
 		assertTrue("cooldown line should render H:mm remaining",
 			out.contains("Limit resets in: </col><col=ffffff>3:42</col>"));
@@ -58,7 +58,7 @@ public class GeOfferDescriptionFormatterTest
 	public void buyDescriptionOmitsCooldownWhenNothingWasBoughtInTheWindow()
 	{
 		// AC5 — no purchase inside 4h means the caller passes null and no line renders.
-		String out = GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000, null);
+		String out = GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000L, null);
 
 		assertTrue("no cooldown line without a recorded purchase",
 			!out.contains("Limit resets in"));
@@ -70,10 +70,10 @@ public class GeOfferDescriptionFormatterTest
 	{
 		// A stale/expired reset time must not render "0:00" or a negative duration.
 		assertTrue("elapsed window renders nothing",
-			!GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000, 0L)
+			!GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000L, 0L)
 				.contains("Limit resets in"));
 		assertTrue("negative remaining renders nothing",
-			!GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000, -5_000L)
+			!GeOfferDescriptionFormatter.formatBuyDescription(1000, 15, 500_000L, -5_000L)
 				.contains("Limit resets in"));
 	}
 
@@ -93,7 +93,7 @@ public class GeOfferDescriptionFormatterTest
 	{
 		// Old school bond is on the exempt list; at any price it is never taxed.
 		String out = GeOfferDescriptionFormatter.formatSellDescription(
-			OLD_SCHOOL_BOND_ID, 8_000_000, 8_100_000, 1);
+			OLD_SCHOOL_BOND_ID, 8_000_000L, 8_100_000, 1);
 
 		assertEquals("exempt-list item is never taxed",
 			0, GeOfferDescriptionFormatter.calculateTaxPerItem(OLD_SCHOOL_BOND_ID, 8_100_000));

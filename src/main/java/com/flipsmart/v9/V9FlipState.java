@@ -16,11 +16,11 @@ public class V9FlipState
 	private String timeframe;
 	private long listingTimestampMs;
 	private String scenario;
-	private Integer scenarioBMid;
-	private int buyPrice;
+	private Long scenarioBMid;
+	private long buyPrice;
 	private int totalQty;
 	private int remainingQty;
-	private int originalTarget;
+	private long originalTarget;
 	private int ladderRung;
 	private long ladder1ResolvedAtMs;
 	private long seed;

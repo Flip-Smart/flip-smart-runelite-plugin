@@ -103,10 +103,10 @@ public class SessionCorpusTest
 			int itemId = Integer.parseInt(e.getKey());
 			// Null cycle basis: the harness drives the store directly, so no fills reach a ledger.
 			// This assertion is deliberately about what the offer records alone can resolve.
-			Integer basis = BuyPriceLookup.findAverageBuyPriceWithFallback(
+			Long basis = BuyPriceLookup.findAverageBuyPriceWithFallback(
 				null, null, result.store.forItem(itemId), itemId);
 			assertEquals("[" + name + "] buy basis for item " + itemId,
-				Integer.valueOf(e.getValue().getAsInt()), basis);
+				Long.valueOf(e.getValue().getAsLong()), basis);
 		}
 	}
 

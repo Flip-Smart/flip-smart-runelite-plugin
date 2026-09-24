@@ -47,15 +47,13 @@ public class PanelFormatCharacterizationTest
 		assertEquals("1.0M", PanelFormat.formatGP(1_000_000));
 	}
 
-	/**
-	 * There is no B suffix -- ten billion renders as "10000.0M". Pinned so the absence
-	 * is a deliberate, visible fact rather than something a future reader assumes.
-	 */
+	/** Billions and trillions get their own B/T tiers, matching the M tier's one-decimal format. */
 	@Test
-	public void formatGpHasNoBillionsSuffix()
+	public void formatGpUsesBillionAndTrillionTiers()
 	{
-		assertEquals("10000.0M", PanelFormat.formatGP(10_000_000_000L));
-		assertEquals("-10000.0M", PanelFormat.formatGP(-10_000_000_000L));
+		assertEquals("10.0B", PanelFormat.formatGP(10_000_000_000L));
+		assertEquals("-10.0B", PanelFormat.formatGP(-10_000_000_000L));
+		assertEquals("2.1T", PanelFormat.formatGP(2_100_000_000_000L));
 	}
 
 	/**
@@ -67,8 +65,8 @@ public class PanelFormatCharacterizationTest
 	@Test
 	public void formatGpHandlesValuesBeyondIntegerRange()
 	{
-		assertEquals("2147.5M", PanelFormat.formatGP(2_147_483_647L));
-		assertEquals("2147.5M", PanelFormat.formatGP(2_147_483_648L));
+		assertEquals("2.1B", PanelFormat.formatGP(2_147_483_647L));
+		assertEquals("2.1B", PanelFormat.formatGP(2_147_483_648L));
 	}
 
 	/**
@@ -79,7 +77,7 @@ public class PanelFormatCharacterizationTest
 	@Test
 	public void formatProfitCostTextRendersTotalsBeyondIntegerRange()
 	{
-		assertEquals("Profit: 3000.0M | Cost: 5000.0M",
+		assertEquals("Profit: 3.0B | Cost: 5.0B",
 			PanelFormat.formatProfitCostText(3_000_000_000L, 5_000_000_000L));
 	}
 
@@ -224,6 +222,6 @@ public class PanelFormatCharacterizationTest
 	{
 		assertEquals("<html>Buy: <b><font color='#6fb1ff'>100</font></b> "
 				+ "| Sell: <b><font color='#ffab54'>200</font></b></html>",
-			PanelFormat.buySellHtml(100, 200));
+			PanelFormat.buySellHtml(100, 200L));
 	}
 }

@@ -11,9 +11,9 @@ public class GEHistoryEntry
 	private final int itemId;
 	private final boolean isBuy;
 	private final int quantity;
-	private final int pricePerItem;
+	private final long pricePerItem;
 
-	public GEHistoryEntry(int itemId, boolean isBuy, int quantity, int pricePerItem)
+	public GEHistoryEntry(int itemId, boolean isBuy, int quantity, long pricePerItem)
 	{
 		this.itemId = itemId;
 		this.isBuy = isBuy;

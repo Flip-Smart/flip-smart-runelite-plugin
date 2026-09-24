@@ -85,7 +85,7 @@ public class ActiveFlipProjectionTest
     {
         ActiveFlip enrich = new ActiveFlip();
         enrich.setItemId(42);
-        enrich.setRecommendedSellPrice(1500);
+        enrich.setRecommendedSellPrice(1500L);
         Map<Integer, ActiveFlip> byId = new HashMap<>();
         byId.put(42, enrich);
 
@@ -93,7 +93,7 @@ public class ActiveFlipProjectionTest
             Collections.singletonList(liveSell(42, 10, 1200, 3, 3600L)),
             NO_BASIS, Collections.emptyList(), byId);
 
-        assertEquals(Integer.valueOf(1500), out.get(0).getRecommendedSellPrice());
+        assertEquals(Long.valueOf(1500), out.get(0).getRecommendedSellPrice());
     }
 
     @Test

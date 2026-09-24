@@ -91,7 +91,7 @@ public class GrandExchangeTracker
 	@Setter
 	private IntConsumer onV9SellCancelled;
 	@Setter
-	private IntFunction<Integer> displayedSellPriceProvider;
+	private IntFunction<Long> displayedSellPriceProvider;
 	@Setter
 	private BiConsumer<Integer, Runnable> oneShotScheduler;
 	// Cost basis straight from the offer store, so a manual exit can be priced without
@@ -125,8 +125,8 @@ public class GrandExchangeTracker
 		final String itemName;
 		final int quantitySold;
 		final int totalQuantity;
-		final int price;
-		final int spent;
+		final long price;
+		final long spent;
 		final boolean isBuy;
 		final GrandExchangeOfferState state;
 	}
@@ -134,7 +134,7 @@ public class GrandExchangeTracker
 	@FunctionalInterface
 	public interface V9SellFillHandler
 	{
-		void onSellFill(int itemId, int filledQty, int fillPrice, boolean complete);
+		void onSellFill(int itemId, int filledQty, long fillPrice, boolean complete);
 	}
 
 	@Inject
@@ -332,7 +332,7 @@ public class GrandExchangeTracker
 		String rsn = getRsn().orElse(null);
 		if (rsn != null)
 		{
-			int pricePerItem = (ctx.quantitySold > 0) ? (int)((long) ctx.spent / ctx.quantitySold) : 0;
+			long pricePerItem = (ctx.quantitySold > 0) ? ctx.spent / ctx.quantitySold : 0;
 			log.debug("Syncing cancelled order quantity to backend: {} x{} (was {})",
 				ctx.itemName, ctx.quantitySold, cancelledOffer.getTotalQuantity());
 			apiClient.syncActiveFlipAsync(
@@ -413,7 +413,7 @@ public class GrandExchangeTracker
 					collectedQty,
 					collectedOffer.getTotalQuantity(),
 					collectedOffer.getSpent() > 0 && collectedOffer.getFilledQuantity() > 0
-						? (int)(collectedOffer.getSpent() / collectedOffer.getFilledQuantity())
+						? collectedOffer.getSpent() / collectedOffer.getFilledQuantity()
 						: collectedOffer.getPrice(),
 					rsn
 				);
@@ -742,8 +742,8 @@ public class GrandExchangeTracker
 		if (!isAutoRecommendActive() && manualAdjustmentTracker != null && isAdjustmentPromptsEnabled())
 		{
 			// Use the buy price as cost basis — fall back to sell price if unavailable
-			Integer buyPrice = session.getRecommendedPrice(ctx.itemId);
-			int averageBuyPrice = (buyPrice != null && buyPrice > 0) ? buyPrice : ctx.price;
+			Long buyPrice = session.getRecommendedPrice(ctx.itemId);
+			long averageBuyPrice = (buyPrice != null && buyPrice > 0) ? buyPrice : ctx.price;
 			manualAdjustmentTracker.scheduleSellAdjustment(
 				ctx.itemId, ctx.itemName, ctx.slot, ctx.price, averageBuyPrice);
 		}
@@ -864,7 +864,7 @@ public class GrandExchangeTracker
 		}
 
 		AwaitingSaleLots.BuyBasis basis = buyBasisProvider != null ? buyBasisProvider.apply(itemId) : null;
-		Integer sellPrice = ManualSellFocus.resolveSellPrice(
+		Long sellPrice = ManualSellFocus.resolveSellPrice(
 			displayedSellPriceProvider != null ? displayedSellPriceProvider.apply(itemId) : null,
 			session != null ? session.getRecommendedPrice(itemId) : null,
 			basis != null ? basis.avgBuyPrice : 0);
@@ -1074,9 +1074,9 @@ public class GrandExchangeTracker
 
 	private boolean setFocusForSell(ActiveFlip flip, int inventoryFallbackCount)
 	{
-		int sellPrice;
+		long sellPrice;
 
-		Integer panelPrice = displayedSellPriceProvider != null
+		Long panelPrice = displayedSellPriceProvider != null
 			? displayedSellPriceProvider.apply(flip.getItemId()) : null;
 
 		if (panelPrice != null && panelPrice > 0)

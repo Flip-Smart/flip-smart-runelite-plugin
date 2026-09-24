@@ -20,8 +20,8 @@ public class OfferAdviceResponseTest
 		assertEquals("move_price_down", r.getAction());
 		assertEquals(OfferAction.MOVE_PRICE_DOWN, r.getActionEnum());
 		assertEquals("Move down", r.getReason());
-		assertEquals(Integer.valueOf(1050), r.getNewPrice());
-		assertEquals(Integer.valueOf(12500), r.getNetProfitEstimate());
+		assertEquals(Long.valueOf(1050), r.getNewPrice());
+		assertEquals(Long.valueOf(12500), r.getNetProfitEstimate());
 	}
 
 	@Test
@@ -40,7 +40,7 @@ public class OfferAdviceResponseTest
 		String json = "{\"action\":\"wait\",\"reason\":\"monitoring\",\"position_margin\":3100,"
 			+ "\"consecutive_margin_decreases\":2,\"cumulative_margin_reduction_pct\":0.15}";
 		OfferAdviceResponse r = gson.fromJson(json, OfferAdviceResponse.class);
-		assertEquals(Integer.valueOf(3100), r.getPositionMargin());
+		assertEquals(Long.valueOf(3100), r.getPositionMargin());
 		assertEquals(2, r.getConsecutiveMarginDecreases());
 		assertEquals(0.15, r.getCumulativeMarginReductionPct(), 1e-9);
 	}

@@ -284,7 +284,7 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, String transactionType,
-			int quantity, int pricePerItem, String rsn)
+			int quantity, long pricePerItem, String rsn)
 	{
 		return transactions.recordTransactionAsync(itemId, itemName, transactionType, quantity, pricePerItem, rsn);
 	}
@@ -324,7 +324,7 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<Boolean> syncActiveFlipAsync(int itemId, String itemName, int filledQuantity,
-			int orderQuantity, int pricePerItem, String rsn)
+			int orderQuantity, long pricePerItem, String rsn)
 	{
 		return activeFlips.syncActiveFlipAsync(itemId, itemName, filledQuantity, orderQuantity, pricePerItem, rsn);
 	}
@@ -437,7 +437,7 @@ public class FlipSmartApiClient
 		return offerActions.postSellPriceCheckAsync(req);
 	}
 
-	public CompletableFuture<PriceTargetResponse> getFirstListingAsync(int itemId, int buyPrice, int originalSellPrice, String rsn)
+	public CompletableFuture<PriceTargetResponse> getFirstListingAsync(int itemId, long buyPrice, long originalSellPrice, String rsn)
 	{
 		return priceTargets.getFirstListingAsync(itemId, buyPrice, originalSellPrice, rsn);
 	}
@@ -447,9 +447,9 @@ public class FlipSmartApiClient
 		return priceTargets.postReadjustmentAsync(itemId, body);
 	}
 
-	public static JsonObject buildReadjustmentBody(String scenario, int ladder, int buyPrice, int totalQty,
-		int remainingQty, long realizedProfit, int originalTarget, Integer currentInstantSell,
-		Integer scenarioBMid, Long seed)
+	public static JsonObject buildReadjustmentBody(String scenario, int ladder, long buyPrice, int totalQty,
+		int remainingQty, long realizedProfit, long originalTarget, Long currentInstantSell,
+		Long scenarioBMid, Long seed)
 	{
 		JsonObject body = new JsonObject();
 		body.addProperty("scenario", scenario);

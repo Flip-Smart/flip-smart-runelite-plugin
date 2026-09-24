@@ -42,10 +42,10 @@ public class ManualAdjustmentTracker
 		final int geSlot;
 		long deadlineMs;
 		int adjustmentCount;
-		int averageBuyPrice;
+		long averageBuyPrice;
 
 		OfferAdjustmentState(int itemId, String itemName, boolean isBuy, int geSlot,
-			long deadlineMs, int averageBuyPrice)
+			long deadlineMs, long averageBuyPrice)
 		{
 			this.itemId = itemId;
 			this.itemName = itemName;
@@ -75,7 +75,7 @@ public class ManualAdjustmentTracker
 
 	// Callback to highlight a GE slot for adjustment
 	@Setter
-	private volatile BiConsumer<Integer, Integer> onHighlightSlot;
+	private volatile BiConsumer<Integer, Long> onHighlightSlot;
 
 	// Callback to clear a GE slot highlight
 	@Setter
@@ -91,7 +91,7 @@ public class ManualAdjustmentTracker
 
 	// Callback to persist adjusted sell price to session
 	@Setter
-	private volatile BiConsumer<Integer, Integer> onSellPriceAdjusted;
+	private volatile BiConsumer<Integer, Long> onSellPriceAdjusted;
 
 	// Suppliers for ditch logic — needed to fetch replacement recommendations
 	@Setter
@@ -127,7 +127,7 @@ public class ManualAdjustmentTracker
 	 * @param geSlot GE slot index
 	 * @param offerPrice Price of the buy offer
 	 */
-	public void scheduleBuyAdjustment(int itemId, String itemName, int geSlot, int offerPrice)
+	public void scheduleBuyAdjustment(int itemId, String itemName, int geSlot, long offerPrice)
 	{
 		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
@@ -148,7 +148,7 @@ public class ManualAdjustmentTracker
 	 * @param averageBuyPrice Average buy price (cost basis)
 	 */
 	public void scheduleSellAdjustment(int itemId, String itemName, int geSlot,
-		int offerPrice, int averageBuyPrice)
+		long offerPrice, long averageBuyPrice)
 	{
 		long delay = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 		long deadline = System.currentTimeMillis() + delay;
@@ -337,7 +337,7 @@ public class ManualAdjustmentTracker
 			// Overnight exit that already bought items: surface the sell price to list at.
 			notifyHighlight(state.geSlot, response.getRecommendedPrice());
 			notifyInventoryHighlight(state.itemId);
-			BiConsumer<Integer, Integer> cb = onSellPriceAdjusted;
+			BiConsumer<Integer, Long> cb = onSellPriceAdjusted;
 			if (cb != null)
 			{
 				cb.accept(state.itemId, response.getRecommendedPrice());
@@ -363,7 +363,7 @@ public class ManualAdjustmentTracker
 		BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
 		if (focusCallback != null)
 		{
-			int sellPrice = response.getBreakevenPrice() + 1;
+			long sellPrice = response.getBreakevenPrice() + 1;
 			if (response.getCurrentMargin() != null && response.getCurrentMargin() > 0)
 			{
 				sellPrice = response.getRecommendedPrice() + response.getCurrentMargin();
@@ -393,7 +393,7 @@ public class ManualAdjustmentTracker
 		notifyHighlight(state.geSlot, response.getRecommendedPrice());
 		notifyInventoryHighlight(state.itemId);
 
-		BiConsumer<Integer, Integer> cb = onSellPriceAdjusted;
+		BiConsumer<Integer, Long> cb = onSellPriceAdjusted;
 		if (cb != null)
 		{
 			cb.accept(state.itemId, response.getRecommendedPrice());
@@ -409,9 +409,9 @@ public class ManualAdjustmentTracker
 		}
 	}
 
-	private void notifyHighlight(int geSlot, int price)
+	private void notifyHighlight(int geSlot, long price)
 	{
-		BiConsumer<Integer, Integer> cb = onHighlightSlot;
+		BiConsumer<Integer, Long> cb = onHighlightSlot;
 		if (cb != null)
 		{
 			cb.accept(geSlot, price);

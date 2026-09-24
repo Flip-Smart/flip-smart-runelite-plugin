@@ -255,7 +255,7 @@ public class FlipFinderPanel extends PluginPanel
 
 	// Cache displayed sell prices to ensure focus uses same price as shown in UI
 	// Key: itemId, Value: calculated sell price shown in the active flip panel
-	private final Map<Integer, Integer> displayedSellPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> displayedSellPrices = new ConcurrentHashMap<>();
 
 	// Auto-recommend UI
 	private JToggleButton autoRecommendButton;
@@ -2820,7 +2820,7 @@ public class FlipFinderPanel extends PluginPanel
 	/** Map a favorite onto a {@link FlipRecommendation} so the recommendation renderer can draw it. */
 	private static FlipRecommendation favoriteAsRecommendation(FavoriteItem item)
 	{
-		int buy = item.getBuyPrice() != null ? item.getBuyPrice() : 0;
+		long buy = item.getBuyPrice() != null ? item.getBuyPrice() : 0;
 		int quantity = item.getBuyLimit() != null && item.getBuyLimit() > 0 ? item.getBuyLimit() : 1;
 		FlipRecommendation rec = new FlipRecommendation();
 		rec.setItemId(item.getItemId());
@@ -2867,12 +2867,12 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Apply price offset to displayed values so they match Flip Assist
 		int priceOffset = config.priceOffset();
-		int displayBuyPrice = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
-		int displaySellPrice = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
-		int displayMargin = displaySellPrice - displayBuyPrice;
+		long displayBuyPrice = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
+		long displaySellPrice = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
+		long displayMargin = displaySellPrice - displayBuyPrice;
 		int geTax = GeTax.taxFor(rec.getItemId(), displaySellPrice);
-		long displayProfit = ((long) displayMargin - geTax) * rec.getRecommendedQuantity();
-		long displayCost = (long) displayBuyPrice * rec.getRecommendedQuantity();
+		long displayProfit = (displayMargin - geTax) * rec.getRecommendedQuantity();
+		long displayCost = displayBuyPrice * rec.getRecommendedQuantity();
 		double displayRoi = displayBuyPrice > 0 ? ((double)(displayMargin - geTax) / displayBuyPrice) * 100 : 0;
 
 		// Recommended Buy/Sell prices — buy blue, sell orange, bold (matches the Active-tab live-price row).
@@ -3617,8 +3617,8 @@ public class FlipFinderPanel extends PluginPanel
 		// Prefer session — it carries any sell-price adjustments. The displayed
 		// cache is only a fallback when session hasn't been populated yet.
 		PlayerSession session = plugin.getSession();
-		Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
-		Integer cachedSellPrice = (sessionPrice != null && sessionPrice > 0)
+		Long sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+		Long cachedSellPrice = (sessionPrice != null && sessionPrice > 0)
 			? sessionPrice
 			: displayedSellPrices.get(flip.getItemId());
 		int priceOffset = config.priceOffset();
@@ -3640,7 +3640,7 @@ public class FlipFinderPanel extends PluginPanel
 			// Fallback: fetch market data if no cached price (shouldn't normally happen)
 			apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
 			{
-				Integer currentMarketPrice = null;
+				Long currentMarketPrice = null;
 				Integer dailyVolume = null;
 				
 				if (analysis != null && analysis.getCurrentPrices() != null)
@@ -3655,12 +3655,12 @@ public class FlipFinderPanel extends PluginPanel
 				}
 				
 				// Calculate smart sell price
-				Integer smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
+				Long smartSellPrice = SmartSellPricer.calculateSmartSellPrice(flip, currentMarketPrice);
 				if (smartSellPrice == null || smartSellPrice <= 0)
 				{
 					return;
 				}
-				int sellPrice = smartSellPrice;
+				long sellPrice = smartSellPrice;
 				
 				// Cache this price for future use
 				displayedSellPrices.put(flip.getItemId(), sellPrice);
@@ -3685,9 +3685,9 @@ public class FlipFinderPanel extends PluginPanel
 	private void setFocus(PendingOrder pending, JPanel panel)
 	{
 		// Pending orders that are filled should show sell step
-		int sellPrice = pending.recommendedSellPrice != null 
+		long sellPrice = pending.recommendedSellPrice != null 
 			? pending.recommendedSellPrice 
-			: (int)(pending.pricePerItem * 1.05); // Default 5% markup
+			: (long) (pending.pricePerItem * 1.05); // Default 5% markup
 		
 		// Create focused flip for selling the filled items with price offset applied
 		int priceOffset = config.priceOffset();
@@ -3814,12 +3814,12 @@ public class FlipFinderPanel extends PluginPanel
 	 * @param itemId The item ID
 	 * @return The displayed sell price, or null if not cached
 	 */
-	public Integer getDisplayedSellPrice(int itemId)
+	public Long getDisplayedSellPrice(int itemId)
 	{
 		return displayedSellPrices.get(itemId);
 	}
 
-	public void setDisplayedSellPrice(int itemId, int sellPrice)
+	public void setDisplayedSellPrice(int itemId, long sellPrice)
 	{
 		if (sellPrice > 0)
 		{
@@ -4113,8 +4113,8 @@ public class FlipFinderPanel extends PluginPanel
 		apiClient.getItemAnalysisAsync(flip.getItemId()).thenAccept(analysis ->
 			SwingUtilities.invokeLater(() ->
 			{
-				Integer high = null;
-				Integer low = null;
+				Long high = null;
+				Long low = null;
 				Integer buyLimit = null;
 				FlipAnalysis.Liquidity liquidity = null;
 				FlipAnalysis.Risk risk = null;
@@ -4140,7 +4140,7 @@ public class FlipFinderPanel extends PluginPanel
 
 				// The flip's own sell price (session-recommended, else computed) drives both the
 				// side effects and the Max Potential Profit figure.
-				Integer flipSellPrice = resolveSmartSellPrice(flip, high, plugin.getSession());
+				Long flipSellPrice = resolveSmartSellPrice(flip, high, plugin.getSession());
 				applySmartSellSideEffects(flip, panels, flipSellPrice);
 
 				rows.set(CardRow.BUY_LIMIT, 
@@ -4165,7 +4165,7 @@ public class FlipFinderPanel extends PluginPanel
 			}));
 	}
 
-	private static boolean hasValidMarketPrices(Integer high, Integer low)
+	private static boolean hasValidMarketPrices(Long high, Long low)
 	{
 		return high != null && high > 0 && low != null && low > 0;
 	}
@@ -4174,7 +4174,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * The flip's sell price drives the session write, Flip Assist focus update and
 	 * price-indicator background, even though the price itself is not displayed.
 	 */
-	private void applySmartSellSideEffects(ActiveFlip flip, ActiveFlipCardPanels panels, Integer smartSellPrice)
+	private void applySmartSellSideEffects(ActiveFlip flip, ActiveFlipCardPanels panels, Long smartSellPrice)
 	{
 		if (smartSellPrice == null)
 		{
@@ -4190,15 +4190,15 @@ public class FlipFinderPanel extends PluginPanel
 	 * Prefer the session's already-recommended price; otherwise compute one and persist
 	 * it to the session so later cards/refreshes stay pinned to the same price.
 	 */
-	private static Integer resolveSmartSellPrice(ActiveFlip flip, Integer high, PlayerSession session)
+	private static Long resolveSmartSellPrice(ActiveFlip flip, Long high, PlayerSession session)
 	{
-		Integer sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
+		Long sessionPrice = session != null ? session.getRecommendedPrice(flip.getItemId()) : null;
 		if (isValidPrice(sessionPrice))
 		{
 			return sessionPrice;
 		}
 
-		Integer computedPrice = SmartSellPricer.calculateSmartSellPrice(flip, high);
+		Long computedPrice = SmartSellPricer.calculateSmartSellPrice(flip, high);
 		// With no basis the price is a live-market reading, not a target. Persisting it would
 		// pin this instant's market for the session and outrank the real breakeven once it returns.
 		if (isValidPrice(computedPrice) && session != null && flip.getAverageBuyPrice() > 0)
@@ -4208,14 +4208,14 @@ public class FlipFinderPanel extends PluginPanel
 		return isValidPrice(computedPrice) ? computedPrice : null;
 	}
 
-	private static boolean isValidPrice(Integer price)
+	private static boolean isValidPrice(Long price)
 	{
 		return price != null && price > 0;
 	}
 
-	private void applyPriceIndicatorIfNeeded(ActiveFlip flip, ActiveFlipCardPanels panels, int smartSellPrice)
+	private void applyPriceIndicatorIfNeeded(ActiveFlip flip, ActiveFlipCardPanels panels, long smartSellPrice)
 	{
-		Integer recommendedPrice = flip.getRecommendedSellPrice();
+		Long recommendedPrice = flip.getRecommendedSellPrice();
 		boolean focusedOnThisFlip = currentFocus != null && currentFocus.getItemId() == flip.getItemId();
 		if (recommendedPrice == null || recommendedPrice <= 0 || smartSellPrice == recommendedPrice || focusedOnThisFlip)
 		{
@@ -4228,7 +4228,7 @@ public class FlipFinderPanel extends PluginPanel
 		CardWidgets.applyPriceIndicatorBackground(panels.panel, panels.topPanel, panels.namePanel, panels.detailsPanel, priceIndicatorBg);
 	}
 
-	private void updateFocusIfSelected(ActiveFlip flip, int smartSellPrice)
+	private void updateFocusIfSelected(ActiveFlip flip, long smartSellPrice)
 	{
 		if (currentFocus == null || currentFocus.getItemId() != flip.getItemId() || !currentFocus.isSelling())
 		{
@@ -4256,7 +4256,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * position rows (current profit, max potential profit) once prices are available.
 	 */
 	private void populateActiveFlipMarketRows(ActiveFlip flip, ActiveFlipCardPanels panels,
-		CardRows rows, int low, int high, Integer flipSellPrice,
+		CardRows rows, long low, long high, Long flipSellPrice,
 		RealizedFlipProfit.Result realized, long fullQty)
 	{
 		ActiveFlipCardMetrics.Result metrics = ActiveFlipCardMetrics.compute(
@@ -4277,7 +4277,7 @@ public class FlipFinderPanel extends PluginPanel
 		if (flipSellPrice != null && flipSellPrice > 0)
 		{
 			int sellTax = GeTax.taxFor(flip.getItemId(), flipSellPrice);
-			maxPotentialProfit = ((long) flipSellPrice - flip.getAverageBuyPrice() - sellTax) * fullQty;
+			maxPotentialProfit = (flipSellPrice - flip.getAverageBuyPrice() - sellTax) * fullQty;
 		}
 
 		// Colours are baked into the HTML by PanelFormat, so no setForeground needed here.
@@ -4381,8 +4381,8 @@ public class FlipFinderPanel extends PluginPanel
 		apiClient.getItemAnalysisAsync(pending.itemId).thenAccept(analysis ->
 			SwingUtilities.invokeLater(() ->
 			{
-				Integer high = null;
-				Integer low = null;
+				Long high = null;
+				Long low = null;
 				Integer buyLimit = null;
 				FlipAnalysis.Liquidity liquidity = null;
 				FlipAnalysis.Risk risk = null;
@@ -4403,7 +4403,7 @@ public class FlipFinderPanel extends PluginPanel
 
 				if (high != null && high > 0 && low != null && low > 0)
 				{
-					int margin = high - low;
+					long margin = high - low;
 					double roi = (margin * 100.0) / low;
 					long totalTax = (long) GeTax.taxFor(pending.itemId, high) * pending.quantity;
 					rows.set(CardRow.BUY_SELL, PanelFormat.livePriceHtml(low, high));
@@ -4419,13 +4419,13 @@ public class FlipFinderPanel extends PluginPanel
 
 				// Max Potential Profit for the pending buy: (sell - buy - tax) x ordered qty,
 				// where sell is the flip's recommended sell price (else the current market high).
-				Integer sellPrice = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
+				Long sellPrice = pending.recommendedSellPrice != null && pending.recommendedSellPrice > 0
 					? pending.recommendedSellPrice : high;
 				long maxPotentialProfit = 0L;
 				if (sellPrice != null && sellPrice > 0)
 				{
 					int sellTax = GeTax.taxFor(pending.itemId, sellPrice);
-					maxPotentialProfit = ((long) sellPrice - pending.pricePerItem - sellTax) * pending.quantity;
+					maxPotentialProfit = (sellPrice - pending.pricePerItem - sellTax) * pending.quantity;
 				}
 				rows.set(CardRow.MAX_POTENTIAL, PanelFormat.maxPotentialProfitHtml(maxPotentialProfit));
 

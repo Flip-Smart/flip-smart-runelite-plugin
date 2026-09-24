@@ -243,7 +243,7 @@ public class BankSnapshotService
 			return null;
 		}
 
-		int gePrice = itemManager.getItemPrice(itemId);
+		long gePrice = itemManager.getItemPrice(itemId);
 		if (gePrice <= 0)
 		{
 			return null;
@@ -340,12 +340,12 @@ public class BankSnapshotService
 			return 0;
 		}
 
-		int price = offer.getPrice();
+		long price = offer.getPrice();
 		int totalQty = offer.getTotalQuantity();
 		int filledQty = offer.getQuantitySold();
 		int remainingQty = totalQty - filledQty;
 
-		int itemPrice = itemManager.getItemPrice(offer.getItemId());
+		long itemPrice = itemManager.getItemPrice(offer.getItemId());
 		if (itemPrice <= 0)
 		{
 			itemPrice = price;

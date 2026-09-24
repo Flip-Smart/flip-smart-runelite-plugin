@@ -11,6 +11,8 @@ public final class GpUtils
 {
 	// number with optional decimal, optional k/m/b suffix (case-insensitive).
 	private static final Pattern GP_INPUT = Pattern.compile("^(\\d+(?:\\.\\d+)?)([kmb]?)$");
+	private static final long[] GP_TIERS = {1_000_000_000_000L, 1_000_000_000L, 1_000_000L, 1_000L};
+	private static final String GP_SUFFIXES = "TBMK";
 
 	private GpUtils()
 	{
@@ -22,7 +24,7 @@ public final class GpUtils
 	 * trailing words like "coins". Returns 0 for null, empty, digit-free or
 	 * over-long input rather than throwing -- callers treat 0 as "unknown".
 	 */
-	public static int parseDigits(String text)
+	public static long parseDigits(String text)
 	{
 		if (text == null || text.isEmpty())
 		{
@@ -31,7 +33,7 @@ public final class GpUtils
 		try
 		{
 			String numericOnly = text.replaceAll("\\D", "");
-			return numericOnly.isEmpty() ? 0 : Integer.parseInt(numericOnly);
+			return numericOnly.isEmpty() ? 0 : Long.parseLong(numericOnly);
 		}
 		catch (NumberFormatException e)
 		{
@@ -114,22 +116,14 @@ public final class GpUtils
 	}
 
 	/**
-	 * Format GP amount for display with K/M suffix.
+	 * Format GP amount for display with K/M/B/T suffix.
 	 *
 	 * @param amount The GP amount to format
 	 * @return Formatted string (e.g., "1.5M", "500K", "100")
 	 */
 	public static String formatGP(long amount)
 	{
-		if (amount >= 1_000_000)
-		{
-			return String.format("%.1fM", amount / 1_000_000.0);
-		}
-		else if (amount >= 1_000)
-		{
-			return String.format("%.1fK", amount / 1_000.0);
-		}
-		return String.valueOf(amount);
+		return amount < 1_000 ? String.valueOf(amount) : formatGPSigned(amount);
 	}
 
 	/**
@@ -152,15 +146,12 @@ public final class GpUtils
 	public static String formatGPSigned(long amount)
 	{
 		long absAmount = Math.abs(amount);
-		String sign = amount < 0 ? "-" : "";
-
-		if (absAmount >= 1_000_000)
+		for (int i = 0; i < GP_TIERS.length; i++)
 		{
-			return String.format("%s%.1fM", sign, absAmount / 1_000_000.0);
-		}
-		else if (absAmount >= 1_000)
-		{
-			return String.format("%s%.1fK", sign, absAmount / 1_000.0);
+			if (absAmount >= GP_TIERS[i])
+			{
+				return String.format("%s%.1f%c", amount < 0 ? "-" : "", absAmount / (double) GP_TIERS[i], GP_SUFFIXES.charAt(i));
+			}
 		}
 		return String.valueOf(amount);
 	}

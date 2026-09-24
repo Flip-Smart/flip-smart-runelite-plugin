@@ -20,7 +20,7 @@ import java.util.Set;
 public final class GeTax
 {
 	private static final double GE_TAX_RATE = 0.02;
-	private static final int GE_TAX_CAP = 5_000_000;
+	public static final int GE_TAX_CAP = 5_000_000;
 	private static final int GE_TAX_EXEMPT_PRICE_THRESHOLD = 50;
 
 	/** Items the GE never taxes regardless of sell price. */
@@ -87,7 +87,7 @@ public final class GeTax
 	 * Two reasons an item is exempt: sell price &le; 50gp, or the item id is
 	 * on the GE tax-free list.
 	 */
-	public static boolean isExempt(int itemId, int sellPrice)
+	public static boolean isExempt(int itemId, long sellPrice)
 	{
 		if (sellPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
 		{
@@ -106,29 +106,29 @@ public final class GeTax
 	 * caps at 5,000,000gp per item for high-value flips. Matches Jagex's
 	 * floored 2% calc.
 	 */
-	public static int taxFor(int itemId, int sellPrice)
+	public static int taxFor(int itemId, long sellPrice)
 	{
 		if (isExempt(itemId, sellPrice))
 		{
 			return 0;
 		}
-		return Math.min((int) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
+		return (int) Math.min((long) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
 	}
 
 	/**
 	 * Per-item GE tax for a given sell price when the item id is not known to the
 	 * caller (e.g. the pure-function offer-description formatter). Applies the
 	 * price-based exemption (&le; 50gp) and cap, but cannot consult the
-	 * exempt-item list. Prefer {@link #taxFor(int, int)} whenever an item id is
+	 * exempt-item list. Prefer {@link #taxFor(int, long)} whenever an item id is
 	 * available.
 	 */
-	public static int taxFor(int sellPrice)
+	public static int taxFor(long sellPrice)
 	{
 		if (sellPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
 		{
 			return 0;
 		}
-		return Math.min((int) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
+		return (int) Math.min((long) Math.floor(sellPrice * GE_TAX_RATE), GE_TAX_CAP);
 	}
 
 	/**
@@ -137,7 +137,7 @@ public final class GeTax
 	 * the breakeven is simply the recorded buy price. Otherwise defers to the
 	 * price-only calculation.
 	 */
-	public static int breakevenSellPrice(int itemId, int recordedBuyPrice)
+	public static long breakevenSellPrice(int itemId, long recordedBuyPrice)
 	{
 		if (isExemptItem(itemId))
 		{
@@ -151,16 +151,14 @@ public final class GeTax
 	 * i.e. the price at which a flip first breaks even after GE tax. Returns the
 	 * buy price unchanged for tax-exempt (&le; 50gp) inputs.
 	 */
-	public static int breakevenSellPrice(int recordedBuyPrice)
+	public static long breakevenSellPrice(long recordedBuyPrice)
 	{
 		if (recordedBuyPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
 		{
 			return recordedBuyPrice;
 		}
-		// Start from the closed-form estimate (overshoots by 1 due to ceiling),
-		// walk up past the cap/floor-truncation region, then down to guarantee
-		// minimality.
-		int candidate = (int) Math.ceil(recordedBuyPrice / (1.0 - GE_TAX_RATE));
+		// Closed-form estimate, bounded by buy + cap so capped prices skip a multi-million-step walk down.
+		long candidate = Math.min((long) Math.ceil(recordedBuyPrice / (1.0 - GE_TAX_RATE)), recordedBuyPrice + GE_TAX_CAP);
 		while (candidate - taxFor(candidate) < recordedBuyPrice)
 		{
 			candidate++;

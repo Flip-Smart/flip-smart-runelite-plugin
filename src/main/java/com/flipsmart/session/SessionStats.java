@@ -66,13 +66,13 @@ public final class SessionStats
 		long sum = 0L;
 		for (OpenPosition position : open)
 		{
-			Integer recommendedSell = position.recommendedSellPrice;
+			Long recommendedSell = position.recommendedSellPrice;
 			if (recommendedSell == null || position.unsoldQuantity <= 0)
 			{
 				continue;
 			}
 			long tax = GeTax.taxFor(position.itemId, recommendedSell);
-			long perItem = (long) recommendedSell - position.averageBuyPrice - tax;
+			long perItem = recommendedSell - position.averageBuyPrice - tax;
 			sum += perItem * position.unsoldQuantity;
 		}
 		return sum;
@@ -84,7 +84,7 @@ public final class SessionStats
 		{
 			return null;
 		}
-		return profit * MS_PER_HOUR / activeMs;
+		return (long) (profit * (double) MS_PER_HOUR / activeMs);
 	}
 
 	public static String formatSignedGp(long amount)

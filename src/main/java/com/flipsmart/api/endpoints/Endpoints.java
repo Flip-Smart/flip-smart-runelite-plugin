@@ -216,7 +216,7 @@ public final class Endpoints
 		 * Sync the filled quantity for an active flip when the plugin detects a mismatch.
 		 */
 		public CompletableFuture<Boolean> syncActiveFlipAsync(int itemId, String itemName, int filledQuantity,
-				int orderQuantity, int pricePerItem, String rsn)
+				int orderQuantity, long pricePerItem, String rsn)
 		{
 			String apiUrl = transport.getApiUrl();
 			String url = String.format("%s/transactions/active-flips/sync", apiUrl);
@@ -959,7 +959,7 @@ public final class Endpoints
 		/**
 		 * Parse wiki price API response and update cache
 		 */
-		private void parseWikiPriceResponse(String json)
+		void parseWikiPriceResponse(String json)
 		{
 			JsonObject root = gson.fromJson(json, JsonObject.class);
 			if (root == null)
@@ -999,8 +999,8 @@ public final class Endpoints
 			try
 			{
 				int itemId = Integer.parseInt(itemKey);
-				int high = getJsonIntOrZero(priceData, "high");
-				int low = getJsonIntOrZero(priceData, "low");
+				long high = getJsonLongOrZero(priceData, "high");
+				long low = getJsonLongOrZero(priceData, "low");
 
 				if (high > 0 || low > 0)
 				{
@@ -1014,13 +1014,13 @@ public final class Endpoints
 		}
 
 		/**
-		 * Safely get an int value from JSON, returning 0 if null or missing
+		 * Safely get a long value from JSON, returning 0 if null or missing
 		 */
-		private int getJsonIntOrZero(JsonObject obj, String key)
+		private long getJsonLongOrZero(JsonObject obj, String key)
 		{
 			if (obj.has(key) && !obj.get(key).isJsonNull())
 			{
-				return obj.get(key).getAsInt();
+				return obj.get(key).getAsLong();
 			}
 			return 0;
 		}
@@ -1178,7 +1178,7 @@ public final class Endpoints
 			this.transport = transport;
 		}
 
-		public CompletableFuture<PriceTargetResponse> getFirstListingAsync(int itemId, int buyPrice, int originalSellPrice, String rsn)
+		public CompletableFuture<PriceTargetResponse> getFirstListingAsync(int itemId, long buyPrice, long originalSellPrice, String rsn)
 		{
 			StringBuilder url = new StringBuilder(transport.getApiUrl())
 				.append("/price-targets/").append(itemId)
@@ -1339,7 +1339,7 @@ public final class Endpoints
 		 * Used for recording offline transactions detected on login.
 		 */
 		public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, String transactionType,
-				int quantity, int pricePerItem, String rsn)
+				int quantity, long pricePerItem, String rsn)
 		{
 			boolean isBuy = "BUY".equalsIgnoreCase(transactionType);
 			TransactionRequest request = TransactionRequest

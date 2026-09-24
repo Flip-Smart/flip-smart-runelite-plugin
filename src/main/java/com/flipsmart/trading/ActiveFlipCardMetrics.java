@@ -11,12 +11,12 @@ public final class ActiveFlipCardMetrics
 {
 	public static final class Result
 	{
-		public final int margin;
+		public final long margin;
 		public final double roi;
 		public final long totalTax;
-		public final int positionNetPerUnit;
+		public final long positionNetPerUnit;
 
-		Result(int margin, double roi, long totalTax, int positionNetPerUnit)
+		Result(long margin, double roi, long totalTax, long positionNetPerUnit)
 		{
 			this.margin = margin;
 			this.roi = roi;
@@ -37,15 +37,15 @@ public final class ActiveFlipCardMetrics
 	 * @param realizedSoldQuantity units already sold and realized this flip
 	 * @param remainingQuantity    units still held (flip.getTotalQuantity())
 	 */
-	public static Result compute(int low, int high, int itemId, int averageBuyPrice,
+	public static Result compute(long low, long high, int itemId, long averageBuyPrice,
 		int realizedSoldQuantity, int remainingQuantity)
 	{
-		int margin = high - low;
+		long margin = high - low;
 		double roi = low > 0 ? (margin * 100.0) / low : 0.0;
 		long fullQuantity = (long) realizedSoldQuantity + remainingQuantity;
 		int perItemTax = GeTax.taxFor(itemId, high);
 		long totalTax = (long) perItemTax * fullQuantity;
-		int positionNetPerUnit = high - averageBuyPrice - perItemTax;
+		long positionNetPerUnit = high - averageBuyPrice - perItemTax;
 
 		return new Result(margin, roi, totalTax, positionNetPerUnit);
 	}

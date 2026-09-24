@@ -97,7 +97,7 @@ public class StaleOfferQueueTest
 		assertEquals(1, q.size());
 		assertTrue(q.headIsItem(12));
 		assertNull(q.getResellPrice(11));
-		assertEquals(Integer.valueOf(200), q.getResellPrice(12));
+		assertEquals(Long.valueOf(200), q.getResellPrice(12));
 	}
 
 	@Test
@@ -114,7 +114,7 @@ public class StaleOfferQueueTest
 		assertEquals(1, q.size());
 		assertTrue(q.headIsItem(12));
 		assertNull("pruned item's resell price must be cleared", q.getResellPrice(11));
-		assertEquals(Integer.valueOf(200), q.getResellPrice(12));
+		assertEquals(Long.valueOf(200), q.getResellPrice(12));
 	}
 
 	// ---- resell price / net bookkeeping ----
@@ -126,11 +126,11 @@ public class StaleOfferQueueTest
 
 		assertNull(q.getResellPrice(11));
 		q.putResellPrice(11, 150);
-		assertEquals(Integer.valueOf(150), q.getResellPrice(11));
+		assertEquals(Long.valueOf(150), q.getResellPrice(11));
 
 		assertNull(q.getResellNet(11));
 		q.putResellNet(11, -50);
-		assertEquals(Integer.valueOf(-50), q.getResellNet(11));
+		assertEquals(Long.valueOf(-50), q.getResellNet(11));
 		q.removeResellNet(11);
 		assertNull(q.getResellNet(11));
 	}
