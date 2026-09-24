@@ -1259,6 +1259,17 @@ public class FlipAssistOverlay extends Overlay
 		this.autoStatusMessage = message;
 		this.autoStatusItemId = itemId;
 	}
+
+	// Clear the auto-status prompt only if it belongs to this item (e.g. its flip completed),
+	// leaving a prompt for any other active item untouched.
+	public void clearAutoStatusForItem(int itemId)
+	{
+		if (autoStatusItemId == itemId)
+		{
+			this.autoStatusMessage = null;
+			this.autoStatusItemId = 0;
+		}
+	}
 	
 	private void setGELastSearchedItem(int itemId)
 	{

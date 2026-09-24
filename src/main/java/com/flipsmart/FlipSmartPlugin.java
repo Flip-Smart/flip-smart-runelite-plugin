@@ -2698,6 +2698,10 @@ public class FlipSmartPlugin extends Plugin
 		if (complete || remaining <= 0)
 		{
 			v9Store().remove(itemId);
+			if (flipAssistOverlay != null)
+			{
+				flipAssistOverlay.clearAutoStatusForItem(itemId);
+			}
 			return;
 		}
 		state.setListingTimestampMs(System.currentTimeMillis());
@@ -2719,6 +2723,10 @@ public class FlipSmartPlugin extends Plugin
 		state.setLadderRung(0);
 		state.setLadder1ResolvedAtMs(0L);
 		v9Store().put(state);
+		if (flipAssistOverlay != null)
+		{
+			flipAssistOverlay.clearAutoStatusForItem(itemId);
+		}
 	}
 
 	public void handleActiveOfferHandoff(OfferAdviceResponse resp)
