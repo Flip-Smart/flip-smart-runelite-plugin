@@ -304,7 +304,7 @@ public class GEHistoryService
 		// no reported quantity — that is the only context this triggers.
 		int rawQty = scan.itemWidget.getItemQuantity();
 		int qty = (rawQty > 0) ? rawQty : (itemId > 0 ? 1 : 0);
-		int price;
+		long price;
 		String pricePath;
 		if (scan.priceWidget != null)
 		{
@@ -317,7 +317,7 @@ public class GEHistoryService
 			// there's nothing to break out — the displayed total IS the per-item
 			// price. Fall back to the "X,XXX coins" widget and divide by qty.
 			// See Flip-Smart/flip-smart#650.
-			int total = parseLeadingTotal(scan.coinsWidget);
+			long total = parseLeadingTotal(scan.coinsWidget);
 			price = (total > 0) ? total / qty : -1;
 			pricePath = "coins-fallback(total=" + total + ")";
 		}
@@ -397,7 +397,7 @@ public class GEHistoryService
 	}
 
 	/** Price text is "<col=...>X coins</col><br>= Y each" — the per-item price is after the '='. */
-	private static int parsePerItemPrice(Widget widget)
+	private static long parsePerItemPrice(Widget widget)
 	{
 		return (widget == null) ? -1 : parsePerItemPriceFromText(widget.getText());
 	}
@@ -416,7 +416,7 @@ public class GEHistoryService
 	 *  the {@code 83 × 10^n + qty} corruption pattern observed in production
 	 *  (Flip-Smart/flip-smart#689). Tag-stripping first removes that whole
 	 *  failure mode regardless of which widget shape RuneLite returns. */
-	static int parsePerItemPriceFromText(String text)
+	static long parsePerItemPriceFromText(String text)
 	{
 		if (text == null || text.isEmpty()) return -1;
 		String cleaned = stripHtmlTags(text);
@@ -427,7 +427,7 @@ public class GEHistoryService
 
 	/** Leading total from a "X,XXX coins[(gross - tax)]" widget, ignoring any
 	 *  parenthesized tax breakdown so parseDigits doesn't concatenate them. */
-	private static int parseLeadingTotal(Widget widget)
+	private static long parseLeadingTotal(Widget widget)
 	{
 		return (widget == null) ? -1 : parseLeadingTotalFromText(widget.getText());
 	}
@@ -439,7 +439,7 @@ public class GEHistoryService
 	 *  total, so the {@code indexOf('(')} seek would produce the correct head
 	 *  either way — but ordering matters as soon as RuneLite changes the row
 	 *  shape, so we strip first defensively. */
-	static int parseLeadingTotalFromText(String text)
+	static long parseLeadingTotalFromText(String text)
 	{
 		if (text == null || text.isEmpty()) return -1;
 		String cleaned = stripHtmlTags(text);
@@ -464,7 +464,7 @@ public class GEHistoryService
 	 * offerId is worse than none, so any ambiguity (or no match) returns null and
 	 * the backend falls back to the item-level path.
 	 */
-	static Long matchOfferId(List<OfferRecord> candidates, int itemId, boolean isBuy, int pricePerItem)
+	static Long matchOfferId(List<OfferRecord> candidates, int itemId, boolean isBuy, long pricePerItem)
 	{
 		Long found = null;
 		for (OfferRecord o : candidates)
@@ -486,7 +486,7 @@ public class GEHistoryService
 	 * them directly never matches a taxed sell. Both forms are accepted; a row that fits two
 	 * different offers still resolves to null via the ambiguity check above.
 	 */
-	private static boolean priceMatches(OfferRecord o, int historyPrice)
+	private static boolean priceMatches(OfferRecord o, long historyPrice)
 	{
 		if (o.getPrice() == historyPrice)
 		{
@@ -547,15 +547,14 @@ public class GEHistoryService
 			});
 	}
 
-	private static int parseDigits(String text)
+	private static long parseDigits(String text)
 	{
 		if (text == null) return -1;
 		String cleaned = text.replaceAll("\\D", "");
 		if (cleaned.isEmpty()) return -1;
 		try
 		{
-			long val = Long.parseLong(cleaned);
-			return (val > Integer.MAX_VALUE) ? -1 : (int) val;
+			return Long.parseLong(cleaned);
 		}
 		catch (NumberFormatException e)
 		{

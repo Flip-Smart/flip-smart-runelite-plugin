@@ -135,7 +135,7 @@ public final class TransactionLogger
         }
         // Rounded rather than truncated: this now also feeds recordBuyBasis below, and truncation
         // biased every weighted-average basis down by up to 1gp/item.
-        int pricePerItem = newlyFilled > 0 ? (int) Math.round((double) newlySpent / newlyFilled) : 0;
+        long pricePerItem = newlyFilled > 0 ? Math.round((double) newlySpent / newlyFilled) : 0;
         // The offer is done filling (so its slot's cumulative baseline may reset) once it is no longer
         // NEW or PARTIAL_FILL — i.e. FILLED, collected, or cancelled. A still-filling offer keeps its
         // baseline so a sibling slot of the same item is never double-counted on a mid-fill close.
@@ -203,9 +203,9 @@ public final class TransactionLogger
     }
 
     private TransactionRequest.Builder baseBuilder(OfferRecord r,
-                                                    int qty, int price, String rsn, String key)
+                                                    int qty, long price, String rsn, String key)
     {
-        Integer recPrice = r.isBuy() ? session.getRecommendedPrice(r.getItemId()) : null;
+        Long recPrice = r.isBuy() ? session.getRecommendedPrice(r.getItemId()) : null;
         return TransactionRequest
             .builder(r.getItemId(), r.getItemName(), r.isBuy(), qty, price)
             .geSlot(r.getSlot())
@@ -242,7 +242,7 @@ public final class TransactionLogger
         }
         String rsn = rsnSupplier.get().orElse(null);
         int qty = r.getFilledQuantity();
-        int pricePerItem = (int) Math.round((double) r.getSpent() / qty);
+        long pricePerItem = Math.round((double) r.getSpent() / qty);
         Integer roundTripId = roundTripLedger.peekRoundTripId(rsn, r.getItemId());
         apiClient.recordTransactionAsync(
             baseBuilder(r, qty, pricePerItem, rsn, idempotencyKey(rsn, r, Type.FILL))

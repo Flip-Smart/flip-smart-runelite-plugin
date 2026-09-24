@@ -87,7 +87,7 @@ public class GeOfferContextResolutionTest
 		GrandExchangeOffer offer = mock(GrandExchangeOffer.class);
 		when(offer.getState()).thenReturn(GrandExchangeOfferState.SELLING);
 		when(offer.getItemId()).thenReturn(itemId);
-		when(offer.getPrice()).thenReturn(price);
+		when(offer.getPrice()).thenAnswer(GpAnswer.gp(price));
 		when(offer.getTotalQuantity()).thenReturn(qty);
 
 		offers[slot] = offer;
@@ -126,7 +126,7 @@ public class GeOfferContextResolutionTest
 		// ... but the open GE panel is the Dragon Pickaxe Upgrade Kit.
 		openOfferPanel(0, KIT_ITEM_ID, 650_000);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull("open offer panel must resolve a context", ctx);
 		assertEquals("resolved item must be the on-screen offer item, not the focus",
@@ -142,7 +142,7 @@ public class GeOfferContextResolutionTest
 			newServiceWithFocus(FocusedFlip.forSell(KIT_ITEM_ID, "Dragon pickaxe upgrade kit", 700_000, 1));
 		openOfferPanel(0, KIT_ITEM_ID, 650_000);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(KIT_ITEM_ID, ctx[0]);
@@ -159,7 +159,7 @@ public class GeOfferContextResolutionTest
 		when(client.getGrandExchangeOffers()).thenReturn(null);
 		when(client.getVarbitValue(VarbitID.GE_SELECTEDSLOT)).thenReturn(-1);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(ELY_ITEM_ID, ctx[0]);
@@ -182,7 +182,7 @@ public class GeOfferContextResolutionTest
 		clickSlot(service, 0);
 		openSetupWindow(SHARK, 960, 10_000, true);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
@@ -200,7 +200,7 @@ public class GeOfferContextResolutionTest
 		clickSlot(service, 0);
 		openSetupWindow(SHARK, 960, 10_000, true);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
@@ -223,7 +223,7 @@ public class GeOfferContextResolutionTest
 		clickSlot(service, 0);
 		openSetupWindow(SHARK, 960, 500, false); // ... while BUYING sharks
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
@@ -246,7 +246,7 @@ public class GeOfferContextResolutionTest
 		when(client.getVarbitValue(VarbitID.GE_SELECTEDSLOT)).thenReturn(0);
 		openSetupWindow(SHARK, 960, 10_000, true);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
@@ -262,7 +262,7 @@ public class GeOfferContextResolutionTest
 		clickSlot(service, 0);
 		when(client.getWidget(InterfaceID.GeOffers.SETUP_DESC)).thenReturn(null);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals(RAW_KARAMBWAN, ctx[0]);
@@ -287,7 +287,7 @@ public class GeOfferContextResolutionTest
 		when(details.isHidden()).thenReturn(false);
 		when(client.getWidget(InterfaceID.GeOffers.DETAILS)).thenReturn(details);
 
-		int[] ctx = service.resolveOfferContext();
+		long[] ctx = service.resolveOfferContext();
 
 		assertNotNull(ctx);
 		assertEquals("the details panel's own slot must win", RAW_KARAMBWAN, ctx[0]);

@@ -47,7 +47,7 @@ public class SeamDtoDeserializationTest
 			+ "\"recommendations_returned\":40}}";
 		FlipFinderResponse r = gson.fromJson(json, FlipFinderResponse.class);
 		assertEquals("high_volume", r.getFlipStyle());
-		assertEquals(Integer.valueOf(50000000), r.getCashStack());
+		assertEquals(Long.valueOf(50000000), r.getCashStack());
 		assertEquals(Double.valueOf(6250000.0), r.getPerSlotBudget());
 		assertEquals(3500, r.getTotalItemsAnalyzed());
 		assertEquals(120, r.getItemsMatchingCriteria());

@@ -21,11 +21,11 @@ public class ActiveOfferAdvisorService
 	@Getter
 	public static final class CourierState
 	{
-		private final Integer previousPositionMargin;
+		private final Long previousPositionMargin;
 		private final int consecutiveMarginDecreases;
 		private final double cumulativeMarginReductionPct;
 
-		public CourierState(Integer previousPositionMargin, int consecutiveMarginDecreases, double cumulativeMarginReductionPct)
+		public CourierState(Long previousPositionMargin, int consecutiveMarginDecreases, double cumulativeMarginReductionPct)
 		{
 			this.previousPositionMargin = previousPositionMargin;
 			this.consecutiveMarginDecreases = consecutiveMarginDecreases;
@@ -127,7 +127,7 @@ public class ActiveOfferAdvisorService
 	static OfferAdviceRequest buildSnapshot(
 		OfferRecord offer,
 		WikiPrice market,
-		Integer userAvgBuyPrice,
+		Long userAvgBuyPrice,
 		Integer dailyVolume)
 	{
 		return buildSnapshot(offer, market, userAvgBuyPrice, dailyVolume, null, CourierState.EMPTY);
@@ -139,7 +139,7 @@ public class ActiveOfferAdvisorService
 	 * off we relay null / EMPTY so the backend runs only the base wait / move-down / exit advice.
 	 * Static + package-private so the gate stays unit-testable.
 	 */
-	static Integer relayedMargin(boolean aggressive, Integer originalMargin)
+	static Long relayedMargin(boolean aggressive, Long originalMargin)
 	{
 		return aggressive ? originalMargin : null;
 	}
@@ -152,9 +152,9 @@ public class ActiveOfferAdvisorService
 	static OfferAdviceRequest buildSnapshot(
 		OfferRecord offer,
 		WikiPrice market,
-		Integer userAvgBuyPrice,
+		Long userAvgBuyPrice,
 		Integer dailyVolume,
-		Integer originalMargin,
+		Long originalMargin,
 		CourierState courier)
 	{
 		boolean isSell = !offer.isBuy();

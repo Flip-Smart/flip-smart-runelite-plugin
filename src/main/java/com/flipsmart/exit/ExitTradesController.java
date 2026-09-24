@@ -14,6 +14,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.function.IntFunction;
+import java.util.function.IntToLongFunction;
 import java.util.function.IntUnaryOperator;
 import java.util.function.Supplier;
 import lombok.Getter;
@@ -32,9 +33,9 @@ public final class ExitTradesController
 
 	private final OfferStore offerStore;
 	@Setter
-	private IntUnaryOperator buyBasisSupplier = itemId -> 0;
+	private IntToLongFunction buyBasisSupplier = itemId -> 0;
 	@Setter
-	private IntUnaryOperator backendSellPriceSupplier = itemId -> 0;
+	private IntToLongFunction backendSellPriceSupplier = itemId -> 0;
 	@Setter
 	private IntFunction<WikiPrice> wikiPriceSupplier = itemId -> null;
 	@Setter
@@ -93,7 +94,7 @@ public final class ExitTradesController
 			{
 				continue;
 			}
-			int basis = buyBasisSupplier.applyAsInt(r.getItemId());
+			long basis = buyBasisSupplier.applyAsLong(r.getItemId());
 			targets.add(r.isBuy()
 				? ExitSlotTarget.forBuy(slot, r.getItemId(), r.getItemName(), basis)
 				: ExitSlotTarget.sell(slot, r.getItemId(), r.getItemName(), basis));
@@ -128,7 +129,7 @@ public final class ExitTradesController
 			{
 				continue; // collected set is stale — nothing actually in inventory
 			}
-			int basis = buyBasisSupplier.applyAsInt(itemId);
+			long basis = buyBasisSupplier.applyAsLong(itemId);
 			ExitSlotTarget target = ExitSlotTarget.sell(NO_SLOT, itemId, itemNameSupplier.apply(itemId), basis);
 			target.setPhase(ExitPhase.CANCELLED_HOLDING);
 			target.setHeldQuantity(held);
@@ -398,7 +399,7 @@ public final class ExitTradesController
 				return;
 			}
 			// Still listed: re-list at the exit price — unless it's already at it.
-			int price = resolveExitPrice(t);
+			long price = resolveExitPrice(t);
 			if (price > 0 && price == live.getPrice())
 			{
 				log.debug("Exit Trades: slot {} item {} already at exit price {} — skipping",
@@ -476,7 +477,7 @@ public final class ExitTradesController
 			{
 				continue;
 			}
-			int price = resolveExitPrice(t);
+			long price = resolveExitPrice(t);
 			if (price <= 0)
 			{
 				return false;
@@ -503,13 +504,13 @@ public final class ExitTradesController
 		return false;
 	}
 
-	private int resolveExitPrice(ExitSlotTarget t)
+	private long resolveExitPrice(ExitSlotTarget t)
 	{
 		return ExitPriceResolver.resolve(mode, t.getItemId(), t.getBuyBasis(),
-			backendSellPriceSupplier.applyAsInt(t.getItemId()), wikiPriceSupplier.apply(t.getItemId()));
+			backendSellPriceSupplier.applyAsLong(t.getItemId()), wikiPriceSupplier.apply(t.getItemId()));
 	}
 
-	private void surfaceSell(ExitSlotTarget t, int price, int quantity, boolean highlightSlot)
+	private void surfaceSell(ExitSlotTarget t, long price, int quantity, boolean highlightSlot)
 	{
 		if (price <= 0)
 		{
@@ -539,7 +540,7 @@ public final class ExitTradesController
 		int itemId;
 		String itemName;
 		boolean buy;
-		int buyBasis;
+		long buyBasis;
 		String phase;
 	}
 

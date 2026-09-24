@@ -21,10 +21,10 @@ import java.util.function.Predicate;
 public final class StaleOfferQueue
 {
 	private final List<OfferRecord> offers = new CopyOnWriteArrayList<>();
-	private final Map<Integer, Integer> staleResellPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> staleResellPrices = new ConcurrentHashMap<>();
 	// Advisor-only: net profit/loss estimate to show alongside a re-sell prompt. Kept in
 	// sync with staleResellPrices at both put-sites, so it's never read with a stale price.
-	private final Map<Integer, Integer> staleResellNet = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> staleResellNet = new ConcurrentHashMap<>();
 	// Items that have already been flagged as stale/uncompetitive — prevents repeated prompts.
 	// Cleared when the offer is cancelled, filled, or a new offer is placed for the item.
 	private final Set<Integer> promptedStaleItems = ConcurrentHashMap.newKeySet();
@@ -65,22 +65,22 @@ public final class StaleOfferQueue
 		return null;
 	}
 
-	public Integer getResellPrice(int itemId)
+	public Long getResellPrice(int itemId)
 	{
 		return staleResellPrices.get(itemId);
 	}
 
-	public void putResellPrice(int itemId, int price)
+	public void putResellPrice(int itemId, long price)
 	{
 		staleResellPrices.put(itemId, price);
 	}
 
-	public Integer getResellNet(int itemId)
+	public Long getResellNet(int itemId)
 	{
 		return staleResellNet.get(itemId);
 	}
 
-	public void putResellNet(int itemId, int net)
+	public void putResellNet(int itemId, long net)
 	{
 		staleResellNet.put(itemId, net);
 	}

@@ -224,6 +224,6 @@ public class PanelFormatCharacterizationTest
 	{
 		assertEquals("<html>Buy: <b><font color='#6fb1ff'>100</font></b> "
 				+ "| Sell: <b><font color='#ffab54'>200</font></b></html>",
-			PanelFormat.buySellHtml(100, 200));
+			PanelFormat.buySellHtml(100, 200L));
 	}
 }

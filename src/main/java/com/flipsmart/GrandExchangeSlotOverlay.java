@@ -62,7 +62,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance();
 
 	// Slots with pending adjustment recommendations (slot -> recommended price)
-	private final java.util.Map<Integer, Integer> adjustmentHighlights = new java.util.concurrent.ConcurrentHashMap<>();
+	private final java.util.Map<Integer, Long> adjustmentHighlights = new java.util.concurrent.ConcurrentHashMap<>();
 
 	// Slots whose orange box must persist across focus changes because the player skipped
 	// their maintenance action and it is still within its cooldown. Transient clears
@@ -92,7 +92,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * @param slot GE slot index
 	 * @param recommendedPrice The recommended adjustment price
 	 */
-	public void setAdjustmentHighlight(int slot, int recommendedPrice)
+	public void setAdjustmentHighlight(int slot, long recommendedPrice)
 	{
 		adjustmentHighlights.put(slot, recommendedPrice);
 	}
@@ -235,10 +235,10 @@ public class GrandExchangeSlotOverlay extends Overlay
 	{
 		GrandExchangeOffer offer;
 		WikiPrice wikiPrice;
-		int offerPrice;
+		long offerPrice;
 		int x;
 		int y;
-		Integer buyPrice; // null if no buy price on record or not a sell offer
+		Long buyPrice; // null if no buy price on record or not a sell offer
 	}
 
 	/**
@@ -338,7 +338,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		return tooltip;
 	}
 
-	private Integer getBuyPriceForItem(int itemId)
+	private Long getBuyPriceForItem(int itemId)
 	{
 		return BuyPriceLookup.findAverageBuyPriceWithFallback(
 			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
@@ -366,7 +366,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 * Draw a custom tooltip with background showing real-time insta prices
 	 */
 	private void drawPriceTooltip(Graphics2D graphics, int x, int y, GrandExchangeOffer offer,
-								  WikiPrice wikiPrice, int offerPrice, Integer buyPrice)
+								  WikiPrice wikiPrice, long offerPrice, Long buyPrice)
 	{
 		boolean isBuy = isOfferBuyType(offer);
 
@@ -394,8 +394,8 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Build tooltip text lines based on wiki price data
 	 */
-	private List<String> buildTooltipLines(WikiPrice wikiPrice, int offerPrice,
-													  Integer buyPrice, boolean isBuy, int totalQuantity, int itemId)
+	private List<String> buildTooltipLines(WikiPrice wikiPrice, long offerPrice,
+													  Long buyPrice, boolean isBuy, int totalQuantity, int itemId)
 	{
 		List<String> lines = new java.util.ArrayList<>();
 
@@ -427,14 +427,14 @@ public class GrandExchangeSlotOverlay extends Overlay
 		}
 	}
 
-	private void addProfitLossLine(List<String> lines, int sellPrice, int buyPrice, int totalQuantity, int itemId)
+	static void addProfitLossLine(List<String> lines, long sellPrice, long buyPrice, int totalQuantity, int itemId)
 	{
 		// Honor the GE tax-exempt list and the <=50gp threshold (issue #685 Bugs 3 & 4).
 		// ROI uses netPnlPerItem so it automatically becomes pre-tax for exempt items
 		// and post-tax for taxable ones, matching AC2 of Bug 4.
 		int geTaxPerItem = GeTax.taxFor(itemId, sellPrice);
-		int netPnlPerItem = sellPrice - buyPrice - geTaxPerItem;
-		int totalPnl = netPnlPerItem * totalQuantity;
+		long netPnlPerItem = sellPrice - buyPrice - geTaxPerItem;
+		long totalPnl = netPnlPerItem * totalQuantity;
 		double roiPercent = (netPnlPerItem / (double) buyPrice) * 100.0;
 
 		lines.add("---");
@@ -444,7 +444,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 		lines.add(label + formattedPnl + " gp (" + String.format("%.1f%%", roiPercent) + ")");
 	}
 
-	private String formatPnlValue(int totalPnl)
+	private static String formatPnlValue(long totalPnl)
 	{
 		if (Math.abs(totalPnl) >= 100_000)
 		{
@@ -457,7 +457,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	/**
 	 * Determine color for user's price based on competitiveness
 	 */
-	private Color determineYourPriceColor(WikiPrice wikiPrice, int offerPrice, boolean isBuy)
+	private Color determineYourPriceColor(WikiPrice wikiPrice, long offerPrice, boolean isBuy)
 	{
 		if (wikiPrice == null || (wikiPrice.instaBuy <= 0 && wikiPrice.instaSell <= 0))
 		{

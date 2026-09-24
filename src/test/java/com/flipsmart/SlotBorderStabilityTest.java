@@ -10,6 +10,7 @@ import org.junit.Test;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -43,14 +44,14 @@ public class SlotBorderStabilityTest
         GrandExchangeOffer offer = mock(GrandExchangeOffer.class);
         when(offer.getState()).thenReturn(GrandExchangeOfferState.BUYING);
         when(offer.getItemId()).thenReturn(itemId);
-        when(offer.getPrice()).thenReturn(price);
+        when(offer.getPrice()).thenAnswer(GpAnswer.gp(price));
         return offer;
     }
 
     private void verdict(FlipSmartPlugin.OfferCompetitiveness first,
         FlipSmartPlugin.OfferCompetitiveness... rest)
     {
-        when(plugin.calculateCompetitiveness(anyInt(), anyInt(), anyBoolean()))
+        when(plugin.calculateCompetitiveness(anyInt(), anyLong(), anyBoolean()))
             .thenReturn(first, rest);
     }
 

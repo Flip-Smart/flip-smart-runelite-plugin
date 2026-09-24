@@ -15,7 +15,7 @@ public class OpenPositionsTest
 	{
 		ActiveFlip a = new ActiveFlip();
 		a.setItemId(itemId);
-		a.setRecommendedSellPrice(recSell);
+		a.setRecommendedSellPrice(recSell == null ? null : recSell.longValue());
 		a.setAverageBuyPrice(avgBuy);
 		a.setTotalQuantity(qty);
 		return a;
@@ -70,7 +70,7 @@ public class OpenPositionsTest
 			Collections.singletonList(projected(4151, 200, 100, 10)), itemId -> 0).get(0);
 
 		assertEquals(4151, p.itemId);
-		assertEquals(Integer.valueOf(200), p.recommendedSellPrice);
+		assertEquals(Long.valueOf(200), p.recommendedSellPrice);
 		assertEquals(100, p.averageBuyPrice);
 	}
 

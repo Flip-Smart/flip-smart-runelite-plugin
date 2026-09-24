@@ -26,7 +26,7 @@ public class SessionStatsTest
 	/** An unsold position: {@code unsoldQty} is what is still to be sold, never the offer total. */
 	private static OpenPosition open(int itemId, Integer recSell, int avgBuy, int unsoldQty)
 	{
-		return new OpenPosition(itemId, unsoldQty, avgBuy, recSell);
+		return new OpenPosition(itemId, unsoldQty, avgBuy, recSell == null ? null : recSell.longValue());
 	}
 
 	@Test
@@ -75,6 +75,21 @@ public class SessionStatsTest
 	public void gpPerHourScalesProfitToAnHour()
 	{
 		assertEquals(Long.valueOf(2000L), SessionStats.gpPerHour(1000L, 1_800_000L));
+	}
+
+	@Test
+	public void gpPerHourDoesNotOverflowOnMaxCashProfits()
+	{
+		// profit * 3,600,000 overflows a long once profit passes ~2.56T.
+		assertEquals(Long.valueOf(6_000_000_000_000L), SessionStats.gpPerHour(3_000_000_000_000L, 1_800_000L));
+		assertEquals(Long.valueOf(2_100_000_000_000L), SessionStats.gpPerHour(2_100_000_000_000L, 3_600_000L));
+	}
+
+	@Test
+	public void unrealisedProfitHandlesPricesAboveInt32()
+	{
+		OpenPosition p = new OpenPosition(4151, 700, 3_000_000_000L, 3_100_000_000L);
+		assertEquals(95_000_000L * 700, SessionStats.unrealisedProfit(Collections.singletonList(p)));
 	}
 
 	@Test

@@ -274,7 +274,7 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<Void> recordTransactionAsync(int itemId, String itemName, String transactionType,
-			int quantity, int pricePerItem, String rsn)
+			int quantity, long pricePerItem, String rsn)
 	{
 		return transactions.recordTransactionAsync(itemId, itemName, transactionType, quantity, pricePerItem, rsn);
 	}
@@ -314,7 +314,7 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<Boolean> syncActiveFlipAsync(int itemId, String itemName, int filledQuantity,
-			int orderQuantity, int pricePerItem, String rsn)
+			int orderQuantity, long pricePerItem, String rsn)
 	{
 		return activeFlips.syncActiveFlipAsync(itemId, itemName, filledQuantity, orderQuantity, pricePerItem, rsn);
 	}

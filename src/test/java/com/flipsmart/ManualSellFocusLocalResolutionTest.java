@@ -117,7 +117,7 @@ public class ManualSellFocusLocalResolutionTest
 	{
 		tracker.setBuyBasisProvider(
 			itemId -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
-		tracker.setDisplayedSellPriceProvider(itemId -> 1_234_567);
+		tracker.setDisplayedSellPriceProvider(itemId -> 1_234_567L);
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
 

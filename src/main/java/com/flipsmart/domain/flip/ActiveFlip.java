@@ -22,7 +22,7 @@ public class ActiveFlip
 	private int originalQuantity;
 
 	@SerializedName("average_buy_price")
-	private int averageBuyPrice;
+	private long averageBuyPrice;
 
 	@SerializedName("total_invested")
 	private long totalInvested;
@@ -37,7 +37,7 @@ public class ActiveFlip
 	private int transactionCount;
 
 	@SerializedName("recommended_sell_price")
-	private Integer recommendedSellPrice;
+	private Long recommendedSellPrice;
 
 	@SerializedName("order_quantity")
 	private int orderQuantity;

@@ -37,7 +37,7 @@ public final class RealizedFlipProfit
 	 * @param sinceMillis     include only sells last active at/after this epoch-ms
 	 *                        (the current flip's first-buy time); 0 includes all
 	 */
-	public static Result compute(List<OfferRecord> itemRecords, int itemId, int averageBuyPrice, long sinceMillis)
+	public static Result compute(List<OfferRecord> itemRecords, int itemId, long averageBuyPrice, long sinceMillis)
 	{
 		int soldQuantity = 0;
 		long grossProceeds = 0L;

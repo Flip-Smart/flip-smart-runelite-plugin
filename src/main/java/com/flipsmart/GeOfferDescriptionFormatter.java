@@ -49,7 +49,7 @@ public final class GeOfferDescriptionFormatter
 	 *         appended.
 	 */
 	public static String formatBuyDescription(
-		Integer dailyVolume, Integer buyLimit, Integer wikiInstaBuy, Long limitResetMillis)
+		Integer dailyVolume, Integer buyLimit, Long wikiInstaBuy, Long limitResetMillis)
 	{
 		StringBuilder sb = new StringBuilder();
 		sb.append(formatDailyVolumeLine(dailyVolume));
@@ -83,7 +83,7 @@ public final class GeOfferDescriptionFormatter
 		return colorTag(COLOR_LABEL) + "Buy limit: </col>" + formatExact(buyLimit) + " / 4h";
 	}
 
-	static String formatWikiInstaBuyLine(int wikiInstaBuy)
+	static String formatWikiInstaBuyLine(long wikiInstaBuy)
 	{
 		return colorTag(COLOR_LABEL) + "Wiki insta-buy: </col>"
 			+ colorTag(COLOR_WHITE) + formatExact(wikiInstaBuy) + " gp</col>";
@@ -117,8 +117,8 @@ public final class GeOfferDescriptionFormatter
 	 */
 	public static String formatSellDescription(
 		int itemId,
-		Integer recordedBuyPrice,
-		int listedSellPrice,
+		Long recordedBuyPrice,
+		long listedSellPrice,
 		int quantity)
 	{
 		int taxPerItem = calculateTaxPerItem(itemId, listedSellPrice);
@@ -135,14 +135,14 @@ public final class GeOfferDescriptionFormatter
 		return sb.toString();
 	}
 
-	static String formatBreakevenLine(int itemId, Integer recordedBuyPrice)
+	static String formatBreakevenLine(int itemId, Long recordedBuyPrice)
 	{
 		String label = colorTag(COLOR_LABEL) + "Breakeven: </col>";
 		if (recordedBuyPrice == null)
 		{
 			return label + "?";
 		}
-		int breakeven = calculateBreakevenPrice(itemId, recordedBuyPrice);
+		long breakeven = calculateBreakevenPrice(itemId, recordedBuyPrice);
 		return label + colorTag(COLOR_WHITE) + formatExact(breakeven) + " gp</col>";
 	}
 
@@ -157,7 +157,7 @@ public final class GeOfferDescriptionFormatter
 		return label + formatShortLower(totalTax) + " (" + formatShortLower(taxPerItem) + " per item)";
 	}
 
-	static String formatProfitLine(Integer recordedBuyPrice, int listedSellPrice, int taxPerItem, int quantity)
+	static String formatProfitLine(Long recordedBuyPrice, long listedSellPrice, int taxPerItem, int quantity)
 	{
 		String label = colorTag(COLOR_LABEL) + "Your profit: </col>";
 
@@ -167,8 +167,8 @@ public final class GeOfferDescriptionFormatter
 			return label + colorTag(COLOR_WHITE) + "?</col>";
 		}
 
-		int profitPerItem = listedSellPrice - recordedBuyPrice - taxPerItem;
-		long totalProfit = (long) profitPerItem * (long) Math.max(quantity, 1);
+		long profitPerItem = listedSellPrice - recordedBuyPrice - taxPerItem;
+		long totalProfit = profitPerItem * Math.max(quantity, 1);
 		String color = colorForProfit(totalProfit);
 		String sign = totalProfit > 0 ? "+" : "";
 
@@ -184,12 +184,12 @@ public final class GeOfferDescriptionFormatter
 		return sb.toString();
 	}
 
-	static int calculateBreakevenPrice(int itemId, int recordedBuyPrice)
+	static long calculateBreakevenPrice(int itemId, long recordedBuyPrice)
 	{
 		return GeTax.breakevenSellPrice(itemId, recordedBuyPrice);
 	}
 
-	static int calculateTaxPerItem(int itemId, int sellPrice)
+	static int calculateTaxPerItem(int itemId, long sellPrice)
 	{
 		return GeTax.taxFor(itemId, sellPrice);
 	}

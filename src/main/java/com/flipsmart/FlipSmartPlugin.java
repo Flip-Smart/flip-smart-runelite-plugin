@@ -391,7 +391,7 @@ public class FlipSmartPlugin extends Plugin
 	 * Average buy price for the round trip currently open on {@code itemId}, or {@code null} when
 	 * no position is open. Scoped to the cycle, so it never reflects stock already sold.
 	 */
-	public Integer getCycleBasisForItem(int itemId)
+	public Long getCycleBasisForItem(int itemId)
 	{
 		return roundTripLedger == null
 			? null : roundTripLedger.currentBasis(getCurrentRsnSafe().orElse(null), itemId);
@@ -590,7 +590,7 @@ public class FlipSmartPlugin extends Plugin
 	/**
 	 * Store recommended sell price when user views/acts on a flip recommendation
 	 */
-	public void setRecommendedSellPrice(int itemId, int recommendedSellPrice)
+	public void setRecommendedSellPrice(int itemId, long recommendedSellPrice)
 	{
 		session.setRecommendedPrice(itemId, recommendedSellPrice);
 	}
@@ -636,7 +636,7 @@ public class FlipSmartPlugin extends Plugin
 	 * Competitiveness from the three facts a price check actually needs. The GE slot reports all
 	 * of them, so a render pass can decide a border without a tracked record existing.
 	 */
-	public OfferCompetitiveness calculateCompetitiveness(int itemId, int price, boolean isBuy)
+	public OfferCompetitiveness calculateCompetitiveness(int itemId, long price, boolean isBuy)
 	{
 		// A stale pair beats a fresh single price here. instaSell and instaBuy answer
 		// different questions for buys and sells; one blended number answers neither,
@@ -645,7 +645,7 @@ public class FlipSmartPlugin extends Plugin
 
 		if (wikiPrice != null)
 		{
-			int targetPrice = isBuy ? wikiPrice.instaSell : wikiPrice.instaBuy;
+			long targetPrice = isBuy ? wikiPrice.instaSell : wikiPrice.instaBuy;
 			return compareOfferPrice(price, targetPrice, isBuy);
 		}
 
@@ -655,7 +655,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
-		int guidePrice = itemManager.getItemPrice(itemId);
+		long guidePrice = itemManager.getItemPrice(itemId);
 		if (guidePrice <= 0)
 		{
 			return OfferCompetitiveness.UNKNOWN;
@@ -668,7 +668,7 @@ public class FlipSmartPlugin extends Plugin
 	 * Compare offer price against target price to determine competitiveness.
 	 * Buy offers are competitive if price >= target, sell offers if price <= target.
 	 */
-	private OfferCompetitiveness compareOfferPrice(int offerPrice, int targetPrice, boolean isBuy)
+	private OfferCompetitiveness compareOfferPrice(long offerPrice, long targetPrice, boolean isBuy)
 	{
 		boolean isCompetitive = isBuy ? offerPrice >= targetPrice : offerPrice <= targetPrice;
 		return isCompetitive ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
@@ -706,7 +706,7 @@ public class FlipSmartPlugin extends Plugin
 			// Include all buy orders (pending or partially filled)
 			if (offer.isBuy() && offer.getSlot() != null)
 			{
-				Integer recommendedSellPrice = session.getRecommendedPrice(offer.getItemId());
+				Long recommendedSellPrice = session.getRecommendedPrice(offer.getItemId());
 
 				PendingOrder pending = new PendingOrder(
 					offer.getItemId(),
@@ -1553,8 +1553,8 @@ public class FlipSmartPlugin extends Plugin
 		int itemId = offer.getItemId();
 		int quantitySold = offer.getQuantitySold();
 		int totalQuantity = offer.getTotalQuantity();
-		int price = offer.getPrice();
-		int spent = offer.getSpent();
+		long price = offer.getPrice();
+		long spent = offer.getSpent();
 		GrandExchangeOfferState state = offer.getState();
 
 		String itemName = ItemUtils.getItemName(itemManager, itemId);
@@ -2039,11 +2039,11 @@ public class FlipSmartPlugin extends Plugin
 			}
 			Integer dailyVolume = apiClient.getCachedDailyVolume(offer.getItemId());
 			WikiPrice market = apiClient.getWikiPrice(offer.getItemId());
-			Integer avgBuy = avgBuyPriceFor(offer);
+			Long avgBuy = avgBuyPriceFor(offer);
 			// Gate the competitive re-prompts + margin-decay exit behind the experimental toggle:
 			// relaying the margin/courier only when it's on leaves the base advisor advice unchanged.
 			boolean aggressive = config.enableAggressiveAdvisor();
-			Integer originalMargin = ActiveOfferAdvisorService.relayedMargin(aggressive,
+			Long originalMargin = ActiveOfferAdvisorService.relayedMargin(aggressive,
 				autoRecommendService == null ? null : autoRecommendService.getOriginalMargin(offer.getItemId()));
 			ActiveOfferAdvisorService.CourierState courier = ActiveOfferAdvisorService.relayedCourier(
 				aggressive, activeOfferAdvisorService.getCourierState(offer.getItemId()));
@@ -2092,7 +2092,7 @@ public class FlipSmartPlugin extends Plugin
 	 * offer's own average fill (falling back to the listed price), which the
 	 * margin-decay exit (#918 AC2) needs.
 	 */
-	private Integer avgBuyPriceFor(OfferRecord offer)
+	private Long avgBuyPriceFor(OfferRecord offer)
 	{
 		if (!offer.isBuy())
 		{
@@ -2103,7 +2103,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{
-			return (int) Math.round(offer.getSpent() / (double) offer.getFilledQuantity());
+			return Math.round(offer.getSpent() / (double) offer.getFilledQuantity());
 		}
 		return offer.getPrice();
 	}
@@ -2184,7 +2184,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		Integer originalSell = sess.getRecommendedPrice(itemId);
+		Long originalSell = sess.getRecommendedPrice(itemId);
 		if (originalSell == null || originalSell <= 0)
 		{
 			return;
@@ -2224,7 +2224,7 @@ public class FlipSmartPlugin extends Plugin
 				{
 					return;
 				}
-				int fresh = resp.getRecommendedSellPrice();
+				long fresh = resp.getRecommendedSellPrice();
 				if (fresh <= 0 || fresh == originalSell)
 				{
 					return;
@@ -2241,7 +2241,7 @@ public class FlipSmartPlugin extends Plugin
 			});
 	}
 
-	private void applyRecalced12hSellPrice(int itemId, int freshSellPrice)
+	private void applyRecalced12hSellPrice(int itemId, long freshSellPrice)
 	{
 		PlayerSession sess = getSession();
 		if (sess == null)
@@ -2260,7 +2260,7 @@ public class FlipSmartPlugin extends Plugin
 		notifyRecalced12hSellPrice(itemId, freshSellPrice);
 	}
 
-	private void notifyRecalced12hSellPrice(int itemId, int freshSellPrice)
+	private void notifyRecalced12hSellPrice(int itemId, long freshSellPrice)
 	{
 		String itemName = itemManager.getItemComposition(itemId).getName();
 		String message = new ChatMessageBuilder()
@@ -2327,7 +2327,7 @@ public class FlipSmartPlugin extends Plugin
 	 * recent filled buy for {@code itemId}, derived from the offer store. Returns 0
 	 * when unknown, which drives {@code ExitPriceResolver} to the mid-price fallback.
 	 */
-	public int getExitBuyBasis(int itemId)
+	public long getExitBuyBasis(int itemId)
 	{
 		if (offerStore == null)
 		{
@@ -2343,7 +2343,7 @@ public class FlipSmartPlugin extends Plugin
 				best = r;
 			}
 		}
-		return best == null ? 0 : (int) (best.getSpent() / best.getFilledQuantity());
+		return best == null ? 0 : best.getSpent() / best.getFilledQuantity();
 	}
 
 	public int getExitInventoryQty(int itemId)
@@ -2365,9 +2365,9 @@ public class FlipSmartPlugin extends Plugin
 	 * Backend-computed exit sell price for {@code itemId} (the advisor's exit-at-breakeven,
 	 * stored in the session), used as the source of truth for breakeven mode. 0 when unknown.
 	 */
-	public int getExitBackendSellPrice(int itemId)
+	public long getExitBackendSellPrice(int itemId)
 	{
-		Integer price = session != null ? session.getRecommendedPrice(itemId) : null;
+		Long price = session != null ? session.getRecommendedPrice(itemId) : null;
 		return price == null ? 0 : price;
 	}
 

@@ -25,7 +25,7 @@ public class OfferActionsBatchTest
 		OfferAdviceRequest b = OfferAdviceRequest.builder()
 			.itemId(2).pool("mid_vol").side("sell").stage("initial")
 			.listedAtMillis(1781035200000L).listedPrice(50).listedQuantity(3).filledQuantity(1)
-			.userAvgBuyPrice(40).build();
+			.userAvgBuyPrice(40L).build();
 
 		JsonObject body = FlipSmartApiClient.buildOfferActionsBody(Arrays.asList(a, b));
 
@@ -48,7 +48,7 @@ public class OfferActionsBatchTest
 		OfferAdviceResult first = resp.getResults().get(0);
 		assertEquals(111, first.getItemId());
 		assertEquals(OfferAction.MOVE_PRICE_DOWN, first.getActionEnum());
-		assertEquals(Integer.valueOf(1050), first.getNewPrice());
+		assertEquals(Long.valueOf(1050), first.getNewPrice());
 
 		OfferAdviceResult second = resp.getResults().get(1);
 		assertEquals(222, second.getItemId());

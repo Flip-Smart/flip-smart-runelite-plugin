@@ -60,8 +60,8 @@ public class PlayerSession
 	// GE State
 	// =====================
 
-	private final Map<Integer, Integer> recommendedPrices = new ConcurrentHashMap<>();
-	private final Map<Integer, Integer> originalMargins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> recommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> originalMargins = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
 	// =====================
@@ -234,12 +234,12 @@ public class PlayerSession
 	// Recommended Prices Methods
 	// =====================
 
-	public Integer getRecommendedPrice(int itemId)
+	public Long getRecommendedPrice(int itemId)
 	{
 		return recommendedPrices.get(itemId);
 	}
 
-	public void setRecommendedPrice(int itemId, int price)
+	public void setRecommendedPrice(int itemId, long price)
 	{
 		recommendedPrices.put(itemId, price);
 		log.debug("Stored recommended sell price for item {}: {}", itemId, price);
@@ -256,12 +256,12 @@ public class PlayerSession
 	 * reduction budget against — a property of the active offer, not of the transient
 	 * recommendation queue, so it persists until the item is flipped again.
 	 */
-	public Integer getOriginalMargin(int itemId)
+	public Long getOriginalMargin(int itemId)
 	{
 		return originalMargins.get(itemId);
 	}
 
-	public void setOriginalMargin(int itemId, int margin)
+	public void setOriginalMargin(int itemId, long margin)
 	{
 		originalMargins.put(itemId, margin);
 	}

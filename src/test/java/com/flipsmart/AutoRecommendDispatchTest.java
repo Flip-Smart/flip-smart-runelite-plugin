@@ -482,7 +482,7 @@ public class AutoRecommendDispatchTest {
             .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
         offerStore.importRecords(Arrays.asList(activeSell));
 
-        service.surfaceAdvisorResell(activeSell, 250, 1000);
+        service.surfaceAdvisorResell(activeSell, 250, 1000L);
 
         AtomicReference<FocusedFlip> painted = new AtomicReference<>();
         service.setOnFocusChanged(painted::set);
@@ -507,7 +507,7 @@ public class AutoRecommendDispatchTest {
             .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
         offerStore.importRecords(Arrays.asList(partialBuy));
 
-        service.surfaceAdvisorExitResell(partialBuy, 250, -1000);
+        service.surfaceAdvisorExitResell(partialBuy, 250, -1000L);
         SwingUtilities.invokeAndWait(() -> {});
 
         String overlay = service.getLastOverlayMessage();
@@ -526,7 +526,7 @@ public class AutoRecommendDispatchTest {
             .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
         offerStore.importRecords(Arrays.asList(heldSell));
 
-        service.surfaceAdvisorExitResell(heldSell, 250, -1000);
+        service.surfaceAdvisorExitResell(heldSell, 250, -1000L);
 
         AtomicReference<FocusedFlip> painted = new AtomicReference<>();
         service.setOnFocusChanged(painted::set);
@@ -550,7 +550,7 @@ public class AutoRecommendDispatchTest {
             .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
         offerStore.importRecords(Arrays.asList(activeSell));
 
-        service.surfaceAdvisorResell(activeSell, 250, 1000);
+        service.surfaceAdvisorResell(activeSell, 250, 1000L);
         SwingUtilities.invokeAndWait(() -> {});
 
         String overlay = service.getLastOverlayMessage();
@@ -569,7 +569,7 @@ public class AutoRecommendDispatchTest {
             .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
         offerStore.importRecords(Arrays.asList(partialBuy));
 
-        service.surfaceAdvisorExitResell(partialBuy, 250, -1000);
+        service.surfaceAdvisorExitResell(partialBuy, 250, -1000L);
         SwingUtilities.invokeAndWait(() -> {});
 
         String overlay = service.getLastOverlayMessage();
@@ -611,7 +611,7 @@ public class AutoRecommendDispatchTest {
         service.refreshQueue(Arrays.asList(rec(88), rec(99)));
 
         assertEquals("original margin must persist from the active offer, not the live queue",
-            Integer.valueOf(5000), service.getOriginalMargin(77));
+            Long.valueOf(5000), service.getOriginalMargin(77));
     }
 
     @Test

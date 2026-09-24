@@ -17,13 +17,13 @@ public class ActiveOfferDispositionCacheTest
 		OfferAdviceResponse resp = new OfferAdviceResponse();
 		resp.setAction(MOVE_PRICE_DOWN);
 		resp.setReason("Move down to 1050");
-		resp.setNewPrice(1050);
+		resp.setNewPrice(1050L);
 
 		svc.applyResponse(12345, resp);
 
 		OfferAdviceResponse cached = svc.getDisposition(12345);
 		assertEquals(MOVE_PRICE_DOWN, cached.getAction());
-		assertEquals(Integer.valueOf(1050), cached.getNewPrice());
+		assertEquals(Long.valueOf(1050), cached.getNewPrice());
 	}
 
 	@Test
@@ -72,14 +72,14 @@ public class ActiveOfferDispositionCacheTest
 		ActiveOfferAdvisorService svc = new ActiveOfferAdvisorService();
 		OfferAdviceResponse resp = new OfferAdviceResponse();
 		resp.setAction("wait");
-		resp.setPositionMargin(3100);
+		resp.setPositionMargin(3100L);
 		resp.setConsecutiveMarginDecreases(2);
 		resp.setCumulativeMarginReductionPct(0.15);
 
 		svc.applyResponse(42, resp);
 
 		ActiveOfferAdvisorService.CourierState c = svc.getCourierState(42);
-		assertEquals(Integer.valueOf(3100), c.getPreviousPositionMargin());
+		assertEquals(Long.valueOf(3100), c.getPreviousPositionMargin());
 		assertEquals(2, c.getConsecutiveMarginDecreases());
 		assertEquals(0.15, c.getCumulativeMarginReductionPct(), 1e-9);
 

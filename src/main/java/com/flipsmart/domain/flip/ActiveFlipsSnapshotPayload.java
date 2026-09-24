@@ -33,7 +33,7 @@ public final class ActiveFlipsSnapshotPayload
         f.setTotalQuantity(order.quantity);
         f.setOriginalQuantity(order.quantity);
         f.setAverageBuyPrice(order.pricePerItem);
-        f.setTotalInvested((long) order.pricePerItem * order.quantityFilled);
+        f.setTotalInvested(order.pricePerItem * order.quantityFilled);
         f.setRecommendedSellPrice(order.recommendedSellPrice);
         f.setPhase("buy");
         return f;

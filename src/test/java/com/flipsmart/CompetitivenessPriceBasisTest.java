@@ -42,7 +42,7 @@ public class CompetitivenessPriceBasisTest
         itemManager = mock(ItemManager.class);
         Client client = mock(Client.class);
         when(client.isClientThread()).thenReturn(true);
-        when(itemManager.getItemPrice(WHIP)).thenReturn(GUIDE_PRICE);
+        when(itemManager.getItemPrice(WHIP)).thenAnswer(GpAnswer.gp(GUIDE_PRICE));
 
         inject("apiClient", apiClient);
         inject("itemManager", itemManager);

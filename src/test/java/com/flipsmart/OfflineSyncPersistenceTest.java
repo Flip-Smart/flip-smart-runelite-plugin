@@ -1156,9 +1156,9 @@ public class OfflineSyncPersistenceTest
 		when(o.getItemId()).thenReturn(itemId);
 		when(o.getState()).thenReturn(state);
 		when(o.getTotalQuantity()).thenReturn(total);
-		when(o.getPrice()).thenReturn(price);
+		when(o.getPrice()).thenAnswer(GpAnswer.gp(price));
 		when(o.getQuantitySold()).thenReturn(0);
-		when(o.getSpent()).thenReturn(0);
+		when(o.getSpent()).thenAnswer(GpAnswer.gp(0));
 		return o;
 	}
 

@@ -24,11 +24,11 @@ public final class AdjustmentService
 	{
 		public final int itemId;
 		public final String itemName;
-		public final int averageBuyPrice;
+		public final long averageBuyPrice;
 		public long deadline;
 		public int adjustmentCount;
 
-		public SellAdjustmentState(int itemId, String itemName, int averageBuyPrice, long deadline)
+		public SellAdjustmentState(int itemId, String itemName, long averageBuyPrice, long deadline)
 		{
 			this.itemId = itemId;
 			this.itemName = itemName;
@@ -45,7 +45,7 @@ public final class AdjustmentService
 	private final Map<Integer, SellAdjustmentState> sellAdjustmentStates = new ConcurrentHashMap<>();
 
 	// Buy prices stored when buy orders are placed — used as cost basis for sell adjustments
-	private final Map<Integer, Integer> buyPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> buyPrices = new ConcurrentHashMap<>();
 
 	// =====================
 	// Buy deadlines
@@ -121,17 +121,17 @@ public final class AdjustmentService
 	// Buy prices (cost basis)
 	// =====================
 
-	public void putBuyPrice(int itemId, int price)
+	public void putBuyPrice(int itemId, long price)
 	{
 		buyPrices.put(itemId, price);
 	}
 
-	public Integer getBuyPrice(int itemId)
+	public Long getBuyPrice(int itemId)
 	{
 		return buyPrices.get(itemId);
 	}
 
-	public Integer getBuyPriceOrDefault(int itemId, int fallback)
+	public Long getBuyPriceOrDefault(int itemId, long fallback)
 	{
 		return buyPrices.getOrDefault(itemId, fallback);
 	}
@@ -146,12 +146,12 @@ public final class AdjustmentService
 		return buyPrices.isEmpty();
 	}
 
-	public Map<Integer, Integer> buyPricesSnapshot()
+	public Map<Integer, Long> buyPricesSnapshot()
 	{
 		return new HashMap<>(buyPrices);
 	}
 
-	public void putAllBuyPrices(Map<Integer, Integer> prices)
+	public void putAllBuyPrices(Map<Integer, Long> prices)
 	{
 		buyPrices.putAll(prices);
 	}

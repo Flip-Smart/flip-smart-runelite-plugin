@@ -25,7 +25,7 @@ public final class BuyPriceLookup
 	 * @return The recorded average buy price, or {@code null} if no active flip
 	 *         exists for the item (or all matching flips have a non-positive price).
 	 */
-	public static Integer findAverageBuyPrice(List<ActiveFlip> activeFlips, int itemId)
+	public static Long findAverageBuyPrice(List<ActiveFlip> activeFlips, int itemId)
 	{
 		if (activeFlips == null)
 		{
@@ -42,8 +42,8 @@ public final class BuyPriceLookup
 	}
 
 	/** Convenience overload with no held-quantity hint; the records fallback averages every buy. */
-	public static Integer findAverageBuyPriceWithFallback(
-		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId)
+	public static Long findAverageBuyPriceWithFallback(
+		List<ActiveFlip> activeFlips, Long cycleBasis, List<OfferRecord> offerRecords, int itemId)
 	{
 		return findAverageBuyPriceWithFallback(activeFlips, cycleBasis, offerRecords, itemId, 0);
 	}
@@ -57,11 +57,11 @@ public final class BuyPriceLookup
 	 *
 	 * @return the average buy price, or {@code null} if no source knows the item.
 	 */
-	public static Integer findAverageBuyPriceWithFallback(
-		List<ActiveFlip> activeFlips, Integer cycleBasis, List<OfferRecord> offerRecords, int itemId,
+	public static Long findAverageBuyPriceWithFallback(
+		List<ActiveFlip> activeFlips, Long cycleBasis, List<OfferRecord> offerRecords, int itemId,
 		int heldQuantity)
 	{
-		Integer fromFlips = findAverageBuyPrice(activeFlips, itemId);
+		Long fromFlips = findAverageBuyPrice(activeFlips, itemId);
 		if (fromFlips != null)
 		{
 			return fromFlips;
@@ -80,7 +80,7 @@ public final class BuyPriceLookup
 	 * still held rather than positions already sold; a non-positive value counts every recorded buy.
 	 * {@code null} when none carry a fill. Sells and other items are ignored.
 	 */
-	static Integer averageBuyPriceFromOffers(List<OfferRecord> offerRecords, int itemId, int heldQuantity)
+	static Long averageBuyPriceFromOffers(List<OfferRecord> offerRecords, int itemId, int heldQuantity)
 	{
 		List<OfferRecord> buys = filledBuys(offerRecords, itemId);
 		buys.sort(Comparator.comparingLong(OfferRecord::getOfferId).reversed());
@@ -98,7 +98,7 @@ public final class BuyPriceLookup
 			filled += take;
 			remaining -= take;
 		}
-		return filled > 0 ? (int) Math.round(spent / filled) : null;
+		return filled > 0 ? Math.round(spent / filled) : null;
 	}
 
 	private static List<OfferRecord> filledBuys(List<OfferRecord> offerRecords, int itemId)

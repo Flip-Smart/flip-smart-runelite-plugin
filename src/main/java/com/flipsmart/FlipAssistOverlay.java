@@ -248,7 +248,7 @@ public class FlipAssistOverlay extends Overlay
 	 * integer count with no rounding, so the ±1 price tolerance would wrongly accept the
 	 * default qty 1 when the target is 2. Price keeps the ±1 tolerance. Package-private for tests.
 	 */
-	static FlipAssistStep offerSetupStep(int currentQty, int targetQty, int currentPrice, int targetPrice,
+	static FlipAssistStep offerSetupStep(long currentQty, int targetQty, long currentPrice, long targetPrice,
 		boolean buying)
 	{
 		boolean qtyCorrect = targetQty > 0 && currentQty == targetQty;
@@ -270,7 +270,7 @@ public class FlipAssistOverlay extends Overlay
 	 * Tolerance is needed because GE can have slight rounding differences
 	 * when displaying prices/quantities (e.g., 1gp variance in price).
 	 */
-	private static boolean isValueWithinTolerance(int current, int target)
+	private static boolean isValueWithinTolerance(long current, long target)
 	{
 		return current > 0 && target > 0 && Math.abs(current - target) <= 1;
 	}
@@ -842,7 +842,7 @@ public class FlipAssistOverlay extends Overlay
 
 		if (flip.isBuying() && flip.getSellPrice() > 0)
 		{
-			int totalProfit = calculateTotalProfit();
+			long totalProfit = calculateTotalProfit();
 			drawLabelValue(graphics, "Profit:", PRICE_FORMAT.get().format(totalProfit) + " gp",
 				y + lineHeight * 3, totalProfit > 0 ? COLOR_PROFIT : new Color(255, 100, 100));
 		}
@@ -856,14 +856,14 @@ public class FlipAssistOverlay extends Overlay
 		graphics.drawString(value, SECTION_PADDING + 42, y);
 	}
 	
-	private int calculateTotalProfit()
+	private long calculateTotalProfit()
 	{
 		final FocusedFlip flip = focusedFlip;
 		if (flip == null)
 		{
 			return 0;
 		}
-		int margin = flip.getSellPrice() - flip.getBuyPrice();
+		long margin = flip.getSellPrice() - flip.getBuyPrice();
 		int geTax = GeTax.taxFor(flip.getItemId(), flip.getSellPrice());
 		return (margin - geTax) * flip.getBuyQuantity();
 	}
@@ -886,7 +886,7 @@ public class FlipAssistOverlay extends Overlay
 					PRICE_FORMAT.get().format(targetQty));
 			case SET_PRICE:
 			case SET_SELL_PRICE:
-				int targetPrice = flip.getCurrentStepPrice();
+				long targetPrice = flip.getCurrentStepPrice();
 				// Just show the target price with hotkey
 				return String.format(currentStep.getDescription(), hotkeyName,
 					PRICE_FORMAT.get().format(targetPrice));
@@ -1130,17 +1130,17 @@ public class FlipAssistOverlay extends Overlay
 		return null;
 	}
 	
-	private int getCurrentQuantityFromGE()
+	private long getCurrentQuantityFromGE()
 	{
 		Widget[] children = getOfferPanelChildren();
 		return findNumericValueInRange(children, GE_QTY_CHILD_START, GE_QTY_CHILD_END, false);
 	}
 	
-	private int findNumericValueInRange(Widget[] children, int start, int end, boolean requireCoins)
+	private long findNumericValueInRange(Widget[] children, int start, int end, boolean requireCoins)
 	{
 		for (int i = start; i <= end && i < children.length; i++)
 		{
-			int value = extractValueFromWidget(children[i], requireCoins);
+			long value = extractValueFromWidget(children[i], requireCoins);
 			if (value >= 1)
 			{
 				return value;
@@ -1149,7 +1149,7 @@ public class FlipAssistOverlay extends Overlay
 		return 0;
 	}
 	
-	private int extractValueFromWidget(Widget widget, boolean requireCoins)
+	private long extractValueFromWidget(Widget widget, boolean requireCoins)
 	{
 		String text = getVisibleWidgetText(widget);
 		if (text == null || text.isEmpty())
@@ -1168,19 +1168,19 @@ public class FlipAssistOverlay extends Overlay
 		return GpUtils.parseDigits(text);
 	}
 	
-	private int getCurrentPriceFromGE()
+	private long getCurrentPriceFromGE()
 	{
 		Widget[] children = getOfferPanelChildren();
-		int value = findNumericValueInRange(children, GE_PRICE_CHILD_START, GE_PRICE_CHILD_END, true);
+		long value = findNumericValueInRange(children, GE_PRICE_CHILD_START, GE_PRICE_CHILD_END, true);
 		return value > 0 ? value : getCurrentPriceFromGEFallback();
 	}
 	
-	private int getCurrentPriceFromGEFallback()
+	private long getCurrentPriceFromGEFallback()
 	{
 		int[] priceWidgetIds = {25, 27};
 		for (int childId : priceWidgetIds)
 		{
-			int value = findPriceInWidget(client.getWidget(GE_INTERFACE_GROUP, childId));
+			long value = findPriceInWidget(client.getWidget(GE_INTERFACE_GROUP, childId));
 			if (value > 0)
 			{
 				return value;
@@ -1189,14 +1189,14 @@ public class FlipAssistOverlay extends Overlay
 		return 0;
 	}
 	
-	private int findPriceInWidget(Widget widget)
+	private long findPriceInWidget(Widget widget)
 	{
 		if (widget == null || widget.isHidden())
 		{
 			return 0;
 		}
 		
-		int value = extractCoinsValue(widget.getText());
+		long value = extractCoinsValue(widget.getText());
 		if (value > 0)
 		{
 			return value;
@@ -1218,7 +1218,7 @@ public class FlipAssistOverlay extends Overlay
 		return 0;
 	}
 	
-	private int extractCoinsValue(String text)
+	private long extractCoinsValue(String text)
 	{
 		if (text != null && text.toLowerCase().contains(COINS_TEXT))
 		{

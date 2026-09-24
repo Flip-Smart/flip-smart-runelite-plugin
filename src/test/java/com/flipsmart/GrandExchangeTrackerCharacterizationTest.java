@@ -734,7 +734,7 @@ public class GrandExchangeTrackerCharacterizationTest
 
 		TransactionRequest req = captor.getValue();
 		assertEquals("immediate-fill buy records the recommended sell price from auto-recommend",
-			(Integer) recommendedSell, req.recommendedSellPrice);
+			Long.valueOf(recommendedSell), req.recommendedSellPrice);
 		assertTrue("recorded transaction is a buy", req.isBuy);
 		assertEquals("item id matches", ITEM_A, req.itemId);
 	}

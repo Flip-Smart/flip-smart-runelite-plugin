@@ -35,7 +35,7 @@ public class RoundTripLedgerTest
         ledger.recordBuyBasis(RSN, ITEM, 10, 100);
         ledger.recordBuyBasis(RSN, ITEM, 10, 140);
 
-        assertEquals(Integer.valueOf(120), ledger.currentBasis(RSN, ITEM));
+        assertEquals(Long.valueOf(120), ledger.currentBasis(RSN, ITEM));
     }
 
     @Test
@@ -51,7 +51,7 @@ public class RoundTripLedgerTest
 
         assertEquals("held quantity survives", 10, restored.heldQuantity(RSN, ITEM));
         assertEquals("so must the basis it depends on",
-            Integer.valueOf(1736), restored.currentBasis(RSN, ITEM));
+            Long.valueOf(1736), restored.currentBasis(RSN, ITEM));
     }
 
     @Test
@@ -71,7 +71,7 @@ public class RoundTripLedgerTest
 
         ledger.recordBuyBasis(RSN, ITEM, 5, 200);
         assertEquals("the next cycle starts clean",
-            Integer.valueOf(200), ledger.currentBasis(RSN, ITEM));
+            Long.valueOf(200), ledger.currentBasis(RSN, ITEM));
     }
 
     @Test
@@ -82,7 +82,7 @@ public class RoundTripLedgerTest
         ledger.recordFill(RSN, ITEM, false, 3);    // holdings still 7, cycle stays open
 
         assertEquals("a partial sell does not disturb the buy-side basis",
-            Integer.valueOf(100), ledger.currentBasis(RSN, ITEM));
+            Long.valueOf(100), ledger.currentBasis(RSN, ITEM));
     }
 
     @Test
@@ -364,7 +364,7 @@ public class RoundTripLedgerTest
         ledger.seedColdStart(RSN, Collections.singletonList(liveBuy));
 
         assertEquals("seeded basis is the per-item average of the seed buys",
-            Integer.valueOf(1_000), ledger.currentBasis(RSN, ITEM));
+            Long.valueOf(1_000), ledger.currentBasis(RSN, ITEM));
     }
 
     @Test

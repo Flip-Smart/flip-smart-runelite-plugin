@@ -8,7 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.ToIntFunction;
+import java.util.function.ToLongFunction;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -198,7 +198,7 @@ public final class RecommendationQueue
 	 */
 	public void skipToNextSurfaceable(
 		Set<Integer> activeItemIds,
-		ToIntFunction<FlipRecommendation> profitFn,
+		ToLongFunction<FlipRecommendation> profitFn,
 		int minProfit)
 	{
 		skipToNextSurfaceable(activeItemIds, profitFn, minProfit, id -> false);
@@ -210,7 +210,7 @@ public final class RecommendationQueue
 	 */
 	public void skipToNextSurfaceable(
 		Set<Integer> activeItemIds,
-		ToIntFunction<FlipRecommendation> profitFn,
+		ToLongFunction<FlipRecommendation> profitFn,
 		int minProfit,
 		java.util.function.IntPredicate isCoolingDown)
 	{
@@ -220,7 +220,7 @@ public final class RecommendationQueue
 			FlipRecommendation next = recommendations.get(currentIndex);
 			if (!activeItemIds.contains(next.getItemId())
 				&& !isCoolingDown.test(next.getItemId())
-				&& profitFn.applyAsInt(next) >= minProfit)
+				&& profitFn.applyAsLong(next) >= minProfit)
 			{
 				break;
 			}

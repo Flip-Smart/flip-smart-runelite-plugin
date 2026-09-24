@@ -30,17 +30,17 @@ public class FlipAnalysis
 	@Data
 	public static class CurrentPrices
 	{
-		private Integer high;
-		private Integer low;
+		private Long high;
+		private Long low;
 
 		@SerializedName("gross_margin")
-		private Integer grossMargin;
+		private Long grossMargin;
 
 		@SerializedName("ge_tax")
-		private Integer geTax;
+		private Long geTax;
 
 		@SerializedName("net_margin")
-		private Integer netMargin;
+		private Long netMargin;
 
 		@SerializedName("roi_percent")
 		private Double roiPercent;
@@ -86,7 +86,7 @@ public class FlipAnalysis
 		private Integer dataPoints;
 
 		@SerializedName("avg_price")
-		private Integer avgPrice;
+		private Long avgPrice;
 
 		private Integer volatility;
 	}

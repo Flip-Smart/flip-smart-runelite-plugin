@@ -20,28 +20,28 @@ public class FlipRecommendation
 
 	// Instant prices (reference only)
 	@SerializedName("instant_buy_price")
-	private int instantBuyPrice;
+	private long instantBuyPrice;
 
 	@SerializedName("instant_sell_price")
-	private int instantSellPrice;
+	private long instantSellPrice;
 
 	// Recommended prices (for GE offers)
 	@SerializedName("recommended_buy_price")
-	private int recommendedBuyPrice;
+	private long recommendedBuyPrice;
 
 	@SerializedName("recommended_sell_price")
-	private int recommendedSellPrice;
+	private long recommendedSellPrice;
 
 	@SerializedName("recommended_quantity")
 	private int recommendedQuantity;
 
-	private int margin;
+	private long margin;
 
 	@SerializedName("roi_percent")
 	private double roiPercent;
 
 	@SerializedName("ge_tax")
-	private int geTax;
+	private long geTax;
 
 	@SerializedName("volume_per_hour")
 	private double volumePerHour;
@@ -53,7 +53,7 @@ public class FlipRecommendation
 	private int buyLimitCycles;
 
 	@SerializedName("breakeven_sell_price")
-	private int breakevenSellPrice;
+	private long breakevenSellPrice;
 
 	@SerializedName("breakeven_is_estimate")
 	private boolean breakevenIsEstimate;
@@ -74,20 +74,20 @@ public class FlipRecommendation
 	private Integer quantityAffordable;
 
 	@SerializedName("potential_profit")
-	private int potentialProfit;
+	private long potentialProfit;
 
 	@SerializedName("total_cost")
-	private int totalCost;
+	private long totalCost;
 
 	// Deprecated fields (kept for backwards compatibility)
 	@SerializedName("buy_price")
-	private Integer buyPrice;
+	private Long buyPrice;
 
 	@SerializedName("sell_price")
-	private Integer sellPrice;
+	private Long sellPrice;
 
 	@SerializedName("cost_per_flip")
-	private Integer costPerFlip;
+	private Long costPerFlip;
 
 }
 

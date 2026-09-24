@@ -14,7 +14,7 @@ public final class OfferRecord
     private String itemName;
     private boolean buy;
     private int totalQuantity;
-    private int price;
+    private long price;
     private int filledQuantity;    // cumulative
     private long spent;            // cumulative GP
     private OfferState state;
@@ -29,7 +29,7 @@ public final class OfferRecord
     // 2 % keeps noise from price rounding from triggering false negatives
     private static final double BREAKEVEN_RELIST_TOLERANCE = 0.02;
 
-    public static boolean shouldAdvanceToBreakevenRelist(boolean breakevenExitAccepted, int observedRelistPrice, int advisedPrice)
+    public static boolean shouldAdvanceToBreakevenRelist(boolean breakevenExitAccepted, long observedRelistPrice, long advisedPrice)
     {
         if (!breakevenExitAccepted || advisedPrice <= 0 || observedRelistPrice <= 0)
         {
@@ -40,7 +40,7 @@ public final class OfferRecord
     }
 
     private OfferRecord(long offerId, Integer slot, int itemId, String itemName, boolean buy,
-                        int totalQuantity, int price, int filledQuantity, long spent,
+                        int totalQuantity, long price, int filledQuantity, long spent,
                         OfferState state, long createdAtMillis, long completedAtMillis,
                         long lastActivityAtMillis, String offerStage)
     {
@@ -62,7 +62,7 @@ public final class OfferRecord
 
     /** A freshly-placed offer (state NEW, zero filled). */
     public static OfferRecord newOffer(long offerId, int slot, int itemId, String itemName,
-                                       boolean buy, int totalQuantity, int price, long now)
+                                       boolean buy, int totalQuantity, long price, long now)
     {
         return new OfferRecord(offerId, slot, itemId, itemName, buy, totalQuantity, price,
             0, 0L, OfferState.NEW, now, 0L, now, STAGE_INITIAL);

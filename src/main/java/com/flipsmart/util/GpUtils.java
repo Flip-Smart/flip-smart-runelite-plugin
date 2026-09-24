@@ -22,7 +22,7 @@ public final class GpUtils
 	 * trailing words like "coins". Returns 0 for null, empty, digit-free or
 	 * over-long input rather than throwing -- callers treat 0 as "unknown".
 	 */
-	public static int parseDigits(String text)
+	public static long parseDigits(String text)
 	{
 		if (text == null || text.isEmpty())
 		{
@@ -31,7 +31,7 @@ public final class GpUtils
 		try
 		{
 			String numericOnly = text.replaceAll("\\D", "");
-			return numericOnly.isEmpty() ? 0 : Integer.parseInt(numericOnly);
+			return numericOnly.isEmpty() ? 0 : Long.parseLong(numericOnly);
 		}
 		catch (NumberFormatException e)
 		{

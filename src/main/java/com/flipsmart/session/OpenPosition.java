@@ -9,10 +9,10 @@ public final class OpenPosition
 {
 	public final int itemId;
 	public final int unsoldQuantity;
-	public final int averageBuyPrice;
-	public final Integer recommendedSellPrice;
+	public final long averageBuyPrice;
+	public final Long recommendedSellPrice;
 
-	public OpenPosition(int itemId, int unsoldQuantity, int averageBuyPrice, Integer recommendedSellPrice)
+	public OpenPosition(int itemId, int unsoldQuantity, long averageBuyPrice, Long recommendedSellPrice)
 	{
 		this.itemId = itemId;
 		this.unsoldQuantity = unsoldQuantity;

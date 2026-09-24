@@ -10,7 +10,7 @@ public final class ExitPriceResolver
 	{
 	}
 
-	public static int resolve(ExitTradesMode mode, int itemId, int buyBasis, int backendBreakeven, WikiPrice price)
+	public static long resolve(ExitTradesMode mode, int itemId, long buyBasis, long backendBreakeven, WikiPrice price)
 	{
 		if (mode == ExitTradesMode.BREAKEVEN)
 		{

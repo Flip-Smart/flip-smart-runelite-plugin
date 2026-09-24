@@ -25,17 +25,17 @@ public class FocusedFlip
 	private final FlipStep step;
 	
 	// Buy step fields
-	private final int buyPrice;
+	private final long buyPrice;
 	private final int buyQuantity;
 	
 	// Sell step fields
-	private final int sellPrice;
+	private final long sellPrice;
 	private final int sellQuantity;
 	
 	/**
 	 * Create a FocusedFlip for the BUY step (from a recommendation)
 	 */
-	public static FocusedFlip forBuy(int itemId, String itemName, int buyPrice, int buyQuantity, int sellPrice)
+	public static FocusedFlip forBuy(int itemId, String itemName, long buyPrice, int buyQuantity, long sellPrice)
 	{
 		return forBuy(itemId, itemName, buyPrice, buyQuantity, sellPrice, 0);
 	}
@@ -44,12 +44,12 @@ public class FocusedFlip
 	 * Create a FocusedFlip for the BUY step with price offset applied
 	 * @param priceOffset Positive offset = buy higher to fill faster
 	 */
-	public static FocusedFlip forBuy(int itemId, String itemName, int buyPrice, int buyQuantity, int sellPrice, int priceOffset)
+	public static FocusedFlip forBuy(int itemId, String itemName, long buyPrice, int buyQuantity, long sellPrice, int priceOffset)
 	{
 		// Apply offset: add to buy price (pay more to fill faster)
-		int adjustedBuyPrice = Math.max(1, buyPrice + priceOffset);
+		long adjustedBuyPrice = Math.max(1, buyPrice + priceOffset);
 		// Also adjust sell price by subtracting offset (sell lower to fill faster)
-		int adjustedSellPrice = Math.max(1, sellPrice - priceOffset);
+		long adjustedSellPrice = Math.max(1, sellPrice - priceOffset);
 		
 		return new FocusedFlip(
 			itemId,
@@ -65,7 +65,7 @@ public class FocusedFlip
 	/**
 	 * Create a FocusedFlip for the SELL step (from an active flip)
 	 */
-	public static FocusedFlip forSell(int itemId, String itemName, int sellPrice, int sellQuantity)
+	public static FocusedFlip forSell(int itemId, String itemName, long sellPrice, int sellQuantity)
 	{
 		return forSell(itemId, itemName, sellPrice, sellQuantity, 0);
 	}
@@ -74,10 +74,10 @@ public class FocusedFlip
 	 * Create a FocusedFlip for the SELL step with price offset applied
 	 * @param priceOffset Positive offset = sell lower to fill faster
 	 */
-	public static FocusedFlip forSell(int itemId, String itemName, int sellPrice, int sellQuantity, int priceOffset)
+	public static FocusedFlip forSell(int itemId, String itemName, long sellPrice, int sellQuantity, int priceOffset)
 	{
 		// Apply offset: subtract from sell price (sell lower to fill faster)
-		int adjustedSellPrice = Math.max(1, sellPrice - priceOffset);
+		long adjustedSellPrice = Math.max(1, sellPrice - priceOffset);
 		
 		return new FocusedFlip(
 			itemId,
@@ -93,7 +93,7 @@ public class FocusedFlip
 	/**
 	 * Get the price relevant to the current step
 	 */
-	public int getCurrentStepPrice()
+	public long getCurrentStepPrice()
 	{
 		return step == FlipStep.BUY ? buyPrice : sellPrice;
 	}
@@ -126,11 +126,11 @@ public class FocusedFlip
 	 * Calculate the expected profit for a recommendation after applying the price offset.
 	 * This matches the profit shown in the Flip Assist overlay.
 	 */
-	public static int calculateAdjustedProfit(FlipRecommendation rec, int priceOffset)
+	public static long calculateAdjustedProfit(FlipRecommendation rec, int priceOffset)
 	{
-		int adjBuy = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
-		int adjSell = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
-		int margin = adjSell - adjBuy;
+		long adjBuy = Math.max(1, rec.getRecommendedBuyPrice() + priceOffset);
+		long adjSell = Math.max(1, rec.getRecommendedSellPrice() - priceOffset);
+		long margin = adjSell - adjBuy;
 		int geTax = GeTax.taxFor(rec.getItemId(), adjSell);
 		return (margin - geTax) * rec.getRecommendedQuantity();
 	}

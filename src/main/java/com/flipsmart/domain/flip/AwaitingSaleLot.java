@@ -6,12 +6,12 @@ public final class AwaitingSaleLot
     public final int itemId;
     public final String itemName;
     public final int quantity;
-    public final int avgBuyPrice;
+    public final long avgBuyPrice;
     public final long totalInvested;
     /** ISO-8601 time of the buy this lot came from; null when unknown (time-scopes realized P&L). */
     public final String firstBuyTime;
 
-    public AwaitingSaleLot(int itemId, String itemName, int quantity, int avgBuyPrice, long totalInvested,
+    public AwaitingSaleLot(int itemId, String itemName, int quantity, long avgBuyPrice, long totalInvested,
         String firstBuyTime)
     {
         this.itemId = itemId;

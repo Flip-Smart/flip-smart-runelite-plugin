@@ -70,9 +70,9 @@ public final class Dtos
 	{
 		public final int itemId;
 		public final int quantity;
-		public final int valuePerItem;
+		public final long valuePerItem;
 
-		public BankItem(int itemId, int quantity, int valuePerItem)
+		public BankItem(int itemId, int quantity, long valuePerItem)
 		{
 			this.itemId = itemId;
 			this.quantity = quantity;
@@ -324,17 +324,17 @@ public final class Dtos
 		private String iconUrl;
 
 		@SerializedName("buy_price")
-		private Integer buyPrice;
+		private Long buyPrice;
 
 		@SerializedName("sell_price")
-		private Integer sellPrice;
+		private Long sellPrice;
 
 		@SerializedName("buy_limit")
 		private Integer buyLimit;
 
-		private int margin;
+		private long margin;
 
-		private int profit;
+		private long profit;
 
 		private int volume;
 
@@ -361,8 +361,8 @@ public final class Dtos
 	{
 		public final int itemId;
 		public final boolean isBuyOffer;
-		public final int offerPrice;
-		public final int averageBuyPrice;
+		public final long offerPrice;
+		public final long averageBuyPrice;
 		public final int minutesSinceOffer;
 		public final int adjustmentCount;
 		public final int quantityFilled;
@@ -382,16 +382,16 @@ public final class Dtos
 		private String action;
 
 		@SerializedName("recommended_price")
-		private Integer recommendedPrice;
+		private Long recommendedPrice;
 
 		@SerializedName("current_margin")
-		private Integer currentMargin;
+		private Long currentMargin;
 
 		@SerializedName("is_profitable")
 		private boolean isProfitable;
 
 		@SerializedName("breakeven_price")
-		private int breakevenPrice;
+		private long breakevenPrice;
 
 		@SerializedName("minutes_elapsed")
 		private int minutesElapsed;
@@ -450,7 +450,7 @@ public final class Dtos
 		private String flipStyle;
 
 		@SerializedName("cash_stack")
-		private Integer cashStack;
+		private Long cashStack;
 
 		@SerializedName("per_slot_budget")
 		private Double perSlotBudget;
@@ -518,10 +518,10 @@ public final class Dtos
 		public final String itemName;
 		public final boolean isBuy;
 		public final int quantity;
-		public final int pricePerItem;
+		public final long pricePerItem;
 		public final Long offerId;
 
-		public HistoryBackfillEntry(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem, Long offerId)
+		public HistoryBackfillEntry(int itemId, String itemName, boolean isBuy, int quantity, long pricePerItem, Long offerId)
 		{
 			this.itemId = itemId;
 			this.itemName = itemName;
@@ -547,18 +547,18 @@ public final class Dtos
 		private final String side;
 		private final String stage;
 		private final Long listedAtMillis;
-		private final int listedPrice;
+		private final long listedPrice;
 		private final int listedQuantity;
 		private final int filledQuantity;
 		private final Long lastFillAtMillis;
-		private final Integer currentMarketHigh;
-		private final Integer currentMarketLow;
-		private final Integer userAvgBuyPrice;
+		private final Long currentMarketHigh;
+		private final Long currentMarketLow;
+		private final Long userAvgBuyPrice;
 
 		// Courier state (#918): the backend advisor is stateless, so cross-poll
 		// state travels on the request and is echoed back from the previous response.
-		private final Integer originalMargin;
-		private final Integer previousPositionMargin;
+		private final Long originalMargin;
+		private final Long previousPositionMargin;
 		private final int consecutiveMarginDecreases;
 		private final double cumulativeMarginReductionPct;
 
@@ -579,14 +579,14 @@ public final class Dtos
 		private String reason;
 
 		@SerializedName("new_price")
-		private Integer newPrice;
+		private Long newPrice;
 
 		@SerializedName("net_profit_estimate")
-		private Integer netProfitEstimate;
+		private Long netProfitEstimate;
 
 		// Courier state (#918) echoed back to the plugin for the next poll.
 		@SerializedName("position_margin")
-		private Integer positionMargin;
+		private Long positionMargin;
 
 		@SerializedName("consecutive_margin_decreases")
 		private int consecutiveMarginDecreases;
@@ -651,8 +651,8 @@ public final class Dtos
 	public static class SellPriceCheckRequest
 	{
 		private final int itemId;
-		private final int originalSellPrice;
-		private final int currentMarketHigh;
+		private final long originalSellPrice;
+		private final long currentMarketHigh;
 		private final int dailyVolume;
 		private final String timeframe;
 		private final String style;
@@ -663,7 +663,7 @@ public final class Dtos
 	public static class SellPriceCheckResponse
 	{
 		@SerializedName("recommended_sell_price")
-		private int recommendedSellPrice;
+		private long recommendedSellPrice;
 
 		private boolean adjusted;
 
@@ -679,9 +679,9 @@ public final class Dtos
 		public final String itemName;
 		public final boolean isBuy;
 		public final int quantity;
-		public final int pricePerItem;
+		public final long pricePerItem;
 		public final Integer geSlot;
-		public final Integer recommendedSellPrice;
+		public final Long recommendedSellPrice;
 		public final String rsn;
 		public final Integer totalQuantity;
 		public final String idempotencyKey;
@@ -708,7 +708,7 @@ public final class Dtos
 			this.timeframe = builder.timeframe;
 		}
 
-		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+		public static Builder builder(int itemId, String itemName, boolean isBuy, int quantity, long pricePerItem)
 		{
 			return new Builder(itemId, itemName, isBuy, quantity, pricePerItem);
 		}
@@ -719,9 +719,9 @@ public final class Dtos
 			private final String itemName;
 			private final boolean isBuy;
 			private final int quantity;
-			private final int pricePerItem;
+			private final long pricePerItem;
 			private Integer geSlot;
-			private Integer recommendedSellPrice;
+			private Long recommendedSellPrice;
 			private String rsn;
 			private Integer totalQuantity;
 			private String idempotencyKey;
@@ -730,7 +730,7 @@ public final class Dtos
 			private Integer slotGeneration;
 			private String timeframe;
 
-			private Builder(int itemId, String itemName, boolean isBuy, int quantity, int pricePerItem)
+			private Builder(int itemId, String itemName, boolean isBuy, int quantity, long pricePerItem)
 			{
 				this.itemId = itemId;
 				this.itemName = itemName;
@@ -740,7 +740,7 @@ public final class Dtos
 			}
 
 			public Builder geSlot(Integer geSlot) { this.geSlot = geSlot; return this; }
-			public Builder recommendedSellPrice(Integer price) { this.recommendedSellPrice = price; return this; }
+			public Builder recommendedSellPrice(Long price) { this.recommendedSellPrice = price; return this; }
 			public Builder rsn(String rsn) { this.rsn = rsn; return this; }
 			public Builder totalQuantity(Integer qty) { this.totalQuantity = qty; return this; }
 			public Builder idempotencyKey(String key) { this.idempotencyKey = key; return this; }
@@ -767,11 +767,11 @@ public final class Dtos
 		// competitiveness was decided on a different basis and slot borders flipped.
 		public static final long WIKI_PRICE_REFRESH_INTERVAL_MS = 45_000;
 
-		public final int instaBuy;   // High price - what buyers pay to instant-buy
-		public final int instaSell;  // Low price - what sellers receive when instant-selling
+		public final long instaBuy;   // High price - what buyers pay to instant-buy
+		public final long instaSell;  // Low price - what sellers receive when instant-selling
 		public final long fetchedAt;
 
-		public WikiPrice(int instaBuy, int instaSell)
+		public WikiPrice(long instaBuy, long instaSell)
 		{
 			this.instaBuy = instaBuy;
 			this.instaSell = instaSell;
@@ -787,7 +787,7 @@ public final class Dtos
 		 * Midpoint of instant-buy and instant-sell, used as a safe exit fallback when
 		 * a mode's target price is unavailable. Degrades to whichever side is present.
 		 */
-		public int midPrice()
+		public long midPrice()
 		{
 			if (instaBuy <= 0)
 			{
@@ -797,7 +797,7 @@ public final class Dtos
 			{
 				return instaBuy;
 			}
-			return (int) (((long) instaBuy + instaSell) / 2);
+			return (instaBuy + instaSell) / 2;
 		}
 	}
 

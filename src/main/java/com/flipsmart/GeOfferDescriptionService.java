@@ -229,17 +229,17 @@ public class GeOfferDescriptionService
 			return;
 		}
 
-		int[] ctx = resolveOfferContext();
+		long[] ctx = resolveOfferContext();
 		if (ctx == null)
 		{
 			return;
 		}
 
 		// ctx: [itemId, isBuy (0/1), price, qty]
-		int itemId = ctx[0];
+		int itemId = (int) ctx[0];
 		boolean isBuy = ctx[1] == 1;
-		int price = ctx[2];
-		int qty = ctx[3];
+		long price = ctx[2];
+		int qty = (int) ctx[3];
 
 		String desired = isBuy
 			? buildBuyDescription(itemId)
@@ -257,12 +257,12 @@ public class GeOfferDescriptionService
 	 * on screen: Flip Assist focus (only when it agrees with the screen), the live
 	 * "Set up offer" window, then the committed offer on the active slot.
 	 *
-	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
+	 * @return long[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
 	 *         no actionable context can be determined.
 	 */
-	int[] resolveOfferContext()
+	long[] resolveOfferContext()
 	{
-		int[] focusCtx = resolveFlipAssistFocusContext();
+		long[] focusCtx = resolveFlipAssistFocusContext();
 		if (focusCtx != null)
 		{
 			return focusCtx;
@@ -271,7 +271,7 @@ public class GeOfferDescriptionService
 		// The setup window is pre-confirm and belongs to no committed slot, so
 		// while it is open it outranks the active slot: that slot may hold an
 		// unrelated in-flight offer the player merely hovered or clicked earlier.
-		int[] setupCtx = resolveSetupWindowContext();
+		long[] setupCtx = resolveSetupWindowContext();
 		if (setupCtx != null)
 		{
 			return setupCtx;
@@ -290,10 +290,10 @@ public class GeOfferDescriptionService
 	 * on-screen item can be determined yet (e.g. a fresh buy before an item is
 	 * picked), focus is still the best available signal.
 	 *
-	 * @return int[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
+	 * @return long[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
 	 *         Flip Assist focus is absent or disagrees with the on-screen item.
 	 */
-	private int[] resolveFlipAssistFocusContext()
+	private long[] resolveFlipAssistFocusContext()
 	{
 		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
 		if (focus == null)
@@ -308,9 +308,9 @@ public class GeOfferDescriptionService
 		}
 
 		boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
-		int price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
+		long price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
 		int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
-		return new int[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
+		return new long[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
 	}
 
 	/**
@@ -324,10 +324,10 @@ public class GeOfferDescriptionService
 	{
 		// The setup window covers the slot tiles, so when it is open the active
 		// slot's committed offer is not what the player is looking at.
-		int[] setupCtx = resolveSetupWindowContext();
+		long[] setupCtx = resolveSetupWindowContext();
 		if (setupCtx != null)
 		{
-			return setupCtx[0];
+			return (int) setupCtx[0];
 		}
 
 		int slot = resolveActiveSlot();
@@ -357,7 +357,7 @@ public class GeOfferDescriptionService
 	 * geSellExamineText callbacks do not fire on the current Jagex setup window, so
 	 * nothing else would replace SETUP_DESC for an offer built without a focus.
 	 */
-	private int[] resolveSetupWindowContext()
+	private long[] resolveSetupWindowContext()
 	{
 		// The in-flight status panel is a different surface with a different
 		// authority (its committed slot), so the setup window never speaks for it.
@@ -387,10 +387,10 @@ public class GeOfferDescriptionService
 		boolean isBuy = offerType != 1;
 		int price = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
 		int qty = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
-		return new int[]{itemId, isBuy ? 1 : 0, price, qty};
+		return new long[]{itemId, isBuy ? 1 : 0, price, qty};
 	}
 
-	private int[] resolveSlotContext()
+	private long[] resolveSlotContext()
 	{
 		int slot = resolveActiveSlot();
 		if (slot < 0)
@@ -409,7 +409,7 @@ public class GeOfferDescriptionService
 		}
 		Boolean uiIsBuy = readSlotDirectionFromUi(slot);
 		boolean isBuy = uiIsBuy != null ? uiIsBuy : OfferSignal.isBuyState(offer.getState());
-		return new int[]{offer.getItemId(), isBuy ? 1 : 0, offer.getPrice(), offer.getTotalQuantity()};
+		return new long[]{offer.getItemId(), isBuy ? 1 : 0, offer.getPrice(), offer.getTotalQuantity()};
 	}
 
 	/**
@@ -586,7 +586,7 @@ public class GeOfferDescriptionService
 
 	private String buildSellDescription(int itemId)
 	{
-		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
+		Long recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
 			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
 			plugin.getOfferRecordsForItem(itemId), itemId, plugin.getHeldQuantityForItem(itemId));
 		int sellPrice = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
@@ -594,9 +594,9 @@ public class GeOfferDescriptionService
 		return GeOfferDescriptionFormatter.formatSellDescription(itemId, recordedBuyPrice, sellPrice, quantity);
 	}
 
-	private String buildSellDescriptionStatic(int itemId, int listedPrice, int totalQuantity)
+	private String buildSellDescriptionStatic(int itemId, long listedPrice, int totalQuantity)
 	{
-		Integer recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
+		Long recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
 			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
 			plugin.getOfferRecordsForItem(itemId), itemId, plugin.getHeldQuantityForItem(itemId));
 		return GeOfferDescriptionFormatter.formatSellDescription(
@@ -616,7 +616,7 @@ public class GeOfferDescriptionService
 		}
 	}
 
-	private Integer lookupWikiInstaBuy(int itemId)
+	private Long lookupWikiInstaBuy(int itemId)
 	{
 		WikiPrice price = apiClient.getWikiPrice(itemId);
 		return (price != null && price.instaBuy > 0) ? price.instaBuy : null;

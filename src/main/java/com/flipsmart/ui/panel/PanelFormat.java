@@ -186,14 +186,14 @@ public final class PanelFormat
 	}
 
 	/** Top "live" price row: market low (blue) | market high (orange), both bold; label stays plain. */
-	public static String livePriceHtml(int low, int high)
+	public static String livePriceHtml(long low, long high)
 	{
 		return htmlRow("Live Price: " + bold(coloured(HEX_PRICE_LOW, formatGPExact(low)))
 			+ " | " + bold(coloured(HEX_PRICE_HIGH, formatGPExact(high))));
 	}
 
 	/** Buy/Sell row styled like the live-price row: buy price blue, sell price orange, both bold. */
-	public static String buySellHtml(int buyPrice, Integer sellPrice)
+	public static String buySellHtml(long buyPrice, Long sellPrice)
 	{
 		String sellSpan = sellPrice != null && sellPrice > 0
 			? bold(coloured(HEX_PRICE_HIGH, formatGPExact(sellPrice)))
@@ -203,7 +203,7 @@ public final class PanelFormat
 	}
 
 	/** Live Margin: gross market spread coloured green (profit) / red (loss), with ROI. No "+" prefix. */
-	public static String liveMarginHtml(int margin, double roiPercent)
+	public static String liveMarginHtml(long margin, double roiPercent)
 	{
 		String colour = margin < 0 ? HEX_LOSS : HEX_PROFIT;
 		return htmlRow("Live Margin: "
