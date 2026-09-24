@@ -34,8 +34,6 @@ import com.flipsmart.util.GeTax;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.inject.Provides;
-import java.awt.Point;
-import java.awt.Rectangle;
 import java.awt.image.BufferedImage;
 import java.util.ArrayList;
 import java.util.Collections;

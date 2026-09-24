@@ -1,5 +1,4 @@
 package com.flipsmart.domain.flip;
-import com.flipsmart.util.GpUtils;
 
 import com.google.gson.annotations.SerializedName;
 import lombok.Data;
@@ -78,16 +77,6 @@ public class FlipRecommendation
 
 	@SerializedName("total_cost")
 	private int totalCost;
-
-	// Deprecated fields (kept for backwards compatibility)
-	@SerializedName("buy_price")
-	private Integer buyPrice;
-
-	@SerializedName("sell_price")
-	private Integer sellPrice;
-
-	@SerializedName("cost_per_flip")
-	private Integer costPerFlip;
 
 }
 

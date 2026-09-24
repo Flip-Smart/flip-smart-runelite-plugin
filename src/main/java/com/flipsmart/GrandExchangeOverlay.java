@@ -2,10 +2,8 @@ package com.flipsmart;
 
 import com.flipsmart.domain.offer.OfferSignal;
 import com.flipsmart.util.ItemUtils;
-import java.awt.image.BufferedImage;
 import java.text.DecimalFormat;
 import javax.inject.Inject;
-import lombok.Getter;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;

@@ -4,7 +4,6 @@ import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferAction;
-import com.flipsmart.util.GpUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.annotations.SerializedName;
