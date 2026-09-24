@@ -130,4 +130,36 @@ public class EntitlementsResponseTest
 		assertTrue(r.isPremium());
 		assertTrue(r.isRsnBlocked());
 	}
+
+	// ---- v9_enabled branches (fail-closed) ----
+
+	@Test
+	public void v9EnabledTrueWhenFlagTrue()
+	{
+		assertTrue(parse("{\"v9_enabled\":true}").isV9Enabled());
+	}
+
+	@Test
+	public void v9EnabledFalseWhenFlagFalse()
+	{
+		assertFalse(parse("{\"v9_enabled\":false}").isV9Enabled());
+	}
+
+	@Test
+	public void v9EnabledFalseWhenMissing()
+	{
+		assertFalse(parse("{}").isV9Enabled());
+	}
+
+	@Test
+	public void v9EnabledFalseWhenNonPrimitive()
+	{
+		assertFalse(parse("{\"v9_enabled\":{}}").isV9Enabled());
+	}
+
+	@Test
+	public void v9EnabledFalseWhenNull()
+	{
+		assertFalse(parse("{\"v9_enabled\":null}").isV9Enabled());
+	}
 }
