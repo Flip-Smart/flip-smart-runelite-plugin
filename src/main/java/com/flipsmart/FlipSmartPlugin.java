@@ -2471,6 +2471,9 @@ public class FlipSmartPlugin extends Plugin
 		return null;
 	}
 
+	private static final long V9_SEED_UNSET = 0L;
+	private static final int V9_LADDER_RUNG_1 = 1;
+
 	// Re-adjustment rung interval = 2/3 of the timeframe's target trade time.
 	private static long v9RungIntervalMs(String timeframe)
 	{
@@ -2551,7 +2554,7 @@ public class FlipSmartPlugin extends Plugin
 		WikiPrice market = apiClient.getWikiPrice(itemId);
 		Integer instantSell = market != null ? market.instaBuy : null;
 		long seed = state.getSeed();
-		if (seed == 0L)
+		if (seed == V9_SEED_UNSET)
 		{
 			seed = System.nanoTime();
 			state.setSeed(seed);
@@ -2621,7 +2624,7 @@ public class FlipSmartPlugin extends Plugin
 			notifyV9Readjustment(message);
 		}
 		state.setLadderRung(rung);
-		if (rung == 1)
+		if (rung == V9_LADDER_RUNG_1)
 		{
 			state.setLadder1ResolvedAtMs(System.currentTimeMillis());
 		}
