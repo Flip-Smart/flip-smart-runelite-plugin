@@ -1,6 +1,7 @@
 package com.flipsmart.recommend;
 
 import com.flipsmart.domain.flip.ActiveFlip;
+import com.flipsmart.util.GeTax;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -52,7 +53,7 @@ public final class SmartSellPricer
 	/**
 	 * Calculate the minimum profitable sell price for an active flip.
 	 * This is the price that would result in zero profit after tax.
-	 * Formula: minSellPrice = buyPrice / (1 - taxRate)
+	 * Formula: minSellPrice = min(buyPrice / (1 - taxRate), buyPrice + tax cap)
 	 * Adding 1gp ensures a small profit.
 	 *
 	 * @return {@code 0} when {@code buyPrice} is non-positive. A missing cost basis is not a
@@ -64,10 +65,7 @@ public final class SmartSellPricer
 		{
 			return 0;
 		}
-		// GE tax is 2%, so to break even: sellPrice * 0.98 = buyPrice
-		// sellPrice = buyPrice / 0.98
-		// Add 1gp to ensure profit
-		return (long) Math.ceil(buyPrice / 0.98) + 1;
+		return Math.min((long) Math.ceil(buyPrice / 0.98), buyPrice + GeTax.GE_TAX_CAP) + 1;
 	}
 
 	/**

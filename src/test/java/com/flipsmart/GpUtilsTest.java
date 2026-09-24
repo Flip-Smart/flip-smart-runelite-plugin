@@ -77,9 +77,14 @@ public class GpUtilsTest
 	public void formatsValuesBeyondIntegerRangeWithoutSaturating()
 	{
 		// #961: a total above Integer.MAX_VALUE must render its real magnitude, not cap at ~2.1B.
-		assertEquals("3000.0M", GpUtils.formatGP(3_000_000_000L));
-		assertEquals("3000.0M", GpUtils.formatGPSigned(3_000_000_000L));
-		assertEquals("-3000.0M", GpUtils.formatGPSigned(-3_000_000_000L));
+		assertEquals("3.0B", GpUtils.formatGP(3_000_000_000L));
+		assertEquals("3.0B", GpUtils.formatGPSigned(3_000_000_000L));
+		assertEquals("-3.0B", GpUtils.formatGPSigned(-3_000_000_000L));
+		assertEquals("66.5B", GpUtils.formatGP(66_500_000_000L));
+		assertEquals("2.1T", GpUtils.formatGP(2_100_000_000_000L));
+		assertEquals("-2.1T", GpUtils.formatGPSigned(-2_100_000_000_000L));
+		assertEquals("999.9M", GpUtils.formatGP(999_900_000L));
+		assertEquals("-1500", GpUtils.formatGP(-1500L));
 		assertEquals("3,000,000,000", GpUtils.formatGPExact(3_000_000_000L));
 	}
 

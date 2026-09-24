@@ -187,7 +187,11 @@ public class MaxCashGpTest
 	public void minProfitableSellPriceDoesNotWrapNegative()
 	{
 		long min = SmartSellPricer.calculateMinProfitableSellPrice(PRICE_3B);
-		assertEquals((long) Math.ceil(PRICE_3B / 0.98) + 1, min);
+		// Tax caps at 5m, so the 2% closed form (~3.061b) would overshoot the real breakeven.
+		assertEquals(GeTax.breakevenSellPrice(PRICE_3B) + 1, min);
+		assertEquals(3_005_000_001L, min);
+		assertEquals(104L, SmartSellPricer.calculateMinProfitableSellPrice(100));
+		assertEquals((long) Math.ceil(8_000_000 / 0.98) + 1, SmartSellPricer.calculateMinProfitableSellPrice(8_000_000));
 		assertTrue(min > PRICE_3B);
 
 		ActiveFlip flip = new ActiveFlip();
@@ -214,7 +218,7 @@ public class MaxCashGpTest
 		List<String> lines = new ArrayList<>();
 		GrandExchangeSlotOverlay.addProfitLossLine(lines, SELL_3_1B, PRICE_3B, QTY_700, ITEM);
 		// (3.1b - 3b - 5m) x 700 = 66.5b; the old int math wrapped this to a loss.
-		assertEquals("Profit: 66500.0M gp (3.2%)", lines.get(lines.size() - 1));
+		assertEquals("Profit: 66.5B gp (3.2%)", lines.get(lines.size() - 1));
 	}
 
 	@Test

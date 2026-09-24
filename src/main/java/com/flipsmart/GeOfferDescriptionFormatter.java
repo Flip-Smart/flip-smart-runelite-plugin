@@ -13,6 +13,8 @@ import java.util.Locale;
  */
 public final class GeOfferDescriptionFormatter
 {
+	private static final long[] SHORT_TIERS = {1_000_000_000_000L, 1_000_000_000L, 1_000_000L, 1_000L};
+	private static final String[] SHORT_SUFFIXES = {"T", "B", "M", "k"};
 	// Color codes used inline in the returned RuneScript strings.
 	// Format is the standard widget hex tag, e.g. <col=00ff00>green</col>.
 	static final String COLOR_GREEN = "00ff00";
@@ -213,20 +215,19 @@ public final class GeOfferDescriptionFormatter
 	}
 
 	/**
-	 * Lowercase k/M shorthand matching the AC examples ({@code 100k}, {@code 1.5M}).
+	 * Lowercase k/M/B/T shorthand matching the AC examples ({@code 100k}, {@code 1.5M}).
 	 * Distinct from {@link GpUtils#formatGP} which uses uppercase K.
 	 */
 	static String formatShortLower(long value)
 	{
 		long abs = Math.abs(value);
-		String sign = value < 0 ? "-" : "";
-		if (abs >= 1_000_000)
+		for (int i = 0; i < SHORT_TIERS.length; i++)
 		{
-			return sign + stripTrailingZero(String.format(Locale.ROOT, "%.1f", abs / 1_000_000.0)) + "M";
-		}
-		if (abs >= 1_000)
-		{
-			return sign + stripTrailingZero(String.format(Locale.ROOT, "%.1f", abs / 1_000.0)) + "k";
+			if (abs >= SHORT_TIERS[i])
+			{
+				return (value < 0 ? "-" : "")
+					+ stripTrailingZero(String.format(Locale.ROOT, "%.1f", abs / (double) SHORT_TIERS[i])) + SHORT_SUFFIXES[i];
+			}
 		}
 		return Long.toString(value);
 	}

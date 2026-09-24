@@ -20,7 +20,7 @@ import java.util.Set;
 public final class GeTax
 {
 	private static final double GE_TAX_RATE = 0.02;
-	private static final int GE_TAX_CAP = 5_000_000;
+	public static final int GE_TAX_CAP = 5_000_000;
 	private static final int GE_TAX_EXEMPT_PRICE_THRESHOLD = 50;
 
 	/** Items the GE never taxes regardless of sell price. */
