@@ -13,6 +13,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.IntConsumer;
+import java.util.function.IntPredicate;
 import java.util.function.ObjIntConsumer;
 import java.util.function.Supplier;
 import lombok.Setter;
@@ -101,6 +102,8 @@ public class ManualAdjustmentTracker
 	private volatile Supplier<Integer> filledSlotsSupplier;
 	@Setter
 	private volatile Supplier<Boolean> membersWorldSupplier;
+	@Setter
+	private volatile IntPredicate v9OwnsSell;
 
 	public ManualAdjustmentTracker(FlipSmartApiClient apiClient, FlipSmartConfig config, OfferStore offerStore)
 	{
@@ -253,6 +256,12 @@ public class ManualAdjustmentTracker
 
 	private void processExpiredTimer(OfferAdjustmentState state, OfferRecord offer)
 	{
+		// A live V9 flip owns this item's sell price via its own re-adjustment ladder;
+		// don't let the legacy manual adjustment path touch the same sell.
+		if (!state.isBuy && v9OwnsSell != null && v9OwnsSell.test(state.itemId))
+		{
+			return;
+		}
 		long minutesSinceOffer = (System.currentTimeMillis() - offer.getEffectiveLastActivityAtMillis()) / 60000;
 		String timeframe = config.flipTimeframe().getApiValue();
 		String style = config.flipStyle().getApiValue();

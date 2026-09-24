@@ -20,6 +20,8 @@ import com.flipsmart.api.dto.Dtos.OfferAdviceBatchResponse;
 import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
 import com.flipsmart.api.dto.Dtos.PluginSyncResponse;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
+import com.flipsmart.api.dto.Dtos.PriceTargetResponse;
+import com.flipsmart.api.dto.Dtos.ReadjustmentResponse;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckResponse;
 import com.flipsmart.api.dto.Dtos.TransactionRequest;
 import com.flipsmart.api.dto.Dtos.WikiPrice;
@@ -31,6 +33,7 @@ import com.flipsmart.api.endpoints.Endpoints.FavoritesEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.FlipsEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.MarketDataEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.OfferActionEndpoints;
+import com.flipsmart.api.endpoints.Endpoints.PriceTargetEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.TradeStationEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.TransactionEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.WebhookEndpoints;
@@ -66,6 +69,7 @@ public class FlipSmartApiClient
 	private final TransactionEndpoints transactions;
 	private final ActiveFlipEndpoints activeFlips;
 	private final OfferActionEndpoints offerActions;
+	private final PriceTargetEndpoints priceTargets;
 	private final MarketDataEndpoints marketData;
 	private final BankSnapshotEndpoints bankSnapshots;
 	private final BlocklistEndpoints blocklists;
@@ -91,6 +95,7 @@ public class FlipSmartApiClient
 		this.transactions = new TransactionEndpoints(transport);
 		this.activeFlips = new ActiveFlipEndpoints(transport);
 		this.offerActions = new OfferActionEndpoints(transport);
+		this.priceTargets = new PriceTargetEndpoints(transport);
 		this.marketData = new MarketDataEndpoints(transport);
 		this.bankSnapshots = new BankSnapshotEndpoints(transport);
 		this.blocklists = new BlocklistEndpoints(transport);
@@ -182,6 +187,11 @@ public class FlipSmartApiClient
 	public boolean isPremium()
 	{
 		return transport.isPremium();
+	}
+
+	public boolean isV9Enabled()
+	{
+		return transport.isV9Enabled();
 	}
 
 	public void setPremium(boolean premium)
@@ -425,6 +435,43 @@ public class FlipSmartApiClient
 	public CompletableFuture<SellPriceCheckResponse> postSellPriceCheckAsync(SellPriceCheckRequest req)
 	{
 		return offerActions.postSellPriceCheckAsync(req);
+	}
+
+	public CompletableFuture<PriceTargetResponse> getFirstListingAsync(int itemId, long buyPrice, long originalSellPrice, String rsn)
+	{
+		return priceTargets.getFirstListingAsync(itemId, buyPrice, originalSellPrice, rsn);
+	}
+
+	public CompletableFuture<ReadjustmentResponse> postReadjustmentAsync(int itemId, JsonObject body)
+	{
+		return priceTargets.postReadjustmentAsync(itemId, body);
+	}
+
+	public static JsonObject buildReadjustmentBody(String scenario, int ladder, long buyPrice, int totalQty,
+		int remainingQty, long realizedProfit, long originalTarget, Long currentInstantSell,
+		Long scenarioBMid, Long seed)
+	{
+		JsonObject body = new JsonObject();
+		body.addProperty("scenario", scenario);
+		body.addProperty("ladder", ladder);
+		body.addProperty("buy_price", buyPrice);
+		body.addProperty("total_qty", totalQty);
+		body.addProperty("remaining_qty", remainingQty);
+		body.addProperty("realized_profit", realizedProfit);
+		body.addProperty("original_target", originalTarget);
+		if (currentInstantSell != null)
+		{
+			body.addProperty("current_instant_sell", currentInstantSell);
+		}
+		if (scenarioBMid != null)
+		{
+			body.addProperty("scenario_b_mid", scenarioBMid);
+		}
+		if (seed != null)
+		{
+			body.addProperty("seed", seed);
+		}
+		return body;
 	}
 
 	// ============================================================================

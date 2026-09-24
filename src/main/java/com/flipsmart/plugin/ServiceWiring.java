@@ -162,6 +162,7 @@ public class ServiceWiring
 		manualAdjustmentTracker.setRsnSupplier(() -> plugin.getCurrentRsnSafe().orElse(null));
 		manualAdjustmentTracker.setFilledSlotsSupplier(plugin::getFilledGESlotCount);
 		manualAdjustmentTracker.setMembersWorldSupplier(plugin::isMembersWorld);
+		manualAdjustmentTracker.setV9OwnsSell(plugin::v9OwnsSell);
 
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
 		grandExchangeTracker.setActiveOfferAdvisorService(activeOfferAdvisorService);
@@ -206,6 +207,8 @@ public class ServiceWiring
 		OfferStore offerStore, PanelRefreshCoalescer refreshCoalescer)
 	{
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
+		grandExchangeTracker.setOnV9SellFill(plugin::onV9SellFill);
+		grandExchangeTracker.setOnV9SellCancelled(plugin::onV9SellCancelled);
 		grandExchangeTracker.setRsnSupplier(plugin::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> refreshCoalescer.request(true));
 		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().reevaluateSlotLimitDisplay(); plugin.maybeEventPollAdvisor(); refreshCoalescer.request(false); });

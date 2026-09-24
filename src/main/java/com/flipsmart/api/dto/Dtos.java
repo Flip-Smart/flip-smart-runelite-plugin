@@ -4,7 +4,6 @@ import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.CompletedFlip;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferAction;
-import com.flipsmart.util.GpUtils;
 import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.annotations.SerializedName;
@@ -285,6 +284,9 @@ public final class Dtos
 		@SerializedName("is_premium")
 		private JsonElement premiumElement;
 
+		@SerializedName("v9_enabled")
+		private JsonElement v9EnabledElement;
+
 		@SerializedName("rsn_entitlement")
 		private RsnEntitlement rsnEntitlement;
 
@@ -297,6 +299,11 @@ public final class Dtos
 		public boolean isPremium()
 		{
 			return premiumElement != null && premiumElement.isJsonPrimitive() && premiumElement.getAsBoolean();
+		}
+
+		public boolean isV9Enabled()
+		{
+			return v9EnabledElement != null && v9EnabledElement.isJsonPrimitive() && v9EnabledElement.getAsBoolean();
 		}
 
 		public boolean isRsnBlocked()
@@ -668,6 +675,48 @@ public final class Dtos
 		private boolean adjusted;
 
 		private String reason;
+	}
+
+	/**
+	 * Response from GET /price-targets/{id}. When the first-listing params (buy_price +
+	 * original_sell_price) are supplied, the listing_* / scenario fields are populated;
+	 * otherwise they are null. scenario is "A" | "B" | "C" and drives the re-adjustment
+	 * ladder; scenario_b_mid is only set for scenario B.
+	 */
+	@Data
+	public static class PriceTargetResponse
+	{
+		@SerializedName("recommended_buy_price")
+		private long recommendedBuyPrice;
+
+		@SerializedName("recommended_sell_price")
+		private long recommendedSellPrice;
+
+		@SerializedName("listing_sell_price")
+		private Long listingSellPrice;
+
+		@SerializedName("listing_strategy")
+		private String listingStrategy;
+
+		private String scenario;
+
+		@SerializedName("scenario_b_mid")
+		private Long scenarioBMid;
+	}
+
+	/**
+	 * Response from POST /price-targets/{id}/readjustment. action is
+	 * "relist" | "prompt_sell" | "bypass_to_ladder2"; listing_price is null only for a bypass.
+	 */
+	@Data
+	public static class ReadjustmentResponse
+	{
+		private String action;
+
+		@SerializedName("listing_price")
+		private Long listingPrice;
+
+		private String disposition;
 	}
 
 	/**

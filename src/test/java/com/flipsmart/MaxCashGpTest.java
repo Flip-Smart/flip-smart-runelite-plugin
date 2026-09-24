@@ -4,6 +4,8 @@ import com.flipsmart.api.dto.Dtos.FavoriteItem;
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
 import com.flipsmart.api.dto.Dtos.FlipFinderResponse;
 import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
+import com.flipsmart.api.dto.Dtos.PriceTargetResponse;
+import com.flipsmart.api.dto.Dtos.ReadjustmentResponse;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckResponse;
 import com.flipsmart.api.dto.Dtos.TransactionRequest;
 import com.flipsmart.domain.flip.ActiveFlip;
@@ -17,6 +19,8 @@ import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GeTax;
 import com.flipsmart.util.GpUtils;
+import com.flipsmart.v9.V9FlipState;
+import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import java.util.ArrayList;
@@ -54,8 +58,7 @@ public class MaxCashGpTest
 			+ "\"recommended_buy_price\":3000000000,\"recommended_sell_price\":3100000000,"
 			+ "\"recommended_quantity\":700,\"margin\":100000000,\"ge_tax\":5000000,"
 			+ "\"breakeven_sell_price\":3005000000,\"potential_profit\":66500000000,"
-			+ "\"total_cost\":2100000000000,\"buy_price\":3000000000,\"sell_price\":3100000000,"
-			+ "\"cost_per_flip\":2100000000000}";
+			+ "\"total_cost\":2100000000000}";
 		FlipRecommendation rec = gson.fromJson(json, FlipRecommendation.class);
 
 		assertEquals(SELL_3_1B, rec.getInstantBuyPrice());
@@ -66,9 +69,6 @@ public class MaxCashGpTest
 		assertEquals(3_005_000_000L, rec.getBreakevenSellPrice());
 		assertEquals(66_500_000_000L, rec.getPotentialProfit());
 		assertEquals(TOTAL_2_1T, rec.getTotalCost());
-		assertEquals(Long.valueOf(PRICE_3B), rec.getBuyPrice());
-		assertEquals(Long.valueOf(SELL_3_1B), rec.getSellPrice());
-		assertEquals(Long.valueOf(TOTAL_2_1T), rec.getCostPerFlip());
 	}
 
 	@Test
@@ -125,6 +125,33 @@ public class MaxCashGpTest
 		String json = gson.toJson(req);
 		assertTrue(json, json.contains("3000000000"));
 		assertTrue(json, json.contains("3100000000"));
+	}
+
+	@Test
+	public void v9PriceTargetDtosAndStateCarryPricesAboveInt32()
+	{
+		PriceTargetResponse target = gson.fromJson(
+			"{\"recommended_buy_price\":3000000000,\"recommended_sell_price\":3100000000,"
+				+ "\"listing_sell_price\":3050000000,\"scenario\":\"B\",\"scenario_b_mid\":3040000000}",
+			PriceTargetResponse.class);
+		assertEquals(PRICE_3B, target.getRecommendedBuyPrice());
+		assertEquals(Long.valueOf(3_050_000_000L), target.getListingSellPrice());
+		assertEquals(Long.valueOf(3_040_000_000L), target.getScenarioBMid());
+
+		ReadjustmentResponse readjust = gson.fromJson(
+			"{\"action\":\"relist\",\"listing_price\":3020000000}", ReadjustmentResponse.class);
+		assertEquals(Long.valueOf(3_020_000_000L), readjust.getListingPrice());
+
+		V9FlipState legacy = gson.fromJson(
+			"{\"itemId\":4151,\"buyPrice\":1000,\"originalTarget\":1100,\"scenarioBMid\":1050}", V9FlipState.class);
+		assertEquals(1000L, legacy.getBuyPrice());
+		assertEquals(Long.valueOf(1050L), legacy.getScenarioBMid());
+
+		JsonObject body = FlipSmartApiClient.buildReadjustmentBody(
+			"B", 1, PRICE_3B, QTY_700, QTY_700, TOTAL_2_1T, SELL_3_1B, SELL_3_1B, 3_040_000_000L, 7L);
+		assertEquals(PRICE_3B, body.get("buy_price").getAsLong());
+		assertEquals(SELL_3_1B, body.get("original_target").getAsLong());
+		assertEquals(TOTAL_2_1T, body.get("realized_profit").getAsLong());
 	}
 
 	// ---- persisted local state written by the int-typed build must still load ----

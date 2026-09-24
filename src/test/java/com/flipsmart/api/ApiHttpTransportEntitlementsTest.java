@@ -66,4 +66,40 @@ public class ApiHttpTransportEntitlementsTest
 		transport.applyEntitlements(parse("{\"rsn_entitlement\":{\"status\":\"active\"}}"));
 		assertFalse(transport.isRsnBlocked());
 	}
+
+	@Test
+	public void v9GateDefaultsFalse()
+	{
+		assertFalse(transport.isV9Enabled());
+	}
+
+	@Test
+	public void applyingEntitlementsEnablesV9WhenFlagTrue()
+	{
+		transport.applyEntitlements(parse("{\"v9_enabled\":true}"));
+		assertTrue(transport.isV9Enabled());
+	}
+
+	@Test
+	public void applyingEntitlementsWithoutFlagKeepsV9Disabled()
+	{
+		transport.applyEntitlements(parse("{\"is_premium\":true}"));
+		assertFalse(transport.isV9Enabled());
+	}
+
+	@Test
+	public void applyingEntitlementsWithoutFlagDisablesV9()
+	{
+		transport.applyEntitlements(parse("{\"v9_enabled\":true}"));
+		transport.applyEntitlements(parse("{}"));
+		assertFalse(transport.isV9Enabled());
+	}
+
+	@Test
+	public void clearAuthDisablesV9()
+	{
+		transport.applyEntitlements(parse("{\"v9_enabled\":true}"));
+		transport.clearAuth();
+		assertFalse(transport.isV9Enabled());
+	}
 }

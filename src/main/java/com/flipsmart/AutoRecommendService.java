@@ -2202,6 +2202,14 @@ public class AutoRecommendService
 	private void processOneSellTimer(SellAdjustmentState state,
 		long now, Iterator<Map.Entry<Integer, SellAdjustmentState>> iter)
 	{
+		// A live V9 flip owns this item's sell price via its own re-adjustment ladder;
+		// stand the legacy /flips/adjustment path down so the two never fight.
+		if (plugin.v9OwnsSell(state.itemId))
+		{
+			iter.remove();
+			return;
+		}
+
 		if (now < state.deadline)
 		{
 			return;

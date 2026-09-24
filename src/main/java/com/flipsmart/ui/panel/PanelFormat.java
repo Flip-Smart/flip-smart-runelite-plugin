@@ -2,10 +2,8 @@ package com.flipsmart.ui.panel;
 
 import com.flipsmart.util.GpUtils;
 import java.awt.AlphaComposite;
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Graphics2D;
-import java.awt.Polygon;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.ConcurrentHashMap;
@@ -255,22 +253,6 @@ public final class PanelFormat
 	{
 		return "<b>" + text + "</b>";
 	}
-
-	/**
-	 * Shared setup for a transparent icon canvas: antialiasing on, cleared to fully
-	 * transparent so the icon draws over a blank background instead of opaque black.
-	 */
-	private static Graphics2D createTransparentIconGraphics(BufferedImage icon)
-	{
-		Graphics2D g = icon.createGraphics();
-		g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-		g.setComposite(AlphaComposite.Clear);
-		g.fillRect(0, 0, icon.getWidth(), icon.getHeight());
-		g.setComposite(AlphaComposite.SrcOver);
-		return g;
-	}
-
 
 
 
