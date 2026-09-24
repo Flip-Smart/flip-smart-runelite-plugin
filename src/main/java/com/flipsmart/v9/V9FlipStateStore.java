@@ -103,7 +103,10 @@ public class V9FlipStateStore
 		}
 		catch (Exception e)
 		{
-			log.debug("Ignoring unreadable persisted v9 flip state ({})", e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Ignoring unreadable persisted v9 flip state ({})", e.getMessage());
+			}
 		}
 	}
 
@@ -124,7 +127,10 @@ public class V9FlipStateStore
 		}
 		catch (Exception e)
 		{
-			log.debug("Failed to persist v9 flip state for {}: {}", rsn, e.getMessage());
+			if (log.isDebugEnabled())
+			{
+				log.debug("Failed to persist v9 flip state for {}: {}", rsn, e.getMessage());
+			}
 		}
 	}
 
