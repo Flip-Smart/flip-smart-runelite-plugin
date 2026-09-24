@@ -22,6 +22,8 @@ public class V9FlipState
 	private int remainingQty;
 	private int originalTarget;
 	private int ladderRung;
+	private long ladder1ResolvedAtMs;
+	private long seed;
 	private long realizedProfit;
 	private long savedAtMillis;
 }

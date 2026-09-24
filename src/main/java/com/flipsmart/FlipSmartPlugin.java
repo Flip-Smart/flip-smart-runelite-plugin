@@ -4,6 +4,7 @@ import com.flipsmart.api.dto.Dtos.OfferAdviceRequest;
 import com.flipsmart.api.dto.Dtos.OfferAdviceResponse;
 import com.flipsmart.api.dto.Dtos.OfferAdviceResult;
 import com.flipsmart.api.dto.Dtos.PriceTargetResponse;
+import com.flipsmart.api.dto.Dtos.ReadjustmentResponse;
 import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
 import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.v9.V9FlipState;
@@ -29,7 +30,9 @@ import com.flipsmart.util.BuyPriceLookup;
 import com.flipsmart.util.GpUtils;
 import com.flipsmart.util.ItemUtils;
 import com.flipsmart.util.TimeUtils;
+import com.flipsmart.util.GeTax;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.google.inject.Provides;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -210,6 +213,7 @@ public class FlipSmartPlugin extends Plugin
 
 	private V9FlipStateStore v9FlipStateStore;
 	private final java.util.Set<Integer> v9FirstListingInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final java.util.Set<Integer> v9ReadjustInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	// Timer / one-shot ownership extracted into PluginScheduler
 	private final PluginScheduler scheduler = new PluginScheduler();
@@ -1072,6 +1076,13 @@ public class FlipSmartPlugin extends Plugin
 		if (atGrandExchange)
 		{
 			geSlotDecorator.reconcile();
+			if (apiClient.isV9Enabled())
+			{
+				for (V9FlipState s : v9Store().snapshot().values())
+				{
+					maybeAdvanceV9Ladder(s.getItemId());
+				}
+			}
 		}
 
 		// On the first LOGGED_IN tick the local player is sometimes not yet
@@ -2460,6 +2471,216 @@ public class FlipSmartPlugin extends Plugin
 			}
 		}
 		return null;
+	}
+
+	// Re-adjustment rung interval = 2/3 of the timeframe's target trade time.
+	private static long v9RungIntervalMs(String timeframe)
+	{
+		if ("30m".equals(timeframe))
+		{
+			return 20L * 60_000L;
+		}
+		if ("2h".equals(timeframe))
+		{
+			return 80L * 60_000L;
+		}
+		if ("4h".equals(timeframe))
+		{
+			return 160L * 60_000L;
+		}
+		return 0L;
+	}
+
+	/**
+	 * Fire the next due re-adjustment rung for a listed V9 flip. Wall-clock from the stored
+	 * anchors, so an offline gap counts and no rung is skipped: Ladder 1 becomes due one
+	 * interval after listing; Ladder 2 one interval after Ladder 1 resolves. Surfaces only
+	 * while a live offer for the item still exists (flip gone → no-op).
+	 */
+	public void maybeAdvanceV9Ladder(int itemId)
+	{
+		if (!apiClient.isV9Enabled())
+		{
+			return;
+		}
+		V9FlipState state = v9Store().get(itemId);
+		if (state == null || state.getListingTimestampMs() <= 0 || state.getLadderRung() >= 2)
+		{
+			return;
+		}
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (live == null)
+		{
+			return;
+		}
+		long interval = v9RungIntervalMs(state.getTimeframe());
+		if (interval <= 0)
+		{
+			return;
+		}
+		long now = System.currentTimeMillis();
+		int dueRung;
+		if (state.getLadderRung() == 0)
+		{
+			if (now < state.getListingTimestampMs() + interval)
+			{
+				return;
+			}
+			dueRung = 1;
+		}
+		else
+		{
+			if (state.getLadder1ResolvedAtMs() <= 0 || now < state.getLadder1ResolvedAtMs() + interval)
+			{
+				return;
+			}
+			dueRung = 2;
+		}
+		if (!v9ReadjustInFlight.add(itemId))
+		{
+			return;
+		}
+		fireV9Readjustment(itemId, state, dueRung);
+	}
+
+	private void fireV9Readjustment(int itemId, V9FlipState state, int rung)
+	{
+		if (getSession() == null)
+		{
+			v9ReadjustInFlight.remove(itemId);
+			return;
+		}
+		WikiPrice market = apiClient.getWikiPrice(itemId);
+		Integer instantSell = market != null ? market.instaBuy : null;
+		long seed = state.getSeed();
+		if (seed == 0L)
+		{
+			seed = System.nanoTime();
+			state.setSeed(seed);
+			v9Store().put(state);
+		}
+		JsonObject body = FlipSmartApiClient.buildReadjustmentBody(
+			state.getScenario(), rung, state.getBuyPrice(), state.getTotalQty(),
+			state.getRemainingQty(), state.getRealizedProfit(), state.getOriginalTarget(),
+			instantSell, state.getScenarioBMid(), seed);
+		final int firedRung = rung;
+		apiClient.postReadjustmentAsync(itemId, body)
+			.thenAccept(resp ->
+			{
+				if (resp == null)
+				{
+					return;
+				}
+				clientThread.invokeLater(() -> applyV9Readjustment(itemId, resp, firedRung));
+			})
+			.exceptionally(ex ->
+			{
+				if (log.isDebugEnabled())
+				{
+					log.debug("v9 re-adjustment failed for {}: {}", itemId, ex.getMessage());
+				}
+				return null;
+			})
+			.whenComplete((r, t) -> v9ReadjustInFlight.remove(itemId));
+	}
+
+	private void applyV9Readjustment(int itemId, ReadjustmentResponse resp, int rung)
+	{
+		V9FlipState state = v9Store().get(itemId);
+		if (state == null)
+		{
+			return;
+		}
+		String action = resp.getAction();
+		Integer listingPrice = resp.getListingPrice();
+		boolean priced = ("relist".equals(action) || "prompt_sell".equals(action))
+			&& listingPrice != null && listingPrice > 0;
+		if (priced)
+		{
+			PlayerSession sess = getSession();
+			if (sess != null)
+			{
+				sess.setRecommendedPrice(itemId, listingPrice);
+				if (flipFinderPanel != null)
+				{
+					flipFinderPanel.setDisplayedSellPrice(itemId, listingPrice);
+				}
+			}
+			if (grandExchangeTracker != null)
+			{
+				grandExchangeTracker.refreshSellFocus(itemId);
+			}
+			if (flipAssistOverlay != null && resp.getDisposition() != null)
+			{
+				flipAssistOverlay.setAutoStatusMessage(resp.getDisposition(), itemId);
+			}
+			OfferRecord live = findLiveOfferForItem(itemId);
+			if (geSlotOverlay != null && live != null && live.getSlot() != null)
+			{
+				geSlotOverlay.setAdjustmentHighlight(live.getSlot(), listingPrice);
+			}
+			notifyV9Readjustment(itemId, listingPrice, resp.getDisposition());
+		}
+		state.setLadderRung(rung);
+		if (rung == 1)
+		{
+			state.setLadder1ResolvedAtMs(System.currentTimeMillis());
+		}
+		v9Store().put(state);
+	}
+
+	private void notifyV9Readjustment(int itemId, int listingPrice, String disposition)
+	{
+		String itemName = itemManager.getItemComposition(itemId).getName();
+		String detail = disposition != null && !disposition.isEmpty()
+			? disposition
+			: "re-list " + itemName + " at " + GpUtils.formatGPWithSuffix(listingPrice);
+		String message = new ChatMessageBuilder()
+			.append(ChatColorType.HIGHLIGHT)
+			.append("[FlipSmart] ")
+			.append(ChatColorType.NORMAL)
+			.append(detail)
+			.build();
+		chatMessageManager.queue(QueuedMessage.builder()
+			.type(ChatMessageType.CONSOLE)
+			.runeLiteFormattedMessage(message)
+			.build());
+	}
+
+	// True when a live V9 flip owns this item's sell price, so legacy adjustment paths must stand down.
+	public boolean v9OwnsSell(int itemId)
+	{
+		if (!apiClient.isV9Enabled())
+		{
+			return false;
+		}
+		V9FlipState state = v9Store().get(itemId);
+		return state != null && state.getListingTimestampMs() > 0;
+	}
+
+	// A sell-side fill on a V9 flip: book the sold units, and either finish the flip (fully
+	// sold) or re-anchor the ladder so the remaining units get a fresh interval (partial fill).
+	public void onV9SellFill(int itemId, int filledQty, int fillPrice, boolean complete)
+	{
+		V9FlipState state = v9Store().get(itemId);
+		if (state == null || state.getListingTimestampMs() <= 0 || filledQty <= 0)
+		{
+			return;
+		}
+		int remaining = Math.max(0, state.getRemainingQty() - filledQty);
+		state.setRemainingQty(remaining);
+		int taxPerItem = GeTax.taxFor(itemId, fillPrice);
+		state.setRealizedProfit(state.getRealizedProfit()
+			+ (long) filledQty * (fillPrice - state.getBuyPrice() - taxPerItem));
+		if (complete || remaining <= 0)
+		{
+			v9Store().remove(itemId);
+			return;
+		}
+		state.setListingTimestampMs(System.currentTimeMillis());
+		state.setLadderRung(0);
+		state.setLadder1ResolvedAtMs(0L);
+		v9Store().put(state);
 	}
 
 	public void handleActiveOfferHandoff(OfferAdviceResponse resp)

@@ -231,12 +231,14 @@ public class EventRouter
 			plugin.getExitTradesController().onSellScreenOpened(openItemId);
 			plugin.maybeRecalc12hSellPrice(openItemId);
 			plugin.maybeSuggestV9FirstListing(openItemId);
+			plugin.maybeAdvanceV9Ladder(openItemId);
 			return;
 		}
 
 		grandExchangeTracker.autoFocusOnActiveFlip(openItemId);
 		plugin.maybeRecalc12hSellPrice(openItemId);
 		plugin.maybeSuggestV9FirstListing(openItemId);
+		plugin.maybeAdvanceV9Ladder(openItemId);
 	}
 
 	public void onGrandExchangeOfferChanged(GrandExchangeOfferChanged offerEvent)

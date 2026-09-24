@@ -82,6 +82,10 @@ public class GrandExchangeTracker
 	// onFocusClear which is skipped during Auto. Used to mark Flip Finder-sourced buys.
 	@Setter
 	private BiConsumer<Integer, Boolean> onOrderSubmitted;
+	// Notifies the V9 ladder of sell-side fills so it can decrement remaining qty, accrue
+	// realized profit, re-anchor its timer on a partial, and clear state on completion.
+	@Setter
+	private V9SellFillHandler onV9SellFill;
 	@Setter
 	private IntFunction<Integer> displayedSellPriceProvider;
 	@Setter
@@ -121,6 +125,12 @@ public class GrandExchangeTracker
 		final int spent;
 		final boolean isBuy;
 		final GrandExchangeOfferState state;
+	}
+
+	@FunctionalInterface
+	public interface V9SellFillHandler
+	{
+		void onSellFill(int itemId, int filledQty, int fillPrice, boolean complete);
 	}
 
 	@Inject
@@ -517,6 +527,11 @@ public class GrandExchangeTracker
 		if (newQuantity > 0)
 		{
 			applyFillSideEffects(ctx, newQuantity);
+			if (!ctx.isBuy && onV9SellFill != null)
+			{
+				onV9SellFill.onSellFill(ctx.itemId, newQuantity, ctx.price,
+					ctx.state == GrandExchangeOfferState.SOLD);
+			}
 		}
 
 		// Reset adjustment timer on partial fills (not yet fully completed)
