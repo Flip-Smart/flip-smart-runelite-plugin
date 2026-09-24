@@ -209,6 +209,7 @@ public class FlipSmartPlugin extends Plugin
 	private PlayerSession session;
 
 	private V9FlipStateStore v9FlipStateStore;
+	private final java.util.Set<Integer> v9FirstListingInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	// Timer / one-shot ownership extracted into PluginScheduler
 	private final PluginScheduler scheduler = new PluginScheduler();
@@ -1597,7 +1598,7 @@ public class FlipSmartPlugin extends Plugin
 			.build());
 		if (apiClient.isV9Enabled())
 		{
-			captureV9BuyBasis(itemId, quantitySold, spent, price, totalQuantity, state);
+			captureV9BuyBasis(itemId, quantitySold, spent, state);
 		}
 		pushActiveFlipsSnapshot();
 	}
@@ -2306,10 +2307,12 @@ public class FlipSmartPlugin extends Plugin
 			|| tf == FlipSmartConfig.FlipTimeframe.FOUR_HOURS;
 	}
 
-	private void captureV9BuyBasis(int itemId, int quantitySold, int spent, int price, int totalQuantity,
+	private void captureV9BuyBasis(int itemId, int quantitySold, int spent,
 		GrandExchangeOfferState state)
 	{
-		if (state != GrandExchangeOfferState.BOUGHT)
+		boolean buyPhaseComplete = state == GrandExchangeOfferState.BOUGHT
+			|| state == GrandExchangeOfferState.CANCELLED_BUY;
+		if (!buyPhaseComplete)
 		{
 			return;
 		}
@@ -2318,8 +2321,13 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		int buyPrice = quantitySold > 0 ? (int) Math.round((double) spent / quantitySold) : price;
-		if (buyPrice <= 0 || totalQuantity <= 0)
+		int filledQty = quantitySold;
+		if (filledQty <= 0)
+		{
+			return;
+		}
+		int buyPrice = (int) Math.round((double) spent / filledQty);
+		if (buyPrice <= 0)
 		{
 			return;
 		}
@@ -2327,8 +2335,8 @@ public class FlipSmartPlugin extends Plugin
 		fs.setItemId(itemId);
 		fs.setTimeframe(tf.getApiValue());
 		fs.setBuyPrice(buyPrice);
-		fs.setTotalQty(totalQuantity);
-		fs.setRemainingQty(totalQuantity);
+		fs.setTotalQty(filledQty);
+		fs.setRemainingQty(filledQty);
 		fs.setLadderRung(0);
 		fs.setSavedAtMillis(System.currentTimeMillis());
 		PlayerSession sess = getSession();
@@ -2360,8 +2368,16 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
+		if (state.getListingTimestampMs() > 0)
+		{
+			return;
+		}
 		Integer originalSell = sess.getRecommendedPrice(itemId);
 		if (originalSell == null || originalSell <= 0)
+		{
+			return;
+		}
+		if (!v9FirstListingInFlight.add(itemId))
 		{
 			return;
 		}
@@ -2382,7 +2398,8 @@ public class FlipSmartPlugin extends Plugin
 					log.debug("v9 first-listing suggestion failed for {}: {}", itemId, ex.getMessage());
 				}
 				return null;
-			});
+			})
+			.whenComplete((r, t) -> v9FirstListingInFlight.remove(itemId));
 	}
 
 	private void applyV9FirstListing(int itemId, PriceTargetResponse resp, int originalTarget)
