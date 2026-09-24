@@ -103,10 +103,15 @@ public class V9FlipStateStore
 		}
 		catch (Exception e)
 		{
-			if (log.isDebugEnabled())
-			{
-				log.debug("Ignoring unreadable persisted v9 flip state ({})", e.getMessage());
-			}
+			logLoadFailure(e);
+		}
+	}
+
+	private void logLoadFailure(Exception e)
+	{
+		if (log.isDebugEnabled())
+		{
+			log.debug("Ignoring unreadable persisted v9 flip state ({})", e.getMessage());
 		}
 	}
 
