@@ -208,6 +208,7 @@ public class ServiceWiring
 	{
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setOnV9SellFill(plugin::onV9SellFill);
+		grandExchangeTracker.setOnV9SellCancelled(plugin::onV9SellCancelled);
 		grandExchangeTracker.setRsnSupplier(plugin::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> refreshCoalescer.request(true));
 		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().reevaluateSlotLimitDisplay(); plugin.maybeEventPollAdvisor(); refreshCoalescer.request(false); });

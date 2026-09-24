@@ -2706,6 +2706,21 @@ public class FlipSmartPlugin extends Plugin
 		v9Store().put(state);
 	}
 
+	// Player cancelled a V9-owned sell (manual adjustment / relist — OSRS requires cancel to
+	// change a price): re-anchor the ladder so the re-listed offer starts a fresh window at rung 0.
+	public void onV9SellCancelled(int itemId)
+	{
+		V9FlipState state = v9Store().get(itemId);
+		if (state == null || state.getListingTimestampMs() <= 0)
+		{
+			return;
+		}
+		state.setListingTimestampMs(System.currentTimeMillis());
+		state.setLadderRung(0);
+		state.setLadder1ResolvedAtMs(0L);
+		v9Store().put(state);
+	}
+
 	public void handleActiveOfferHandoff(OfferAdviceResponse resp)
 	{
 		if (autoRecommendService == null || resp == null || resp.getItemIdHint() == null)
