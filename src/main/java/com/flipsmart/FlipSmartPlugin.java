@@ -2480,7 +2480,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		for (OfferRecord o : offerStore.liveOffers())
 		{
-			if (o.getItemId() == itemId && o.getState() != OfferState.FILLED)
+			if (o.getItemId() == itemId && !o.isBuy() && o.getState() != OfferState.FILLED)
 			{
 				return o;
 			}
