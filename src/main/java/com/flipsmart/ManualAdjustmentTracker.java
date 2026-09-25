@@ -256,8 +256,7 @@ public class ManualAdjustmentTracker
 
 	private void processExpiredTimer(OfferAdjustmentState state, OfferRecord offer)
 	{
-		// A live V9 flip owns this item's sell price via its own re-adjustment ladder;
-		// don't let the legacy manual adjustment path touch the same sell.
+		// V9 owns this item's sell once it is tracking the flip; keep the legacy path off it.
 		if (!state.isBuy && v9OwnsSell != null && v9OwnsSell.test(state.itemId))
 		{
 			return;

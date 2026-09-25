@@ -9,6 +9,7 @@ import com.flipsmart.api.dto.Dtos.SellPriceCheckRequest;
 import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.v9.V9FlipState;
 import com.flipsmart.v9.V9FlipStateStore;
+import com.flipsmart.v9.V9SellArbitration;
 import com.flipsmart.domain.flip.ActiveFlip;
 import com.flipsmart.domain.flip.ActiveFlipItemIds;
 import com.flipsmart.domain.flip.ActiveFlipProjection;
@@ -2381,8 +2382,9 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		Integer originalSell = sess.getRecommendedPrice(itemId);
-		if (originalSell == null || originalSell <= 0)
+		int originalTarget = V9SellArbitration.resolveFirstListingTarget(
+			sess.getRecommendedPrice(itemId), state);
+		if (originalTarget <= 0)
 		{
 			return;
 		}
@@ -2390,7 +2392,6 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
-		final int originalTarget = originalSell;
 		apiClient.getFirstListingAsync(itemId, state.getBuyPrice(), originalTarget, sess.getRsn())
 			.thenAccept(resp ->
 			{
@@ -2445,6 +2446,9 @@ public class FlipSmartPlugin extends Plugin
 		long profit = v9TradeProfit(itemId, listingSellPrice);
 		String disposition = profit > 0 ? "profit" : (profit < 0 ? "loss" : "breakeven");
 		String detail = v9PromptCopy(itemId, disposition, listingSellPrice, true);
+		// Surface on the overlay + GE slot too, not chat-only, so the first listing is as
+		// visible as the re-adjustment ladder (chat lines are easily missed).
+		surfaceV9Prompt(itemId, detail, listingSellPrice);
 		String message = new ChatMessageBuilder()
 			.append(ChatColorType.HIGHLIGHT)
 			.append("[FlipSmart] ")
@@ -2455,6 +2459,21 @@ public class FlipSmartPlugin extends Plugin
 			.type(ChatMessageType.CONSOLE)
 			.runeLiteFormattedMessage(message)
 			.build());
+	}
+
+	// Prominent surfacing shared by the first listing and the re-adjustment ladder: the Flip
+	// Assist overlay status line, plus a GE slot highlight when a live offer exists.
+	private void surfaceV9Prompt(int itemId, String detail, int price)
+	{
+		if (flipAssistOverlay != null)
+		{
+			flipAssistOverlay.setAutoStatusMessage(detail, itemId);
+		}
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (geSlotOverlay != null && live != null && live.getSlot() != null)
+		{
+			geSlotOverlay.setAdjustmentHighlight(live.getSlot(), price);
+		}
 	}
 
 	private OfferRecord findLiveOfferForItem(int itemId)
@@ -2610,15 +2629,7 @@ public class FlipSmartPlugin extends Plugin
 				grandExchangeTracker.refreshSellFocus(itemId);
 			}
 			String message = v9PromptCopy(itemId, resp.getDisposition(), listingPrice, false);
-			if (flipAssistOverlay != null)
-			{
-				flipAssistOverlay.setAutoStatusMessage(message, itemId);
-			}
-			OfferRecord live = findLiveOfferForItem(itemId);
-			if (geSlotOverlay != null && live != null && live.getSlot() != null)
-			{
-				geSlotOverlay.setAdjustmentHighlight(live.getSlot(), listingPrice);
-			}
+			surfaceV9Prompt(itemId, message, listingPrice);
 			notifyV9Readjustment(message);
 		}
 		state.setLadderRung(rung);
@@ -2682,15 +2693,10 @@ public class FlipSmartPlugin extends Plugin
 			.build());
 	}
 
-	// True when a live V9 flip owns this item's sell price, so legacy adjustment paths must stand down.
+	// True when V9 is tracking this item's flip, so legacy adjustment paths must stand down.
 	public boolean v9OwnsSell(int itemId)
 	{
-		if (!apiClient.isV9Enabled())
-		{
-			return false;
-		}
-		V9FlipState state = v9Store().get(itemId);
-		return state != null && state.getListingTimestampMs() > 0;
+		return V9SellArbitration.v9OwnsSell(apiClient.isV9Enabled(), v9Store().get(itemId));
 	}
 
 	// A sell-side fill on a V9 flip: book the sold units, and either finish the flip (fully
@@ -2698,7 +2704,7 @@ public class FlipSmartPlugin extends Plugin
 	public void onV9SellFill(int itemId, int filledQty, int fillPrice, boolean complete)
 	{
 		V9FlipState state = v9Store().get(itemId);
-		if (state == null || state.getListingTimestampMs() <= 0 || filledQty <= 0)
+		if (state == null || filledQty <= 0)
 		{
 			return;
 		}
@@ -2716,9 +2722,13 @@ public class FlipSmartPlugin extends Plugin
 			}
 			return;
 		}
-		state.setListingTimestampMs(System.currentTimeMillis());
-		state.setLadderRung(0);
-		state.setLadder1ResolvedAtMs(0L);
+		// Only an armed flip has ladder rungs to re-anchor on a partial fill.
+		if (state.getListingTimestampMs() > 0)
+		{
+			state.setListingTimestampMs(System.currentTimeMillis());
+			state.setLadderRung(0);
+			state.setLadder1ResolvedAtMs(0L);
+		}
 		v9Store().put(state);
 	}
 
