@@ -2660,7 +2660,9 @@ public class FlipSmartPlugin extends Plugin
 	// profit/reduced: "Sell" the first time, "Relist" when adjusting an existing offer.
 	private String v9PromptCopy(int itemId, String disposition, int price, boolean firstListing)
 	{
-		String at = itemManager.getItemComposition(itemId).getName() + " at " + GpUtils.formatGPWithSuffix(price);
+		// Full digits for the listing price — it's the exact value the player types into the GE,
+		// so an abbreviated "3.4k" would be ambiguous. Profit below stays abbreviated (magnitude only).
+		String at = itemManager.getItemComposition(itemId).getName() + " at " + String.format("%,d gp", price);
 		long profit = v9TradeProfit(itemId, price);
 		String signed = (profit >= 0 ? "+" : "-") + GpUtils.formatGPWithSuffix(Math.abs(profit));
 		String verb = firstListing ? "Sell" : "Relist";
