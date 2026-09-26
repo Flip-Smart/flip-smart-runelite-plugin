@@ -352,6 +352,12 @@ public class OfflineSyncService
 	 */
 	public void preloadPersistedOffers()
 	{
+		// The saved mark can lag ids already sent (it only reaches disk on a lazy flush), so start
+		// every login's ids above every earlier login's instead of trusting it alone. Both floors go
+		// ahead of the early return: records can all age out while the mark survives.
+		offerStore.raiseNextOfferId(clock.getAsLong());
+		offerStore.raiseNextOfferId(loadPersistedNextOfferId(resolvePersistenceRsn()));
+
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
 		if (persistedRecords.isEmpty())
 		{
@@ -369,9 +375,6 @@ public class OfflineSyncService
 
 		offerStore.watermarks().seedFrom(persistedRecords);
 		offerStore.watermarks().mergeFrom(loadPersistedWatermarks());
-
-		// Ahead of the reconcile, which mints ids for live slots no persisted record claims.
-		offerStore.raiseNextOfferId(loadPersistedNextOfferId(resolvePersistenceRsn()));
 
 		reconcilePersistedIntoStore(persistedRecords);
 		// Runs after reconciliation so cold-start seeding (when there is no persisted
