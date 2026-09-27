@@ -363,6 +363,71 @@ public class OfflineSyncPersistenceTest
 	}
 
 	@Test
+	public void preloadSeedsTheCounterFromTheClockSoALaggingMarkCannotRemint()
+	{
+		// The saved mark only reaches disk on RuneLite's lazy config flush, so a crash, force-quit
+		// or hop can leave it behind ids this client already sent to the backend. Seeding from the
+		// clock puts every login's ids above every earlier login's, whatever the mark says.
+		when(session.getRsn()).thenReturn("Zezima");
+		configStore.put(NEXT_OFFER_ID_MARKER_ZEZIMA, "60");
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		store.apply(sig(1, GrandExchangeOfferState.BUYING, 5678, 0, 10), 1000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		service.preloadPersistedOffers();
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), fakeNow);
+
+		assertTrue("an id minted after preload must not sit under the clock",
+			store.bySlot(0).getOfferId() >= fakeNow);
+	}
+
+	@Test
+	public void preloadSeedsFromTheClockEvenWithNoPersistedRecords()
+	{
+		// A first login, or one after every record aged out, takes preload's early return. That
+		// path must seed too, or it mints from 1.
+		when(session.getRsn()).thenReturn("Zezima");
+
+		service.preloadPersistedOffers();
+
+		assertTrue(store.nextOfferId() >= fakeNow);
+	}
+
+	@Test
+	public void aSavedMarkAboveTheClockStillWins()
+	{
+		// Seeding only ever raises. A mark ahead of the clock (a clock set back, or ids from a
+		// faster-running device) must not be lowered to it.
+		when(session.getRsn()).thenReturn("Zezima");
+		long mark = fakeNow * 5;
+		configStore.put(NEXT_OFFER_ID_MARKER_ZEZIMA, Long.toString(mark));
+		when(client.getGrandExchangeOffers()).thenReturn(new GrandExchangeOffer[0]);
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		service.persistOfferState();
+		store.importRecords(Collections.emptyList());
+
+		service.preloadPersistedOffers();
+
+		assertTrue(store.nextOfferId() >= mark);
+	}
+
+	@Test
+	public void aSavedMarkIsHonouredEvenWhenNoRecordsSurvive()
+	{
+		// Records can all age out of retention while the mark survives — the case the mark exists
+		// for. Preload's early return for an empty record set must still apply it, or a clock that
+		// has fallen behind the mark would re-mint ids the mark was protecting.
+		when(session.getRsn()).thenReturn("Zezima");
+		long mark = fakeNow * 5;
+		configStore.put(NEXT_OFFER_ID_MARKER_ZEZIMA, Long.toString(mark));
+
+		service.preloadPersistedOffers();
+
+		assertTrue(store.nextOfferId() >= mark);
+	}
+
+	@Test
 	public void unparseableOrAbsentNextOfferIdIsIgnoredRatherThanThrowing()
 	{
 		when(session.getRsn()).thenReturn("Zezima");
