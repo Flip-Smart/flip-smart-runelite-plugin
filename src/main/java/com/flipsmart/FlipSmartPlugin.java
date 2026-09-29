@@ -1075,12 +1075,14 @@ public class FlipSmartPlugin extends Plugin
 		if (atGrandExchange)
 		{
 			geSlotDecorator.reconcile();
-			if (apiClient.isV9Enabled())
+		}
+		// Advance the ladder every tick, not only at the GE, so a listed offer still re-adjusts
+		// while the player is away.
+		if (apiClient.isV9Enabled())
+		{
+			for (V9FlipState s : v9Store().snapshot().values())
 			{
-				for (V9FlipState s : v9Store().snapshot().values())
-				{
-					maybeAdvanceV9Ladder(s.getItemId());
-				}
+				maybeAdvanceV9Ladder(s.getItemId());
 			}
 		}
 
@@ -2537,28 +2539,32 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		long now = System.currentTimeMillis();
-		int dueRung;
-		if (state.getLadderRung() == 0)
+		int dueRung = v9DueRung(
+			state.getLadderRung(), state.getListingTimestampMs(), state.getLadder1ResolvedAtMs(), interval, now);
+		if (dueRung == 0)
 		{
-			if (now < state.getListingTimestampMs() + interval)
-			{
-				return;
-			}
-			dueRung = 1;
-		}
-		else
-		{
-			if (state.getLadder1ResolvedAtMs() <= 0 || now < state.getLadder1ResolvedAtMs() + interval)
-			{
-				return;
-			}
-			dueRung = 2;
+			return;
 		}
 		if (!v9ReadjustInFlight.add(itemId))
 		{
 			return;
 		}
 		fireV9Readjustment(itemId, state, dueRung);
+	}
+
+	// Which rung is due now (0 = none). Ladder 2 anchors to wall-clock (listing + 2 intervals),
+	// not to when ladder 1 ran, so time away from the GE counts. Pure math for unit tests.
+	static int v9DueRung(int ladderRung, long listingTimestampMs, long ladder1ResolvedAtMs, long interval, long now)
+	{
+		if (ladderRung == 0)
+		{
+			return now >= listingTimestampMs + interval ? 1 : 0;
+		}
+		if (ladder1ResolvedAtMs <= 0 || now < listingTimestampMs + 2 * interval)
+		{
+			return 0;
+		}
+		return 2;
 	}
 
 	private void fireV9Readjustment(int itemId, V9FlipState state, int rung)
