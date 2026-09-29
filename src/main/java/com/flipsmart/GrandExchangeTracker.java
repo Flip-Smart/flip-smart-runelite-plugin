@@ -638,18 +638,33 @@ public class GrandExchangeTracker
 
 	private void notifyAutoRecommendOnCompletion(OfferContext ctx)
 	{
-		if (!isAutoRecommendActive())
+		if (isAutoRecommendActive())
 		{
+			if (ctx.state == GrandExchangeOfferState.BOUGHT && ctx.isBuy)
+			{
+				autoRecommendService.onBuyOrderCompleted(ctx.itemId, ctx.itemName);
+			}
+			if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
+			{
+				autoRecommendService.onSellOrderCompleted(ctx.itemId);
+			}
 			return;
 		}
 
+		// Manual mode gets the same finished-trade nudge as an ignorable prompt (sell a
+		// completed buy / collect a completed sell). Serving a NEW item into a free slot
+		// stays auto-only, so nothing here recommends a replacement flip.
+		if (manualAdjustmentTracker == null || !isAdjustmentPromptsEnabled())
+		{
+			return;
+		}
 		if (ctx.state == GrandExchangeOfferState.BOUGHT && ctx.isBuy)
 		{
-			autoRecommendService.onBuyOrderCompleted(ctx.itemId, ctx.itemName);
+			manualAdjustmentTracker.promptSellCollectedBuy(ctx.itemId, ctx.itemName);
 		}
-		if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
+		else if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
 		{
-			autoRecommendService.onSellOrderCompleted(ctx.itemId);
+			manualAdjustmentTracker.promptCollectSoldOffer(ctx.itemId, ctx.itemName);
 		}
 	}
 

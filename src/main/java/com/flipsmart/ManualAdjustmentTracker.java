@@ -2,8 +2,6 @@ package com.flipsmart;
 
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentRequest;
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
-import com.flipsmart.api.dto.Dtos.FlipFinderResponse;
-import com.flipsmart.domain.flip.FlipRecommendation;
 import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
@@ -93,15 +91,8 @@ public class ManualAdjustmentTracker
 	@Setter
 	private volatile BiConsumer<Integer, Long> onSellPriceAdjusted;
 
-	// Suppliers for ditch logic — needed to fetch replacement recommendations
-	@Setter
-	private volatile Supplier<Integer> cashStackSupplier;
 	@Setter
 	private volatile Supplier<String> rsnSupplier;
-	@Setter
-	private volatile Supplier<Integer> filledSlotsSupplier;
-	@Setter
-	private volatile Supplier<Boolean> membersWorldSupplier;
 	@Setter
 	private volatile IntPredicate v9OwnsSell;
 
@@ -344,8 +335,52 @@ public class ManualAdjustmentTracker
 		}
 		else
 		{
-			log.debug("Manual adjustment: Margin gone on {} — fetching replacement", state.itemName);
-			fetchReplacementRecommendation(state);
+			// Keep the cancel nudge on the existing trade; manual mode never pushes a
+			// replacement buy — the player picks the next item themselves.
+			notifyMarginGone(state);
+		}
+	}
+
+	/**
+	 * Manual-mode nudge to sell a just-completed buy. Ignorable: highlights the held item
+	 * and surfaces a prompt without listing or buying anything for the player.
+	 */
+	public void promptSellCollectedBuy(int itemId, String itemName)
+	{
+		notifyPrompt(String.format("Bought %s — list it to sell", itemName), itemId);
+		notifyInventoryHighlight(itemId);
+	}
+
+	/** Manual-mode nudge to collect the proceeds of a just-completed sell. */
+	public void promptCollectSoldOffer(int itemId, String itemName)
+	{
+		notifyPrompt(String.format("Sold %s — collect from the GE", itemName), itemId);
+	}
+
+	/**
+	 * Schedule adjustment timers for any live manual offer that lacks one — the manual
+	 * counterpart to auto's ensure/reschedule pass, so an offer placed before this session
+	 * (relog / plugin rebuild) still becomes eligible for a staleness prompt. An offer
+	 * already past the initial check interval is deadlined for an immediate check.
+	 */
+	public void ensureTimersForLiveOffers()
+	{
+		long now = System.currentTimeMillis();
+		for (OfferRecord offer : offerStore.liveOffers())
+		{
+			Integer slot = offer.getSlot();
+			if (slot == null || offer.getState() == OfferState.FILLED || trackedOffers.containsKey(slot))
+			{
+				continue;
+			}
+			long age = now - offer.getEffectiveLastActivityAtMillis();
+			long deadline = age >= AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS
+				? now - 1
+				: now + (AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS - age);
+			trackedOffers.put(slot, new OfferAdjustmentState(
+				offer.getItemId(), offer.getItemName(), offer.isBuy(), slot, deadline, offer.getPrice()));
+			log.debug("Manual adjustment timer ensured for {} (slot {}, age {}m)",
+				offer.getItemName(), slot, age / 60000);
 		}
 	}
 
@@ -433,69 +468,6 @@ public class ManualAdjustmentTracker
 		{
 			cb.accept(itemId);
 		}
-	}
-
-	/**
-	 * Fetch a replacement flip recommendation when the current flip's margin has evaporated.
-	 * Shows a prompt like "Margin gone on [item] — switch to [new item] instead?"
-	 */
-	private void fetchReplacementRecommendation(OfferAdjustmentState state)
-	{
-		Integer cashStack = cashStackSupplier != null ? cashStackSupplier.get() : null;
-		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
-		Integer filledSlots = filledSlotsSupplier != null ? filledSlotsSupplier.get() : null;
-		boolean isMembersWorld = membersWorldSupplier == null || membersWorldSupplier.get();
-		String timeframe = config.flipTimeframe().getApiValue();
-		String flipStyle = config.flipStyle().getApiValue();
-
-		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, 1, null, timeframe, rsn, filledSlots, isMembersWorld, false)
-			.thenAccept(response -> handleReplacementResponse(response, state))
-			.exceptionally(e ->
-			{
-				log.debug("Failed to fetch replacement recommendation: {}", e.getMessage());
-				notifyMarginGone(state);
-				return null;
-			});
-	}
-
-	private void handleReplacementResponse(FlipFinderResponse response,
-		OfferAdjustmentState state)
-	{
-		if (response == null || response.getRecommendations() == null
-			|| response.getRecommendations().isEmpty())
-		{
-			notifyMarginGone(state);
-			return;
-		}
-
-		FlipRecommendation replacement = response.getRecommendations().get(0);
-		if (replacement.getItemId() == state.itemId)
-		{
-			notifyMarginGone(state);
-			return;
-		}
-
-		String msg = String.format("Margin gone on %s — switch to %s instead? (%s profit)",
-			state.itemName,
-			replacement.getItemName(),
-			GpUtils.formatGPWithSuffix(replacement.getPotentialProfit()));
-
-		log.debug("Ditch recommendation: {}", msg);
-
-		BiConsumer<FocusedFlip, String> focusCallback = onFocusFlip;
-		if (focusCallback != null)
-		{
-			FocusedFlip focus = FocusedFlip.forBuy(
-				replacement.getItemId(),
-				replacement.getItemName(),
-				replacement.getRecommendedBuyPrice(),
-				replacement.getRecommendedQuantity(),
-				replacement.getRecommendedSellPrice(),
-				config.priceOffset());
-			focusCallback.accept(focus, msg);
-		}
-
-		notifyHighlight(state.geSlot, 0);
 	}
 
 	private void notifyMarginGone(OfferAdjustmentState state)

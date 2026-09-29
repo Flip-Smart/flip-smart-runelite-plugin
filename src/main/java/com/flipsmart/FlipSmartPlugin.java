@@ -1997,6 +1997,12 @@ public class FlipSmartPlugin extends Plugin
 
 		if (manualAdjustmentTracker != null)
 		{
+			// Manual mode owns its own staleness prompts; ensure offers that predate this
+			// session (relog / plugin rebuild) pick up a timer before the check runs.
+			if (!autoActive && config.showAdjustmentPrompts())
+			{
+				manualAdjustmentTracker.ensureTimersForLiveOffers();
+			}
 			manualAdjustmentTracker.checkTimers();
 		}
 	}

@@ -739,6 +739,53 @@ public class GrandExchangeTrackerCharacterizationTest
 		assertEquals("item id matches", ITEM_A, req.itemId);
 	}
 
+	// ==================================================================
+	// Manual-mode finished-trade nudges (Option A): when auto-recommend is
+	// INACTIVE, a completed buy surfaces an ignorable "list it to sell" prompt
+	// and a completed sell surfaces a "collect" prompt — via the manual
+	// adjustment tracker, never by recommending a new item.
+	// ==================================================================
+	@Test
+	public void manualMode_buyCompletes_promptsToSell()
+	{
+		ManualAdjustmentTracker manual = mock(ManualAdjustmentTracker.class);
+		tracker.setManualAdjustmentTracker(manual);
+		tracker.setAdjustmentPromptsEnabled(() -> true);
+
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 5, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 5, 100, 5, 500));
+
+		verify(manual, times(1)).promptSellCollectedBuy(ITEM_A, NAME_A);
+		verify(manual, org.mockito.Mockito.never()).promptCollectSoldOffer(anyInt(), any());
+	}
+
+	@Test
+	public void manualMode_sellCompletes_promptsToCollect()
+	{
+		ManualAdjustmentTracker manual = mock(ManualAdjustmentTracker.class);
+		tracker.setManualAdjustmentTracker(manual);
+		tracker.setAdjustmentPromptsEnabled(() -> true);
+
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 0, 0));
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SOLD, ITEM_A, NAME_A, 5, 200, 5, 1000));
+
+		verify(manual, times(1)).promptCollectSoldOffer(ITEM_A, NAME_A);
+		verify(manual, org.mockito.Mockito.never()).promptSellCollectedBuy(anyInt(), any());
+	}
+
+	@Test
+	public void manualMode_promptsSuppressedWhenAdjustmentPromptsDisabled()
+	{
+		ManualAdjustmentTracker manual = mock(ManualAdjustmentTracker.class);
+		tracker.setManualAdjustmentTracker(manual);
+		tracker.setAdjustmentPromptsEnabled(() -> false);
+
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 5, 100, 0, 0));
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 5, 100, 5, 500));
+
+		verify(manual, org.mockito.Mockito.never()).promptSellCollectedBuy(anyInt(), any());
+	}
+
 	private int mockingDetailsSyncCount()
 	{
 		return (int) org.mockito.Mockito.mockingDetails(apiClient).getInvocations().stream()
