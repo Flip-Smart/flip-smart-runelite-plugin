@@ -57,6 +57,10 @@ public class GeOfferDescriptionService
 	private static final int GE_OFFERS_GROUP = 465;
 	private static final int INDEX_0_CHILD = 7;
 
+	// The max-cash update moved the typed offer price out of a varbit into this
+	// 64-bit varp (unnamed in the RuneLite API), since prices can now exceed int.
+	private static final int NEWOFFER_PRICE_VARP = 5753;
+
 	// DETAILS_DESC sits 10px further left than SETUP_DESC in Jagex's
 	// hand-tuned layout, exposing a parent-background strip between the icon
 	// column and our text. Shift left to close the gap. Tracked per-widget so
@@ -385,7 +389,7 @@ public class GeOfferDescriptionService
 		}
 
 		boolean isBuy = offerType != 1;
-		int price = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
+		long price = Math.max(client.getVarpLongValue(NEWOFFER_PRICE_VARP), 0L);
 		int qty = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
 		return new long[]{itemId, isBuy ? 1 : 0, price, qty};
 	}
@@ -589,7 +593,7 @@ public class GeOfferDescriptionService
 		Long recordedBuyPrice = BuyPriceLookup.findAverageBuyPriceWithFallback(
 			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
 			plugin.getOfferRecordsForItem(itemId), itemId, plugin.getHeldQuantityForItem(itemId));
-		int sellPrice = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE), 0);
+		long sellPrice = Math.max(client.getVarpLongValue(NEWOFFER_PRICE_VARP), 0L);
 		int quantity = Math.max(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY), 0);
 		return GeOfferDescriptionFormatter.formatSellDescription(itemId, recordedBuyPrice, sellPrice, quantity);
 	}
