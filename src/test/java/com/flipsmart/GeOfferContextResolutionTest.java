@@ -45,6 +45,7 @@ public class GeOfferContextResolutionTest
 
 	private static final int GE_OFFERS_GROUP = 465;
 	private static final int INDEX_0_CHILD = 7;
+	private static final int NEWOFFER_PRICE_VARP = 5753;
 
 	private static final String MSG_SETUP_ITEM = "item must be the one on the setup screen";
 	private static final String MSG_SETUP_PRICE = "price must be the setup screen's";
@@ -95,7 +96,7 @@ public class GeOfferContextResolutionTest
 	}
 
 	/** Opens the "Set up offer" window showing {@code itemId} at price x qty. */
-	private void openSetupWindow(int itemId, int price, int qty, boolean isSell)
+	private void openSetupWindow(int itemId, long price, int qty, boolean isSell)
 	{
 		Widget setupDesc = mock(Widget.class);
 		when(setupDesc.isHidden()).thenReturn(false);
@@ -103,7 +104,7 @@ public class GeOfferContextResolutionTest
 
 		when(client.getVarbitValue(VarbitID.GE_NEWOFFER_TYPE)).thenReturn(isSell ? 1 : 2);
 		when(client.getVarpValue(VarPlayerID.TRADINGPOST_SEARCH)).thenReturn(itemId);
-		when(client.getVarbitValue(VarbitID.GE_NEWOFFER_PRICE)).thenReturn(price);
+		when(client.getVarpLongValue(NEWOFFER_PRICE_VARP)).thenReturn(price);
 		when(client.getVarbitValue(VarbitID.GE_NEWOFFER_QUANTITY)).thenReturn(qty);
 	}
 
@@ -188,6 +189,21 @@ public class GeOfferContextResolutionTest
 		assertEquals(MSG_SETUP_ITEM, SHARK, ctx[0]);
 		assertEquals(MSG_SETUP_PRICE, 960, ctx[2]);
 		assertEquals("qty must be the setup screen's", 10_000, ctx[3]);
+	}
+
+	/** A typed price above the old int limit survives, read from the 64-bit varp. */
+	@Test
+	public void setupWindowPriceAboveIntMaxSurvives()
+	{
+		GeOfferDescriptionService service = newService();
+
+		long bigPrice = 5_000_000_000L; // > Integer.MAX_VALUE (max-cash territory)
+		openSetupWindow(SHARK, bigPrice, 1, true);
+
+		long[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals(MSG_SETUP_PRICE, bigPrice, ctx[2]);
 	}
 
 	/** Same divergence with no focus at all — isolates the slot path. */

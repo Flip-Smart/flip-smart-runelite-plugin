@@ -41,7 +41,13 @@ public class FlipAssistInputListener implements KeyListener
 
 	// Input type values
 	private static final int INPUT_TYPE_NUMERIC = 7;
+	private static final int INPUT_TYPE_NUMERIC_LONG = 30;
 	static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
+
+	private static boolean isNumericInput(int inputType)
+	{
+		return inputType == INPUT_TYPE_NUMERIC || inputType == INPUT_TYPE_NUMERIC_LONG;
+	}
 	
 	// Chat message prefix - cyan color for visibility
 	private static final String CHAT_MESSAGE_PREFIX = "<col=00e5ff>[FlipSmart]</col> ";
@@ -121,7 +127,7 @@ public class FlipAssistInputListener implements KeyListener
 		// Numeric (price/quantity) input is hotkey-driven: the plugin fills the
 		// value. Consume eagerly on the EDT — clientThread.invoke() is async, so
 		// consuming inside the callback would be too late to stop the keystroke.
-		if (cachedInputType == INPUT_TYPE_NUMERIC)
+		if (isNumericInput(cachedInputType))
 		{
 			handledKeyPressedEvent.set(e);
 			e.consume();
@@ -160,7 +166,7 @@ public class FlipAssistInputListener implements KeyListener
 
 		// Only numeric (price/quantity) input is hotkey-driven. Item selection is
 		// handled by the injected "FlipSmart item" shortcut row the player clicks.
-		if (client.getVarcIntValue(VARCLIENT_INPUT_TYPE) == INPUT_TYPE_NUMERIC)
+		if (isNumericInput(client.getVarcIntValue(VARCLIENT_INPUT_TYPE)))
 		{
 			handleFlipAssistAction(focusedFlip);
 			flipAssistOverlay.updateStep();

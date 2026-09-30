@@ -73,4 +73,15 @@ public class FlipAssistInputListenerTest
 		listener.keyPressed(e);
 		assertTrue("hotkey must be consumed on the price/quantity screen", e.isConsumed());
 	}
+
+	// The max-cash update opens the price prompt in the 64-bit input mode (30);
+	// the hotkey must be consumed there too, not just the legacy int mode (7).
+	@Test
+	public void hotkeyConsumedOnLongNumericInputScreen()
+	{
+		listener.updateInputType(30); // INPUT_TYPE_NUMERIC_LONG
+		KeyEvent e = hotkeyPress();
+		listener.keyPressed(e);
+		assertTrue("hotkey must be consumed on the 64-bit price screen", e.isConsumed());
+	}
 }
