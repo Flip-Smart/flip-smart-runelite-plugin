@@ -87,7 +87,6 @@ public class FlipAssistOverlay extends Overlay
 	// VarClientInt.INPUT_TYPE value (raw ID to avoid deprecated API)
 	private static final int VARCLIENT_INPUT_TYPE = 5;
 	private static final int INPUT_TYPE_NUMERIC = 7;
-	// The max-cash update added a 64-bit numeric entry mode for values past int.
 	private static final int INPUT_TYPE_NUMERIC_LONG = 30;
 	private static final int INPUT_TYPE_GE_SEARCH = 14;
 	private static final String COINS_TEXT = "coins";

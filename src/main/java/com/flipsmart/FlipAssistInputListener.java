@@ -41,7 +41,6 @@ public class FlipAssistInputListener implements KeyListener
 
 	// Input type values
 	private static final int INPUT_TYPE_NUMERIC = 7;
-	// The max-cash update added a 64-bit numeric entry mode for values past int.
 	private static final int INPUT_TYPE_NUMERIC_LONG = 30;
 	static final int INPUT_TYPE_GE_ITEM_SEARCH = 14;
 
