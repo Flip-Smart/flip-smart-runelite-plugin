@@ -87,6 +87,8 @@ public class FlipAssistOverlay extends Overlay
 	// VarClientInt.INPUT_TYPE value (raw ID to avoid deprecated API)
 	private static final int VARCLIENT_INPUT_TYPE = 5;
 	private static final int INPUT_TYPE_NUMERIC = 7;
+	// The max-cash update added a 64-bit numeric entry mode for values past int.
+	private static final int INPUT_TYPE_NUMERIC_LONG = 30;
 	private static final int INPUT_TYPE_GE_SEARCH = 14;
 	private static final String COINS_TEXT = "coins";
 	private static final int[] CHATBOX_WIDGET_GROUPS = {162, 163, 164, 217, 219, 229, 548, 161};
@@ -216,7 +218,7 @@ public class FlipAssistOverlay extends Overlay
 		{
 			return FlipAssistStep.SEARCH_ITEM;
 		}
-		if (inputType == INPUT_TYPE_NUMERIC)
+		if (isNumericInput(inputType))
 		{
 			return determineNumericInputStep();
 		}
@@ -990,7 +992,7 @@ public class FlipAssistOverlay extends Overlay
 		}
 		int inputType = getInputType();
 		return inputType == INPUT_TYPE_GE_SEARCH
-			|| inputType == INPUT_TYPE_NUMERIC
+			|| isNumericInput(inputType)
 			|| isOfferSetupOpen();
 	}
 
@@ -1081,6 +1083,11 @@ public class FlipAssistOverlay extends Overlay
 	private int getInputType()
 	{
 		return client.getVarcIntValue(VARCLIENT_INPUT_TYPE);
+	}
+
+	private static boolean isNumericInput(int inputType)
+	{
+		return inputType == INPUT_TYPE_NUMERIC || inputType == INPUT_TYPE_NUMERIC_LONG;
 	}
 	
 	private boolean isLikelyPriceInput()
