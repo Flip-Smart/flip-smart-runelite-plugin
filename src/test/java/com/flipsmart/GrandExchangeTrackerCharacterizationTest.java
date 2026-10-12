@@ -296,6 +296,22 @@ public class GrandExchangeTrackerCharacterizationTest
 		verify(apiClient, times(1)).markActiveFlipSellingAsync(eq(ITEM_A), any());
 	}
 
+	// #1309 Finding 4: a NEW sell placement is the "sell listed" moment that must arm the V9
+	// ladder (anchoring its timer to the real listing, not to the earlier price suggestion). The
+	// hook fires once at placement and not again on later fill events for the same offer.
+	@Test
+	public void newSellPlacementFiresV9SellListedHookOnceAtPlacement()
+	{
+		java.util.List<Integer> listed = new java.util.ArrayList<>();
+		tracker.setOnV9SellListed(listed::add);
+
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 0, 0));
+		tracker.handleOfferChanged(ctx(SLOT, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 5, 200, 2, 400));
+
+		assertEquals("V9 sell-listed hook fires exactly once, at placement", 1, listed.size());
+		assertEquals("hook carries the item id", (Integer) ITEM_A, listed.get(0));
+	}
+
 	// ==================================================================
 	// Regression (#1223) — two DISTINCT flips of the same item must
 	// aggregate, not overwrite. Inventory left at 0 so the offline-fill

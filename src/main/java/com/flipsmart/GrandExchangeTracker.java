@@ -90,6 +90,10 @@ public class GrandExchangeTracker
 	// Notifies the V9 ladder of a cancelled sell (the manual-relist signal) so it re-anchors.
 	@Setter
 	private IntConsumer onV9SellCancelled;
+	// Notifies the V9 ladder when a NEW sell offer is actually placed, so the ladder arms and
+	// its timer anchors to the real listing moment — not to when we merely suggested a price.
+	@Setter
+	private IntConsumer onV9SellListed;
 	@Setter
 	private IntFunction<Long> displayedSellPriceProvider;
 	@Setter
@@ -738,6 +742,10 @@ public class GrandExchangeTracker
 	private void recordNewSellOrder(OfferContext ctx)
 	{
 		log.debug("Sell order placed for {} x{} - marking active flip as selling", ctx.itemName, ctx.totalQuantity);
+		if (onV9SellListed != null)
+		{
+			onV9SellListed.accept(ctx.itemId);
+		}
 		String rsn = getRsn().orElse(null);
 		if (rsn != null)
 		{
