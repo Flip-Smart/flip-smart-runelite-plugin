@@ -1824,6 +1824,16 @@ public class AutoRecommendService
 	 */
 	private boolean staleOfferNoLongerRelevant(OfferRecord queued, List<OfferRecord> currentOffers)
 	{
+		// Reconcile against the live trade window first: the store can hold a non-terminal record
+		// whose offer has already left the GE (collected/cancelled offline, slot reused, or a
+		// missed EMPTY event), which would keep nagging to reprice an order that no longer exists.
+		// If live GE shows no open offer for this item, drop it. Fails open when the GE view is
+		// unavailable (off client thread / not loaded) so a transient gap never clears a real one.
+		java.util.Set<Integer> activeInGe = plugin.geActiveItemIds();
+		if (activeInGe != null && !activeInGe.contains(queued.getItemId()))
+		{
+			return true; // No live offer for this item in the GE
+		}
 		OfferRecord current = currentOffers.stream()
 			.filter(t -> t.getItemId() == queued.getItemId() && t.getState() != OfferState.FILLED)
 			.findFirst().orElse(null);

@@ -59,6 +59,16 @@ public class AutoRecommendDispatchTest {
         when(config.priceOffset()).thenReturn(0);
         when(config.minimumProfit()).thenReturn(1);
         when(plugin.isClientThread()).thenReturn(true);
+        // By default the mocked live-GE view agrees with the store (an offer tracked in the store is
+        // present in the GE), so maintenance reconciliation keeps it. Ghost tests override this to
+        // simulate an order that has left the GE while the store still holds a stale record.
+        when(plugin.geActiveItemIds()).thenAnswer(inv -> {
+            java.util.Set<Integer> live = new HashSet<>();
+            for (OfferRecord r : offerStore.liveOffers()) {
+                live.add(r.getItemId());
+            }
+            return live;
+        });
         service = new AutoRecommendService(config, plugin, offerStore);
         service.start(Arrays.asList(rec(21)));
     }
@@ -275,6 +285,47 @@ public class AutoRecommendDispatchTest {
 
         assertEquals("highlight callback must fire on every resolveAndApply cycle", 2, highlightCalls.get());
         assertEquals(77, lastHighlightItem.get());
+    }
+
+    @Test
+    public void staleMaintenanceOfferAbsentFromLiveGeIsPruned() {
+        // A reprice/"maintenance" prompt for an order that has already left the GE (collected or
+        // cancelled offline, slot reused) must be dropped, not nagged every cycle.
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.calculateCompetitiveness(any()))
+            .thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        when(plugin.geActiveItemIds()).thenReturn(new HashSet<>()); // live GE shows nothing
+
+        OfferRecord staleBuy = OfferRecord
+            .newOffer(10, 0, 77, "item-77", true, 10, 100, 0L)
+            .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(staleBuy));
+        service.addToStaleQueue(staleBuy);
+
+        service.resolveAndApply(-1);
+
+        assertEquals("maintenance prompt for an order absent from live GE must be pruned",
+            0, service.staleOfferCount());
+    }
+
+    @Test
+    public void staleMaintenanceOfferStillInLiveGeIsKept() {
+        // The same order, still present in the live GE, must survive the reconcile.
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+        when(plugin.calculateCompetitiveness(any()))
+            .thenReturn(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        when(plugin.geActiveItemIds()).thenReturn(new HashSet<>(Arrays.asList(77)));
+
+        OfferRecord staleBuy = OfferRecord
+            .newOffer(10, 0, 77, "item-77", true, 10, 100, 0L)
+            .withFill(5, 500L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(staleBuy));
+        service.addToStaleQueue(staleBuy);
+
+        service.resolveAndApply(-1);
+
+        assertEquals("maintenance prompt for an order still live in the GE must be kept",
+            1, service.staleOfferCount());
     }
 
     @Test

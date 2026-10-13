@@ -605,6 +605,36 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Set of item ids that currently occupy a GE slot at all — any non-EMPTY offer, whether still
+	 * filling or awaiting collect. Unlike {@link #geCollectableItemBySlot()} this does not require
+	 * fills to collect, so it is the right presence test for an OPEN offer (a reprice/"maintenance"
+	 * target that may not have sold anything yet). Returns null when the GE view is unavailable or
+	 * off the client thread, so callers fail open. Used to drop "maintenance" prompts whose offer
+	 * has already left the trade window.
+	 */
+	public java.util.Set<Integer> geActiveItemIds()
+	{
+		if (!isClientThread())
+		{
+			return null;
+		}
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return null;
+		}
+		java.util.Set<Integer> active = new java.util.HashSet<>();
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
+			{
+				active.add(offer.getItemId());
+			}
+		}
+		return active;
+	}
+
+	/**
 	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
 	 */
 	public int getInventoryCountForItem(int itemId)
