@@ -1,6 +1,6 @@
 package com.flipsmart.util;
 
-import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
 /**
@@ -79,7 +79,7 @@ public final class TimeUtils
 		}
 		try
 		{
-			return Instant.parse(isoTimestamp).toEpochMilli();
+			return OffsetDateTime.parse(isoTimestamp).toInstant().toEpochMilli();
 		}
 		catch (DateTimeParseException e)
 		{
