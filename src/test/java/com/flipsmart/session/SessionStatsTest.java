@@ -40,6 +40,18 @@ public class SessionStatsTest
 	}
 
 	@Test
+	public void realisedProfitCountsBackendOffsetFormattedSellTimes()
+	{
+		// The API serialises with Python isoformat(): "+00:00" offset, microseconds, no "Z".
+		long realised = SessionStats.realisedProfit(Arrays.asList(
+			completed("2026-07-22T11:59:59.999999+00:00", 500),
+			completed("2026-07-22T13:00:00.123456+00:00", 1000),
+			completed("2026-07-22T13:30:00+00:00", 250)),
+			SESSION_START);
+		assertEquals(1250L, realised);
+	}
+
+	@Test
 	public void realisedProfitExcludesUnparseableSellTimes()
 	{
 		long realised = SessionStats.realisedProfit(
