@@ -22,6 +22,7 @@ import com.flipsmart.trading.OfferStore;
 import com.flipsmart.util.GpUtils;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -2934,7 +2935,7 @@ public class AutoRecommendService
 	 */
 	private void promptCollectionForItem(int itemId)
 	{
-		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		List<OfferRecord> completed = reconciledAwaitingCollection();
 		OfferRecord target = null;
 		for (OfferRecord r : completed)
 		{
@@ -2976,7 +2977,7 @@ public class AutoRecommendService
 		// Clear the buy overlay so it doesn't show a buy instruction when slots are full
 		invokeFocusCallback(null);
 
-		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		List<OfferRecord> completed = reconciledAwaitingCollection();
 		if (!completed.isEmpty() && plugin.hasCollectableGEOffers())
 		{
 			OfferRecord first = completed.get(0);
@@ -3205,6 +3206,55 @@ public class AutoRecommendService
 		return plugin.getFilledGESlotCount() < MAX_GE_SLOTS && !plugin.isFlipFinderLimitReached();
 	}
 
+	/**
+	 * The awaiting-collection feed with ghosts removed. A tracked FILLED / CANCELLED_PARTIAL
+	 * record is dropped when live GE no longer backs it with a collectable offer — its offer was
+	 * collected offline, its slot was reused by another order, or its EMPTY event was missed —
+	 * leaving a record that would otherwise re-prompt "collect" every tick with no way to clear it.
+	 * A record keyed to a slot is kept only while that slot still shows the same item as
+	 * collectable; a slot-less record (evicted on slot reuse) is kept only while some slot still
+	 * shows its item. Fails open: when the live GE view is unavailable (off the client thread or
+	 * not yet loaded) the unfiltered feed is returned, so a transient gap never suppresses a real
+	 * collect. Runs on every resolver pass (per tick and on login), which is the periodic + on-login
+	 * sanity check against the live trade window.
+	 */
+	private List<OfferRecord> reconciledAwaitingCollection()
+	{
+		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		int[] geItemBySlot = plugin.geCollectableItemBySlot();
+		if (geItemBySlot == null || completed.isEmpty())
+		{
+			return completed;
+		}
+		Set<Integer> collectableItems = new HashSet<>();
+		for (int itemId : geItemBySlot)
+		{
+			if (itemId > 0)
+			{
+				collectableItems.add(itemId);
+			}
+		}
+		List<OfferRecord> live = new ArrayList<>(completed.size());
+		for (OfferRecord r : completed)
+		{
+			Integer slot = r.getSlot();
+			boolean backed;
+			if (slot != null && slot >= 0 && slot < geItemBySlot.length)
+			{
+				backed = geItemBySlot[slot] == r.getItemId();
+			}
+			else
+			{
+				backed = collectableItems.contains(r.getItemId());
+			}
+			if (backed)
+			{
+				live.add(r);
+			}
+		}
+		return live;
+	}
+
 	ResolverInput buildResolverInput(int excludeItemId)
 	{
 		return buildResolverInput(excludeItemId, true);
@@ -3278,7 +3328,7 @@ public class AutoRecommendService
 		// separate concern threaded as flipFinderCapReached, so it only suppresses new buys —
 		// never the listing of a collected sell (which would deadlock an at-cap free user).
 		int slotLimit = MAX_GE_SLOTS;
-		List<OfferRecord> completed = offerStore.completedAwaitingCollection();
+		List<OfferRecord> completed = reconciledAwaitingCollection();
 		// Drop any cooling-down stale offers so a skipped reprice/cancel action is not
 		// re-surfaced by the resolver until its cooldown lifts (AC6).
 		List<OfferRecord> staleSnapshot = staleOffers.snapshot().stream()

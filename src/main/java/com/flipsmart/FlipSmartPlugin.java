@@ -573,6 +573,38 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Per-slot view of which GE slots currently hold something to collect: index is the GE slot
+	 * (0..7), value is that slot's item id when the slot is non-EMPTY with fills still uncollected,
+	 * or -1 when the slot is empty or has nothing to collect. Returns null when the GE offer array
+	 * is unavailable or this is not the client thread, so callers fail open — no reconciliation —
+	 * rather than wrongly suppressing a genuine collect prompt. Used to drop "collect" prompts for
+	 * tracked records whose offer has already left the GE (collected offline, slot reused by a new
+	 * order, or a missed EMPTY event), which would otherwise re-prompt every tick and never clear.
+	 */
+	public int[] geCollectableItemBySlot()
+	{
+		if (!isClientThread())
+		{
+			return null;
+		}
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return null;
+		}
+		int[] itemBySlot = new int[offers.length];
+		for (int slot = 0; slot < offers.length; slot++)
+		{
+			GrandExchangeOffer offer = offers[slot];
+			boolean collectable = offer != null
+				&& offer.getState() != GrandExchangeOfferState.EMPTY
+				&& offer.getQuantitySold() > 0;
+			itemBySlot[slot] = collectable ? offer.getItemId() : -1;
+		}
+		return itemBySlot;
+	}
+
+	/**
 	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
 	 */
 	public int getInventoryCountForItem(int itemId)
