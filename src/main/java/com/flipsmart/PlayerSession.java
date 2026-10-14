@@ -118,9 +118,6 @@ public class PlayerSession
 		this.currentCashStack = amount;
 	}
 
-	/**
-	 * Inventory gp plus the bank gp last seen this session; the GE pays from both.
-	 */
 	public long getSpendableGp()
 	{
 		return currentCashStack + bankGp;

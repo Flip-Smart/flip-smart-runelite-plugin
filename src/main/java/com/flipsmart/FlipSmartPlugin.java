@@ -1896,18 +1896,12 @@ public class FlipSmartPlugin extends Plugin
 		return !a.equals(b);
 	}
 
-	/**
-	 * Live cash stack for recommendations, or null when nothing is held.
-	 */
 	public Long liveCashStack()
 	{
 		long gp = session.getSpendableGp();
 		return gp > 0 ? gp : null;
 	}
 
-	/**
-	 * GP held in a container: coins plus platinum tokens at 1,000 gp each.
-	 */
 	public static long gpIn(ItemContainer container)
 	{
 		long gp = 0;
