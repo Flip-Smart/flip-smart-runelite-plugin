@@ -194,16 +194,17 @@ public class GeOfferDescriptionService
 
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
-		int widgetId = event.getParam1();
-		if ((widgetId >>> 16) != GE_OFFERS_GROUP)
-		{
-			return;
-		}
-		int slot = (widgetId & 0xFFFF) - INDEX_0_CHILD;
-		if (slot >= 0 && slot < MAX_GE_SLOTS)
+		int slot = slotOf(event.getParam1());
+		if (slot >= 0)
 		{
 			lastClickedSlot = slot;
 		}
+	}
+
+	public static int slotOf(int widgetId)
+	{
+		int slot = (widgetId & 0xFFFF) - INDEX_0_CHILD;
+		return (widgetId >>> 16) == GE_OFFERS_GROUP && slot >= 0 && slot < MAX_GE_SLOTS ? slot : -1;
 	}
 
 	/**
