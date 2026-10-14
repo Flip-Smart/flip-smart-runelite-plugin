@@ -214,6 +214,7 @@ public class AutoRecommendService
 
 	// Last decision applied by resolveAndApply / the game-tick re-resolve. Drives change
 	// detection so the per-tick re-resolve only repaints (and logs) when the action changes.
+	@Getter
 	private ActionDecision lastAppliedDecision;
 
 	// Fires on each applied decision so action alerts can notify. The notifier owns its own

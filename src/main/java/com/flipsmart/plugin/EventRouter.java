@@ -1,5 +1,6 @@
 package com.flipsmart.plugin;
 
+import com.flipsmart.AutoRecommendService;
 import com.flipsmart.BankSnapshotService;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.FlipSmartPlugin;
@@ -9,11 +10,14 @@ import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
 import com.flipsmart.WebhookSyncService;
+import com.flipsmart.recommend.ActionDecision;
+import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.trading.OfferStore;
 
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.InventoryID;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.ScriptID;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
@@ -21,6 +25,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.PostMenuSort;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
@@ -292,5 +297,43 @@ public class EventRouter
 		{
 			geOfferDescriptionService.onMenuOptionClicked(event);
 		}
+	}
+
+	public void onPostMenuSort(PostMenuSort event)
+	{
+		AutoRecommendService auto = plugin.getAutoRecommendService();
+		ActionDecision decision = auto == null || !auto.isActive() || client.isMenuOpen() ? null : auto.getLastAppliedDecision();
+		String option = swapOption(decision);
+		if (option == null)
+		{
+			return;
+		}
+		MenuEntry[] entries = client.getMenuEntries();
+		int top = entries.length - 1;
+		for (int i = 0; i < top; i++)
+		{
+			MenuEntry entry = entries[i];
+			if (entry.getOption().startsWith(option)
+				&& GeOfferDescriptionService.slotOf(entry.getParam1()) == decision.getSlot())
+			{
+				entries[i] = entries[top];
+				entries[top] = entry;
+				client.setMenuEntries(entries);
+				return;
+			}
+		}
+	}
+
+	static String swapOption(ActionDecision decision)
+	{
+		if (decision == null || decision.getSlot() < 0)
+		{
+			return null;
+		}
+		if (decision.getStep() == ActionStep.REPRICE)
+		{
+			return "Modify";
+		}
+		return decision.getStep() == ActionStep.CANCEL ? "Abort" : null;
 	}
 }

@@ -63,6 +63,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.PostMenuSort;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
@@ -1653,6 +1654,12 @@ public class FlipSmartPlugin extends Plugin
 	public void onBeforeRender(BeforeRender event)
 	{
 		eventRouter.onBeforeRender(event);
+	}
+
+	@Subscribe
+	public void onPostMenuSort(PostMenuSort event)
+	{
+		eventRouter.onPostMenuSort(event);
 	}
 
 	@Subscribe
