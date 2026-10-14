@@ -33,13 +33,6 @@ public class RecommendationQueueTest
 		return r;
 	}
 
-	private static FlipRecommendation recVol(int itemId, double volumePerHour)
-	{
-		FlipRecommendation r = rec(itemId, 0);
-		r.setVolumePerHour(volumePerHour);
-		return r;
-	}
-
 	// ---- replace / add ----
 
 	@Test
@@ -53,23 +46,6 @@ public class RecommendationQueueTest
 		assertEquals(2, q.size());
 		assertEquals(0, q.getCurrentIndex());
 		assertSame(a, q.get(0));
-	}
-
-	@Test
-	public void addFilteredByActiveDropsActiveItemsButStillCachesTheirNames()
-	{
-		RecommendationQueue q = new RecommendationQueue();
-		q.setCurrentIndex(2);
-		q.addFilteredByActive(
-			Arrays.asList(rec(11, 100), rec(12, 100)),
-			Collections.singleton(12));
-
-		assertEquals("active item must be filtered out of the queue", 1, q.size());
-		assertEquals(11, q.get(0).getItemId());
-		// Name cache survives the active filter (used for prompts even while live on the GE).
-		assertEquals("item-12", q.getItemName(12, "fallback"));
-		assertEquals("item-11", q.getItemName(11, "fallback"));
-		assertEquals("addFilteredByActive must not reset the cursor", 2, q.getCurrentIndex());
 	}
 
 	@Test
@@ -253,7 +229,8 @@ public class RecommendationQueueTest
 	public void clearAllAlsoDropsCachedNamesAndResetsCursorToFront()
 	{
 		RecommendationQueue q = new RecommendationQueue();
-		q.addFilteredByActive(Arrays.asList(rec(11, 100)), Collections.emptySet());
+		q.replace(Arrays.asList(rec(11, 100)));
+		q.putItemName(11, "item-11");
 		q.setCurrentIndex(1);
 
 		q.clearAll();
@@ -273,20 +250,6 @@ public class RecommendationQueueTest
 		assertEquals("fallback", q.getItemName(11, "fallback"));
 	}
 
-	@Test
-	public void addFilteredByActiveSkipsCachingNullNames()
-	{
-		RecommendationQueue q = new RecommendationQueue();
-		FlipRecommendation noName = new FlipRecommendation();
-		noName.setItemId(11);
-		noName.setItemName(null);
-
-		q.addFilteredByActive(Arrays.asList(noName), Collections.emptySet());
-
-		assertEquals("the recommendation is still queued", 1, q.size());
-		assertEquals("a null name must not be cached", "fallback", q.getItemName(11, "fallback"));
-	}
-
 	// ---- lookups / sorting ----
 
 	@Test
@@ -298,19 +261,6 @@ public class RecommendationQueueTest
 
 		assertSame(b, q.findRecommendationForItem(12));
 		assertNull(q.findRecommendationForItem(999));
-	}
-
-	@Test
-	public void sortByVolumeAscendingOrdersSlowestFillingFirst()
-	{
-		RecommendationQueue q = new RecommendationQueue();
-		q.replace(Arrays.asList(recVol(11, 10.0), recVol(12, 2.0), recVol(13, 5.0)));
-
-		q.sortByVolumeAscending();
-
-		assertEquals(12, q.get(0).getItemId());
-		assertEquals(13, q.get(1).getItemId());
-		assertEquals(11, q.get(2).getItemId());
 	}
 
 	// ---- ancillary state ----

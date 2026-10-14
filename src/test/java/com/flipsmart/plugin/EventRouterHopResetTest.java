@@ -9,7 +9,6 @@ import com.flipsmart.GeOfferDescriptionService;
 import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
-import com.flipsmart.WebhookSyncService;
 import com.flipsmart.trading.OfferStore;
 
 import net.runelite.api.Client;
@@ -77,7 +76,6 @@ public class EventRouterHopResetTest
 			client,
 			mock(FlipSmartConfig.class),
 			mock(PlayerSession.class),
-			mock(WebhookSyncService.class),
 			mock(OfflineSyncService.class),
 			mock(BankSnapshotService.class),
 			geHistoryService,

@@ -1,5 +1,9 @@
 package com.flipsmart.util;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -28,51 +32,15 @@ public final class GeTax
 	static
 	{
 		Set<Integer> ids = new HashSet<>();
-		ids.add(233);    // Pestle and mortar
-		ids.add(315);    // Shrimps
-		ids.add(329);    // Salmon
-		ids.add(347);    // Herring
-		ids.add(351);    // Pike
-		ids.add(355);    // Mackerel
-		ids.add(361);    // Tuna
-		ids.add(365);    // Bass
-		ids.add(379);    // Lobster
-		ids.add(558);    // Mind rune
-		ids.add(806);    // Bronze dart
-		ids.add(807);    // Iron dart
-		ids.add(808);    // Steel dart
-		ids.add(882);    // Bronze arrow
-		ids.add(884);    // Iron arrow
-		ids.add(886);    // Steel arrow
-		ids.add(952);    // Spade
-		ids.add(1733);   // Needle
-		ids.add(1735);   // Shears
-		ids.add(1755);   // Chisel
-		ids.add(1785);   // Glassblowing pipe
-		ids.add(1891);   // Cake
-		ids.add(2140);   // Cooked chicken
-		ids.add(2142);   // Cooked meat
-		ids.add(2309);   // Bread
-		ids.add(2327);   // Meat pie
-		ids.add(2347);   // Hammer
-		ids.add(2552);   // Ring of dueling(8)
-		ids.add(3008);   // Energy potion(4)
-		ids.add(3853);   // Games necklace(8)
-		ids.add(5325);   // Gardening trowel
-		ids.add(5329);   // Secateurs
-		ids.add(5331);   // Watering can
-		ids.add(5341);   // Rake
-		ids.add(5343);   // Seed dibber
-		ids.add(8007);   // Varrock teleport (tablet)
-		ids.add(8008);   // Lumbridge teleport (tablet)
-		ids.add(8009);   // Falador teleport (tablet)
-		ids.add(8010);   // Camelot teleport (tablet)
-		ids.add(8011);   // Ardougne teleport (tablet)
-		ids.add(8013);   // Teleport to house (tablet)
-		ids.add(8794);   // Saw
-		ids.add(13190);  // Old school bond
-		ids.add(28790);  // Kourend castle teleport (tablet)
-		ids.add(28824);  // Civitas illa fortis teleport
+		try (BufferedReader r = new BufferedReader(new InputStreamReader(
+			GeTax.class.getResourceAsStream("/ge_tax_exempt.txt"), StandardCharsets.UTF_8)))
+		{
+			r.lines().forEach(l -> ids.add(Integer.parseInt(l.split(" ")[0])));
+		}
+		catch (IOException e)
+		{
+			throw new ExceptionInInitializerError(e);
+		}
 		EXEMPT_ITEM_IDS = Collections.unmodifiableSet(ids);
 	}
 

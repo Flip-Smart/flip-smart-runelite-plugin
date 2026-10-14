@@ -1,0 +1,45 @@
+233 Pestle and mortar
+315 Shrimps
+329 Salmon
+347 Herring
+351 Pike
+355 Mackerel
+361 Tuna
+365 Bass
+379 Lobster
+558 Mind rune
+806 Bronze dart
+807 Iron dart
+808 Steel dart
+882 Bronze arrow
+884 Iron arrow
+886 Steel arrow
+952 Spade
+1733 Needle
+1735 Shears
+1755 Chisel
+1785 Glassblowing pipe
+1891 Cake
+2140 Cooked chicken
+2142 Cooked meat
+2309 Bread
+2327 Meat pie
+2347 Hammer
+2552 Ring of dueling(8)
+3008 Energy potion(4)
+3853 Games necklace(8)
+5325 Gardening trowel
+5329 Secateurs
+5331 Watering can
+5341 Rake
+5343 Seed dibber
+8007 Varrock teleport (tablet)
+8008 Lumbridge teleport (tablet)
+8009 Falador teleport (tablet)
+8010 Camelot teleport (tablet)
+8011 Ardougne teleport (tablet)
+8013 Teleport to house (tablet)
+8794 Saw
+13190 Old school bond
+28790 Kourend castle teleport (tablet)
+28824 Civitas illa fortis teleport

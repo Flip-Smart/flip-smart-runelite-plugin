@@ -9,7 +9,6 @@ import com.flipsmart.GeOfferDescriptionService;
 import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
-import com.flipsmart.WebhookSyncService;
 import com.flipsmart.recommend.ActionDecision;
 import com.flipsmart.recommend.ActionKind;
 import com.flipsmart.recommend.ActionStep;
@@ -58,7 +57,6 @@ public class EventRouterMenuSwapTest
 			client,
 			mock(FlipSmartConfig.class),
 			mock(PlayerSession.class),
-			mock(WebhookSyncService.class),
 			mock(OfflineSyncService.class),
 			mock(BankSnapshotService.class),
 			mock(GEHistoryService.class),
