@@ -127,7 +127,7 @@ public class AutoRecommendService
 	private final StaleOfferQueue staleOffers = new StaleOfferQueue();
 
 	// Buy/sell adjustment timers + buy-price cost basis.
-	private final AdjustmentService adjustments = new AdjustmentService();
+	final AdjustmentService adjustments = new AdjustmentService();
 
 	private final ActionResolver actionResolver = new ActionResolver();
 
@@ -779,15 +779,19 @@ public class AutoRecommendService
 		else
 		{
 			clearSellAdjustmentTimer(itemId);
-			adjustments.removeBuyPrice(itemId);
 
 			// Modify/cancel of a sell returns the items to inventory (re-added to collected by
 			// handleCollectedSellOffer). The player is mid-flip on that item, so re-list it —
 			// directly, mirroring handleBuyCollected — instead of advancing to a new buy for the
 			// freed slot (where the resolver's S2 empty-slot buy would outrank the S3 re-list).
 			PlayerSession session = plugin.getSession();
-			Long sellPrice = session != null ? session.getRecommendedPrice(itemId) : null;
-			if (session != null && session.getCollectedItemIds().contains(itemId) && sellPrice != null && sellPrice > 0)
+			boolean returned = session != null && session.getCollectedItemIds().contains(itemId);
+			if (!returned)
+			{
+				adjustments.removeBuyPrice(itemId);
+			}
+			Long sellPrice = returned ? session.getRecommendedPrice(itemId) : null;
+			if (returned && sellPrice != null && sellPrice > 0)
 			{
 				log.debug("Auto-recommend: Sell modified/returned for {} - re-listing", itemName);
 				focusSellForItem(itemId, itemName, quantity);
@@ -1675,7 +1679,7 @@ public class AutoRecommendService
 
 	private void scheduleMissingSellTimer(OfferRecord offer, long now)
 	{
-		Long buyPrice = adjustments.getBuyPriceOrDefault(offer.getItemId(), offer.getPrice());
+		long buyPrice = resolveSellCostBasis(offer.getItemId(), offer.getPrice());
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		SellAdjustmentState state = new SellAdjustmentState(
@@ -2106,23 +2110,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		// Get the buy price (cost basis) — stored when the buy was placed
-		Long buyPrice = adjustments.getBuyPrice(itemId);
-		if (buyPrice == null)
-		{
-			// Fallback: try recommendation queue
-			FlipRecommendation rec = findRecommendationForItem(itemId);
-			if (rec != null)
-			{
-				buyPrice = rec.getRecommendedBuyPrice();
-			}
-		}
-		if (buyPrice == null)
-		{
-			// Last resort: use the sell price itself (breakeven will be approximate)
-			buyPrice = sellOffer.getPrice();
-		}
-
+		long buyPrice = resolveSellCostBasis(itemId, sellOffer.getPrice());
 		long delay = sellInitialCheckDelayMs(config.flipTimeframe());
 		long deadline = System.currentTimeMillis() + delay;
 
@@ -2346,12 +2334,7 @@ public class AutoRecommendService
 				continue;
 			}
 
-			// Get buy price from stored prices or fall back to sell price
-			Long buyPrice = adjustments.getBuyPrice(offer.getItemId());
-			if (buyPrice == null)
-			{
-				buyPrice = offer.getPrice();
-			}
+			long buyPrice = resolveSellCostBasis(offer.getItemId(), offer.getPrice());
 
 			long delayMs = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 			long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
@@ -2375,6 +2358,27 @@ public class AutoRecommendService
 				offer.getItemId(), offer.getItemName(), buyPrice, deadline);
 			adjustments.putSellState(offer.getItemId(), state);
 		}
+	}
+
+	/** Sell breakeven basis; stored once resolved so a cancel and re-list keeps it. List price is never stored. */
+	long resolveSellCostBasis(int itemId, long listPrice)
+	{
+		Long cost = adjustments.getBuyPrice(itemId);
+		if (cost == null || cost <= 0)
+		{
+			cost = plugin.getRecordedBuyCost(itemId);
+		}
+		if (cost == null || cost <= 0)
+		{
+			FlipRecommendation rec = findRecommendationForItem(itemId);
+			cost = rec != null ? rec.getRecommendedBuyPrice() : null;
+		}
+		if (cost == null || cost <= 0)
+		{
+			return listPrice;
+		}
+		adjustments.putBuyPrice(itemId, cost);
+		return cost;
 	}
 
 	/**
