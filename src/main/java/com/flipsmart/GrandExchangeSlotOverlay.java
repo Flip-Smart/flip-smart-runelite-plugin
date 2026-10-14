@@ -131,6 +131,11 @@ public class GrandExchangeSlotOverlay extends Overlay
 		stickyAdjustmentSlots.remove(slot);
 	}
 
+	public boolean hasAdjustmentHighlight(int slot)
+	{
+		return adjustmentHighlights.containsKey(slot) || stickyAdjustmentSlots.contains(slot);
+	}
+
 	/**
 	 * Full reset of every highlight, transient and sticky (e.g., on logout or when
 	 * auto-mode stops).
