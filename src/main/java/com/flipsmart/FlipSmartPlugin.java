@@ -2469,11 +2469,15 @@ public class FlipSmartPlugin extends Plugin
 	// Assist overlay status line, plus a GE slot highlight when a live offer exists.
 	private void surfaceV9Prompt(int itemId, String detail, long price)
 	{
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (live != null && isAutoRecommendActive())
+		{
+			autoRecommendService.surfaceAdvisorResell(live, price, null);
+		}
 		if (flipAssistOverlay != null)
 		{
 			flipAssistOverlay.setAutoStatusMessage(detail, itemId);
 		}
-		OfferRecord live = findLiveOfferForItem(itemId);
 		if (geSlotOverlay != null && live != null && live.getSlot() != null)
 		{
 			geSlotOverlay.setAdjustmentHighlight(live.getSlot(), price);

@@ -497,6 +497,22 @@ public class AutoRecommendDispatchTest {
     }
 
     @Test
+    public void advisorResellOnLiveSellResolvesToRepriceOnItsSlot() {
+        OfferRecord activeSell = OfferRecord
+            .newOffer(7, 2, 42, "item-42", false, 5, 300, 0L)
+            .withFill(0, 0L, OfferState.PARTIAL_FILL, 1L);
+        offerStore.importRecords(Arrays.asList(activeSell));
+        when(plugin.getFilledGESlotCount()).thenReturn(8);
+
+        service.surfaceAdvisorResell(activeSell, 250, null);
+        ActionDecision d = service.resolveAndApply(-1);
+
+        assertEquals(ActionStep.REPRICE, d.getStep());
+        assertEquals(42, d.getItemId());
+        assertEquals(2, d.getSlot());
+    }
+
+    @Test
     public void ac2ExitResellShowsCancelAndResellPrompt() throws Exception {
         // AC2 (#918): the margin-decay exit surfaces a "cancel & re-sell" prompt at the
         // advisor's price, distinct from the AC3 "adjust buy" reprice on a buy offer.
