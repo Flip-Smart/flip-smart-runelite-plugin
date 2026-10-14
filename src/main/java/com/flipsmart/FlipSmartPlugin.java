@@ -2131,7 +2131,6 @@ public class FlipSmartPlugin extends Plugin
 		return offer.getPrice();
 	}
 
-	/** Recorded average buy cost of the units held for {@code itemId}, or null if unknown. */
 	public Long getRecordedBuyCost(int itemId)
 	{
 		return BuyPriceLookup.findAverageBuyPriceWithFallback(

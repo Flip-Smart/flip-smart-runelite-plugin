@@ -786,13 +786,13 @@ public class AutoRecommendService
 			// directly, mirroring handleBuyCollected — instead of advancing to a new buy for the
 			// freed slot (where the resolver's S2 empty-slot buy would outrank the S3 re-list).
 			PlayerSession session = plugin.getSession();
-			boolean returned = session != null && session.getCollectedItemIds().contains(itemId);
-			if (!returned)
+			boolean held = session != null && session.getCollectedItemIds().contains(itemId);
+			if (!held)
 			{
 				adjustments.removeBuyPrice(itemId);
 			}
-			Long sellPrice = returned ? session.getRecommendedPrice(itemId) : null;
-			if (returned && sellPrice != null && sellPrice > 0)
+			Long sellPrice = held ? session.getRecommendedPrice(itemId) : null;
+			if (held && sellPrice != null && sellPrice > 0)
 			{
 				log.debug("Auto-recommend: Sell modified/returned for {} - re-listing", itemName);
 				focusSellForItem(itemId, itemName, quantity);
@@ -2361,23 +2361,23 @@ public class AutoRecommendService
 		}
 	}
 
-	/** Sell breakeven basis; stored once resolved so a cancel and re-list keeps it. List price is never stored. */
 	long resolveSellCostBasis(int itemId, long listPrice)
 	{
 		Long cost = adjustments.getBuyPrice(itemId);
-		if (cost == null || cost <= 0)
+		if (cost == null)
 		{
 			cost = plugin.getRecordedBuyCost(itemId);
 		}
-		if (cost == null || cost <= 0)
+		FlipRecommendation rec = cost == null || cost <= 0 ? findRecommendationForItem(itemId) : null;
+		if (rec != null)
 		{
-			FlipRecommendation rec = findRecommendationForItem(itemId);
-			cost = rec != null ? rec.getRecommendedBuyPrice() : null;
+			cost = rec.getRecommendedBuyPrice();
 		}
 		if (cost == null || cost <= 0)
 		{
 			return listPrice;
 		}
+		// Stored so a cancel and re-list keeps it
 		adjustments.putBuyPrice(itemId, cost);
 		return cost;
 	}
