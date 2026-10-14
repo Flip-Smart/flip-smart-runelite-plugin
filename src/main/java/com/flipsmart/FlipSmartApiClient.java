@@ -36,7 +36,6 @@ import com.flipsmart.api.endpoints.Endpoints.OfferActionEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.PriceTargetEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.TradeStationEndpoints;
 import com.flipsmart.api.endpoints.Endpoints.TransactionEndpoints;
-import com.flipsmart.api.endpoints.Endpoints.WebhookEndpoints;
 import com.flipsmart.domain.flip.FlipAnalysis;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
@@ -73,7 +72,6 @@ public class FlipSmartApiClient
 	private final MarketDataEndpoints marketData;
 	private final BankSnapshotEndpoints bankSnapshots;
 	private final BlocklistEndpoints blocklists;
-	private final WebhookEndpoints webhooks;
 	private final TradeStationEndpoints tradeStation;
 	private final FavoritesEndpoints favorites;
 	private final ActiveFlipsSnapshotEndpoints activeFlipsSnapshot;
@@ -99,7 +97,6 @@ public class FlipSmartApiClient
 		this.marketData = new MarketDataEndpoints(transport);
 		this.bankSnapshots = new BankSnapshotEndpoints(transport);
 		this.blocklists = new BlocklistEndpoints(transport);
-		this.webhooks = new WebhookEndpoints(transport);
 		this.tradeStation = new TradeStationEndpoints(transport);
 		this.favorites = new FavoritesEndpoints(transport);
 		this.activeFlipsSnapshot = new ActiveFlipsSnapshotEndpoints(transport);
@@ -387,8 +384,6 @@ public class FlipSmartApiClient
 		return marketData.needsWikiPriceRefresh();
 	}
 
-
-
 	public CompletableFuture<Integer> getDailyVolumeAsync(int itemId)
 	{
 		return marketData.getDailyVolumeAsync(itemId);
@@ -472,35 +467,6 @@ public class FlipSmartApiClient
 			body.addProperty("seed", seed);
 		}
 		return body;
-	}
-
-	// ============================================================================
-	// Webhooks
-	// ============================================================================
-
-	public void updateWebhookAsync(
-		String webhookUrl,
-		boolean notifySale,
-		boolean notifySuggestion,
-		Runnable onSuccess,
-		Consumer<String> onError
-	)
-	{
-		webhooks.updateWebhookAsync(webhookUrl, notifySale, notifySuggestion, onSuccess, onError);
-	}
-
-	public void fetchWebhookConfigAsync(
-		Consumer<JsonObject> onSuccess,
-		Runnable onNotFound,
-		Consumer<String> onError
-	)
-	{
-		webhooks.fetchWebhookConfigAsync(onSuccess, onNotFound, onError);
-	}
-
-	public void deleteWebhookAsync(Runnable onSuccess, Consumer<String> onError)
-	{
-		webhooks.deleteWebhookAsync(onSuccess, onError);
 	}
 
 	// ============================================================================

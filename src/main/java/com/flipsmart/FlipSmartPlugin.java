@@ -148,10 +148,8 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private net.runelite.client.game.ItemManager itemManager;
 
-
 	@Inject
 	private ConfigManager configManager;
-
 
 	@Inject
 	private OfflineSyncService offlineSyncService;
@@ -171,9 +169,6 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private com.flipsmart.trading.RoundTripLedger roundTripLedger;
-
-	@Inject
-	private WebhookSyncService webhookSyncService;
 
 	@Inject
 	private GEHistoryService geHistoryService;
@@ -307,8 +302,6 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 
-
-
 	/**
 	 * Check if player is logged into RuneScape (delegates to session for backwards compatibility).
 	 */
@@ -340,7 +333,6 @@ public class FlipSmartPlugin extends Plugin
 		return membersWorld;
 	}
 
-
 	/**
 	 * Refresh the cached members-world state from the Client API.
 	 * Must be called on the client thread.
@@ -358,7 +350,6 @@ public class FlipSmartPlugin extends Plugin
 	{
 		accountType = AccountTypeMapper.toApiValue(client.getAccountType());
 	}
-
 
 	public int getFlipSlotLimit()
 	{
@@ -750,7 +741,6 @@ public class FlipSmartPlugin extends Plugin
 			inventoryFlipItemCounts, inventorySnapshotKnown);
 	}
 
-
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -804,13 +794,9 @@ public class FlipSmartPlugin extends Plugin
 			offerStore, refreshCoalescer);
 
 		// Build the event router now that all collaborators exist
-		eventRouter = new EventRouter(this, client, config, session, webhookSyncService,
+		eventRouter = new EventRouter(this, client, config, session,
 			offlineSyncService, bankSnapshotService, geHistoryService, geOfferDescriptionService,
 			grandExchangeTracker, offerStore);
-
-
-		// Sync webhook config to backend if configured
-		webhookSyncService.syncIfChanged();
 
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
@@ -1008,7 +994,6 @@ public class FlipSmartPlugin extends Plugin
 		// Stop all pending one-shot timers
 		scheduler.stopAllOneShotTimers();
 
-
 		// Stop auto-recommend service and timer
 		scheduler.stopAutoRecommendRefreshTimer();
 		if (autoRecommendService != null)
@@ -1144,7 +1129,6 @@ public class FlipSmartPlugin extends Plugin
 	{
 		pushFinalCapitalSnapshot();
 		session.onLogout();
-		webhookSyncService.onLogout();
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
 		persistAutoRecommendState();
@@ -1232,9 +1216,6 @@ public class FlipSmartPlugin extends Plugin
 			{
 				SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
 			}
-
-			// Pull webhook config after auth is confirmed
-			webhookSyncService.pullFromBackend();
 		});
 
 		// Collected items are no longer restored here: they are derived from the persisted offer
@@ -1660,7 +1641,6 @@ public class FlipSmartPlugin extends Plugin
 	{
 		eventRouter.onMenuOptionClicked(event);
 	}
-
 
 	/**
 	 * Initialize the Flip Finder panel and add it to the sidebar
@@ -3046,7 +3026,5 @@ public class FlipSmartPlugin extends Plugin
 	{
 		return new PlayerSession();
 	}
-
-
 }
 

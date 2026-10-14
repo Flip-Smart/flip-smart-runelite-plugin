@@ -40,9 +40,6 @@ public final class Dtos
 		@SerializedName("active_flips")
 		private List<ActiveFlip> activeFlips;
 
-		@SerializedName("total_items")
-		private int totalItems;
-
 		@SerializedName("total_invested")
 		private long totalInvested;
 	}
@@ -186,8 +183,6 @@ public final class Dtos
 		private boolean isActive;
 		@SerializedName("created_at")
 		private String createdAt;
-		@SerializedName("updated_at")
-		private String updatedAt;
 	}
 
 	/**
@@ -219,7 +214,6 @@ public final class Dtos
 	public static class DeviceAuthResponse
 	{
 		private String deviceCode;
-		private String userCode;
 		private String verificationUrl;
 		private int expiresIn;
 		private int pollInterval;
@@ -229,9 +223,6 @@ public final class Dtos
 
 		public String getDeviceCode() { return deviceCode; }
 		public void setDeviceCode(String deviceCode) { this.deviceCode = deviceCode; }
-
-		public String getUserCode() { return userCode; }
-		public void setUserCode(String userCode) { this.userCode = userCode; }
 
 		public String getVerificationUrl() { return verificationUrl; }
 		public void setVerificationUrl(String verificationUrl) { this.verificationUrl = verificationUrl; }
@@ -250,7 +241,6 @@ public final class Dtos
 	{
 		private String status;  // pending, authorized, expired
 		private String accessToken;
-		private String tokenType;
 		private String refreshToken;  // For session persistence across client restarts
 
 		/** Default constructor required for Gson deserialization */
@@ -261,9 +251,6 @@ public final class Dtos
 
 		public String getAccessToken() { return accessToken; }
 		public void setAccessToken(String accessToken) { this.accessToken = accessToken; }
-
-		public String getTokenType() { return tokenType; }
-		public void setTokenType(String tokenType) { this.tokenType = tokenType; }
 
 		public String getRefreshToken() { return refreshToken; }
 		public void setRefreshToken(String refreshToken) { this.refreshToken = refreshToken; }
@@ -326,9 +313,6 @@ public final class Dtos
 
 		@SerializedName("item_name")
 		private String itemName;
-
-		@SerializedName("icon_url")
-		private String iconUrl;
 
 		@SerializedName("buy_price")
 		private Long buyPrice;
@@ -394,17 +378,8 @@ public final class Dtos
 		@SerializedName("current_margin")
 		private Long currentMargin;
 
-		@SerializedName("is_profitable")
-		private boolean isProfitable;
-
 		@SerializedName("breakeven_price")
 		private long breakevenPrice;
-
-		@SerializedName("minutes_elapsed")
-		private int minutesElapsed;
-
-		@SerializedName("threshold_minutes")
-		private int thresholdMinutes;
 
 		@SerializedName("adjustment_count")
 		private int adjustmentCount;
@@ -487,9 +462,6 @@ public final class Dtos
 
 			@SerializedName("recommendation_limit")
 			private Integer recommendationLimit;
-
-			@SerializedName("recommendations_returned")
-			private int recommendationsReturned;
 		}
 	}
 
@@ -671,8 +643,6 @@ public final class Dtos
 	{
 		@SerializedName("recommended_sell_price")
 		private long recommendedSellPrice;
-
-		private boolean adjusted;
 
 		private String reason;
 	}

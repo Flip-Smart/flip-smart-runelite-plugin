@@ -22,7 +22,6 @@ public class FlipAnalysis
 
 	private Liquidity liquidity;
 	private Risk risk;
-	private Efficiency efficiency;
 
 	@SerializedName("historical_data")
 	private HistoricalData historicalData;
@@ -33,14 +32,8 @@ public class FlipAnalysis
 		private Long high;
 		private Long low;
 
-		@SerializedName("gross_margin")
-		private Long grossMargin;
-
 		@SerializedName("ge_tax")
 		private Long geTax;
-
-		@SerializedName("net_margin")
-		private Long netMargin;
 
 		@SerializedName("roi_percent")
 		private Double roiPercent;
@@ -51,12 +44,6 @@ public class FlipAnalysis
 	{
 		private Double score;
 		private String rating;
-
-		@SerializedName("buys_per_hour")
-		private Double buysPerHour;
-
-		@SerializedName("sells_per_hour")
-		private Double sellsPerHour;
 
 		@SerializedName("total_volume_per_hour")
 		private Double totalVolumePerHour;
@@ -70,25 +57,12 @@ public class FlipAnalysis
 	}
 
 	@Data
-	public static class Efficiency
-	{
-		private Double score;
-		private String rating;
-		private String recommendation;
-	}
-
-	@Data
 	public static class HistoricalData
 	{
 		private String timeframe;
 
-		@SerializedName("data_points")
-		private Integer dataPoints;
-
 		@SerializedName("avg_price")
 		private Long avgPrice;
-
-		private Integer volatility;
 	}
 
 }

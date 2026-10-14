@@ -168,19 +168,6 @@ public class ApiHttpTransport
 	}
 
 	/**
-	 * Build an authenticated GET request for a fully-formed URL. Used by endpoint
-	 * groups that pre-build their URL via {@link okhttp3.HttpUrl} and need the
-	 * Bearer header applied without the executeAuthenticatedAsync wrapper (e.g.
-	 * fire-and-forget callback-style endpoints).
-	 */
-	public Request withAuthGet(okhttp3.HttpUrl url)
-	{
-		return withAuthHeader(new Request.Builder().url(url))
-			.get()
-			.build();
-	}
-
-	/**
 	 * Execute an HTTP request asynchronously with automatic retry on 401
 	 * This is the core method that handles all HTTP requests off the main threads
 	 *
@@ -357,7 +344,7 @@ public class ApiHttpTransport
 				return pendingAuthFuture;
 			}
 
-			CompletableFuture<Boolean> future = doAuthenticateAsync();
+			CompletableFuture<Boolean> future = refreshAccessTokenAsync();
 			pendingAuthFuture = future;
 			// Clear reference when done to allow future auth attempts
 			future.whenComplete((result, ex) -> {
@@ -371,40 +358,6 @@ public class ApiHttpTransport
 			});
 			return future;
 		}
-	}
-
-	/**
-	 * Internal authentication logic. Called by authenticateAsync() which handles coalescing.
-	 */
-	private CompletableFuture<Boolean> doAuthenticateAsync()
-	{
-		// Try refresh token first if we have one
-		String currentRefreshToken = refreshToken;
-
-		if (currentRefreshToken != null && !currentRefreshToken.isEmpty())
-		{
-			return refreshAccessTokenAsync()
-				.thenCompose(success -> {
-					if (success)
-					{
-						return CompletableFuture.completedFuture(true);
-					}
-					// refreshAccessTokenAsync already clears refreshToken on 401.
-					// Fall back to password auth.
-					return loginWithPasswordAsync();
-				});
-		}
-
-		return loginWithPasswordAsync();
-	}
-
-	/**
-	 * Authenticate using stored email/password (legacy fallback)
-	 */
-	private CompletableFuture<Boolean> loginWithPasswordAsync()
-	{
-		return loginAsync(config.email(), config.password())
-			.thenApply(result -> result.success);
 	}
 
 	/**
@@ -1027,7 +980,6 @@ public class ApiHttpTransport
 
 					DeviceAuthResponse authResponse = new DeviceAuthResponse();
 					authResponse.setDeviceCode(json.get("device_code").getAsString());
-					authResponse.setUserCode(json.get("user_code").getAsString());
 					authResponse.setVerificationUrl(json.get("verification_url").getAsString());
 					authResponse.setExpiresIn(json.get("expires_in").getAsInt());
 					authResponse.setPollInterval(json.get("poll_interval").getAsInt());
@@ -1104,8 +1056,6 @@ public class ApiHttpTransport
 					if ("authorized".equals(statusResponse.getStatus()) && json.has(ACCESS_TOKEN_KEY))
 					{
 						statusResponse.setAccessToken(json.get(ACCESS_TOKEN_KEY).getAsString());
-						statusResponse.setTokenType(json.has("token_type")
-							? json.get("token_type").getAsString() : "bearer");
 						if (json.has("refresh_token"))
 						{
 							statusResponse.setRefreshToken(json.get("refresh_token").getAsString());
