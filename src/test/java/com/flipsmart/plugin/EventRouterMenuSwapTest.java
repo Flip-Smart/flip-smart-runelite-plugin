@@ -15,6 +15,7 @@ import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.trading.OfferStore;
 
 import net.runelite.api.Client;
+import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.MenuEntry;
 import net.runelite.api.events.PostMenuSort;
 
@@ -96,6 +97,18 @@ public class EventRouterMenuSwapTest
 
 	private MenuEntry[] runSwap(ActionDecision decision, boolean active, int menuSlot)
 	{
+		return runSwap(decision, active, menuSlot, ITEM);
+	}
+
+	private MenuEntry[] runSwap(ActionDecision decision, boolean active, int menuSlot, int slotItem)
+	{
+		GrandExchangeOffer[] offers = new GrandExchangeOffer[8];
+		for (int i = 0; i < offers.length; i++)
+		{
+			offers[i] = mock(GrandExchangeOffer.class);
+			when(offers[i].getItemId()).thenReturn(slotItem);
+		}
+		when(client.getGrandExchangeOffers()).thenReturn(offers);
 		when(auto.isActive()).thenReturn(active);
 		when(auto.getLastAppliedDecision()).thenReturn(decision);
 		MenuEntry[] menu = slotMenu(menuSlot);
@@ -125,6 +138,14 @@ public class EventRouterMenuSwapTest
 	public void otherSlotKeepsVanillaMenu()
 	{
 		MenuEntry[] menu = runSwap(decision(ActionStep.CANCEL, 2), true, 5);
+		assertEquals("View offer", menu[3].getOption());
+		verify(client, never()).setMenuEntries(any());
+	}
+
+	@Test
+	public void slotReusedForAnotherItemKeepsVanillaMenu()
+	{
+		MenuEntry[] menu = runSwap(decision(ActionStep.CANCEL, 1), true, 1, ITEM + 1);
 		assertEquals("View offer", menu[3].getOption());
 		verify(client, never()).setMenuEntries(any());
 	}

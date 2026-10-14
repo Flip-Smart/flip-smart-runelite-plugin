@@ -305,7 +305,8 @@ public class EventRouter
 		{
 			MenuEntry entry = entries[i];
 			if (entry.getOption().startsWith(option)
-				&& GeOfferDescriptionService.slotOf(entry.getParam1()) == decision.getSlot())
+				&& GeOfferDescriptionService.slotOf(entry.getParam1()) == decision.getSlot()
+				&& client.getGrandExchangeOffers()[decision.getSlot()].getItemId() == decision.getItemId())
 			{
 				entries[i] = entries[top];
 				entries[top] = entry;
