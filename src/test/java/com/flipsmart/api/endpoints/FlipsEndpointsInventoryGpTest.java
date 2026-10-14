@@ -17,7 +17,7 @@ public class FlipsEndpointsInventoryGpTest
 	public void appendsWhenPresent()
 	{
 		StringBuilder sb = new StringBuilder();
-		FlipsEndpoints.appendInventoryGp(sb, 50_000_000);
+		FlipsEndpoints.appendInventoryGp(sb, 50_000_000L);
 		assertEquals("&inventory_gp=50000000", sb.toString());
 	}
 
@@ -25,7 +25,7 @@ public class FlipsEndpointsInventoryGpTest
 	public void sendsZeroRatherThanOmittingIt()
 	{
 		StringBuilder sb = new StringBuilder();
-		FlipsEndpoints.appendInventoryGp(sb, 0);
+		FlipsEndpoints.appendInventoryGp(sb, 0L);
 		assertEquals("&inventory_gp=0", sb.toString());
 	}
 

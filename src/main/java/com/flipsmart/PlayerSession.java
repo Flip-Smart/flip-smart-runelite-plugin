@@ -39,7 +39,10 @@ public class PlayerSession
 	// =====================
 
 	@Getter
-	private volatile int currentCashStack;
+	private volatile long currentCashStack;
+
+	@Setter
+	private volatile long bankGp;
 
 	private final Set<Integer> collectedItemIds = ConcurrentHashMap.newKeySet();
 	private final Map<Integer, Integer> collectedQuantities = new ConcurrentHashMap<>();
@@ -110,9 +113,14 @@ public class PlayerSession
 	// Player Inventory Methods
 	// =====================
 
-	public void setCashStack(int amount)
+	public void setCashStack(long amount)
 	{
 		this.currentCashStack = amount;
+	}
+
+	public long getSpendableGp()
+	{
+		return currentCashStack + bankGp;
 	}
 
 	public Set<Integer> getCollectedItemIds()
@@ -287,6 +295,7 @@ public class PlayerSession
 	public void onLoginStateChange(int loginTick)
 	{
 		this.lastLoginTick = loginTick;
+		this.bankGp = 0;
 		this.offlineSyncCompleted = false;
 		log.debug("Login state change detected, setting lastLoginTick to {}", loginTick);
 	}
@@ -322,6 +331,7 @@ public class PlayerSession
 		this.loggedIntoRunescape = false;
 		this.lastLoginTick = 0;
 		this.currentCashStack = 0;
+		this.bankGp = 0;
 		this.offlineSyncCompleted = false;
 		this.bankSnapshotInProgress = false;
 		this.lastBankSnapshotAttempt = 0;

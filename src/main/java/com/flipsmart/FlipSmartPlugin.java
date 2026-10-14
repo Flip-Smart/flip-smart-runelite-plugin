@@ -96,6 +96,7 @@ public class FlipSmartPlugin extends Plugin
 {
 	private static final int INVENTORY_CONTAINER_ID = 93;
 	private static final int COINS_ITEM_ID = 995;
+	private static final int PLATINUM_TOKEN_ID = 13204;
 	private static final int GE_REGION_ID = 12598;
 
 	@Inject
@@ -307,13 +308,6 @@ public class FlipSmartPlugin extends Plugin
 
 
 
-	/**
-	 * Get current cash stack (delegates to session for backwards compatibility).
-	 */
-	public int getCurrentCashStack()
-	{
-		return session.getCurrentCashStack();
-	}
 
 	/**
 	 * Check if player is logged into RuneScape (delegates to session for backwards compatibility).
@@ -1676,21 +1670,21 @@ public class FlipSmartPlugin extends Plugin
 		flipFinderPanel = new FlipFinderPanel(config, apiClient, itemManager, this, configManager)
 		{
 			@Override
-			protected Integer getCashStack()
+			protected Long getCashStack()
 			{
 				if (config.cashstackOverrideEnabled())
 				{
-					java.util.OptionalInt override = GpUtils.parseGp(config.cashstackOverrideAmount());
+					java.util.OptionalLong override = GpUtils.parseGp(config.cashstackOverrideAmount());
 					if (override.isPresent())
 					{
-						return override.getAsInt();
+						return override.getAsLong();
 					}
 				}
-				return session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null;
+				return liveCashStack();
 			}
 
 			@Override
-			protected Integer getInventoryGp()
+			protected Long getInventoryGp()
 			{
 				// Never the override: this is the reported figure, not the one
 				// recommendations are built from. Zero is reported as zero.
@@ -1833,17 +1827,13 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
-		int totalCash = 0;
+		long totalCash = gpIn(inventory);
 		Item[] items = inventory.getItems();
 
 		Set<Integer> currentInventoryIds = new HashSet<>();
 		Map<Integer, Integer> currentInventoryCounts = new HashMap<>();
 		for (Item item : items)
 		{
-			if (item.getId() == COINS_ITEM_ID)
-			{
-				totalCash += item.getQuantity();
-			}
 			if (item.getId() > 0)
 			{
 				int canonicalId = itemManager.canonicalize(item.getId());
@@ -1901,7 +1891,32 @@ public class FlipSmartPlugin extends Plugin
 		Map<Integer, Integer> b = new HashMap<>(after);
 		a.remove(COINS_ITEM_ID);
 		b.remove(COINS_ITEM_ID);
+		a.remove(PLATINUM_TOKEN_ID);
+		b.remove(PLATINUM_TOKEN_ID);
 		return !a.equals(b);
+	}
+
+	public Long liveCashStack()
+	{
+		long gp = session.getSpendableGp();
+		return gp > 0 ? gp : null;
+	}
+
+	public static long gpIn(ItemContainer container)
+	{
+		long gp = 0;
+		for (Item item : container.getItems())
+		{
+			if (item.getId() == COINS_ITEM_ID)
+			{
+				gp += item.getQuantity();
+			}
+			else if (item.getId() == PLATINUM_TOKEN_ID)
+			{
+				gp += item.getQuantity() * 1_000L;
+			}
+		}
+		return gp;
 	}
 
 	/**

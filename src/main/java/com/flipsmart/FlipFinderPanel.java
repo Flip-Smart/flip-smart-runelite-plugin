@@ -1293,7 +1293,7 @@ public class FlipFinderPanel extends PluginPanel
 		final int completedScrollPos = getScrollPosition(completedFlipsScrollPane);
 
 		// Recommendation parameters mirror the standalone /flip-finder call.
-		Integer cashStack = getCashStack();
+		Long cashStack = getCashStack();
 		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
 		FlipSmartConfig.FlipStyle selectedStyle = (FlipSmartConfig.FlipStyle) flipStyleDropdown.getSelectedItem();
 		String flipStyle = selectedStyle != null
@@ -1588,7 +1588,7 @@ public class FlipFinderPanel extends PluginPanel
 		// This prevents the UI flash when recommendations disappear and reappear
 
 		// Fetch recommendations asynchronously
-		Integer cashStack = getCashStack();
+		Long cashStack = getCashStack();
 		int limit = Math.max(1, Math.min(50, config.flipFinderLimit()));
 
 		// Get selected flip style
@@ -2164,11 +2164,11 @@ public class FlipFinderPanel extends PluginPanel
 			return;
 		}
 
-		java.util.OptionalInt parsed = GpUtils.parseGp(config.cashstackOverrideAmount());
+		java.util.OptionalLong parsed = GpUtils.parseGp(config.cashstackOverrideAmount());
 		if (parsed.isPresent())
 		{
 			cashstackOverrideLabel.setForeground(OVERRIDE_ACTIVE_COLOR);
-			cashstackOverrideLabel.setText("Cashstack override: " + GpUtils.formatGPExact(parsed.getAsInt()) + " gp");
+			cashstackOverrideLabel.setText("Cashstack override: " + GpUtils.formatGPExact(parsed.getAsLong()) + " gp");
 		}
 		else
 		{
@@ -2183,7 +2183,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * Returns null if not available
 	 * Can be overridden by subclasses to provide actual cash stack
 	 */
-	protected Integer getCashStack()
+	protected Long getCashStack()
 	{
 		// This will be overridden by the plugin
 		// For now, return null to get all recommendations
@@ -2196,7 +2196,7 @@ public class FlipFinderPanel extends PluginPanel
 	 * override may replace with a user-supplied figure. Null means "unknown, do not
 	 * record"; zero is a real reading and must be sent as such.
 	 */
-	protected Integer getInventoryGp()
+	protected Long getInventoryGp()
 	{
 		return null;
 	}
@@ -3480,17 +3480,6 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			label.setText(RISK_NA);
 		}
-	}
-
-	/**
-	 * Set the cash stack for filtering recommendations
-	 * @param cashStack the cash stack value (used to trigger refresh)
-	 */
-	@SuppressWarnings("unused")
-	public void setCashStack(Integer cashStack)
-	{
-		// This will trigger a refresh with the new cash stack
-		refresh();
 	}
 
 	/**

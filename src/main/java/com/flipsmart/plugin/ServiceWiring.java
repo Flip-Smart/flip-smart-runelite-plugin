@@ -157,8 +157,7 @@ public class ServiceWiring
 			}
 		});
 
-		manualAdjustmentTracker.setCashStackSupplier(() ->
-			session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null);
+		manualAdjustmentTracker.setCashStackSupplier(plugin::liveCashStack);
 		manualAdjustmentTracker.setRsnSupplier(() -> plugin.getCurrentRsnSafe().orElse(null));
 		manualAdjustmentTracker.setFilledSlotsSupplier(plugin::getFilledGESlotCount);
 		manualAdjustmentTracker.setMembersWorldSupplier(plugin::isMembersWorld);

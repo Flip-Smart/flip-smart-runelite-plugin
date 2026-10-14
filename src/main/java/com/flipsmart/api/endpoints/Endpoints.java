@@ -621,7 +621,7 @@ public final class Endpoints
 		 * Fetch flip recommendations from the API asynchronously.
 		 */
 		public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
-			Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
+			Long cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
 			Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume, boolean favoritesOnly)
 		{
 			String apiUrl = transport.getApiUrl();
@@ -647,7 +647,7 @@ public final class Endpoints
 		 * {@link #getPluginSyncAsync} — the two callers differ only in path and
 		 * response type, so keep the param-building in one place to avoid drift.
 		 */
-		private void appendSharedQueryParams(StringBuilder urlBuilder, Integer cashStack, Integer randomSeed,
+		private void appendSharedQueryParams(StringBuilder urlBuilder, Long cashStack, Integer randomSeed,
 			String timeframe, String rsn, Integer filledSlots, boolean isMembersWorld)
 		{
 			if (cashStack != null)
@@ -713,7 +713,7 @@ public final class Endpoints
 		 * leave the stored figure overstated indefinitely. Null alone means "unknown".
 		 * Kept off {@code appendSharedQueryParams} because /flip-finder has no use for it.
 		 */
-		static void appendInventoryGp(StringBuilder urlBuilder, Integer inventoryGp)
+		static void appendInventoryGp(StringBuilder urlBuilder, Long inventoryGp)
 		{
 			if (inventoryGp != null)
 			{
@@ -728,7 +728,7 @@ public final class Endpoints
 		 * panel inputs drive both.
 		 */
 		public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
-			Integer cashStack, Integer inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
+			Long cashStack, Long inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
 			String rsn, Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume, boolean favoritesOnly)
 		{
 			String apiUrl = transport.getApiUrl();
@@ -755,7 +755,7 @@ public final class Endpoints
 		 * {@link #getPluginSyncAsync} instead, so this fires once per session.
 		 * Best-effort: failures are swallowed rather than delaying logout.
 		 */
-		public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Integer inventoryGp)
+		public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Long inventoryGp)
 		{
 			JsonObject body = new JsonObject();
 			body.addProperty(JSON_KEY_RSN, rsn);
