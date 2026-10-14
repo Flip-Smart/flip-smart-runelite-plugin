@@ -50,13 +50,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	private static final int GE_MAX_SLOTS = 8;
 
 	// Colors - designed to blend with GE's brown/tan color scheme
-	private static final Color COLOR_COMPETITIVE = new Color(76, 187, 23);        // OSRS green
-	private static final Color COLOR_UNCOMPETITIVE = new Color(215, 75, 75);      // Soft red
 	private static final Color COLOR_FLIP_ASSIST_GLOW = new Color(255, 185, 50);  // Orange glow for flip assist
-
-	// Colorblind-safe alternative colors (blue/orange instead of green/red)
-	private static final Color COLOR_COMPETITIVE_CB = new Color(0, 102, 204);           // Blue
-	private static final Color COLOR_UNCOMPETITIVE_CB = new Color(255, 140, 0);         // Orange
 
 	// Adjustment highlight color — amber pulse to draw attention without conflicting with red/green
 	private static final NumberFormat NUMBER_FORMAT = NumberFormat.getIntegerInstance();
@@ -151,7 +145,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private Color getCompetitiveColor()
 	{
-		return config.colorblindMode() ? COLOR_COMPETITIVE_CB : COLOR_COMPETITIVE;
+		return (config.colorblindMode() ? SlotBorderTint.BLUE : SlotBorderTint.GREEN).getColor();
 	}
 
 	/**
@@ -159,7 +153,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 	 */
 	private Color getUncompetitiveColor()
 	{
-		return config.colorblindMode() ? COLOR_UNCOMPETITIVE_CB : COLOR_UNCOMPETITIVE;
+		return (config.colorblindMode() ? SlotBorderTint.ORANGE : SlotBorderTint.RED).getColor();
 	}
 
 	@Override
