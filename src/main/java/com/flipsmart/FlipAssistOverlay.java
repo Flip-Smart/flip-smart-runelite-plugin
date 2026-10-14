@@ -122,7 +122,6 @@ public class FlipAssistOverlay extends Overlay
 		SET_PRICE("Set Price", "Press [%s] to set price: %s"),
 		CONFIRM_OFFER("Confirm", "Click the confirm button"),
 		WAITING_BUY("Buying...", "Offer placed, waiting to fill"),
-		COLLECT_ITEMS("Collect", "Items bought! Collect from slot"),
 		SELL_ITEMS("Sell Items", "Click SELL on collected items"),
 		SET_SELL_PRICE("Set Sell Price", "Press [%s] to set: %s"),
 		CONFIRM_SELL("Confirm Sale", "Click confirm to list"),

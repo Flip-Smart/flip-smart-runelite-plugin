@@ -3,7 +3,6 @@ package com.flipsmart.recommend;
 import com.flipsmart.domain.flip.FlipRecommendation;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -106,25 +105,6 @@ public final class RecommendationQueue
 	}
 
 	/**
-	 * Add every recommendation whose item id is not in {@code activeItemIds},
-	 * caching all item names. Used by start() — does not reset the cursor.
-	 */
-	public void addFilteredByActive(List<FlipRecommendation> incoming, Set<Integer> activeItemIds)
-	{
-		for (FlipRecommendation rec : incoming)
-		{
-			if (!activeItemIds.contains(rec.getItemId()))
-			{
-				recommendations.add(rec);
-			}
-			if (rec.getItemName() != null)
-			{
-				itemNames.put(rec.getItemId(), rec.getItemName());
-			}
-		}
-	}
-
-	/**
 	 * Append recommendations without touching the cursor. Used by the offline-sync
 	 * restore path, which clears, re-populates, then sets a specific cursor — unlike
 	 * {@link #replace(List)}, which resets the cursor to the front.
@@ -132,12 +112,6 @@ public final class RecommendationQueue
 	public void addAll(List<FlipRecommendation> toAdd)
 	{
 		recommendations.addAll(toAdd);
-	}
-
-	/** Sort the queue by volume per hour ascending (slowest-filling items first). */
-	public void sortByVolumeAscending()
-	{
-		recommendations.sort(Comparator.comparingDouble(FlipRecommendation::getVolumePerHour));
 	}
 
 	public FlipRecommendation getCurrentRecommendation()

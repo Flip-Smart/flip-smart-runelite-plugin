@@ -50,18 +50,6 @@ public interface FlipSmartConfig extends Config
 	}
 
 	@ConfigItem(
-		keyName = "password",
-		name = "",
-		description = "Deprecated: Use refresh token instead",
-		hidden = true,
-		secret = true
-	)
-	default String password()
-	{
-		return "";
-	}
-
-	@ConfigItem(
 		keyName = "refreshToken",
 		name = "",
 		description = "Refresh token for persistent login (do not edit manually)",
@@ -429,51 +417,11 @@ public interface FlipSmartConfig extends Config
 	// ============================================
 	@ConfigSection(
 		name = "Notifications",
-		description = "In-game action alerts and Discord webhook notifications for trade events",
+		description = "In-game action alerts",
 		position = 6,
 		closedByDefault = false
 	)
 	String NOTIFICATIONS_SECTION = "notifications";
-
-	@ConfigItem(
-		keyName = "discordWebhookUrl",
-		name = "Discord Webhook URL",
-		description = "Discord webhook URL for receiving notifications. Create one in Discord: Server Settings > Integrations > Webhooks",
-		section = NOTIFICATIONS_SECTION,
-		position = 0,
-		secret = true
-	)
-	default String discordWebhookUrl()
-	{
-		return "";
-	}
-
-	@ConfigItem(
-		keyName = "notifySaleCompleted",
-		name = "Sale Completed",
-		description = "Notify when a sell order completes in the GE",
-		section = NOTIFICATIONS_SECTION,
-		position = 1
-	)
-	default boolean notifySaleCompleted()
-	{
-		return true;
-	}
-
-	// Hidden — coming soon, not exposed in UI. Needs @ConfigItem so RuneLite's config
-	// proxy resolves the default (false) instead of returning null and NPE-ing on unbox.
-	@ConfigItem(
-		keyName = "notifyFlipSuggestion",
-		name = "Flip Suggestion",
-		description = "Notify when a new flip suggestion is available",
-		section = NOTIFICATIONS_SECTION,
-		position = 2,
-		hidden = true
-	)
-	default boolean notifyFlipSuggestion()
-	{
-		return false;
-	}
 
 	@ConfigItem(
 		keyName = "actionAlert",

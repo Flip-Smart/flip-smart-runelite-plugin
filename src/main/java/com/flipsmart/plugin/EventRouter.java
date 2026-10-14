@@ -1,5 +1,6 @@
 package com.flipsmart.plugin;
 
+import com.flipsmart.AutoRecommendService;
 import com.flipsmart.BankSnapshotService;
 import com.flipsmart.FlipSmartConfig;
 import com.flipsmart.FlipSmartPlugin;
@@ -8,12 +9,14 @@ import com.flipsmart.GeOfferDescriptionService;
 import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
-import com.flipsmart.WebhookSyncService;
+import com.flipsmart.recommend.ActionDecision;
+import com.flipsmart.recommend.ActionStep;
 import com.flipsmart.trading.OfferStore;
 
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.InventoryID;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.ScriptID;
 import net.runelite.api.events.BeforeRender;
 import net.runelite.api.events.GameStateChanged;
@@ -21,6 +24,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.PostMenuSort;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
@@ -52,7 +56,6 @@ public class EventRouter
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final PlayerSession session;
-	private final WebhookSyncService webhookSyncService;
 	private final OfflineSyncService offlineSyncService;
 	private final BankSnapshotService bankSnapshotService;
 	private final GEHistoryService geHistoryService;
@@ -61,7 +64,7 @@ public class EventRouter
 	private final OfferStore offerStore;
 
 	public EventRouter(FlipSmartPlugin plugin, Client client, FlipSmartConfig config,
-		PlayerSession session, WebhookSyncService webhookSyncService, OfflineSyncService offlineSyncService,
+		PlayerSession session, OfflineSyncService offlineSyncService,
 		BankSnapshotService bankSnapshotService, GEHistoryService geHistoryService,
 		GeOfferDescriptionService geOfferDescriptionService, GrandExchangeTracker grandExchangeTracker,
 		OfferStore offerStore)
@@ -70,7 +73,6 @@ public class EventRouter
 		this.client = client;
 		this.config = config;
 		this.session = session;
-		this.webhookSyncService = webhookSyncService;
 		this.offlineSyncService = offlineSyncService;
 		this.bankSnapshotService = bankSnapshotService;
 		this.geHistoryService = geHistoryService;
@@ -115,12 +117,6 @@ public class EventRouter
 		{
 			plugin.getFlipFinderPanel().updateCashstackOverrideIndicator();
 			plugin.getFlipFinderPanel().refresh();
-		}
-
-		String key = configChanged.getKey();
-		if ("discordWebhookUrl".equals(key) || "notifySaleCompleted".equals(key))
-		{
-			webhookSyncService.syncIfChanged();
 		}
 	}
 
@@ -182,6 +178,7 @@ public class EventRouter
 
 		if (containerId == InventoryID.BANK.getId())
 		{
+			session.setBankGp(FlipSmartPlugin.gpIn(event.getItemContainer()));
 			bankSnapshotService.onBankContainerChanged(plugin.getCurrentRsnSafe().orElse(null));
 		}
 	}
@@ -291,5 +288,44 @@ public class EventRouter
 		{
 			geOfferDescriptionService.onMenuOptionClicked(event);
 		}
+	}
+
+	public void onPostMenuSort(PostMenuSort event)
+	{
+		AutoRecommendService auto = plugin.getAutoRecommendService();
+		ActionDecision decision = auto == null || !auto.isActive() || client.isMenuOpen() ? null : auto.getLastAppliedDecision();
+		String option = swapOption(decision);
+		if (option == null)
+		{
+			return;
+		}
+		MenuEntry[] entries = client.getMenuEntries();
+		int top = entries.length - 1;
+		for (int i = 0; i < top; i++)
+		{
+			MenuEntry entry = entries[i];
+			if (entry.getOption().startsWith(option)
+				&& GeOfferDescriptionService.slotOf(entry.getParam1()) == decision.getSlot()
+				&& client.getGrandExchangeOffers()[decision.getSlot()].getItemId() == decision.getItemId())
+			{
+				entries[i] = entries[top];
+				entries[top] = entry;
+				client.setMenuEntries(entries);
+				return;
+			}
+		}
+	}
+
+	static String swapOption(ActionDecision decision)
+	{
+		if (decision == null || decision.getSlot() < 0)
+		{
+			return null;
+		}
+		if (decision.getStep() == ActionStep.REPRICE)
+		{
+			return "Modify";
+		}
+		return decision.getStep() == ActionStep.CANCEL ? "Abort" : null;
 	}
 }
