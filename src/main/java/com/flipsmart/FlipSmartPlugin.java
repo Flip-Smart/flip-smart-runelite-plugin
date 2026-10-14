@@ -2122,16 +2122,20 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (!offer.isBuy())
 		{
-			return BuyPriceLookup.findAverageBuyPriceWithFallback(
-				getCurrentActiveFlips(), getCycleBasisForItem(offer.getItemId()),
-				offerStore.forItem(offer.getItemId()), offer.getItemId(),
-				getHeldQuantityForItem(offer.getItemId()));
+			return getRecordedBuyCost(offer.getItemId());
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{
 			return Math.round(offer.getSpent() / (double) offer.getFilledQuantity());
 		}
 		return offer.getPrice();
+	}
+
+	public Long getRecordedBuyCost(int itemId)
+	{
+		return BuyPriceLookup.findAverageBuyPriceWithFallback(
+			getCurrentActiveFlips(), getCycleBasisForItem(itemId),
+			offerStore.forItem(itemId), itemId, getHeldQuantityForItem(itemId));
 	}
 
 	public void applyActiveOfferSurface(OfferAdviceResponse resp)
