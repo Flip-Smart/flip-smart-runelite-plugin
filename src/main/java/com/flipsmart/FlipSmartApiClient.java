@@ -224,7 +224,7 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<FlipFinderResponse> getFlipRecommendationsAsync(
-		Integer cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
+		Long cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
 		Integer filledSlots, boolean isMembersWorld, boolean favoritesOnly)
 	{
 		return flips.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn,
@@ -232,14 +232,14 @@ public class FlipSmartApiClient
 	}
 
 	public CompletableFuture<PluginSyncResponse> getPluginSyncAsync(
-		Integer cashStack, Integer inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
+		Long cashStack, Long inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
 		String rsn, Integer filledSlots, boolean isMembersWorld, boolean favoritesOnly)
 	{
 		return flips.getPluginSyncAsync(cashStack, inventoryGp, flipStyle, limit, randomSeed, timeframe, rsn,
 			filledSlots, isMembersWorld, config.minimumProfit(), config.minimumVolume(), favoritesOnly);
 	}
 
-	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Integer inventoryGp)
+	public CompletableFuture<Boolean> pushRsnCapitalAsync(String rsn, Long inventoryGp)
 	{
 		return flips.pushRsnCapitalAsync(rsn, inventoryGp);
 	}

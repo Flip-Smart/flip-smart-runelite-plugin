@@ -182,6 +182,7 @@ public class EventRouter
 
 		if (containerId == InventoryID.BANK.getId())
 		{
+			session.setBankGp(FlipSmartPlugin.gpIn(event.getItemContainer()));
 			bankSnapshotService.onBankContainerChanged(plugin.getCurrentRsnSafe().orElse(null));
 		}
 	}

@@ -95,7 +95,7 @@ public class ManualAdjustmentTracker
 
 	// Suppliers for ditch logic — needed to fetch replacement recommendations
 	@Setter
-	private volatile Supplier<Integer> cashStackSupplier;
+	private volatile Supplier<Long> cashStackSupplier;
 	@Setter
 	private volatile Supplier<String> rsnSupplier;
 	@Setter
@@ -441,7 +441,7 @@ public class ManualAdjustmentTracker
 	 */
 	private void fetchReplacementRecommendation(OfferAdjustmentState state)
 	{
-		Integer cashStack = cashStackSupplier != null ? cashStackSupplier.get() : null;
+		Long cashStack = cashStackSupplier != null ? cashStackSupplier.get() : null;
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
 		Integer filledSlots = filledSlotsSupplier != null ? filledSlotsSupplier.get() : null;
 		boolean isMembersWorld = membersWorldSupplier == null || membersWorldSupplier.get();
