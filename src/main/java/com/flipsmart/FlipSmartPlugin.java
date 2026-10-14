@@ -63,6 +63,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.PostMenuSort;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
@@ -1637,6 +1638,12 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onPostMenuSort(PostMenuSort event)
+	{
+		eventRouter.onPostMenuSort(event);
+	}
+
+	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		eventRouter.onMenuOptionClicked(event);
@@ -2462,11 +2469,15 @@ public class FlipSmartPlugin extends Plugin
 	// Assist overlay status line, plus a GE slot highlight when a live offer exists.
 	private void surfaceV9Prompt(int itemId, String detail, long price)
 	{
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (live != null && isAutoRecommendActive())
+		{
+			autoRecommendService.surfaceAdvisorResell(live, price, null);
+		}
 		if (flipAssistOverlay != null)
 		{
 			flipAssistOverlay.setAutoStatusMessage(detail, itemId);
 		}
-		OfferRecord live = findLiveOfferForItem(itemId);
 		if (geSlotOverlay != null && live != null && live.getSlot() != null)
 		{
 			geSlotOverlay.setAdjustmentHighlight(live.getSlot(), price);
