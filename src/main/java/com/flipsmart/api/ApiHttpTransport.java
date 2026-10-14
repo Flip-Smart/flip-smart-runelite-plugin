@@ -76,7 +76,7 @@ public class ApiHttpTransport
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
-	// Callback when authentication permanently fails (both refresh token and password fail)
+	// Callback when authentication permanently fails (refresh token missing or rejected)
 	@Setter
 	private volatile Runnable onAuthFailure = null;
 
@@ -331,7 +331,7 @@ public class ApiHttpTransport
 
 	/**
 	 * Authenticate with the API and obtain a JWT token.
-	 * Tries refresh token first (if available), falls back to email/password.
+	 * Re-authenticates with the stored refresh token; no stored-password fallback.
 	 * Coalesces concurrent calls — if auth is already in progress, returns the pending future.
 	 */
 	private CompletableFuture<Boolean> authenticateAsync()
