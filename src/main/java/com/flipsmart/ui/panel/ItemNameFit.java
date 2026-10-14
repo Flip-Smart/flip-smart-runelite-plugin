@@ -1,8 +1,9 @@
 package com.flipsmart.ui.panel;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
+import lombok.Value;
 
 /**
  * Chooses a font size and line breaks so an item name fits the fixed-width name box
@@ -18,41 +19,23 @@ public final class ItemNameFit
 	public static final int MIN_FONT_SIZE = 10;
 	public static final int MAX_LINES = 2;
 
-	private static final String ELLIPSIS = "…";
-
 	/** Rendered width of {@code text} at {@code fontSize}, in pixels. */
-	@FunctionalInterface
 	public interface WidthMeasurer
 	{
 		int widthOf(String text, int fontSize);
 	}
 
-	/** A chosen layout: the raw lines, the font size they assume, and their HTML render. */
-	public static final class Fit
+	/** A chosen layout: the raw, unescaped lines and the font size they assume. */
+	@Value
+	public static class Fit
 	{
-		private final List<String> lines;
-		private final int fontSize;
+		List<String> lines;
+		int fontSize;
 
-		Fit(List<String> lines, int fontSize)
-		{
-			this.lines = Collections.unmodifiableList(new ArrayList<>(lines));
-			this.fontSize = fontSize;
-		}
-
-		/** The raw, unescaped lines this fit chose. */
-		public List<String> getLines()
-		{
-			return lines;
-		}
-
+		/** Escape last: wrapping measured the raw text, so "&" sized as 1 char, not 5. */
 		public String getHtml()
 		{
-			return toHtml(lines);
-		}
-
-		public int getFontSize()
-		{
-			return fontSize;
+			return lines.stream().map(PanelFormat::escapeHtml).collect(Collectors.joining("<br>", "<html>", "</html>"));
 		}
 
 		public int getLineCount()
@@ -68,127 +51,49 @@ public final class ItemNameFit
 	/**
 	 * Largest size in [MIN_FONT_SIZE, MAX_FONT_SIZE] whose greedy wrap fits in
 	 * MAX_LINES lines of {@code boxWidth}, else the floor size with the last line
-	 * ellipsized.
+	 * ellipsized. A single word wider than the box keeps its own line and is clipped
+	 * by the label, which no OSRS item name is long enough to hit.
 	 */
 	public static Fit fit(String name, int boxWidth, WidthMeasurer measurer)
 	{
 		String safe = name == null ? "" : name.trim();
-		if (safe.isEmpty())
+		int size = MAX_FONT_SIZE;
+		List<String> lines = wrap(safe, boxWidth, size, measurer);
+		while (lines.size() > MAX_LINES && size > MIN_FONT_SIZE)
 		{
-			return new Fit(Collections.singletonList(""), MAX_FONT_SIZE);
+			lines = wrap(safe, boxWidth, --size, measurer);
 		}
-
-		for (int size = MAX_FONT_SIZE; size >= MIN_FONT_SIZE; size--)
+		if (lines.size() > MAX_LINES)
 		{
-			List<String> lines = wrap(safe, boxWidth, size, measurer);
-			if (lines.size() <= MAX_LINES)
+			lines = new ArrayList<>(lines.subList(0, MAX_LINES));
+			String last = lines.get(MAX_LINES - 1);
+			while (!last.isEmpty() && measurer.widthOf(last + "…", size) > boxWidth)
 			{
-				return new Fit(lines, size);
+				last = last.substring(0, last.length() - 1);
 			}
+			lines.set(MAX_LINES - 1, last + "…");
 		}
-
-		List<String> lines = wrap(safe, boxWidth, MIN_FONT_SIZE, measurer);
-		List<String> kept = new ArrayList<>(lines.subList(0, MAX_LINES));
-		kept.set(MAX_LINES - 1, ellipsize(kept.get(MAX_LINES - 1), boxWidth, MIN_FONT_SIZE, measurer));
-		return new Fit(kept, MIN_FONT_SIZE);
+		return new Fit(lines, size);
 	}
 
-	/** Greedy word wrap; a word wider than the box on its own is split at characters. */
 	private static List<String> wrap(String text, int boxWidth, int size, WidthMeasurer measurer)
 	{
 		List<String> lines = new ArrayList<>();
-		StringBuilder current = new StringBuilder();
-
+		String current = "";
 		for (String word : text.split(" +"))
 		{
-			String rest = flushOverlongWord(word, lines, current, boxWidth, size, measurer);
-			if (rest.isEmpty())
+			String candidate = current.isEmpty() ? word : current + " " + word;
+			if (current.isEmpty() || measurer.widthOf(candidate, size) <= boxWidth)
 			{
-				continue;
-			}
-			String candidate = current.length() == 0 ? rest : current + " " + rest;
-			if (measurer.widthOf(candidate, size) <= boxWidth)
-			{
-				current.setLength(0);
-				current.append(candidate);
+				current = candidate;
 			}
 			else
 			{
-				if (current.length() > 0)
-				{
-					lines.add(current.toString());
-				}
-				current.setLength(0);
-				current.append(rest);
+				lines.add(current);
+				current = word;
 			}
 		}
-
-		if (current.length() > 0)
-		{
-			lines.add(current.toString());
-		}
-		if (lines.isEmpty())
-		{
-			lines.add("");
-		}
+		lines.add(current);
 		return lines;
-	}
-
-	/** Splits {@code word} across {@code lines} while it's wider than the box; returns the remainder. */
-	private static String flushOverlongWord(String word, List<String> lines, StringBuilder current, int boxWidth, int size, WidthMeasurer measurer)
-	{
-		String rest = word;
-		while (measurer.widthOf(rest, size) > boxWidth)
-		{
-			int cut = longestPrefixThatFits(rest, boxWidth, size, measurer);
-			if (current.length() > 0)
-			{
-				lines.add(current.toString());
-				current.setLength(0);
-			}
-			lines.add(rest.substring(0, cut));
-			rest = rest.substring(cut);
-		}
-		return rest;
-	}
-
-	/** At least 1, so a box too narrow for any glyph still terminates the split loop. */
-	private static int longestPrefixThatFits(String word, int boxWidth, int size, WidthMeasurer measurer)
-	{
-		int cut = 0;
-		for (int i = 1; i <= word.length(); i++)
-		{
-			if (measurer.widthOf(word.substring(0, i), size) > boxWidth)
-			{
-				break;
-			}
-			cut = i;
-		}
-		return Math.max(1, cut);
-	}
-
-	private static String ellipsize(String line, int boxWidth, int size, WidthMeasurer measurer)
-	{
-		String trimmed = line;
-		while (!trimmed.isEmpty() && measurer.widthOf(trimmed + ELLIPSIS, size) > boxWidth)
-		{
-			trimmed = trimmed.substring(0, trimmed.length() - 1);
-		}
-		return trimmed + ELLIPSIS;
-	}
-
-	/** Escape last: wrapping measured the raw text, so "&" sized as 1 char, not 5. */
-	private static String toHtml(List<String> lines)
-	{
-		StringBuilder sb = new StringBuilder("<html>");
-		for (int i = 0; i < lines.size(); i++)
-		{
-			if (i > 0)
-			{
-				sb.append("<br>");
-			}
-			sb.append(PanelFormat.escapeHtml(lines.get(i)));
-		}
-		return sb.append("</html>").toString();
 	}
 }

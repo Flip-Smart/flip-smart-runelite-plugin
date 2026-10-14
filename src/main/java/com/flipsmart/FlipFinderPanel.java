@@ -135,7 +135,6 @@ public class FlipFinderPanel extends PluginPanel
 	private static final Color COLOR_AUTO_RECOMMEND_ACTIVE = new Color(200, 150, 0);
 
 	private static final Color STAR_ON_COLOR = new Color(255, 175, 45);
-	private static final Color STAR_OFF_COLOR = new Color(120, 120, 120);
 
 	// Yellow used for the completed-flip anomaly badge (HTML label markup).
 	private static final String COLOR_ANOMALY_HEX = "#FFCC33";

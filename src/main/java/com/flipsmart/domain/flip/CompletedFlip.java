@@ -27,9 +27,6 @@ public class CompletedFlip
 	@SerializedName("buy_total")
 	private long buyTotal;
 
-	@SerializedName("buy_time")
-	private String buyTime;
-
 	@SerializedName("sell_price_per_item")
 	private long sellPricePerItem;
 

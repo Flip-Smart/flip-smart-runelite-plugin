@@ -1,10 +1,7 @@
 package com.flipsmart.ui.panel;
 
 import com.flipsmart.util.GpUtils;
-import java.awt.AlphaComposite;
 import java.awt.Color;
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
@@ -23,8 +20,6 @@ public final class PanelFormat
 	private static final Color COLOR_LOSS_RED = new Color(255, 100, 100);
 
 	private static final String FORMAT_PROFIT_COST = "Profit: %s | Cost: %s";
-	private static final String FORMAT_MARGIN_ROI = "Margin: %s (%.1f%% ROI)";
-	private static final String FORMAT_MARGIN_ROI_LOSS = "Margin: %s (%.1f%% ROI) - Loss";
 	private static final String FORMAT_LIQUIDITY = "Liquidity: %.0f (%s) | %s";
 	private static final String FORMAT_VOLUME = "Volume: %s/day";
 	private static final String FORMAT_RISK = "Risk: %.0f (%s)";

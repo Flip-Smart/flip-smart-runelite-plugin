@@ -8,7 +8,6 @@ import com.flipsmart.GeOfferDescriptionService;
 import com.flipsmart.GrandExchangeTracker;
 import com.flipsmart.OfflineSyncService;
 import com.flipsmart.PlayerSession;
-import com.flipsmart.WebhookSyncService;
 import com.flipsmart.trading.OfferStore;
 
 import net.runelite.api.Client;
@@ -52,7 +51,6 @@ public class EventRouter
 	private final Client client;
 	private final FlipSmartConfig config;
 	private final PlayerSession session;
-	private final WebhookSyncService webhookSyncService;
 	private final OfflineSyncService offlineSyncService;
 	private final BankSnapshotService bankSnapshotService;
 	private final GEHistoryService geHistoryService;
@@ -61,7 +59,7 @@ public class EventRouter
 	private final OfferStore offerStore;
 
 	public EventRouter(FlipSmartPlugin plugin, Client client, FlipSmartConfig config,
-		PlayerSession session, WebhookSyncService webhookSyncService, OfflineSyncService offlineSyncService,
+		PlayerSession session, OfflineSyncService offlineSyncService,
 		BankSnapshotService bankSnapshotService, GEHistoryService geHistoryService,
 		GeOfferDescriptionService geOfferDescriptionService, GrandExchangeTracker grandExchangeTracker,
 		OfferStore offerStore)
@@ -70,7 +68,6 @@ public class EventRouter
 		this.client = client;
 		this.config = config;
 		this.session = session;
-		this.webhookSyncService = webhookSyncService;
 		this.offlineSyncService = offlineSyncService;
 		this.bankSnapshotService = bankSnapshotService;
 		this.geHistoryService = geHistoryService;
@@ -115,12 +112,6 @@ public class EventRouter
 		{
 			plugin.getFlipFinderPanel().updateCashstackOverrideIndicator();
 			plugin.getFlipFinderPanel().refresh();
-		}
-
-		String key = configChanged.getKey();
-		if ("discordWebhookUrl".equals(key) || "notifySaleCompleted".equals(key))
-		{
-			webhookSyncService.syncIfChanged();
 		}
 	}
 
