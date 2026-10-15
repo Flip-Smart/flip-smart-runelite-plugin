@@ -413,7 +413,8 @@ public class GeSlotWidgetDecorator
 
     void reconcileBorder(Widget slotWidget, int slot, GrandExchangeOffer offer, boolean bordersOn)
     {
-        if (!bordersOn)
+        // The amber adjust highlight is drawn on the same edge, so it owns the slot outright.
+        if (!bordersOn || plugin.hasSlotAdjustmentHighlight(slot))
         {
             revertBorder(slot, slotWidget);
             return;
