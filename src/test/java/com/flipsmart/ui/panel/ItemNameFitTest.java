@@ -60,11 +60,11 @@ public class ItemNameFitTest
 	}
 
 	@Test
-	public void hardSplitsASingleWordWiderThanTheBox()
+	public void keepsASingleWordWiderThanTheBoxOnOneLine()
 	{
 		ItemNameFit.Fit fit = ItemNameFit.fit("Supercalifragilisticexpialidocious", 98, FIXED);
-		assertTrue(fit.getLineCount() <= ItemNameFit.MAX_LINES);
-		assertTrue(fit.getFontSize() >= ItemNameFit.MIN_FONT_SIZE);
+		assertEquals(1, fit.getLineCount());
+		assertEquals(ItemNameFit.MAX_FONT_SIZE, fit.getFontSize());
 	}
 
 	@Test

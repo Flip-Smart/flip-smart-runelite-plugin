@@ -63,6 +63,7 @@ import net.runelite.api.events.GameTick;
 import net.runelite.api.events.GrandExchangeOfferChanged;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.PostMenuSort;
 import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.events.ScriptPostFired;
 import net.runelite.api.events.VarClientIntChanged;
@@ -96,6 +97,7 @@ public class FlipSmartPlugin extends Plugin
 {
 	private static final int INVENTORY_CONTAINER_ID = 93;
 	private static final int COINS_ITEM_ID = 995;
+	private static final int PLATINUM_TOKEN_ID = 13204;
 	private static final int GE_REGION_ID = 12598;
 
 	@Inject
@@ -147,10 +149,8 @@ public class FlipSmartPlugin extends Plugin
 	@Inject
 	private net.runelite.client.game.ItemManager itemManager;
 
-
 	@Inject
 	private ConfigManager configManager;
-
 
 	@Inject
 	private OfflineSyncService offlineSyncService;
@@ -170,9 +170,6 @@ public class FlipSmartPlugin extends Plugin
 
 	@Inject
 	private com.flipsmart.trading.RoundTripLedger roundTripLedger;
-
-	@Inject
-	private WebhookSyncService webhookSyncService;
 
 	@Inject
 	private GEHistoryService geHistoryService;
@@ -306,15 +303,6 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 
-
-	/**
-	 * Get current cash stack (delegates to session for backwards compatibility).
-	 */
-	public int getCurrentCashStack()
-	{
-		return session.getCurrentCashStack();
-	}
-
 	/**
 	 * Check if player is logged into RuneScape (delegates to session for backwards compatibility).
 	 */
@@ -346,7 +334,6 @@ public class FlipSmartPlugin extends Plugin
 		return membersWorld;
 	}
 
-
 	/**
 	 * Refresh the cached members-world state from the Client API.
 	 * Must be called on the client thread.
@@ -364,7 +351,6 @@ public class FlipSmartPlugin extends Plugin
 	{
 		accountType = AccountTypeMapper.toApiValue(client.getAccountType());
 	}
-
 
 	public int getFlipSlotLimit()
 	{
@@ -761,7 +747,6 @@ public class FlipSmartPlugin extends Plugin
 			inventoryFlipItemCounts, inventorySnapshotKnown);
 	}
 
-
 	@Override
 	protected void startUp() throws Exception
 	{
@@ -815,13 +800,9 @@ public class FlipSmartPlugin extends Plugin
 			offerStore, refreshCoalescer);
 
 		// Build the event router now that all collaborators exist
-		eventRouter = new EventRouter(this, client, config, session, webhookSyncService,
+		eventRouter = new EventRouter(this, client, config, session,
 			offlineSyncService, bankSnapshotService, geHistoryService, geOfferDescriptionService,
 			grandExchangeTracker, offerStore);
-
-
-		// Sync webhook config to backend if configured
-		webhookSyncService.syncIfChanged();
 
 		// Note: Cash stack and RSN will be synced when player logs in via onGameStateChanged
 		// Don't access client data during startup - must be on client thread
@@ -1019,7 +1000,6 @@ public class FlipSmartPlugin extends Plugin
 		// Stop all pending one-shot timers
 		scheduler.stopAllOneShotTimers();
 
-
 		// Stop auto-recommend service and timer
 		scheduler.stopAutoRecommendRefreshTimer();
 		if (autoRecommendService != null)
@@ -1155,7 +1135,6 @@ public class FlipSmartPlugin extends Plugin
 	{
 		pushFinalCapitalSnapshot();
 		session.onLogout();
-		webhookSyncService.onLogout();
 		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
 		persistAutoRecommendState();
@@ -1243,9 +1222,6 @@ public class FlipSmartPlugin extends Plugin
 			{
 				SwingUtilities.invokeLater(() -> flipFinderPanel.updatePremiumStatus());
 			}
-
-			// Pull webhook config after auth is confirmed
-			webhookSyncService.pullFromBackend();
 		});
 
 		// Collected items are no longer restored here: they are derived from the persisted offer
@@ -1667,11 +1643,16 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onPostMenuSort(PostMenuSort event)
+	{
+		eventRouter.onPostMenuSort(event);
+	}
+
+	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked event)
 	{
 		eventRouter.onMenuOptionClicked(event);
 	}
-
 
 	/**
 	 * Initialize the Flip Finder panel and add it to the sidebar
@@ -1681,21 +1662,21 @@ public class FlipSmartPlugin extends Plugin
 		flipFinderPanel = new FlipFinderPanel(config, apiClient, itemManager, this, configManager)
 		{
 			@Override
-			protected Integer getCashStack()
+			protected Long getCashStack()
 			{
 				if (config.cashstackOverrideEnabled())
 				{
-					java.util.OptionalInt override = GpUtils.parseGp(config.cashstackOverrideAmount());
+					java.util.OptionalLong override = GpUtils.parseGp(config.cashstackOverrideAmount());
 					if (override.isPresent())
 					{
-						return override.getAsInt();
+						return override.getAsLong();
 					}
 				}
-				return session.getCurrentCashStack() > 0 ? session.getCurrentCashStack() : null;
+				return liveCashStack();
 			}
 
 			@Override
-			protected Integer getInventoryGp()
+			protected Long getInventoryGp()
 			{
 				// Never the override: this is the reported figure, not the one
 				// recommendations are built from. Zero is reported as zero.
@@ -1838,17 +1819,13 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 
-		int totalCash = 0;
+		long totalCash = gpIn(inventory);
 		Item[] items = inventory.getItems();
 
 		Set<Integer> currentInventoryIds = new HashSet<>();
 		Map<Integer, Integer> currentInventoryCounts = new HashMap<>();
 		for (Item item : items)
 		{
-			if (item.getId() == COINS_ITEM_ID)
-			{
-				totalCash += item.getQuantity();
-			}
 			if (item.getId() > 0)
 			{
 				int canonicalId = itemManager.canonicalize(item.getId());
@@ -1906,7 +1883,32 @@ public class FlipSmartPlugin extends Plugin
 		Map<Integer, Integer> b = new HashMap<>(after);
 		a.remove(COINS_ITEM_ID);
 		b.remove(COINS_ITEM_ID);
+		a.remove(PLATINUM_TOKEN_ID);
+		b.remove(PLATINUM_TOKEN_ID);
 		return !a.equals(b);
+	}
+
+	public Long liveCashStack()
+	{
+		long gp = session.getSpendableGp();
+		return gp > 0 ? gp : null;
+	}
+
+	public static long gpIn(ItemContainer container)
+	{
+		long gp = 0;
+		for (Item item : container.getItems())
+		{
+			if (item.getId() == COINS_ITEM_ID)
+			{
+				gp += item.getQuantity();
+			}
+			else if (item.getId() == PLATINUM_TOKEN_ID)
+			{
+				gp += item.getQuantity() * 1_000L;
+			}
+		}
+		return gp;
 	}
 
 	/**
@@ -2125,16 +2127,20 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (!offer.isBuy())
 		{
-			return BuyPriceLookup.findAverageBuyPriceWithFallback(
-				getCurrentActiveFlips(), getCycleBasisForItem(offer.getItemId()),
-				offerStore.forItem(offer.getItemId()), offer.getItemId(),
-				getHeldQuantityForItem(offer.getItemId()));
+			return getRecordedBuyCost(offer.getItemId());
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{
 			return Math.round(offer.getSpent() / (double) offer.getFilledQuantity());
 		}
 		return offer.getPrice();
+	}
+
+	public Long getRecordedBuyCost(int itemId)
+	{
+		return BuyPriceLookup.findAverageBuyPriceWithFallback(
+			getCurrentActiveFlips(), getCycleBasisForItem(itemId),
+			offerStore.forItem(itemId), itemId, getHeldQuantityForItem(itemId));
 	}
 
 	public void applyActiveOfferSurface(OfferAdviceResponse resp)
@@ -2472,11 +2478,15 @@ public class FlipSmartPlugin extends Plugin
 	// Assist overlay status line, plus a GE slot highlight when a live offer exists.
 	private void surfaceV9Prompt(int itemId, String detail, long price)
 	{
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (live != null && isAutoRecommendActive())
+		{
+			autoRecommendService.surfaceAdvisorResell(live, price, null);
+		}
 		if (flipAssistOverlay != null)
 		{
 			flipAssistOverlay.setAutoStatusMessage(detail, itemId);
 		}
-		OfferRecord live = findLiveOfferForItem(itemId);
 		if (geSlotOverlay != null && live != null && live.getSlot() != null)
 		{
 			geSlotOverlay.setAdjustmentHighlight(live.getSlot(), price);
@@ -3036,7 +3046,5 @@ public class FlipSmartPlugin extends Plugin
 	{
 		return new PlayerSession();
 	}
-
-
 }
 

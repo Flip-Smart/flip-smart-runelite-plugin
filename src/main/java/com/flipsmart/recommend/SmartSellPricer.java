@@ -12,42 +12,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public final class SmartSellPricer
 {
-	private static final int HIGH_VOLUME_THRESHOLD = 500_000;
-	private static final int HIGH_VOLUME_TIME_MINUTES = 10;
-
-	private static final int REGULAR_TIME_MINUTES = 20;
-
-	private static final int HIGH_VALUE_THRESHOLD = 250_000_000;
-	private static final int HIGH_VALUE_TIME_MINUTES = 30;
-
 	private SmartSellPricer()
 	{
 		// Utility class - prevent instantiation
-	}
-
-	/**
-	 * Calculate the sell price threshold time for an active flip.
-	 * Returns the number of minutes after which we should switch from
-	 * profit-first to loss-minimizing strategy.
-	 *
-	 * Rules:
-	 * - High volume items (&gt;500k daily): 10 minutes
-	 * - High value items (&gt;250M buy price): 30 minutes
-	 * - Regular items: 20 minutes
-	 */
-	public static int getSellPriceThresholdMinutes(ActiveFlip flip, Integer dailyVolume)
-	{
-		if (flip.getAverageBuyPrice() >= HIGH_VALUE_THRESHOLD)
-		{
-			return HIGH_VALUE_TIME_MINUTES;
-		}
-
-		if (dailyVolume != null && dailyVolume >= HIGH_VOLUME_THRESHOLD)
-		{
-			return HIGH_VOLUME_TIME_MINUTES;
-		}
-
-		return REGULAR_TIME_MINUTES;
 	}
 
 	/**

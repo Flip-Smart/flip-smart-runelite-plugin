@@ -48,29 +48,14 @@ public class FlipRecommendation
 	@SerializedName("daily_volume")
 	private int dailyVolume;
 
-	@SerializedName("buy_limit_cycles")
-	private int buyLimitCycles;
-
 	@SerializedName("breakeven_sell_price")
 	private long breakevenSellPrice;
-
-	@SerializedName("breakeven_is_estimate")
-	private boolean breakevenIsEstimate;
 
 	@SerializedName("risk_score")
 	private double riskScore;
 
 	@SerializedName("risk_rating")
 	private String riskRating;
-
-	@SerializedName("efficiency_score")
-	private double efficiencyScore;
-
-	@SerializedName("efficiency_rating")
-	private String efficiencyRating;
-
-	@SerializedName("quantity_affordable")
-	private Integer quantityAffordable;
 
 	@SerializedName("potential_profit")
 	private long potentialProfit;

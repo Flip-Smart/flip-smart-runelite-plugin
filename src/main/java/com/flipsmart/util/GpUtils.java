@@ -1,6 +1,6 @@
 package com.flipsmart.util;
 
-import java.util.OptionalInt;
+import java.util.OptionalLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,18 +66,17 @@ public final class GpUtils
 	 * ({@code 10,000,000}), a trailing {@code gp}, and case-insensitive
 	 * {@code k}/{@code m}/{@code b} multipliers including decimals
 	 * ({@code 2.5m}, {@code 500K}). Fractional results are floored. Values are
-	 * clamped to {@link Integer#MAX_VALUE} (the largest coin stack the game
-	 * supports). Blank, zero, negative, or otherwise unparseable input yields
+	 * clamped to a full coin stack plus a full platinum token stack. Blank, zero, negative, or otherwise unparseable input yields
 	 * an empty result.
 	 *
 	 * @param input raw user text (may be null)
 	 * @return the resolved GP amount, or empty if the input is invalid
 	 */
-	public static OptionalInt parseGp(String input)
+	public static OptionalLong parseGp(String input)
 	{
 		if (input == null)
 		{
-			return OptionalInt.empty();
+			return OptionalLong.empty();
 		}
 
 		String cleaned = input.trim().toLowerCase();
@@ -88,13 +87,13 @@ public final class GpUtils
 		cleaned = cleaned.replace(",", "").replace(" ", "");
 		if (cleaned.isEmpty())
 		{
-			return OptionalInt.empty();
+			return OptionalLong.empty();
 		}
 
 		Matcher matcher = GP_INPUT.matcher(cleaned);
 		if (!matcher.matches())
 		{
-			return OptionalInt.empty();
+			return OptionalLong.empty();
 		}
 
 		double base;
@@ -104,15 +103,15 @@ public final class GpUtils
 		}
 		catch (NumberFormatException e)
 		{
-			return OptionalInt.empty();
+			return OptionalLong.empty();
 		}
 
 		long value = (long) Math.floor(applyMultiplier(base, matcher.group(2)));
 		if (value < 1)
 		{
-			return OptionalInt.empty();
+			return OptionalLong.empty();
 		}
-		return OptionalInt.of((int) Math.min(value, Integer.MAX_VALUE));
+		return OptionalLong.of(Math.min(value, Integer.MAX_VALUE * 1_001L));
 	}
 
 	/**
