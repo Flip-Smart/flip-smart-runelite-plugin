@@ -1120,12 +1120,9 @@ public class FlipSmartPlugin extends Plugin
 		}
 		// Advance the ladder every tick, not only at the GE, so a listed offer still re-adjusts
 		// while the player is away.
-		if (apiClient.isV9Enabled())
+		for (V9FlipState s : v9Store().snapshot().values())
 		{
-			for (V9FlipState s : v9Store().snapshot().values())
-			{
-				maybeAdvanceV9Ladder(s.getItemId());
-			}
+			maybeAdvanceV9Ladder(s.getItemId());
 		}
 
 		// On the first LOGGED_IN tick the local player is sometimes not yet
@@ -1646,10 +1643,7 @@ public class FlipSmartPlugin extends Plugin
 			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
-		if (apiClient.isV9Enabled())
-		{
-			captureV9BuyBasis(itemId, quantitySold, spent, state);
-		}
+		captureV9BuyBasis(itemId, quantitySold, spent, state);
 		pushActiveFlipsSnapshot();
 	}
 
@@ -2436,10 +2430,6 @@ public class FlipSmartPlugin extends Plugin
 
 	public void maybeSuggestV9FirstListing(int itemId)
 	{
-		if (!apiClient.isV9Enabled())
-		{
-			return;
-		}
 		if (!isV9Timeframe(config.flipTimeframe()))
 		{
 			return;
@@ -2608,10 +2598,6 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public void maybeAdvanceV9Ladder(int itemId)
 	{
-		if (!apiClient.isV9Enabled())
-		{
-			return;
-		}
 		V9FlipState state = v9Store().get(itemId);
 		if (state == null || state.getListingTimestampMs() <= 0 || state.getLadderRung() >= 2)
 		{
@@ -2805,7 +2791,7 @@ public class FlipSmartPlugin extends Plugin
 	// True when V9 is tracking this item's flip, so legacy adjustment paths must stand down.
 	public boolean v9OwnsSell(int itemId)
 	{
-		return V9SellArbitration.v9OwnsSell(apiClient.isV9Enabled(), v9Store().get(itemId));
+		return V9SellArbitration.v9OwnsSell(v9Store().get(itemId));
 	}
 
 	// A sell-side fill on a V9 flip: book the sold units, and either finish the flip (fully

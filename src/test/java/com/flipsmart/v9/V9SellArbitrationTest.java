@@ -24,16 +24,14 @@ public class V9SellArbitrationTest
 		// Regression guard: legacy must stand down the moment V9 tracks the flip, even before the
 		// first-listing prompt has fired (listingTimestampMs == 0). Requiring an armed ladder here
 		// let the legacy path grab the sell and re-price a winner to a loss.
-		assertTrue(V9SellArbitration.v9OwnsSell(true, tracked(0L)));
-		assertTrue(V9SellArbitration.v9OwnsSell(true, tracked(1_000_000L)));
+		assertTrue(V9SellArbitration.v9OwnsSell(tracked(0L)));
+		assertTrue(V9SellArbitration.v9OwnsSell(tracked(1_000_000L)));
 	}
 
 	@Test
-	public void doesNotOwnSellWhenDisabledOrUntracked()
+	public void doesNotOwnSellWhenUntracked()
 	{
-		assertFalse(V9SellArbitration.v9OwnsSell(false, tracked(1_000_000L)));
-		assertFalse(V9SellArbitration.v9OwnsSell(true, null));
-		assertFalse(V9SellArbitration.v9OwnsSell(false, null));
+		assertFalse(V9SellArbitration.v9OwnsSell(null));
 	}
 
 	@Test
