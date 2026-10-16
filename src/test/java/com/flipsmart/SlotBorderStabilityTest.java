@@ -105,4 +105,35 @@ public class SlotBorderStabilityTest
         verify(decorator).applyBorder(0, slotWidget, SlotBorderTint.GREEN);
         verify(decorator).revertBorder(3, slotWidget);
     }
+
+    @Test
+    public void adjustHighlightedSlot_dropsTheCompetitivenessBorder_soOnlyAmberShows()
+    {
+        verdict(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        when(plugin.hasSlotAdjustmentHighlight(0)).thenReturn(true);
+
+        GeSlotWidgetDecorator decorator = decorator();
+        Widget slotWidget = mock(Widget.class);
+
+        decorator.reconcileBorder(slotWidget, 0, buyOffer(4444, 100), true);
+
+        verify(decorator, never()).applyBorder(anyInt(), any(), any());
+        verify(decorator).revertBorder(0, slotWidget);
+    }
+
+    @Test
+    public void clearingTheAdjustHighlight_restoresTheCompetitivenessBorder()
+    {
+        verdict(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE);
+        when(plugin.hasSlotAdjustmentHighlight(0)).thenReturn(true, false);
+
+        GeSlotWidgetDecorator decorator = decorator();
+        Widget slotWidget = mock(Widget.class);
+        GrandExchangeOffer offer = buyOffer(4444, 100);
+
+        decorator.reconcileBorder(slotWidget, 0, offer, true);
+        decorator.reconcileBorder(slotWidget, 0, offer, true);
+
+        verify(decorator).applyBorder(0, slotWidget, SlotBorderTint.RED);
+    }
 }

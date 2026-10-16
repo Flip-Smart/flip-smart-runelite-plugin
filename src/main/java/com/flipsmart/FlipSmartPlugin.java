@@ -689,6 +689,11 @@ public class FlipSmartPlugin extends Plugin
 		return calculateCompetitiveness(record.getItemId(), record.getPrice(), record.isBuy());
 	}
 
+	public boolean hasSlotAdjustmentHighlight(int slot)
+	{
+		return geSlotOverlay.hasAdjustmentHighlight(slot);
+	}
+
 	/**
 	 * Competitiveness from the three facts a price check actually needs. The GE slot reports all
 	 * of them, so a render pass can decide a border without a tracked record existing.
