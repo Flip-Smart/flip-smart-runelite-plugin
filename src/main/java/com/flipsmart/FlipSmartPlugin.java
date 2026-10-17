@@ -559,6 +559,68 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
+	 * Per-slot view of which GE slots currently hold something to collect: index is the GE slot
+	 * (0..7), value is that slot's item id when the slot is non-EMPTY with fills still uncollected,
+	 * or -1 when the slot is empty or has nothing to collect. Returns null when the GE offer array
+	 * is unavailable or this is not the client thread, so callers fail open — no reconciliation —
+	 * rather than wrongly suppressing a genuine collect prompt. Used to drop "collect" prompts for
+	 * tracked records whose offer has already left the GE (collected offline, slot reused by a new
+	 * order, or a missed EMPTY event), which would otherwise re-prompt every tick and never clear.
+	 */
+	public int[] geCollectableItemBySlot()
+	{
+		if (!isClientThread())
+		{
+			return null;
+		}
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return null;
+		}
+		int[] itemBySlot = new int[offers.length];
+		for (int slot = 0; slot < offers.length; slot++)
+		{
+			GrandExchangeOffer offer = offers[slot];
+			boolean collectable = offer != null
+				&& offer.getState() != GrandExchangeOfferState.EMPTY
+				&& offer.getQuantitySold() > 0;
+			itemBySlot[slot] = collectable ? offer.getItemId() : -1;
+		}
+		return itemBySlot;
+	}
+
+	/**
+	 * Set of item ids that currently occupy a GE slot at all — any non-EMPTY offer, whether still
+	 * filling or awaiting collect. Unlike {@link #geCollectableItemBySlot()} this does not require
+	 * fills to collect, so it is the right presence test for an OPEN offer (a reprice/"maintenance"
+	 * target that may not have sold anything yet). Returns null when the GE view is unavailable or
+	 * off the client thread, so callers fail open. Used to drop "maintenance" prompts whose offer
+	 * has already left the trade window.
+	 */
+	public java.util.Set<Integer> geActiveItemIds()
+	{
+		if (!isClientThread())
+		{
+			return null;
+		}
+		GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
+		if (offers == null)
+		{
+			return null;
+		}
+		java.util.Set<Integer> active = new java.util.HashSet<>();
+		for (GrandExchangeOffer offer : offers)
+		{
+			if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
+			{
+				active.add(offer.getItemId());
+			}
+		}
+		return active;
+	}
+
+	/**
 	 * Get the inventory count for a specific item (delegate to ActiveFlipTracker).
 	 */
 	public int getInventoryCountForItem(int itemId)
@@ -1063,12 +1125,9 @@ public class FlipSmartPlugin extends Plugin
 		}
 		// Advance the ladder every tick, not only at the GE, so a listed offer still re-adjusts
 		// while the player is away.
-		if (apiClient.isV9Enabled())
+		for (V9FlipState s : v9Store().snapshot().values())
 		{
-			for (V9FlipState s : v9Store().snapshot().values())
-			{
-				maybeAdvanceV9Ladder(s.getItemId());
-			}
+			maybeAdvanceV9Ladder(s.getItemId());
 		}
 
 		// On the first LOGGED_IN tick the local player is sometimes not yet
@@ -1589,10 +1648,7 @@ public class FlipSmartPlugin extends Plugin
 			.isBuy(OfferSignal.isBuyState(state))
 			.state(state)
 			.build());
-		if (apiClient.isV9Enabled())
-		{
-			captureV9BuyBasis(itemId, quantitySold, spent, state);
-		}
+		captureV9BuyBasis(itemId, quantitySold, spent, state);
 		pushActiveFlipsSnapshot();
 	}
 
@@ -2004,6 +2060,12 @@ public class FlipSmartPlugin extends Plugin
 
 		if (manualAdjustmentTracker != null)
 		{
+			// Manual mode owns its own staleness prompts; ensure offers that predate this
+			// session (relog / plugin rebuild) pick up a timer before the check runs.
+			if (!autoActive && config.showAdjustmentPrompts())
+			{
+				manualAdjustmentTracker.ensureTimersForLiveOffers();
+			}
 			manualAdjustmentTracker.checkTimers();
 		}
 	}
@@ -2373,10 +2435,6 @@ public class FlipSmartPlugin extends Plugin
 
 	public void maybeSuggestV9FirstListing(int itemId)
 	{
-		if (!apiClient.isV9Enabled())
-		{
-			return;
-		}
 		if (!isV9Timeframe(config.flipTimeframe()))
 		{
 			return;
@@ -2393,6 +2451,14 @@ public class FlipSmartPlugin extends Plugin
 		}
 		if (state.getListingTimestampMs() > 0)
 		{
+			return;
+		}
+		if (findLiveOfferForItem(itemId) != null)
+		{
+			// A sell for this item is already live (e.g. listed while offline, or before the async
+			// suggestion returned) — don't surface a first-listing prompt for an already-listed
+			// flip. First-listing is strictly for the not-yet-listed case; the ladder owns live
+			// offers. Prevents a stale breakeven/loss "first listing" appearing on login.
 			return;
 		}
 		long originalTarget = V9SellArbitration.resolveFirstListingTarget(
@@ -2433,6 +2499,9 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		long listing = resp.getListingSellPrice();
+		log.info("[V9] first-listing item={} buy={} origTarget={} -> scenario={} strategy={} listing={} bMid={}",
+			itemId, v9Store().get(itemId) != null ? v9Store().get(itemId).getBuyPrice() : -1, originalTarget,
+			resp.getScenario(), resp.getListingStrategy(), listing, resp.getScenarioBMid());
 		sess.setRecommendedPrice(itemId, listing);
 		if (flipFinderPanel != null)
 		{
@@ -2534,10 +2603,6 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public void maybeAdvanceV9Ladder(int itemId)
 	{
-		if (!apiClient.isV9Enabled())
-		{
-			return;
-		}
 		V9FlipState state = v9Store().get(itemId);
 		if (state == null || state.getListingTimestampMs() <= 0 || state.getLadderRung() >= 2)
 		{
@@ -2564,18 +2629,24 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return;
 		}
+		log.info("[V9] ladder due item={} rung={} tf={} listedMsAgo={} intervalMs={} ladder1ResolvedMsAgo={}",
+			itemId, dueRung, state.getTimeframe(), now - state.getListingTimestampMs(), interval,
+			state.getLadder1ResolvedAtMs() > 0 ? now - state.getLadder1ResolvedAtMs() : -1);
 		fireV9Readjustment(itemId, state, dueRung);
 	}
 
-	// Which rung is due now (0 = none). Ladder 2 anchors to wall-clock (listing + 2 intervals),
-	// not to when ladder 1 ran, so time away from the GE counts. Pure math for unit tests.
+	// Which rung is due now (0 = none). Ladder 1 becomes due one interval after listing (offline
+	// time counts, so it fires once on the next login if it came due while away). Ladder 2 anchors
+	// to when ladder 1 resolved, not to listing — one interval AFTER ladder 1, so an offline gap
+	// can never auto-skip ladder 1 straight into ladder 2's deep-cut/dump on login (Scapenomics
+	// 2026-09-30). Pure math for unit tests.
 	static int v9DueRung(int ladderRung, long listingTimestampMs, long ladder1ResolvedAtMs, long interval, long now)
 	{
 		if (ladderRung == 0)
 		{
 			return now >= listingTimestampMs + interval ? 1 : 0;
 		}
-		if (ladder1ResolvedAtMs <= 0 || now < listingTimestampMs + 2 * interval)
+		if (ladder1ResolvedAtMs <= 0 || now < ladder1ResolvedAtMs + interval)
 		{
 			return 0;
 		}
@@ -2591,6 +2662,10 @@ public class FlipSmartPlugin extends Plugin
 		}
 		WikiPrice market = apiClient.getWikiPrice(itemId);
 		Long instantSell = market != null ? market.instaBuy : null;
+		log.info("[V9] readjust request item={} scenario={} rung={} buy={} remaining={} realized={} origTarget={} instantSell={}{} bMid={}",
+			itemId, state.getScenario(), rung, state.getBuyPrice(), state.getRemainingQty(), state.getRealizedProfit(),
+			state.getOriginalTarget(), instantSell, instantSell == null ? " (price cache cold; backend will fetch)" : "",
+			state.getScenarioBMid());
 		long seed = state.getSeed();
 		if (seed == V9_SEED_UNSET)
 		{
@@ -2632,6 +2707,8 @@ public class FlipSmartPlugin extends Plugin
 		}
 		String action = resp.getAction();
 		Long listingPrice = resp.getListingPrice();
+		log.info("[V9] readjust response item={} rung={} action={} disposition={} listingPrice={}",
+			itemId, rung, action, resp.getDisposition(), listingPrice);
 		boolean priced = ("relist".equals(action) || "prompt_sell".equals(action))
 			&& listingPrice != null && listingPrice > 0;
 		if (priced)
@@ -2692,7 +2769,7 @@ public class FlipSmartPlugin extends Plugin
 			case "breakeven":
 				return "Relist " + at + " (breakeven)";
 			case "dump":
-				return "Exit " + at + " to cap loss";
+				return "Exit " + at + " (" + signed + ")";
 			case "loss":
 				return "Sell " + at + " (" + signed + ")";
 			case "profit":
@@ -2719,7 +2796,7 @@ public class FlipSmartPlugin extends Plugin
 	// True when V9 is tracking this item's flip, so legacy adjustment paths must stand down.
 	public boolean v9OwnsSell(int itemId)
 	{
-		return V9SellArbitration.v9OwnsSell(apiClient.isV9Enabled(), v9Store().get(itemId));
+		return V9SellArbitration.v9OwnsSell(v9Store().get(itemId));
 	}
 
 	// A sell-side fill on a V9 flip: book the sold units, and either finish the flip (fully
@@ -2772,6 +2849,26 @@ public class FlipSmartPlugin extends Plugin
 		{
 			flipAssistOverlay.clearAutoStatusForItem(itemId);
 		}
+	}
+
+	// A NEW sell offer was actually placed for a V9 flip: arm the ladder and anchor its timer to
+	// the real listing moment. applyV9FirstListing's timestamp is only the suggestion time, and a
+	// sell listed without a suggestion ever applying (the player beat the async call) would never
+	// arm the ladder at all. Requires first-listing to have captured the scenario — without it the
+	// ladder can't decide, so we leave it to applyV9FirstListing (which also sets the timestamp).
+	public void onV9SellListed(int itemId)
+	{
+		V9FlipState state = v9Store().get(itemId);
+		if (state == null || state.getScenario() == null)
+		{
+			return;
+		}
+		state.setListingTimestampMs(System.currentTimeMillis());
+		state.setLadderRung(0);
+		state.setLadder1ResolvedAtMs(0L);
+		v9Store().put(state);
+		log.info("[V9] sell listed item={} scenario={} — ladder armed/anchored at real listing time",
+			itemId, state.getScenario());
 	}
 
 	public void handleActiveOfferHandoff(OfferAdviceResponse resp)

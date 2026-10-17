@@ -186,11 +186,6 @@ public class FlipSmartApiClient
 		return transport.isPremium();
 	}
 
-	public boolean isV9Enabled()
-	{
-		return transport.isV9Enabled();
-	}
-
 	public void setPremium(boolean premium)
 	{
 		transport.setPremium(premium);

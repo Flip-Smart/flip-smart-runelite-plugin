@@ -68,11 +68,6 @@ public class ApiHttpTransport
 	// RSN-level blocked status (updated on entitlements fetch)
 	private boolean isRsnBlocked = false;
 
-	// V9 short-timeframe behavior gate, sourced from entitlements. Fail-closed:
-	// stays false unless a backend explicitly reports v9_enabled=true, so the
-	// published plugin is inert against a backend that doesn't serve V9.
-	private boolean v9Enabled = false;
-
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
 
@@ -796,26 +791,6 @@ public class ApiHttpTransport
 	}
 
 	/**
-	 * Whether the connected backend has enabled V9 short-timeframe behavior.
-	 * Fail-closed: false until entitlements report it true.
-	 */
-	public boolean isV9Enabled()
-	{
-		synchronized (authLock)
-		{
-			return v9Enabled;
-		}
-	}
-
-	void setV9Enabled(boolean enabled)
-	{
-		synchronized (authLock)
-		{
-			v9Enabled = enabled;
-		}
-	}
-
-	/**
 	 * Clear the current authentication tokens (access and refresh)
 	 */
 	public void clearAuth()
@@ -829,8 +804,6 @@ public class ApiHttpTransport
 			// recommendations before the next entitlement check resolves
 			isPremium = true;
 			isRsnBlocked = false;
-			// V9 stays fail-closed on logout — never assume it until re-confirmed.
-			v9Enabled = false;
 		}
 		// Re-arm the prompt so a fresh failure on the next login isn't suppressed
 		// by a stale flag from before this logout.
@@ -896,12 +869,10 @@ public class ApiHttpTransport
 			}
 			catch (Exception e)
 			{
-				setV9Enabled(false);
 				log.error("Error parsing entitlements response", e);
 				return isPremium();
 			}
 		}, error -> {
-			setV9Enabled(false);
 			log.warn("Failed to fetch entitlements: {}", error);
 		}, true);
 	}
@@ -922,13 +893,11 @@ public class ApiHttpTransport
 		}
 
 		boolean rsnBlocked = entitlements.isRsnBlocked();
-		boolean v9 = entitlements.isV9Enabled();
 		synchronized (authLock)
 		{
 			isRsnBlocked = rsnBlocked;
-			v9Enabled = v9;
 		}
-		log.debug("Fetched entitlements - rsnBlocked: {}, v9Enabled: {}", rsnBlocked, v9);
+		log.debug("Fetched entitlements - rsnBlocked: {}", rsnBlocked);
 	}
 
 	// ============================================================================

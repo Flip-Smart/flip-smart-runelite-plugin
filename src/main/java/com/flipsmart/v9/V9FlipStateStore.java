@@ -13,8 +13,10 @@ import net.runelite.client.config.ConfigManager;
  * Holds and persists {@link V9FlipState} per active sell, keyed by item id, scoped per RSN.
  * Follows the existing offer/ledger persistence idiom (JSON blob under the flipsmart config
  * group). Absolute timers are never stored — rungs are recomputed from the listing timestamp
- * on restore, so offline elapsed time counts. Entries older than {@link #MAX_AGE_MS} are
- * dropped on load so a long-abandoned flip can't resurrect a stale prompt.
+ * on restore, with the ladder anchors shifted forward by the offline gap so rung timers pause
+ * while the player is away and resume from login ({@link #freezeLadderAcrossOffline}, #1309).
+ * Entries older than {@link #MAX_AGE_MS} are dropped on load so a long-abandoned flip can't
+ * resurrect a stale prompt.
  */
 @Slf4j
 public class V9FlipStateStore
@@ -97,6 +99,7 @@ public class V9FlipStateStore
 				}
 				if (now - s.getSavedAtMillis() <= MAX_AGE_MS)
 				{
+					freezeLadderAcrossOffline(s, now);
 					byItem.put(s.getItemId(), s);
 				}
 			}
@@ -104,6 +107,31 @@ public class V9FlipStateStore
 		catch (Exception e)
 		{
 			logLoadFailure(e);
+		}
+	}
+
+	/**
+	 * Re-adjustment ladders must not advance while the user is offline (Scapenomics #1309): a
+	 * player who buys on a 30m flip and logs out for hours should come back to the same rung, not
+	 * one laddered down toward breakeven. Shift the ladder anchors forward by the offline gap
+	 * (time since the state was last persisted) so rung timers effectively pause while away and
+	 * resume from login. The MAX_AGE_MS load cutoff bounds the shift. Pure; exposed for tests.
+	 */
+	static void freezeLadderAcrossOffline(V9FlipState s, long now)
+	{
+		if (s.getListingTimestampMs() <= 0)
+		{
+			return;
+		}
+		long offlineMs = Math.max(0, now - s.getSavedAtMillis());
+		if (offlineMs == 0)
+		{
+			return;
+		}
+		s.setListingTimestampMs(s.getListingTimestampMs() + offlineMs);
+		if (s.getLadder1ResolvedAtMs() > 0)
+		{
+			s.setLadder1ResolvedAtMs(s.getLadder1ResolvedAtMs() + offlineMs);
 		}
 	}
 
