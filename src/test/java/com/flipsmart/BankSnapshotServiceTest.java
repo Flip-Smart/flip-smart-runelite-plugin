@@ -26,6 +26,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -65,6 +66,7 @@ public class BankSnapshotServiceTest
 		}).when(clientThread).invokeLater(any(Runnable.class));
 
 		when(apiClient.isAuthenticated()).thenReturn(true);
+		when(itemManager.canonicalize(anyInt())).thenAnswer(inv -> inv.getArgument(0));
 
 		// Bank containing a coins stack only — avoids tradeable/price lookups.
 		bank = mock(ItemContainer.class);
@@ -204,6 +206,10 @@ public class BankSnapshotServiceTest
 	private static final int PEGASIAN_BOOTS = 13237;
 	private static final int ETERNAL_BOOTS = 13235;
 	private static final int FIRE_CAPE = 6570;
+	private static final int ARMADYL_CHESTPLATE = 11828;
+	private static final int ARMADYL_CHESTPLATE_OR = 26715;
+	private static final int RUNE_PLATEBODY = 1127;
+	private static final int RUNE_PLATEBODY_NOTED = 1128;
 
 	private void stubItem(int itemId, boolean tradeable, long price)
 	{
@@ -226,6 +232,9 @@ public class BankSnapshotServiceTest
 		stubItem(TUMEKENS_SHADOW_CHARGED, false, 0);
 		stubItem(AVERNIC_TREADS_MAX, false, 0);
 		stubItem(FIRE_CAPE, false, 0);
+		stubItem(ARMADYL_CHESTPLATE, true, 36_000_000);
+		stubItem(ARMADYL_CHESTPLATE_OR, false, 0);
+		stubItem(RUNE_PLATEBODY, true, 38_000);
 	}
 
 	private static Map<Integer, Integer> quantities(List<BankItemId> items)
@@ -343,5 +352,30 @@ public class BankSnapshotServiceTest
 		verify(apiClient).createBankSnapshotAsync(anyString(), anyList(), anyList(), gear.capture(), anyLong());
 		assertEquals(4, quantities(gear.getValue()).size());
 		assertFalse(quantities(gear.getValue()).containsKey(AVERNIC_TREADS_MAX));
+	}
+
+	@Test
+	public void variantMissingFromItemMappingResolvesViaSupplementalMap()
+	{
+		stubTradeables();
+
+		Map<Integer, Integer> components = quantities(service.toTradeableComponents(ARMADYL_CHESTPLATE_OR, 1));
+
+		Map<Integer, Integer> expected = new HashMap<>();
+		expected.put(ARMADYL_CHESTPLATE, 1);
+		assertEquals(expected, components);
+	}
+
+	@Test
+	public void notedItemResolvesToItsUnnotedId()
+	{
+		stubTradeables();
+		when(itemManager.canonicalize(RUNE_PLATEBODY_NOTED)).thenReturn(RUNE_PLATEBODY);
+
+		Map<Integer, Integer> components = quantities(service.toTradeableComponents(RUNE_PLATEBODY_NOTED, 50));
+
+		Map<Integer, Integer> expected = new HashMap<>();
+		expected.put(RUNE_PLATEBODY, 50);
+		assertEquals(expected, components);
 	}
 }

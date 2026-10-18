@@ -27,6 +27,9 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+
+import static java.util.Map.entry;
 
 /**
  * Handles bank snapshot capture and submission to the API.
@@ -39,6 +42,30 @@ public class BankSnapshotService
 	private static final int COINS_ITEM_ID = 995;
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000;
 	private static final long BANK_SNAPSHOT_BACKOFF_MS = 30 * 60_000;
+
+	/**
+	 * Untradeable variants RuneLite's ItemMapping does not cover, keyed to the
+	 * tradeable item they are worth. Kits with no GE price contribute nothing.
+	 */
+	private static final Map<Integer, Integer> UNMAPPED_VARIANTS = Map.ofEntries(
+		entry(26708, 13652), // Dragon claws (or)
+		entry(26710, 13576), // Dragon warhammer (or)
+		entry(26714, 11826), // Armadyl helmet (or)
+		entry(26715, 11828), // Armadyl chestplate (or)
+		entry(26716, 11830), // Armadyl chainskirt (or)
+		entry(26718, 11832), // Bandos chestplate (or)
+		entry(26719, 11834), // Bandos tassets (or)
+		entry(26720, 11836), // Bandos boots (or)
+		entry(27123, 24288), // Dagon'hai hat (or)
+		entry(27125, 24291), // Dagon'hai robe top (or)
+		entry(27127, 24294), // Dagon'hai robe bottom (or)
+		entry(30000, 30002), // Chugging barrel (assembled)
+		entry(27788, 27785), // Thammaron's sceptre (a), charged
+		entry(31241, 31243), // Horn of Plenty, charged
+		entry(31575, 31577), // Camphor blowpipe, loaded
+		entry(31579, 31581), // Ironwood blowpipe, loaded
+		entry(31583, 31585)  // Rosewood blowpipe, loaded
+	);
 
 	/**
 	 * Cooldown applied to the next attempt. Extended to the long backoff when
@@ -251,13 +278,14 @@ public class BankSnapshotService
 	 * expand to their tradeable components via RuneLite's ItemMapping; untradeable
 	 * items with no mapping resolve to nothing.
 	 */
-	List<BankItemId> toTradeableComponents(int itemId, int quantity)
+	List<BankItemId> toTradeableComponents(int rawItemId, int quantity)
 	{
-		if (itemId <= 0 || quantity <= 0)
+		if (rawItemId <= 0 || quantity <= 0)
 		{
 			return Collections.emptyList();
 		}
 
+		int itemId = itemManager.canonicalize(rawItemId);
 		if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
 		{
 			return Collections.singletonList(new BankItemId(itemId, quantity));
@@ -266,7 +294,10 @@ public class BankSnapshotService
 		Collection<ItemMapping> mappings = ItemMapping.map(itemId);
 		if (mappings == null)
 		{
-			return Collections.emptyList();
+			Integer tradeable = UNMAPPED_VARIANTS.get(itemId);
+			return tradeable == null
+				? Collections.emptyList()
+				: Collections.singletonList(new BankItemId(tradeable, quantity));
 		}
 
 		List<BankItemId> components = new ArrayList<>(mappings.size());
