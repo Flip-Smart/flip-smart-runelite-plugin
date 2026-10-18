@@ -90,6 +90,10 @@ public class GrandExchangeTracker
 	// Notifies the V9 ladder of a cancelled sell (the manual-relist signal) so it re-anchors.
 	@Setter
 	private IntConsumer onV9SellCancelled;
+	// Notifies the V9 ladder when a NEW sell offer is actually placed, so the ladder arms and
+	// its timer anchors to the real listing moment — not to when we merely suggested a price.
+	@Setter
+	private IntConsumer onV9SellListed;
 	@Setter
 	private IntFunction<Long> displayedSellPriceProvider;
 	@Setter
@@ -638,18 +642,33 @@ public class GrandExchangeTracker
 
 	private void notifyAutoRecommendOnCompletion(OfferContext ctx)
 	{
-		if (!isAutoRecommendActive())
+		if (isAutoRecommendActive())
 		{
+			if (ctx.state == GrandExchangeOfferState.BOUGHT && ctx.isBuy)
+			{
+				autoRecommendService.onBuyOrderCompleted(ctx.itemId, ctx.itemName);
+			}
+			if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
+			{
+				autoRecommendService.onSellOrderCompleted(ctx.itemId);
+			}
 			return;
 		}
 
+		// Manual mode gets the same finished-trade nudge as an ignorable prompt (sell a
+		// completed buy / collect a completed sell). Serving a NEW item into a free slot
+		// stays auto-only, so nothing here recommends a replacement flip.
+		if (manualAdjustmentTracker == null || !isAdjustmentPromptsEnabled())
+		{
+			return;
+		}
 		if (ctx.state == GrandExchangeOfferState.BOUGHT && ctx.isBuy)
 		{
-			autoRecommendService.onBuyOrderCompleted(ctx.itemId, ctx.itemName);
+			manualAdjustmentTracker.promptSellCollectedBuy(ctx.itemId, ctx.itemName);
 		}
-		if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
+		else if (ctx.state == GrandExchangeOfferState.SOLD && !ctx.isBuy)
 		{
-			autoRecommendService.onSellOrderCompleted(ctx.itemId);
+			manualAdjustmentTracker.promptCollectSoldOffer(ctx.itemId, ctx.itemName);
 		}
 	}
 
@@ -723,6 +742,10 @@ public class GrandExchangeTracker
 	private void recordNewSellOrder(OfferContext ctx)
 	{
 		log.debug("Sell order placed for {} x{} - marking active flip as selling", ctx.itemName, ctx.totalQuantity);
+		if (onV9SellListed != null)
+		{
+			onV9SellListed.accept(ctx.itemId);
+		}
 		String rsn = getRsn().orElse(null);
 		if (rsn != null)
 		{

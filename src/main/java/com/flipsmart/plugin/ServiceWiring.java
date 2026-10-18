@@ -157,10 +157,7 @@ public class ServiceWiring
 			}
 		});
 
-		manualAdjustmentTracker.setCashStackSupplier(plugin::liveCashStack);
 		manualAdjustmentTracker.setRsnSupplier(() -> plugin.getCurrentRsnSafe().orElse(null));
-		manualAdjustmentTracker.setFilledSlotsSupplier(plugin::getFilledGESlotCount);
-		manualAdjustmentTracker.setMembersWorldSupplier(plugin::isMembersWorld);
 		manualAdjustmentTracker.setV9OwnsSell(plugin::v9OwnsSell);
 
 		grandExchangeTracker.setManualAdjustmentTracker(manualAdjustmentTracker);
@@ -208,6 +205,7 @@ public class ServiceWiring
 		grandExchangeTracker.setAutoRecommendService(autoRecommendService);
 		grandExchangeTracker.setOnV9SellFill(plugin::onV9SellFill);
 		grandExchangeTracker.setOnV9SellCancelled(plugin::onV9SellCancelled);
+		grandExchangeTracker.setOnV9SellListed(plugin::onV9SellListed);
 		grandExchangeTracker.setRsnSupplier(plugin::getCurrentRsnSafe);
 		grandExchangeTracker.setOnPanelRefresh(() -> refreshCoalescer.request(true));
 		grandExchangeTracker.setOnActiveFlipsRefresh(() -> { if (plugin.getFlipFinderPanel() != null) plugin.getFlipFinderPanel().reevaluateSlotLimitDisplay(); plugin.maybeEventPollAdvisor(); refreshCoalescer.request(false); });

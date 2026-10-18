@@ -17,9 +17,9 @@ public final class V9SellArbitration
 	 * stand down, so a flip whose first listing has not yet fired can never be grabbed by the
 	 * legacy path and re-priced below its V9 target.
 	 */
-	public static boolean v9OwnsSell(boolean v9Enabled, V9FlipState state)
+	public static boolean v9OwnsSell(V9FlipState state)
 	{
-		return v9Enabled && state != null;
+		return state != null;
 	}
 
 	/**

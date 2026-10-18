@@ -271,9 +271,6 @@ public final class Dtos
 		@SerializedName("is_premium")
 		private JsonElement premiumElement;
 
-		@SerializedName("v9_enabled")
-		private JsonElement v9EnabledElement;
-
 		@SerializedName("rsn_entitlement")
 		private RsnEntitlement rsnEntitlement;
 
@@ -286,11 +283,6 @@ public final class Dtos
 		public boolean isPremium()
 		{
 			return premiumElement != null && premiumElement.isJsonPrimitive() && premiumElement.getAsBoolean();
-		}
-
-		public boolean isV9Enabled()
-		{
-			return v9EnabledElement != null && v9EnabledElement.isJsonPrimitive() && v9EnabledElement.getAsBoolean();
 		}
 
 		public boolean isRsnBlocked()
