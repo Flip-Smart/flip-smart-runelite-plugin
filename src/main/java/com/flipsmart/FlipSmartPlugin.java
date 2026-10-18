@@ -1198,7 +1198,7 @@ public class FlipSmartPlugin extends Plugin
 		geHistoryService.reset();
 		persistAutoRecommendState();
 		persistExitTradesState();
-		v9Store().persist(configManager, session.getRsn());
+		v9Store().persist(configManager, resolveStateRsn(session.getRsn(), lastKnownRsn));
 		geSlotDecorator.revertAll();
 
 		// Stop auto-recommend on logout
@@ -1299,7 +1299,7 @@ public class FlipSmartPlugin extends Plugin
 
 		restoreAutoRecommendState();
 		restoreExitTradesState();
-		v9Store().restore(configManager, session.getRsn());
+		v9Store().restore(configManager, resolveStateRsn(session.getRsn(), lastKnownRsn));
 
 		// Start the refresh timer if not already running (needed for manual adjustment checks)
 		if (!scheduler.isAutoRecommendRefreshTimerRunning())
@@ -3020,6 +3020,16 @@ public class FlipSmartPlugin extends Plugin
 			return prefix + UNKNOWN_RSN_FALLBACK;
 		}
 		return prefix + rsn;
+	}
+
+	/**
+	 * Resolve the RSN to key per-account state under, falling back to the last-known RSN when
+	 * the live session RSN has been cleared — e.g. inside the logout handler, after
+	 * {@link PlayerSession#onLogout()} nulls it. Pure; exposed for tests.
+	 */
+	static String resolveStateRsn(String sessionRsn, String lastKnownRsn)
+	{
+		return (sessionRsn == null || sessionRsn.isEmpty()) ? lastKnownRsn : sessionRsn;
 	}
 
 	private void persistExitTradesState()
