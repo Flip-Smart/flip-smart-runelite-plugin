@@ -15,3 +15,10 @@
 31575 31577 Camphor blowpipe, loaded
 31579 31581 Ironwood blowpipe, loaded
 31583 31585 Rosewood blowpipe, loaded
+13192 13190 Old school bond (untradeable)
+22322 22477 Avernic defender
+22441 22477 Avernic defender (broken)
+27550 22477 Ghommal's avernic defender 5
+27551 22477 Ghommal's avernic defender 5 (trouver)
+27552 22477 Ghommal's avernic defender 6
+27553 22477 Ghommal's avernic defender 6 (trouver)

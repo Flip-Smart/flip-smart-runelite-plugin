@@ -379,4 +379,16 @@ public class BankSnapshotServiceTest
 		expected.put(RUNE_PLATEBODY, 50);
 		assertEquals(expected, components);
 	}
+
+	@Test
+	public void untradeableBondAndAvernicDefenderResolveToTheirTradeableValue()
+	{
+		stubItem(13192, false, 0);
+		stubItem(22322, false, 0);
+		stubItem(13190, true, 10_800_000);
+		stubItem(22477, true, 27_900_000);
+
+		assertEquals(List.of(13190), service.toTradeableComponents(13192, 1).stream().map(i -> i.itemId).collect(Collectors.toList()));
+		assertEquals(List.of(22477), service.toTradeableComponents(22322, 1).stream().map(i -> i.itemId).collect(Collectors.toList()));
+	}
 }
