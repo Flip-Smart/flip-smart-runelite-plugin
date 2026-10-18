@@ -67,6 +67,7 @@ public class BankSnapshotServiceTest
 
 		when(apiClient.isAuthenticated()).thenReturn(true);
 		when(itemManager.canonicalize(anyInt())).thenAnswer(inv -> inv.getArgument(0));
+		when(itemManager.getItemPrice(995)).thenReturn(1L);
 
 		// Bank containing a coins stack only — avoids tradeable/price lookups.
 		bank = mock(ItemContainer.class);

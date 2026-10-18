@@ -24,12 +24,9 @@ import net.runelite.client.game.ItemMapping;
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-
-import static java.util.Map.entry;
+import java.util.stream.Collectors;
 
 /**
  * Handles bank snapshot capture and submission to the API.
@@ -47,25 +44,8 @@ public class BankSnapshotService
 	 * Untradeable variants RuneLite's ItemMapping does not cover, keyed to the
 	 * tradeable item they are worth. Kits with no GE price contribute nothing.
 	 */
-	private static final Map<Integer, Integer> UNMAPPED_VARIANTS = Map.ofEntries(
-		entry(26708, 13652), // Dragon claws (or)
-		entry(26710, 13576), // Dragon warhammer (or)
-		entry(26714, 11826), // Armadyl helmet (or)
-		entry(26715, 11828), // Armadyl chestplate (or)
-		entry(26716, 11830), // Armadyl chainskirt (or)
-		entry(26718, 11832), // Bandos chestplate (or)
-		entry(26719, 11834), // Bandos tassets (or)
-		entry(26720, 11836), // Bandos boots (or)
-		entry(27123, 24288), // Dagon'hai hat (or)
-		entry(27125, 24291), // Dagon'hai robe top (or)
-		entry(27127, 24294), // Dagon'hai robe bottom (or)
-		entry(30000, 30002), // Chugging barrel (assembled)
-		entry(27788, 27785), // Thammaron's sceptre (a), charged
-		entry(31241, 31243), // Horn of Plenty, charged
-		entry(31575, 31577), // Camphor blowpipe, loaded
-		entry(31579, 31581), // Ironwood blowpipe, loaded
-		entry(31583, 31585)  // Rosewood blowpipe, loaded
-	);
+	private static final Map<Integer, Integer> UNMAPPED_VARIANTS = ItemUtils.resourceRows("/unmapped_variants.txt")
+		.collect(Collectors.toMap(r -> Integer.parseInt(r[0]), r -> Integer.parseInt(r[1])));
 
 	/**
 	 * Cooldown applied to the next attempt. Extended to the long backoff when
@@ -235,12 +215,12 @@ public class BankSnapshotService
 
 		for (Item item : bankItems)
 		{
-			for (BankItemId component : toTradeableComponents(item.getId(), item.getQuantity()))
+			for (BankItemId part : toTradeableComponents(item.getId(), item.getQuantity()))
 			{
-				BankItem bankItem = toPricedBankItem(component);
-				if (bankItem != null)
+				long gePrice = itemManager.getItemPrice(part.itemId);
+				if (gePrice > 0)
 				{
-					items.add(bankItem);
+					items.add(new BankItem(part.itemId, part.quantity, gePrice));
 				}
 			}
 		}
@@ -254,59 +234,31 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Price a tradeable item (or coins) client-side; null when it has no GE price.
-	 */
-	private BankItem toPricedBankItem(BankItemId component)
-	{
-		if (component.itemId == COINS_ITEM_ID)
-		{
-			return new BankItem(component.itemId, component.quantity, 1);
-		}
-
-		long gePrice = itemManager.getItemPrice(component.itemId);
-		if (gePrice <= 0)
-		{
-			return null;
-		}
-
-		return new BankItem(component.itemId, component.quantity, gePrice);
-	}
-
-	/**
 	 * Resolve an item to the tradeable item(s) it is worth. Untradeable variants
 	 * (ornament kits, charged weapons, combined items like Avernic treads (max))
 	 * expand to their tradeable components via RuneLite's ItemMapping; untradeable
 	 * items with no mapping resolve to nothing.
 	 */
-	List<BankItemId> toTradeableComponents(int rawItemId, int quantity)
+	List<BankItemId> toTradeableComponents(int id, int quantity)
 	{
-		if (rawItemId <= 0 || quantity <= 0)
+		if (id <= 0 || quantity <= 0)
 		{
-			return Collections.emptyList();
+			return List.of();
 		}
-
-		int itemId = itemManager.canonicalize(rawItemId);
+		int itemId = itemManager.canonicalize(id);
 		if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
 		{
-			return Collections.singletonList(new BankItemId(itemId, quantity));
+			return List.of(new BankItemId(itemId, quantity));
 		}
-
-		Collection<ItemMapping> mappings = ItemMapping.map(itemId);
+		var mappings = ItemMapping.map(itemId);
 		if (mappings == null)
 		{
 			Integer tradeable = UNMAPPED_VARIANTS.get(itemId);
-			return tradeable == null
-				? Collections.emptyList()
-				: Collections.singletonList(new BankItemId(tradeable, quantity));
+			return tradeable == null ? List.of() : List.of(new BankItemId(tradeable, quantity));
 		}
-
-		List<BankItemId> components = new ArrayList<>(mappings.size());
-		for (ItemMapping mapping : mappings)
-		{
-			long componentQuantity = Math.min(Integer.MAX_VALUE, quantity * mapping.getQuantity());
-			components.add(new BankItemId(mapping.getTradeableItem(), (int) componentQuantity));
-		}
-		return components;
+		return mappings.stream()
+			.map(m -> new BankItemId(m.getTradeableItem(), (int) Math.min(Integer.MAX_VALUE, quantity * m.getQuantity())))
+			.collect(Collectors.toList());
 	}
 
 	/**
