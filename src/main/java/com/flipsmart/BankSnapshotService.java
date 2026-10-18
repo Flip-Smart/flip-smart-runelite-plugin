@@ -19,10 +19,13 @@ import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.ItemMapping;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -183,7 +186,7 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Collect all tradeable items from the bank with their GE prices.
+	 * Collect all bank items, resolved to tradeable components, with their GE prices.
 	 */
 	private List<BankItem> collectTradeableBankItems()
 	{
@@ -205,10 +208,13 @@ public class BankSnapshotService
 
 		for (Item item : bankItems)
 		{
-			BankItem bankItem = toTradeableBankItem(item);
-			if (bankItem != null)
+			for (BankItemId component : toTradeableComponents(item.getId(), item.getQuantity()))
 			{
-				items.add(bankItem);
+				BankItem bankItem = toPricedBankItem(component);
+				if (bankItem != null)
+				{
+					items.add(bankItem);
+				}
 			}
 		}
 
@@ -221,35 +227,55 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Convert a bank item to a BankItem if it's tradeable and has a price, or if it's coins.
+	 * Price a tradeable item (or coins) client-side; null when it has no GE price.
 	 */
-	private BankItem toTradeableBankItem(Item item)
+	private BankItem toPricedBankItem(BankItemId component)
 	{
-		int itemId = item.getId();
-		int quantity = item.getQuantity();
-
-		if (itemId <= 0 || quantity <= 0)
+		if (component.itemId == COINS_ITEM_ID)
 		{
-			return null;
+			return new BankItem(component.itemId, component.quantity, 1);
 		}
 
-		if (itemId == COINS_ITEM_ID)
-		{
-			return new BankItem(itemId, quantity, 1);
-		}
-
-		if (!ItemUtils.isTradeable(itemManager, itemId))
-		{
-			return null;
-		}
-
-		long gePrice = itemManager.getItemPrice(itemId);
+		long gePrice = itemManager.getItemPrice(component.itemId);
 		if (gePrice <= 0)
 		{
 			return null;
 		}
 
-		return new BankItem(itemId, quantity, gePrice);
+		return new BankItem(component.itemId, component.quantity, gePrice);
+	}
+
+	/**
+	 * Resolve an item to the tradeable item(s) it is worth. Untradeable variants
+	 * (ornament kits, charged weapons, combined items like Avernic treads (max))
+	 * expand to their tradeable components via RuneLite's ItemMapping; untradeable
+	 * items with no mapping resolve to nothing.
+	 */
+	List<BankItemId> toTradeableComponents(int itemId, int quantity)
+	{
+		if (itemId <= 0 || quantity <= 0)
+		{
+			return Collections.emptyList();
+		}
+
+		if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
+		{
+			return Collections.singletonList(new BankItemId(itemId, quantity));
+		}
+
+		Collection<ItemMapping> mappings = ItemMapping.map(itemId);
+		if (mappings == null)
+		{
+			return Collections.emptyList();
+		}
+
+		List<BankItemId> components = new ArrayList<>(mappings.size());
+		for (ItemMapping mapping : mappings)
+		{
+			long componentQuantity = Math.min(Integer.MAX_VALUE, quantity * mapping.getQuantity());
+			components.add(new BankItemId(mapping.getTradeableItem(), (int) componentQuantity));
+		}
+		return components;
 	}
 
 	/**
@@ -282,7 +308,7 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Filter an item array to tradeable items (or coins) and return as a list
+	 * Resolve an item array to tradeable items (or coins) and return as a list
 	 * of BankItemId records (item_id + quantity, no client-side price).
 	 */
 	private List<BankItemId> collectItemIds(Item[] items)
@@ -294,16 +320,7 @@ public class BankSnapshotService
 		}
 		for (Item item : items)
 		{
-			int itemId = item.getId();
-			int quantity = item.getQuantity();
-			if (itemId <= 0 || quantity <= 0)
-			{
-				continue;
-			}
-			if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
-			{
-				out.add(new BankItemId(itemId, quantity));
-			}
+			out.addAll(toTradeableComponents(item.getId(), item.getQuantity()));
 		}
 		return out;
 	}
