@@ -1,7 +1,12 @@
 package com.flipsmart.util;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 /**
  * Grand Exchange tax helpers.
@@ -23,8 +28,21 @@ public final class GeTax
 	private static final int GE_TAX_EXEMPT_PRICE_THRESHOLD = 50;
 
 	/** Items the GE never taxes regardless of sell price. */
-	public static final Set<Integer> EXEMPT_ITEM_IDS = ItemUtils.resourceRows("/ge_tax_exempt.txt")
-		.map(r -> Integer.parseInt(r[0])).collect(Collectors.toUnmodifiableSet());
+	public static final Set<Integer> EXEMPT_ITEM_IDS;
+	static
+	{
+		Set<Integer> ids = new HashSet<>();
+		try (BufferedReader r = new BufferedReader(new InputStreamReader(
+			GeTax.class.getResourceAsStream("/ge_tax_exempt.txt"), StandardCharsets.UTF_8)))
+		{
+			r.lines().forEach(l -> ids.add(Integer.parseInt(l.split(" ")[0])));
+		}
+		catch (IOException e)
+		{
+			throw new ExceptionInInitializerError(e);
+		}
+		EXEMPT_ITEM_IDS = Collections.unmodifiableSet(ids);
+	}
 
 	private GeTax()
 	{

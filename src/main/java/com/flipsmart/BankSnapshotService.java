@@ -19,14 +19,11 @@ import net.runelite.client.chat.ChatMessageBuilder;
 import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.chat.QueuedMessage;
 import net.runelite.client.game.ItemManager;
-import net.runelite.client.game.ItemMapping;
 
 import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
  * Handles bank snapshot capture and submission to the API.
@@ -39,13 +36,6 @@ public class BankSnapshotService
 	private static final int COINS_ITEM_ID = 995;
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000;
 	private static final long BANK_SNAPSHOT_BACKOFF_MS = 30 * 60_000;
-
-	/**
-	 * Untradeable variants RuneLite's ItemMapping does not cover, keyed to the
-	 * tradeable item they are worth. Kits with no GE price contribute nothing.
-	 */
-	private static final Map<Integer, Integer> UNMAPPED_VARIANTS = ItemUtils.resourceRows("/unmapped_variants.txt")
-		.collect(Collectors.toMap(r -> Integer.parseInt(r[0]), r -> Integer.parseInt(r[1])));
 
 	/**
 	 * Cooldown applied to the next attempt. Extended to the long backoff when
@@ -193,7 +183,7 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Collect all bank items, resolved to tradeable components, with their GE prices.
+	 * Collect all tradeable items from the bank with their GE prices.
 	 */
 	private List<BankItem> collectTradeableBankItems()
 	{
@@ -215,13 +205,10 @@ public class BankSnapshotService
 
 		for (Item item : bankItems)
 		{
-			for (BankItemId part : toTradeableComponents(item.getId(), item.getQuantity()))
+			BankItem bankItem = toTradeableBankItem(item);
+			if (bankItem != null)
 			{
-				long gePrice = itemManager.getItemPrice(part.itemId);
-				if (gePrice > 0)
-				{
-					items.add(new BankItem(part.itemId, part.quantity, gePrice));
-				}
+				items.add(bankItem);
 			}
 		}
 
@@ -234,31 +221,35 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Resolve an item to the tradeable item(s) it is worth. Untradeable variants
-	 * (ornament kits, charged weapons, combined items like Avernic treads (max))
-	 * expand to their tradeable components via RuneLite's ItemMapping; untradeable
-	 * items with no mapping resolve to nothing.
+	 * Convert a bank item to a BankItem if it's tradeable and has a price, or if it's coins.
 	 */
-	List<BankItemId> toTradeableComponents(int id, int quantity)
+	private BankItem toTradeableBankItem(Item item)
 	{
-		if (id <= 0 || quantity <= 0)
+		int itemId = item.getId();
+		int quantity = item.getQuantity();
+
+		if (itemId <= 0 || quantity <= 0)
 		{
-			return List.of();
+			return null;
 		}
-		int itemId = itemManager.canonicalize(id);
-		if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
+
+		if (itemId == COINS_ITEM_ID)
 		{
-			return List.of(new BankItemId(itemId, quantity));
+			return new BankItem(itemId, quantity, 1);
 		}
-		var mappings = ItemMapping.map(itemId);
-		if (mappings == null)
+
+		if (!ItemUtils.isTradeable(itemManager, itemId))
 		{
-			Integer tradeable = UNMAPPED_VARIANTS.get(itemId);
-			return tradeable == null ? List.of() : List.of(new BankItemId(tradeable, quantity));
+			return null;
 		}
-		return mappings.stream()
-			.map(m -> new BankItemId(m.getTradeableItem(), (int) Math.min(Integer.MAX_VALUE, quantity * m.getQuantity())))
-			.collect(Collectors.toList());
+
+		long gePrice = itemManager.getItemPrice(itemId);
+		if (gePrice <= 0)
+		{
+			return null;
+		}
+
+		return new BankItem(itemId, quantity, gePrice);
 	}
 
 	/**
@@ -291,7 +282,7 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Resolve an item array to tradeable items (or coins) and return as a list
+	 * Filter an item array to tradeable items (or coins) and return as a list
 	 * of BankItemId records (item_id + quantity, no client-side price).
 	 */
 	private List<BankItemId> collectItemIds(Item[] items)
@@ -303,7 +294,16 @@ public class BankSnapshotService
 		}
 		for (Item item : items)
 		{
-			out.addAll(toTradeableComponents(item.getId(), item.getQuantity()));
+			int itemId = item.getId();
+			int quantity = item.getQuantity();
+			if (itemId <= 0 || quantity <= 0)
+			{
+				continue;
+			}
+			if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
+			{
+				out.add(new BankItemId(itemId, quantity));
+			}
 		}
 		return out;
 	}

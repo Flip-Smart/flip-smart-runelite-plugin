@@ -38,20 +38,4 @@ public final class ItemUtils
 		ItemComposition composition = itemManager.getItemComposition(itemId);
 		return composition != null && composition.isTradeable();
 	}
-
-	/**
-	 * Read a bundled resource as space-separated rows. Rows start with item ids;
-	 * anything after them (an item name) is for readers of the file.
-	 */
-	public static java.util.stream.Stream<String[]> resourceRows(String path)
-	{
-		try (java.io.InputStream in = ItemUtils.class.getResourceAsStream(path))
-		{
-			return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).lines().map(l -> l.split(" "));
-		}
-		catch (java.io.IOException e)
-		{
-			throw new java.io.UncheckedIOException(e);
-		}
-	}
 }
