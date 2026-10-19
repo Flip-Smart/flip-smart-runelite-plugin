@@ -227,6 +227,8 @@ public class FlipSmartPlugin extends Plugin
 	// Last known RSN — saved when we learn it, used as fallback for persistence on shutdown
 	// when session.getRsn() may already be null
 	private volatile String lastKnownRsn;
+	// Render-frame callers ask for the RSN constantly while logged out; warn once per missing stretch.
+	private volatile boolean rsnMissingWarned;
 
 	// True when handleLoggedInState ran but the local player was not yet
 	// populated, so syncRSN couldn't capture the current account's name. The
@@ -1555,6 +1557,7 @@ public class FlipSmartPlugin extends Plugin
 					lastKnownRsn = liveRsn;
 					configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, liveRsn);
 				}
+				rsnMissingWarned = false;
 				return Optional.of(liveRsn);
 			}
 			// Logged in but the player object isn't ready yet — fall through
@@ -1565,10 +1568,15 @@ public class FlipSmartPlugin extends Plugin
 		String cached = session.getRsn();
 		if (cached != null && !cached.isEmpty())
 		{
+			rsnMissingWarned = false;
 			return Optional.of(cached);
 		}
 
-		log.warn("Unable to determine RSN - transactions will be recorded without RSN");
+		if (!rsnMissingWarned)
+		{
+			rsnMissingWarned = true;
+			log.warn("Unable to determine RSN - transactions will be recorded without RSN");
+		}
 		return Optional.empty();
 	}
 	
