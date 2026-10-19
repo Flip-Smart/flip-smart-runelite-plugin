@@ -5,7 +5,6 @@ import com.flipsmart.domain.offer.OfferRecord;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.function.IntFunction;
 
 /**
  * Projects the offer store's live sell offers and derived awaiting-sale lots into the display list
@@ -18,7 +17,7 @@ public final class ActiveFlipProjection
     private ActiveFlipProjection() {}
 
     public static List<ActiveFlip> project(List<OfferRecord> liveSellOffers,
-        IntFunction<AwaitingSaleLots.BuyBasis> sellBasisForItem,
+        AwaitingSaleLots.BasisLookup sellBasisForItem,
         List<AwaitingSaleLot> awaitingSaleLots, Map<Integer, ActiveFlip> enrichmentByItemId)
     {
         List<ActiveFlip> out = new ArrayList<>();
@@ -33,7 +32,7 @@ public final class ActiveFlipProjection
             // Local cost basis so profit/margin/ROI and time-scoping are correct before the backend
             // catches up; absent basis falls through to enrichment below.
             AwaitingSaleLots.BuyBasis basis = sellBasisForItem == null
-                ? null : sellBasisForItem.apply(sell.getItemId());
+                ? null : sellBasisForItem.apply(sell.getItemId(), sell.getTotalQuantity());
             if (basis != null)
             {
                 f.setAverageBuyPrice(basis.avgBuyPrice);

@@ -4,12 +4,11 @@ import com.flipsmart.domain.offer.OfferRecord;
 import com.flipsmart.domain.offer.OfferState;
 import org.junit.Test;
 import java.util.*;
-import java.util.function.IntFunction;
 import static org.junit.Assert.*;
 
 public class ActiveFlipProjectionTest
 {
-    private static final IntFunction<AwaitingSaleLots.BuyBasis> NO_BASIS = id -> null;
+    private static final AwaitingSaleLots.BasisLookup NO_BASIS = (id, qty) -> null;
     private static final String ITEM_42_NAME = "item42";
     private static final String FIRST_BUY_TIME = "2026-07-28T00:00:00Z";
 
@@ -54,7 +53,7 @@ public class ActiveFlipProjectionTest
     @Test
     public void sellingPositionGetsCostBasisAndFirstBuyTimeFromLookup()
     {
-        IntFunction<AwaitingSaleLots.BuyBasis> basis = id ->
+        AwaitingSaleLots.BasisLookup basis = (id, qty) ->
             id == 42 ? new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, FIRST_BUY_TIME) : null;
 
         List<ActiveFlip> out = ActiveFlipProjection.project(
@@ -121,7 +120,7 @@ public class ActiveFlipProjectionTest
         Map<Integer, ActiveFlip> byId = new HashMap<>();
         byId.put(42, enrich);
 
-        IntFunction<AwaitingSaleLots.BuyBasis> basis = id ->
+        AwaitingSaleLots.BasisLookup basis = (id, qty) ->
             new AwaitingSaleLots.BuyBasis(ITEM_42_NAME, 1000, "2026-07-28T12:00:00Z");
 
         List<ActiveFlip> out = ActiveFlipProjection.project(

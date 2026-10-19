@@ -35,7 +35,7 @@ public class RoundTripLedgerTest
         ledger.recordBuyBasis(RSN, ITEM, 10, 100);
         ledger.recordBuyBasis(RSN, ITEM, 10, 140);
 
-        assertEquals(Long.valueOf(120), ledger.currentBasis(RSN, ITEM));
+        assertEquals(Long.valueOf(120), ledger.currentBasis(RSN, ITEM, 0));
     }
 
     @Test
@@ -51,13 +51,114 @@ public class RoundTripLedgerTest
 
         assertEquals("held quantity survives", 10, restored.heldQuantity(RSN, ITEM));
         assertEquals("so must the basis it depends on",
-            Long.valueOf(1736), restored.currentBasis(RSN, ITEM));
+            Long.valueOf(1736), restored.currentBasis(RSN, ITEM, 0));
+    }
+
+    /**
+     * Production case (Granite hammer): one bought on 8/4 left without a tracked sell, so held never
+     * returned to zero and the cycle stayed open. Five more bought on 10/16 were priced at the
+     * six-unit average, showing a 473k/item loss on a sell that was really +134k/item.
+     */
+    @Test
+    public void basis_forAQuantityUsesTheMostRecentLotsCoveringIt()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 1, 11_323_273);
+        for (int i = 0; i < 5; i++)
+        {
+            ledger.recordBuyBasis(RSN, ITEM, 1, 7_680_292);
+        }
+
+        assertEquals("selling 5 is priced by the 5 most recent buys",
+            Long.valueOf(7_680_292), ledger.currentBasis(RSN, ITEM, 5));
+        assertEquals("the whole cycle still averages every buy",
+            Long.valueOf(8_287_456), ledger.currentBasis(RSN, ITEM, 0));
+    }
+
+    @Test
+    public void basis_forAQuantityProRatesTheLotStraddlingTheBoundary()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 10, 100);
+        ledger.recordBuyBasis(RSN, ITEM, 4, 200);
+
+        assertEquals("4 @ 200 + 2 of the older lot @ 100",
+            Long.valueOf(167), ledger.currentBasis(RSN, ITEM, 6));
+        assertEquals("asking for more than the cycle bought is capped at the cycle",
+            ledger.currentBasis(RSN, ITEM, 0), ledger.currentBasis(RSN, ITEM, 50));
+    }
+
+    @Test
+    public void basis_forAQuantityPricesBuysOlderThanTheRetainedLotsFromTheTotals()
+    {
+        // A blob persisted before lots were tracked carries totals only; buys after the upgrade are
+        // lots. Anything the lots can't cover is priced from what the totals hold beyond them.
+        Map<Integer, RoundTripLedger.Entry> legacy = new HashMap<>();
+        RoundTripLedger.Entry e = new RoundTripLedger.Entry(10, 1);
+        e.boughtQuantity = 10;
+        e.boughtSpent = 1_000;
+        legacy.put(ITEM, e);
+        ledger.importState(RSN, legacy);
+
+        ledger.recordBuyBasis(RSN, ITEM, 2, 400);
+
+        assertEquals(Long.valueOf(400), ledger.currentBasis(RSN, ITEM, 2));
+        assertEquals("2 @ 400 + 2 legacy @ 100", Long.valueOf(250), ledger.currentBasis(RSN, ITEM, 4));
+    }
+
+    @Test
+    public void basis_forAQuantityKeepsItsLotsBoundedWithoutLosingTheirCost()
+    {
+        for (int i = 1; i <= 500; i++)
+        {
+            ledger.recordBuyBasis(RSN, ITEM, 1, i);
+        }
+
+        assertEquals("newest 3 lots: 500, 499, 498", Long.valueOf(499), ledger.currentBasis(RSN, ITEM, 3));
+        assertEquals("evicted lots still count via the totals", Long.valueOf(251), ledger.currentBasis(RSN, ITEM, 0));
+        assertTrue(ledger.export(RSN).get(ITEM).recentLots.size() <= 64);
+    }
+
+    @Test
+    public void basis_forAQuantityForgetsLotsWhenTheCycleCloses()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 10, 100);
+        ledger.recordFill(RSN, ITEM, true, 10);
+        ledger.recordFill(RSN, ITEM, false, 10);
+        ledger.recordBuyBasis(RSN, ITEM, 5, 200);
+
+        assertEquals(Long.valueOf(200), ledger.currentBasis(RSN, ITEM, 10));
+    }
+
+    @Test
+    public void basis_lotsSurviveAnExportImportRoundTrip()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 1, 11_323_273);
+        ledger.recordBuyBasis(RSN, ITEM, 5, 7_680_292);
+
+        RoundTripLedger restored = new RoundTripLedger();
+        restored.importState(RSN, ledger.export(RSN));
+
+        assertEquals(Long.valueOf(7_680_292), restored.currentBasis(RSN, ITEM, 5));
+    }
+
+    @Test
+    public void basis_lotsSurviveTheGsonPersistenceBlob()
+    {
+        ledger.recordBuyBasis(RSN, ITEM, 1, 11_323_273);
+        ledger.recordBuyBasis(RSN, ITEM, 5, 7_680_292);
+        com.google.gson.Gson gson = new com.google.gson.Gson();
+        java.lang.reflect.Type type =
+            new com.google.gson.reflect.TypeToken<Map<Integer, RoundTripLedger.Entry>>(){}.getType();
+
+        RoundTripLedger restored = new RoundTripLedger();
+        restored.importState(RSN, gson.fromJson(gson.toJson(ledger.export(RSN)), type));
+
+        assertEquals(Long.valueOf(7_680_292), restored.currentBasis(RSN, ITEM, 5));
     }
 
     @Test
     public void basis_isAbsentBeforeAnyBuy()
     {
-        assertNull("an untouched item has no basis", ledger.currentBasis(RSN, ITEM));
+        assertNull("an untouched item has no basis", ledger.currentBasis(RSN, ITEM, 0));
     }
 
     @Test
@@ -67,11 +168,11 @@ public class RoundTripLedgerTest
         ledger.recordFill(RSN, ITEM, true, 10);
         ledger.recordFill(RSN, ITEM, false, 10);   // fully liquidated: cycle closes
 
-        assertNull("a closed cycle carries no basis", ledger.currentBasis(RSN, ITEM));
+        assertNull("a closed cycle carries no basis", ledger.currentBasis(RSN, ITEM, 0));
 
         ledger.recordBuyBasis(RSN, ITEM, 5, 200);
         assertEquals("the next cycle starts clean",
-            Long.valueOf(200), ledger.currentBasis(RSN, ITEM));
+            Long.valueOf(200), ledger.currentBasis(RSN, ITEM, 0));
     }
 
     @Test
@@ -82,7 +183,7 @@ public class RoundTripLedgerTest
         ledger.recordFill(RSN, ITEM, false, 3);    // holdings still 7, cycle stays open
 
         assertEquals("a partial sell does not disturb the buy-side basis",
-            Long.valueOf(100), ledger.currentBasis(RSN, ITEM));
+            Long.valueOf(100), ledger.currentBasis(RSN, ITEM, 0));
     }
 
     @Test
@@ -91,7 +192,7 @@ public class RoundTripLedgerTest
         // A placement row carries no price; folding it in would drag the average toward zero.
         ledger.recordBuyBasis(RSN, ITEM, 10, 0);
 
-        assertNull("a priceless fill contributes no basis", ledger.currentBasis(RSN, ITEM));
+        assertNull("a priceless fill contributes no basis", ledger.currentBasis(RSN, ITEM, 0));
     }
 
     @Test
@@ -364,7 +465,7 @@ public class RoundTripLedgerTest
         ledger.seedColdStart(RSN, Collections.singletonList(liveBuy));
 
         assertEquals("seeded basis is the per-item average of the seed buys",
-            Long.valueOf(1_000), ledger.currentBasis(RSN, ITEM));
+            Long.valueOf(1_000), ledger.currentBasis(RSN, ITEM, 0));
     }
 
     @Test

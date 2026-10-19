@@ -101,7 +101,7 @@ public class GrandExchangeTracker
 	// Cost basis straight from the offer store, so a manual exit can be priced without
 	// the backend's slot-capped active-flips list.
 	@Setter
-	private IntFunction<AwaitingSaleLots.BuyBasis> buyBasisProvider;
+	private AwaitingSaleLots.BasisLookup buyBasisProvider;
 
 	// Debounce: prevent duplicate autoFocusOnActiveFlip calls for the same item
 	private volatile int lastAutoFocusItemId;
@@ -886,7 +886,7 @@ public class GrandExchangeTracker
 			return false;
 		}
 
-		AwaitingSaleLots.BuyBasis basis = buyBasisProvider != null ? buyBasisProvider.apply(itemId) : null;
+		AwaitingSaleLots.BuyBasis basis = buyBasisProvider != null ? buyBasisProvider.apply(itemId, inventoryCount) : null;
 		Long sellPrice = ManualSellFocus.resolveSellPrice(
 			displayedSellPriceProvider != null ? displayedSellPriceProvider.apply(itemId) : null,
 			session != null ? session.getRecommendedPrice(itemId) : null,

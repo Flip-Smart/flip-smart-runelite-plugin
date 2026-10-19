@@ -86,7 +86,7 @@ public class ManualSellFocusLocalResolutionTest
 	public void pricesTheExitFromTheOfferStoreBasisWhenTheBackendListOmitsTheHolding() throws Exception
 	{
 		tracker.setBuyBasisProvider(
-			itemId -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
+			(itemId, qty) -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
 
@@ -104,7 +104,7 @@ public class ManualSellFocusLocalResolutionTest
 		// The lookup still fires — it carries the under-counted-quantity reconciliation —
 		// but a response that omits the holding must no longer decide whether a price shows.
 		tracker.setBuyBasisProvider(
-			itemId -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
+			(itemId, qty) -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
 
@@ -116,7 +116,7 @@ public class ManualSellFocusLocalResolutionTest
 	public void prefersThePanelPriceOverTheDerivedBreakevenPrice() throws Exception
 	{
 		tracker.setBuyBasisProvider(
-			itemId -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
+			(itemId, qty) -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
 		tracker.setDisplayedSellPriceProvider(itemId -> 1_234_567L);
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
@@ -129,7 +129,7 @@ public class ManualSellFocusLocalResolutionTest
 	{
 		// No buy basis, no cached price: local resolution genuinely cannot price this,
 		// so the original backend path must remain in place.
-		tracker.setBuyBasisProvider(itemId -> null);
+		tracker.setBuyBasisProvider((itemId, qty) -> null);
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
 
@@ -143,7 +143,7 @@ public class ManualSellFocusLocalResolutionTest
 	{
 		when(activeFlipTracker.getInventoryCountForItem(anyInt())).thenReturn(0);
 		tracker.setBuyBasisProvider(
-			itemId -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
+			(itemId, qty) -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
 
@@ -156,7 +156,7 @@ public class ManualSellFocusLocalResolutionTest
 	public void derivedPriceClearsGeTaxSoTheExitIsNotAGuaranteedLoss() throws Exception
 	{
 		tracker.setBuyBasisProvider(
-			itemId -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
+			(itemId, qty) -> new AwaitingSaleLots.BuyBasis(ITEM_NAME, AVG_BUY_PRICE, null));
 
 		tracker.autoFocusOnActiveFlip(ITEM_ID);
 
