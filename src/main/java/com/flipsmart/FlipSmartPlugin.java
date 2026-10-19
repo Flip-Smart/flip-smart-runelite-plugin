@@ -383,13 +383,13 @@ public class FlipSmartPlugin extends Plugin
 	}
 
 	/**
-	 * Average buy price for the round trip currently open on {@code itemId}, or {@code null} when
-	 * no position is open. Scoped to the cycle, so it never reflects stock already sold.
+	 * Average buy price of the {@code quantity} most recent units bought in the round trip open on
+	 * {@code itemId} (whole cycle when non-positive), or {@code null} when no position is open.
 	 */
-	public Long getCycleBasisForItem(int itemId)
+	public Long getCycleBasisForItem(int itemId, int quantity)
 	{
 		return roundTripLedger == null
-			? null : roundTripLedger.currentBasis(getCurrentRsnSafe().orElse(null), itemId);
+			? null : roundTripLedger.currentBasis(getCurrentRsnSafe().orElse(null), itemId, quantity);
 	}
 
 	/** Quantity of {@code itemId} the ledger currently observes the player to hold, or 0 if unknown. */
@@ -412,7 +412,7 @@ public class FlipSmartPlugin extends Plugin
 	 * Buy cost basis for the round trip currently open on {@code itemId}. The ledger prices it; the
 	 * offer store only identifies it. Null when the store holds no buy record for the item.
 	 */
-	public AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId)
+	public AwaitingSaleLots.BuyBasis buyBasisForItem(int itemId, int quantity)
 	{
 		List<OfferRecord> buys = new ArrayList<>();
 		for (OfferRecord r : offerStore.forItem(itemId))
@@ -422,7 +422,7 @@ public class FlipSmartPlugin extends Plugin
 				buys.add(r);
 			}
 		}
-		return AwaitingSaleLots.resolveBuyBasis(buys, getCycleBasisForItem(itemId));
+		return AwaitingSaleLots.resolveBuyBasis(buys, getCycleBasisForItem(itemId, quantity));
 	}
 
 	/**
@@ -2189,7 +2189,7 @@ public class FlipSmartPlugin extends Plugin
 	{
 		if (!offer.isBuy())
 		{
-			return getRecordedBuyCost(offer.getItemId());
+			return getRecordedBuyCost(offer.getItemId(), offer.getTotalQuantity());
 		}
 		if (offer.getFilledQuantity() > 0 && offer.getSpent() > 0)
 		{
@@ -2198,10 +2198,10 @@ public class FlipSmartPlugin extends Plugin
 		return offer.getPrice();
 	}
 
-	public Long getRecordedBuyCost(int itemId)
+	public Long getRecordedBuyCost(int itemId, int quantity)
 	{
 		return BuyPriceLookup.findAverageBuyPriceWithFallback(
-			getCurrentActiveFlips(), getCycleBasisForItem(itemId),
+			getCurrentActiveFlips(), getCycleBasisForItem(itemId, quantity),
 			offerStore.forItem(itemId), itemId, getHeldQuantityForItem(itemId));
 	}
 

@@ -2,6 +2,7 @@ package com.flipsmart.trading;
 
 import com.flipsmart.domain.offer.OfferRecord;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -27,6 +28,7 @@ import javax.inject.Singleton;
 public final class RoundTripLedger
 {
     private static final int INITIAL_CYCLE_ID = 1;
+    private static final int MAX_RECENT_LOTS = 64;
 
     /** Per-(rsn, itemId) state: quantity currently held, the active cycle id, and the cumulative
      *  already absorbed for the current offer on each GE slot. */
@@ -42,6 +44,13 @@ public final class RoundTripLedger
          */
         public int boughtQuantity;
         public long boughtSpent;
+
+        /**
+         * The cycle's most recent buys as {quantity, pricePerItem}, oldest first and bounded; older
+         * buys survive only in the totals above. Lets a sell be priced by the stock it most likely
+         * is, rather than by a stale lot that left without a tracked sell and kept the cycle open.
+         */
+        public List<long[]> recentLots;
 
         /**
          * Cumulative filled quantity already folded into {@code heldQuantity} for the offer currently
@@ -207,6 +216,7 @@ public final class RoundTripLedger
                 // would inherit the average of stock that has already been sold.
                 e.boughtQuantity = 0;
                 e.boughtSpent = 0L;
+                e.recentLots = null;
                 e.lastClosingFingerprint = fingerprint;
             }
             else
@@ -251,6 +261,16 @@ public final class RoundTripLedger
             Entry e = entryFor(rsn, itemId);
             e.boughtQuantity += quantity;
             e.boughtSpent += quantity * pricePerItem;
+            List<long[]> lots = e.recentLots = e.recentLots == null ? new ArrayList<>() : e.recentLots;
+            int n = lots.size();
+            if (n > 0 && lots.get(n - 1)[1] == pricePerItem)
+            {
+                lots.set(n - 1, new long[]{lots.get(n - 1)[0] + quantity, pricePerItem});
+            }
+            else if (lots.add(new long[]{quantity, pricePerItem}) && n == MAX_RECENT_LOTS)
+            {
+                lots.remove(0);
+            }
         }
     }
 
@@ -271,11 +291,11 @@ public final class RoundTripLedger
     }
 
     /**
-     * Quantity-weighted average buy price for the OPEN cycle, or {@code null} when it has taken
-     * no priced buys. Because a closed cycle's basis is cleared, this can never average across a
-     * position the player has already liquidated.
+     * Average buy price of the {@code quantity} most recent units bought in the OPEN cycle (the whole
+     * cycle when non-positive or larger), or {@code null} when it has taken no priced buys. Because a
+     * closed cycle's basis is cleared, this can never average across a position already liquidated.
      */
-    public Long currentBasis(String rsn, int itemId)
+    public Long currentBasis(String rsn, int itemId, int quantity)
     {
         if (rsn == null || rsn.isEmpty())
         {
@@ -288,7 +308,22 @@ public final class RoundTripLedger
             {
                 return null;
             }
-            return Math.round(e.boughtSpent / (double) e.boughtQuantity);
+            long want = quantity > 0 ? Math.min(quantity, e.boughtQuantity) : e.boughtQuantity;
+            long left = want;
+            long olderQty = e.boughtQuantity;
+            double spent = 0;
+            double olderSpent = e.boughtSpent;
+            List<long[]> lots = e.recentLots == null ? Collections.emptyList() : e.recentLots;
+            for (int i = lots.size() - 1; i >= 0 && left > 0; i--)
+            {
+                long[] lot = lots.get(i);
+                spent += (double) Math.min(lot[0], left) * lot[1];
+                left -= lot[0];
+                olderQty -= lot[0];
+                olderSpent -= (double) lot[0] * lot[1];
+            }
+            // Buys older than the retained lots are priced from what the totals hold beyond them.
+            return Math.round((left > 0 ? spent + left * olderSpent / olderQty : spent) / want);
         }
     }
 
@@ -337,6 +372,8 @@ public final class RoundTripLedger
                 // position without it falls back to averaging across already-closed flips.
                 clone.boughtQuantity = source.boughtQuantity;
                 clone.boughtSpent = source.boughtSpent;
+                // Lots are replaced, never mutated in place, so a shallow copy is a safe snapshot.
+                clone.recentLots = source.recentLots == null ? null : new ArrayList<>(source.recentLots);
                 if (source.absorbedBySlotDir != null)
                 {
                     clone.absorbedBySlotDir = new HashMap<>(source.absorbedBySlotDir);

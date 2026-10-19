@@ -9,9 +9,9 @@ public class AwaitingSaleLotsTest
     private static final String FIRST_BUY_TIME = "2026-07-28T00:00:00Z";
     private static final String ITEM_42_NAME = "item42";
 
-    private static java.util.function.IntFunction<AwaitingSaleLots.BuyBasis> basis(Map<Integer, AwaitingSaleLots.BuyBasis> m)
+    private static AwaitingSaleLots.BasisLookup basis(Map<Integer, AwaitingSaleLots.BuyBasis> m)
     {
-        return id -> m.get(id);
+        return (id, qty) -> m.get(id);
     }
 
     @Test

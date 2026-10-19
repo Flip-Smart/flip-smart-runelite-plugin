@@ -1681,7 +1681,7 @@ public class AutoRecommendService
 
 	private void scheduleMissingSellTimer(OfferRecord offer, long now)
 	{
-		long buyPrice = resolveSellCostBasis(offer.getItemId(), offer.getPrice());
+		long buyPrice = resolveSellCostBasis(offer);
 		long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
 		long deadline = loginCheckDeadlineMs(offerAgeMs, now);
 		SellAdjustmentState state = new SellAdjustmentState(
@@ -2122,7 +2122,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		long buyPrice = resolveSellCostBasis(itemId, sellOffer.getPrice());
+		long buyPrice = resolveSellCostBasis(sellOffer);
 		long delay = sellInitialCheckDelayMs(config.flipTimeframe());
 		long deadline = System.currentTimeMillis() + delay;
 
@@ -2346,7 +2346,7 @@ public class AutoRecommendService
 				continue;
 			}
 
-			long buyPrice = resolveSellCostBasis(offer.getItemId(), offer.getPrice());
+			long buyPrice = resolveSellCostBasis(offer);
 
 			long delayMs = AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
 			long offerAgeMs = now - offer.getEffectiveLastActivityAtMillis();
@@ -2372,12 +2372,14 @@ public class AutoRecommendService
 		}
 	}
 
-	long resolveSellCostBasis(int itemId, long listPrice)
+	long resolveSellCostBasis(OfferRecord offer)
 	{
+		int itemId = offer.getItemId();
+		long listPrice = offer.getPrice();
 		Long cost = adjustments.getBuyPrice(itemId);
 		if (cost == null)
 		{
-			cost = plugin.getRecordedBuyCost(itemId);
+			cost = plugin.getRecordedBuyCost(itemId, offer.getTotalQuantity());
 		}
 		FlipRecommendation rec = cost == null || cost <= 0 ? findRecommendationForItem(itemId) : null;
 		if (rec != null)

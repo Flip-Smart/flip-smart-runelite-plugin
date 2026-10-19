@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.function.IntFunction;
 
 /**
  * Derives awaiting-sale lots: items held in inventory that we bought via a flip and have not yet
@@ -17,6 +16,12 @@ import java.util.function.IntFunction;
 public final class AwaitingSaleLots
 {
     private AwaitingSaleLots() {}
+
+    /** Buy basis for {@code quantity} units of an item; null when unknown. */
+    public interface BasisLookup
+    {
+        BuyBasis apply(int itemId, int quantity);
+    }
 
     /** Buy cost basis for an item, from its store buy record. */
     public static final class BuyBasis
@@ -108,7 +113,7 @@ public final class AwaitingSaleLots
     }
 
     public static List<AwaitingSaleLot> derive(Map<Integer, Integer> inventoryCounts,
-        IntFunction<BuyBasis> buyBasisForItem, Set<Integer> liveSellItemIds)
+        BasisLookup buyBasisForItem, Set<Integer> liveSellItemIds)
     {
         List<AwaitingSaleLot> lots = new ArrayList<>();
         for (Map.Entry<Integer, Integer> e : inventoryCounts.entrySet())
@@ -119,7 +124,7 @@ public final class AwaitingSaleLots
             {
                 continue;
             }
-            BuyBasis basis = buyBasisForItem.apply(itemId);
+            BuyBasis basis = buyBasisForItem.apply(itemId, qty);
             if (basis == null)
             {
                 continue;

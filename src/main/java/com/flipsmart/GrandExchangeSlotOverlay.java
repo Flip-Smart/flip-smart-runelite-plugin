@@ -326,7 +326,7 @@ public class GrandExchangeSlotOverlay extends Overlay
 
 		if (!isOfferBuyType(offer) && config.showProfitLoss())
 		{
-			tooltip.buyPrice = getBuyPriceForItem(offer.getItemId());
+			tooltip.buyPrice = getBuyPriceForItem(offer.getItemId(), offer.getTotalQuantity());
 		}
 
 		if (tooltip.wikiPrice == null)
@@ -337,10 +337,10 @@ public class GrandExchangeSlotOverlay extends Overlay
 		return tooltip;
 	}
 
-	private Long getBuyPriceForItem(int itemId)
+	private Long getBuyPriceForItem(int itemId, int quantity)
 	{
 		return BuyPriceLookup.findAverageBuyPriceWithFallback(
-			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId),
+			plugin.getCurrentActiveFlips(), plugin.getCycleBasisForItem(itemId, quantity),
 			plugin.getOfferRecordsForItem(itemId), itemId, plugin.getHeldQuantityForItem(itemId));
 	}
 

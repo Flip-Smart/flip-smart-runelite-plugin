@@ -13,6 +13,8 @@ import org.mockito.MockitoAnnotations;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 /**
@@ -114,7 +116,7 @@ public class AutoRecommendRelistCostBasisTest
 	public void recordedBuyCostIsUsedBeforeListPrice()
 	{
 		service.refreshQueue(Collections.singletonList(rec(99, 50)));
-		when(plugin.getRecordedBuyCost(ITEM)).thenReturn(BUY_COST);
+		when(plugin.getRecordedBuyCost(eq(ITEM), anyInt())).thenReturn(BUY_COST);
 
 		listSell(2);
 

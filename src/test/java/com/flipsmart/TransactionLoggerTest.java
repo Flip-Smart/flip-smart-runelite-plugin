@@ -68,7 +68,7 @@ public class TransactionLoggerTest
 
         assertEquals("held quantity tracks the buy", 10, roundTripLedger.heldQuantity(RSN, 571));
         assertEquals("the open cycle knows what it paid",
-            Long.valueOf(1736), roundTripLedger.currentBasis(RSN, 571));
+            Long.valueOf(1736), roundTripLedger.currentBasis(RSN, 571, 0));
     }
 
     private TransactionRequest capture()
