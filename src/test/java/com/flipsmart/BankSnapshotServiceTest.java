@@ -1,5 +1,7 @@
 package com.flipsmart;
 
+import com.flipsmart.api.dto.Dtos.BankItem;
+import com.flipsmart.api.dto.Dtos.BankItemId;
 import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
 import com.flipsmart.api.dto.Dtos.BankSnapshotResult;
 import net.runelite.api.Client;
@@ -11,11 +13,16 @@ import net.runelite.client.chat.ChatMessageManager;
 import net.runelite.client.game.ItemManager;
 import org.junit.Before;
 import org.junit.Test;
+import org.mockito.ArgumentCaptor;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -33,6 +40,9 @@ public class BankSnapshotServiceTest
 	private PlayerSession session;
 	private FlipSmartApiClient apiClient;
 	private ChatMessageManager chatMessageManager;
+	private Client client;
+	private ItemManager itemManager;
+	private ItemContainer bank;
 	private BankSnapshotService service;
 
 	@Before
@@ -40,9 +50,10 @@ public class BankSnapshotServiceTest
 	{
 		session = new PlayerSession();
 		apiClient = mock(FlipSmartApiClient.class);
-		Client client = mock(Client.class);
+		client = mock(Client.class);
 		ClientThread clientThread = mock(ClientThread.class);
-		ItemManager itemManager = mock(ItemManager.class);
+		itemManager = mock(ItemManager.class);
+		when(itemManager.canonicalize(anyInt())).thenAnswer(inv -> inv.getArgument(0));
 		chatMessageManager = mock(ChatMessageManager.class);
 
 		doAnswer(inv -> {
@@ -54,7 +65,7 @@ public class BankSnapshotServiceTest
 		when(apiClient.isAuthenticated()).thenReturn(true);
 
 		// Bank containing a coins stack only — avoids tradeable/price lookups.
-		ItemContainer bank = mock(ItemContainer.class);
+		bank = mock(ItemContainer.class);
 		when(bank.getItems()).thenReturn(new Item[]{new Item(995, 25_000)});
 		when(client.getItemContainer(InventoryID.BANK)).thenReturn(bank);
 
@@ -178,5 +189,59 @@ public class BankSnapshotServiceTest
 		service.onBankContainerChanged(RSN);
 
 		verify(apiClient, never()).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+	}
+
+	private static final int BANDOS_GODSWORD_OR = 20370;
+	private static final int AVERNIC_DEFENDER = 22322;
+	private static final int AVERNIC_TREADS_MAX = 31097;
+	private static final int RUNE_PLATEBODY = 1127;
+	private static final int RUNE_PLATEBODY_NOTED = 1128;
+
+	@SuppressWarnings("unchecked")
+	private List<BankItem> sentBankItems()
+	{
+		ArgumentCaptor<List<BankItem>> captor = ArgumentCaptor.forClass(List.class);
+		verify(apiClient).createBankSnapshotAsync(anyString(), captor.capture(), anyList(), anyList(), anyLong());
+		return captor.getValue();
+	}
+
+	@Test
+	public void untradeableBankItemsAreSentForTheApiToValue()
+	{
+		when(bank.getItems()).thenReturn(new Item[]{
+			new Item(995, 25_000), new Item(BANDOS_GODSWORD_OR, 1), new Item(AVERNIC_DEFENDER, 1), new Item(-1, 0),
+		});
+		when(itemManager.getItemPrice(995)).thenReturn(1L);
+		when(itemManager.getItemPrice(BANDOS_GODSWORD_OR)).thenReturn(22_000_000L);
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+
+		service.onBankContainerChanged(RSN);
+
+		List<BankItem> sent = sentBankItems();
+		assertEquals(List.of(995, BANDOS_GODSWORD_OR, AVERNIC_DEFENDER), sent.stream().map(i -> i.itemId).collect(Collectors.toList()));
+		assertEquals(List.of(1L, 22_000_000L, 0L), sent.stream().map(i -> i.valuePerItem).collect(Collectors.toList()));
+	}
+
+	@Test
+	@SuppressWarnings("unchecked")
+	public void inventoryAndGearSendUntradeablesAndCanonicalIds()
+	{
+		ItemContainer inventory = mock(ItemContainer.class);
+		when(inventory.getItems()).thenReturn(new Item[]{new Item(RUNE_PLATEBODY_NOTED, 50)});
+		when(client.getItemContainer(InventoryID.INVENTORY)).thenReturn(inventory);
+		ItemContainer equipment = mock(ItemContainer.class);
+		when(equipment.getItems()).thenReturn(new Item[]{new Item(AVERNIC_TREADS_MAX, 1)});
+		when(client.getItemContainer(InventoryID.EQUIPMENT)).thenReturn(equipment);
+		when(itemManager.canonicalize(RUNE_PLATEBODY_NOTED)).thenReturn(RUNE_PLATEBODY);
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+
+		service.onBankContainerChanged(RSN);
+
+		ArgumentCaptor<List<BankItemId>> inv = ArgumentCaptor.forClass(List.class);
+		ArgumentCaptor<List<BankItemId>> gear = ArgumentCaptor.forClass(List.class);
+		verify(apiClient).createBankSnapshotAsync(anyString(), anyList(), inv.capture(), gear.capture(), anyLong());
+		assertEquals(RUNE_PLATEBODY, inv.getValue().get(0).itemId);
+		assertEquals(50, inv.getValue().get(0).quantity);
+		assertEquals(AVERNIC_TREADS_MAX, gear.getValue().get(0).itemId);
 	}
 }
