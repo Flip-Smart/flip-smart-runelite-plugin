@@ -25,17 +25,4 @@ public final class ItemUtils
 		ItemComposition composition = itemManager.getItemComposition(itemId);
 		return composition != null ? composition.getName() : "Unknown Item";
 	}
-
-	/**
-	 * Checks if an item is tradeable on the Grand Exchange.
-	 *
-	 * @param itemManager The RuneLite item manager
-	 * @param itemId The item ID to check
-	 * @return true if the item exists and is tradeable, false otherwise
-	 */
-	public static boolean isTradeable(ItemManager itemManager, int itemId)
-	{
-		ItemComposition composition = itemManager.getItemComposition(itemId);
-		return composition != null && composition.isTradeable();
-	}
 }

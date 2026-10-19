@@ -3,7 +3,6 @@ import com.flipsmart.api.dto.Dtos.BankItemId;
 import com.flipsmart.api.dto.Dtos.BankItem;
 import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
 import com.flipsmart.domain.offer.OfferSignal;
-import com.flipsmart.util.ItemUtils;
 
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -33,7 +32,6 @@ import java.util.List;
 @Singleton
 public class BankSnapshotService
 {
-	private static final int COINS_ITEM_ID = 995;
 	private static final long BANK_SNAPSHOT_COOLDOWN_MS = 60_000;
 	private static final long BANK_SNAPSHOT_BACKOFF_MS = 30 * 60_000;
 
@@ -110,7 +108,7 @@ public class BankSnapshotService
 	{
 		try
 		{
-			List<BankItem> items = collectTradeableBankItems();
+			List<BankItem> items = collectBankItems();
 
 			if (items == null || items.isEmpty())
 			{
@@ -183,9 +181,10 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Collect all tradeable items from the bank with their GE prices.
+	 * Collect every bank item with its client-side GE price (0 when it has none).
+	 * Untradeable variants are sent as-is; the API values them at their tradeable parts.
 	 */
-	private List<BankItem> collectTradeableBankItems()
+	private List<BankItem> collectBankItems()
 	{
 		ItemContainer bank = client.getItemContainer(InventoryID.BANK);
 		if (bank == null)
@@ -203,57 +202,16 @@ public class BankSnapshotService
 
 		List<BankItem> items = new ArrayList<>();
 
-		for (Item item : bankItems)
+		for (BankItemId item : collectItemIds(bankItems))
 		{
-			BankItem bankItem = toTradeableBankItem(item);
-			if (bankItem != null)
-			{
-				items.add(bankItem);
-			}
-		}
-
-		if (items.isEmpty())
-		{
-			log.debug("No tradeable items with prices found in bank");
+			items.add(new BankItem(item.itemId, item.quantity, itemManager.getItemPrice(item.itemId)));
 		}
 
 		return items;
 	}
 
 	/**
-	 * Convert a bank item to a BankItem if it's tradeable and has a price, or if it's coins.
-	 */
-	private BankItem toTradeableBankItem(Item item)
-	{
-		int itemId = item.getId();
-		int quantity = item.getQuantity();
-
-		if (itemId <= 0 || quantity <= 0)
-		{
-			return null;
-		}
-
-		if (itemId == COINS_ITEM_ID)
-		{
-			return new BankItem(itemId, quantity, 1);
-		}
-
-		if (!ItemUtils.isTradeable(itemManager, itemId))
-		{
-			return null;
-		}
-
-		long gePrice = itemManager.getItemPrice(itemId);
-		if (gePrice <= 0)
-		{
-			return null;
-		}
-
-		return new BankItem(itemId, quantity, gePrice);
-	}
-
-	/**
-	 * Collect tradeable items from the player's inventory.
+	 * Collect items from the player's inventory.
 	 * The backend prices these server-side, so no GE price is computed here.
 	 * Coins (item_id 995) are included; backend prices coins as 1 GP each.
 	 */
@@ -268,7 +226,7 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Collect tradeable equipped gear items from the EQUIPMENT container.
+	 * Collect equipped gear items from the EQUIPMENT container.
 	 * The backend prices these server-side.
 	 */
 	private List<BankItemId> collectGearItems()
@@ -282,8 +240,8 @@ public class BankSnapshotService
 	}
 
 	/**
-	 * Filter an item array to tradeable items (or coins) and return as a list
-	 * of BankItemId records (item_id + quantity, no client-side price).
+	 * Every item in the array as a BankItemId record (canonical item_id + quantity,
+	 * no client-side price). Noted and worn variants resolve to their base item.
 	 */
 	private List<BankItemId> collectItemIds(Item[] items)
 	{
@@ -300,10 +258,7 @@ public class BankSnapshotService
 			{
 				continue;
 			}
-			if (itemId == COINS_ITEM_ID || ItemUtils.isTradeable(itemManager, itemId))
-			{
-				out.add(new BankItemId(itemId, quantity));
-			}
+			out.add(new BankItemId(itemManager.canonicalize(itemId), quantity));
 		}
 		return out;
 	}
