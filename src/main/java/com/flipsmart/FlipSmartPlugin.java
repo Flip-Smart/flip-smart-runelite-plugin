@@ -2828,6 +2828,12 @@ public class FlipSmartPlugin extends Plugin
 		int taxPerItem = GeTax.taxFor(itemId, fillPrice);
 		state.setRealizedProfit(state.getRealizedProfit()
 			+ (long) filledQty * (fillPrice - state.getBuyPrice() - taxPerItem));
+		// Filling, so any re-price prompt for this offer no longer applies.
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (geSlotOverlay != null && live != null && live.getSlot() != null)
+		{
+			geSlotOverlay.clearAdjustmentHighlight(live.getSlot());
+		}
 		if (complete || remaining <= 0)
 		{
 			v9Store().remove(itemId);
@@ -2845,12 +2851,6 @@ public class FlipSmartPlugin extends Plugin
 			state.setLadder1ResolvedAtMs(0L);
 		}
 		v9Store().put(state);
-		// Filling, so any re-price prompt for this offer no longer applies.
-		OfferRecord live = findLiveOfferForItem(itemId);
-		if (geSlotOverlay != null && live != null && live.getSlot() != null)
-		{
-			geSlotOverlay.clearAdjustmentHighlight(live.getSlot());
-		}
 		if (flipAssistOverlay != null)
 		{
 			flipAssistOverlay.clearAutoStatusForItem(itemId);
