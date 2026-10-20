@@ -161,6 +161,7 @@ public class ManualAdjustmentTracker
 			return;
 		}
 		state.deadlineMs = System.currentTimeMillis() + AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+		clearHighlights(state);
 		log.debug("Manual adjustment timer reset for slot {} ({}m)", geSlot,
 			AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS / 60000);
 	}
@@ -174,15 +175,20 @@ public class ManualAdjustmentTracker
 		if (removed != null)
 		{
 			log.debug("Manual adjustment timer cleared for {} (slot {})", removed.itemName, geSlot);
-			IntConsumer cb = onClearHighlight;
-			if (cb != null)
-			{
-				cb.accept(geSlot);
-			}
-			if (!removed.isBuy)
-			{
-				notifyClearInventoryHighlight(removed.itemId);
-			}
+			clearHighlights(removed);
+		}
+	}
+
+	private void clearHighlights(OfferAdjustmentState state)
+	{
+		IntConsumer cb = onClearHighlight;
+		if (cb != null)
+		{
+			cb.accept(state.geSlot);
+		}
+		if (!state.isBuy)
+		{
+			notifyClearInventoryHighlight(state.itemId);
 		}
 	}
 
@@ -256,6 +262,7 @@ public class ManualAdjustmentTracker
 		String timeframe = config.flipTimeframe().getApiValue();
 		String style = config.flipStyle().getApiValue();
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
+		int filledAtRequest = offer.getFilledQuantity();
 
 		apiClient.getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
@@ -276,11 +283,21 @@ public class ManualAdjustmentTracker
 			{
 				return;
 			}
+			// Filled mid-request: this verdict is stale.
+			OfferRecord current = offerStore.bySlot(state.geSlot);
+			if (current == null || current.getFilledQuantity() != filledAtRequest)
+			{
+				return;
+			}
 
-			if (response.isActionRequired())
+			if (response.needsActionOn(offer.getPrice()))
 			{
 				handleAdjustmentRecommendation(state, offer, response);
 				state.adjustmentCount++;
+			}
+			else
+			{
+				clearHighlights(state);
 			}
 
 			// Reschedule using API-provided next_check_minutes (source of truth)
@@ -387,10 +404,10 @@ public class ManualAdjustmentTracker
 	private void handleBuyAdjustment(OfferAdjustmentState state, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
-		String msg = String.format("Adjust %s buy price %s → %s gp",
+		String msg = String.format("Rebuy %s at %s (was %s)",
 			state.itemName,
-			GpUtils.formatGPWithSuffix(offer.getPrice()),
-			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
+			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()),
+			GpUtils.formatGPWithSuffix(offer.getPrice()));
 
 		log.debug("Manual adjustment: {}", msg);
 
@@ -417,10 +434,10 @@ public class ManualAdjustmentTracker
 	private void handleSellAdjustment(OfferAdjustmentState state, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
-		String msg = String.format("Adjust %s sell price %s → %s gp",
+		String msg = String.format("Relist %s at %s (was %s)",
 			state.itemName,
-			GpUtils.formatGPWithSuffix(offer.getPrice()),
-			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
+			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()),
+			GpUtils.formatGPWithSuffix(offer.getPrice()));
 
 		log.debug("Manual adjustment: {}", msg);
 		notifyPrompt(msg, state.itemId);

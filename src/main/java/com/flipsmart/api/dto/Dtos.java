@@ -393,6 +393,18 @@ public final class Dtos
 		}
 
 		/**
+		 * Whether this asks the player to act on an offer at {@code offerPrice}; a re-price to that same price does not.
+		 */
+		public boolean needsActionOn(long offerPrice)
+		{
+			if (isReadjustBuy() || isReadjustSell())
+			{
+				return recommendedPrice != null && recommendedPrice != offerPrice;
+			}
+			return isActionRequired();
+		}
+
+		/**
 		 * Whether this response recommends adjusting a buy price.
 		 */
 		public boolean isReadjustBuy()

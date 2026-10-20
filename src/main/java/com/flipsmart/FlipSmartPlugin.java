@@ -2553,9 +2553,13 @@ public class FlipSmartPlugin extends Plugin
 
 	// Prominent surfacing shared by the first listing and the re-adjustment ladder: the Flip
 	// Assist overlay status line, plus a GE slot highlight when a live offer exists.
-	private void surfaceV9Prompt(int itemId, String detail, long price)
+	private boolean surfaceV9Prompt(int itemId, String detail, long price)
 	{
 		OfferRecord live = findLiveOfferForItem(itemId);
+		if (live != null && live.getPrice() == price)
+		{
+			return false;
+		}
 		if (live != null && isAutoRecommendActive())
 		{
 			autoRecommendService.surfaceAdvisorResell(live, price, null);
@@ -2568,6 +2572,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			geSlotOverlay.setAdjustmentHighlight(live.getSlot(), price);
 		}
+		return true;
 	}
 
 	private OfferRecord findLiveOfferForItem(int itemId)
@@ -2735,8 +2740,10 @@ public class FlipSmartPlugin extends Plugin
 				grandExchangeTracker.refreshSellFocus(itemId);
 			}
 			String message = v9PromptCopy(itemId, resp.getDisposition(), listingPrice, false);
-			surfaceV9Prompt(itemId, message, listingPrice);
-			notifyV9Readjustment(message);
+			if (surfaceV9Prompt(itemId, message, listingPrice))
+			{
+				notifyV9Readjustment(message);
+			}
 		}
 		state.setLadderRung(rung);
 		if (rung == V9_LADDER_RUNG_1)
@@ -2821,6 +2828,12 @@ public class FlipSmartPlugin extends Plugin
 		int taxPerItem = GeTax.taxFor(itemId, fillPrice);
 		state.setRealizedProfit(state.getRealizedProfit()
 			+ (long) filledQty * (fillPrice - state.getBuyPrice() - taxPerItem));
+		// Filling, so any re-price prompt for this offer no longer applies.
+		OfferRecord live = findLiveOfferForItem(itemId);
+		if (geSlotOverlay != null && live != null && live.getSlot() != null)
+		{
+			geSlotOverlay.clearAdjustmentHighlight(live.getSlot());
+		}
 		if (complete || remaining <= 0)
 		{
 			v9Store().remove(itemId);
@@ -2838,6 +2851,10 @@ public class FlipSmartPlugin extends Plugin
 			state.setLadder1ResolvedAtMs(0L);
 		}
 		v9Store().put(state);
+		if (flipAssistOverlay != null)
+		{
+			flipAssistOverlay.clearAutoStatusForItem(itemId);
+		}
 	}
 
 	// Player cancelled a V9-owned sell (manual adjustment / relist — OSRS requires cancel to

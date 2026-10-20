@@ -1552,7 +1552,7 @@ public class AutoRecommendService
 
 		long nextDelay = AdjustmentTimerUtils.nextCheckDelayMs(response.getNextCheckMinutes());
 
-		if (!response.isActionRequired())
+		if (!response.needsActionOn(offer.getPrice()))
 		{
 			// Hold — reschedule using API timing
 			adjustments.putBuyDeadline(itemId, System.currentTimeMillis() + nextDelay);
@@ -2280,7 +2280,7 @@ public class AutoRecommendService
 			return;
 		}
 
-		if (!response.isActionRequired())
+		if (!response.needsActionOn(offer.getPrice()))
 		{
 			// Hold — reschedule using API-provided interval
 			long delay = AdjustmentTimerUtils.nextCheckDelayMs(response.getNextCheckMinutes());
