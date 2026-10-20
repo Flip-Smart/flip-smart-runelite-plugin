@@ -1203,7 +1203,7 @@ public class AutoRecommendService
 	 * The pool a player may be shown in Flip Assist: recommendations that are not
 	 * already on the GE and that clear the same minimum-profit and minimum-volume
 	 * filters Flip Finder's list applies ({@link FocusedFlip#passesRecommendationFilters}),
-	 * sorted slowest-filling first. Shared by both start() and refreshQueue() so the
+	 * sorted proven flips first, then slowest-filling first. Shared by both start() and refreshQueue() so the
 	 * Assist queue never surfaces an item Flip Finder would hide.
 	 */
 	static List<FlipRecommendation> filterSurfaceable(
@@ -1222,7 +1222,8 @@ public class AutoRecommendService
 				filtered.add(rec);
 			}
 		}
-		filtered.sort(Comparator.comparingDouble(FlipRecommendation::getVolumePerHour));
+		filtered.sort(Comparator.comparing((FlipRecommendation rec) -> !rec.isProven())
+			.thenComparingDouble(FlipRecommendation::getVolumePerHour));
 		return filtered;
 	}
 

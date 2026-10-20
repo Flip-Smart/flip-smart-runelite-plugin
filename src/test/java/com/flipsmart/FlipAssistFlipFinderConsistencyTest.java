@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -87,6 +88,21 @@ public class FlipAssistFlipFinderConsistencyTest
 
 		assertFalse(ids(filtered).contains(1001));
 		assertTrue(ids(filtered).contains(2002));
+	}
+
+	// Proven flips lead the Assist queue; the rest keep the slowest-filling-first order.
+	@Test
+	public void provenFlipsSortFirst()
+	{
+		FlipRecommendation slow = rec(1001, 100, 2000, 10, 2000);
+		FlipRecommendation fastProven = rec(2002, 100, 2000, 10, 9000);
+		fastProven.setProven(true);
+		FlipRecommendation fast = rec(3003, 100, 2000, 10, 8000);
+
+		List<FlipRecommendation> filtered = AutoRecommendService.filterSurfaceable(
+			Arrays.asList(fast, slow, fastProven), NONE_ACTIVE, OFFSET, MIN_PROFIT, MIN_VOLUME);
+
+		assertEquals(Arrays.asList(2002, 1001, 3003), ids(filtered));
 	}
 
 	// The shared predicate must match Flip Finder's shouldDisplay semantics exactly:
