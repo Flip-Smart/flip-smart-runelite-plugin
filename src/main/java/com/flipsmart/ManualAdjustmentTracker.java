@@ -262,6 +262,7 @@ public class ManualAdjustmentTracker
 		String timeframe = config.flipTimeframe().getApiValue();
 		String style = config.flipStyle().getApiValue();
 		String rsn = rsnSupplier != null ? rsnSupplier.get() : null;
+		int filledAtRequest = offer.getFilledQuantity();
 
 		apiClient.getFlipAdjustmentAsync(FlipAdjustmentRequest.builder()
 			.itemId(state.itemId)
@@ -279,6 +280,12 @@ public class ManualAdjustmentTracker
 		).thenAccept(response ->
 		{
 			if (response == null)
+			{
+				return;
+			}
+			// Filled mid-request: this verdict is stale.
+			OfferRecord current = offerStore.bySlot(state.geSlot);
+			if (current == null || current.getFilledQuantity() != filledAtRequest)
 			{
 				return;
 			}

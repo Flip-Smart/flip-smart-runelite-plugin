@@ -2,6 +2,7 @@ package com.flipsmart;
 
 import com.flipsmart.api.dto.Dtos.FlipAdjustmentResponse;
 import com.flipsmart.domain.offer.OfferRecord;
+import com.flipsmart.domain.offer.OfferState;
 import com.flipsmart.trading.OfferStore;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -110,6 +111,22 @@ public class ManualAdjustmentTrackerTest
 		tracker.resetTimer(2);
 
 		assertEquals(List.of("glow 2 @6", "clear 2"), events);
+	}
+
+	@Test
+	public void lateVerdictAfterAFillDoesNotRelight()
+	{
+		OfferRecord offer = sell(2, FIRE_RUNE, 9);
+		track(offer);
+		CompletableFuture<FlipAdjustmentResponse> inFlight = new CompletableFuture<>();
+		when(api.getFlipAdjustmentAsync(any())).thenReturn(inFlight);
+		tracker.checkTimers();
+
+		when(store.bySlot(2)).thenReturn(offer.withFill(500, 4_500, OfferState.PARTIAL_FILL, System.currentTimeMillis()));
+		tracker.resetTimer(2);
+		inFlight.complete(response("readjust_sell", 6L));
+
+		assertEquals(List.of("clear 2"), events);
 	}
 
 	@Test
