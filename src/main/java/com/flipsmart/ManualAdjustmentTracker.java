@@ -161,6 +161,7 @@ public class ManualAdjustmentTracker
 			return;
 		}
 		state.deadlineMs = System.currentTimeMillis() + AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS;
+		clearHighlights(state);
 		log.debug("Manual adjustment timer reset for slot {} ({}m)", geSlot,
 			AdjustmentTimerUtils.INITIAL_CHECK_DELAY_MS / 60000);
 	}
@@ -174,15 +175,20 @@ public class ManualAdjustmentTracker
 		if (removed != null)
 		{
 			log.debug("Manual adjustment timer cleared for {} (slot {})", removed.itemName, geSlot);
-			IntConsumer cb = onClearHighlight;
-			if (cb != null)
-			{
-				cb.accept(geSlot);
-			}
-			if (!removed.isBuy)
-			{
-				notifyClearInventoryHighlight(removed.itemId);
-			}
+			clearHighlights(removed);
+		}
+	}
+
+	private void clearHighlights(OfferAdjustmentState state)
+	{
+		IntConsumer cb = onClearHighlight;
+		if (cb != null)
+		{
+			cb.accept(state.geSlot);
+		}
+		if (!state.isBuy)
+		{
+			notifyClearInventoryHighlight(state.itemId);
 		}
 	}
 
@@ -277,10 +283,14 @@ public class ManualAdjustmentTracker
 				return;
 			}
 
-			if (response.isActionRequired())
+			if (response.needsActionOn(offer.getPrice()))
 			{
 				handleAdjustmentRecommendation(state, offer, response);
 				state.adjustmentCount++;
+			}
+			else
+			{
+				clearHighlights(state);
 			}
 
 			// Reschedule using API-provided next_check_minutes (source of truth)
