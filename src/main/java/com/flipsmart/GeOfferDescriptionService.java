@@ -257,48 +257,43 @@ public class GeOfferDescriptionService
 	}
 
 	/**
-	 * Resolves the offer context (itemId, direction, price, quantity) from one of
-	 * three sources, ordered by how authoritative each is about the item actually
-	 * on screen: Flip Assist focus (only when it agrees with the screen), the live
-	 * "Set up offer" window, then the committed offer on the active slot.
+	 * Resolves the offer context (itemId, direction, price, quantity). The screen
+	 * owns item and direction: the live "Set up offer" window, else the committed
+	 * offer on the active slot. Flip Assist focus only supplies its recommended
+	 * price/qty when it agrees with the screen on both, or when nothing is on
+	 * screen yet.
 	 *
 	 * @return long[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
 	 *         no actionable context can be determined.
 	 */
 	long[] resolveOfferContext()
 	{
-		long[] focusCtx = resolveFlipAssistFocusContext();
-		if (focusCtx != null)
-		{
-			return focusCtx;
-		}
-
 		// The setup window is pre-confirm and belongs to no committed slot, so
 		// while it is open it outranks the active slot: that slot may hold an
 		// unrelated in-flight offer the player merely hovered or clicked earlier.
-		long[] setupCtx = resolveSetupWindowContext();
-		if (setupCtx != null)
+		long[] screenCtx = resolveSetupWindowContext();
+		if (screenCtx == null)
 		{
-			return setupCtx;
+			screenCtx = resolveSlotContext();
 		}
 
-		return resolveSlotContext();
+		long[] focusCtx = resolveFlipAssistFocusContext(screenCtx);
+		return focusCtx != null ? focusCtx : screenCtx;
 	}
 
 	/**
-	 * Source #1: Flip Assist focus. When the player has picked a recommendation
-	 * this carries the richest context (recommended price/qty), but focus tracks
-	 * the plugin's *next recommended action* — which is routinely a different item
-	 * than the panel currently open. Only trust it when it agrees with the item
-	 * actually on screen; otherwise the focused item's wiki price/volume bleeds
-	 * onto an unrelated offer panel while 2+ flips are active. When no
-	 * on-screen item can be determined yet (e.g. a fresh buy before an item is
-	 * picked), focus is still the best available signal.
+	 * Flip Assist focus carries the richest context (recommended price/qty), but it
+	 * tracks the plugin's *next recommended action* — routinely a different item, or
+	 * the same item at a different step (a SELL focus lingering after a flip while
+	 * the player re-buys). Trusting its item would bleed another item's numbers onto
+	 * the panel; trusting its step would print sell stats on a buy screen. So it is
+	 * used only when it matches the screen's item and direction, or when no screen
+	 * context exists yet (e.g. a fresh buy before an item is picked).
 	 *
 	 * @return long[]{itemId, isBuy (1=buy/0=sell), price, qty}, or {@code null} if
-	 *         Flip Assist focus is absent or disagrees with the on-screen item.
+	 *         Flip Assist focus is absent or disagrees with the screen.
 	 */
-	private long[] resolveFlipAssistFocusContext()
+	private long[] resolveFlipAssistFocusContext(long[] screenCtx)
 	{
 		FocusedFlip focus = flipAssistOverlay == null ? null : flipAssistOverlay.getFocusedFlip();
 		if (focus == null)
@@ -306,50 +301,15 @@ public class GeOfferDescriptionService
 			return null;
 		}
 
-		Integer onScreenItemId = resolveOnScreenItemId();
-		if (onScreenItemId != null && onScreenItemId != focus.getItemId())
+		boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
+		if (screenCtx != null && (screenCtx[0] != focus.getItemId() || (screenCtx[1] == 1) != isBuy))
 		{
 			return null;
 		}
 
-		boolean isBuy = focus.getStep() == FocusedFlip.FlipStep.BUY;
 		long price = isBuy ? focus.getBuyPrice() : focus.getSellPrice();
 		int qty = isBuy ? focus.getBuyQuantity() : focus.getSellQuantity();
 		return new long[]{focus.getItemId(), isBuy ? 1 : 0, price, qty};
-	}
-
-	/**
-	 * The item id the open GE panel is actually showing, independent of Flip Assist
-	 * focus: the item selected in the "Set up offer" window if that window is open,
-	 * else the committed offer on the active slot (in-flight status panel). Returns
-	 * {@code null} when neither surface exposes an item yet — the caller then treats
-	 * focus as authoritative.
-	 */
-	private Integer resolveOnScreenItemId()
-	{
-		// The setup window covers the slot tiles, so when it is open the active
-		// slot's committed offer is not what the player is looking at.
-		long[] setupCtx = resolveSetupWindowContext();
-		if (setupCtx != null)
-		{
-			return (int) setupCtx[0];
-		}
-
-		int slot = resolveActiveSlot();
-		if (slot >= 0)
-		{
-			GrandExchangeOffer[] offers = client.getGrandExchangeOffers();
-			if (offers != null && slot < offers.length)
-			{
-				GrandExchangeOffer offer = offers[slot];
-				if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
-				{
-					return offer.getItemId();
-				}
-			}
-		}
-
-		return null;
 	}
 
 	/**

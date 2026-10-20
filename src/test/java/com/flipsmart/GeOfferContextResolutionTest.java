@@ -309,6 +309,82 @@ public class GeOfferContextResolutionTest
 		assertEquals("the details panel's own slot must win", RAW_KARAMBWAN, ctx[0]);
 	}
 
+	// -- #1453: the screen owns direction, even when focus names the same item ---
+
+	/**
+	 * Reported case: Shark was flipped this session and Flip Assist focus is still
+	 * on its SELL step. The player opens a fresh BUY for Shark. Focus agrees on the
+	 * item, so it used to win outright and its SELL step sent the buy screen through
+	 * the sell builder — printing Breakeven and Your profit on a buy offer.
+	 */
+	@Test
+	public void sellFocusOnSameItemDoesNotTurnABuySetupScreenIntoASell()
+	{
+		GeOfferDescriptionService service =
+			newServiceWithFocus(FocusedFlip.forSell(SHARK, "Shark", 1_000, 500));
+		openSetupWindow(SHARK, 960, 500, false);
+
+		long[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals(SHARK, ctx[0]);
+		assertEquals("a buy setup screen must resolve as a buy", 1, ctx[1]);
+		assertEquals("a mismatched focus must not supply the price", 960, ctx[2]);
+	}
+
+	/** Mirror: a lingering BUY focus must not hide the sell stats on a sell screen. */
+	@Test
+	public void buyFocusOnSameItemDoesNotTurnASellSetupScreenIntoABuy()
+	{
+		GeOfferDescriptionService service =
+			newServiceWithFocus(FocusedFlip.forBuy(SHARK, "Shark", 950, 500, 1_000));
+		openSetupWindow(SHARK, 1_010, 500, true);
+
+		long[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals("a sell setup screen must resolve as a sell", 0, ctx[1]);
+		assertEquals(MSG_SETUP_PRICE, 1_010, ctx[2]);
+	}
+
+	/** Focus still drives price when its step matches the screen's direction. */
+	@Test
+	public void matchingSellFocusStillDrivesTheSellSetupScreen()
+	{
+		GeOfferDescriptionService service =
+			newServiceWithFocus(FocusedFlip.forSell(SHARK, "Shark", 1_000, 500));
+		openSetupWindow(SHARK, 1_010, 500, true);
+
+		long[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals(0, ctx[1]);
+		assertEquals("matching focus keeps supplying its recommended price", 1_000, ctx[2]);
+	}
+
+	/** In-flight panel: the slot tile's Buy label wins over a SELL focus on the same item. */
+	@Test
+	public void sellFocusOnSameItemDoesNotTurnAnInFlightBuyIntoASell()
+	{
+		GeOfferDescriptionService service =
+			newServiceWithFocus(FocusedFlip.forSell(SHARK, "Shark", 1_000, 500));
+		GrandExchangeOffer offer = mock(GrandExchangeOffer.class);
+		when(offer.getState()).thenReturn(GrandExchangeOfferState.BUYING);
+		when(offer.getItemId()).thenReturn(SHARK);
+		when(offer.getPrice()).thenAnswer(GpAnswer.gp(960));
+		when(offer.getTotalQuantity()).thenReturn(500);
+		offers[2] = offer;
+		when(client.getGrandExchangeOffers()).thenReturn(offers);
+		clickSlot(service, 2);
+
+		long[] ctx = service.resolveOfferContext();
+
+		assertNotNull(ctx);
+		assertEquals(SHARK, ctx[0]);
+		assertEquals("an in-flight buy must resolve as a buy", 1, ctx[1]);
+		assertEquals(960, ctx[2]);
+	}
+
 	/**
 	 * The clicked-slot latch must not survive a GE visit: slots are reused between
 	 * visits, so a carried-over index can name a different item. After a reopen the
