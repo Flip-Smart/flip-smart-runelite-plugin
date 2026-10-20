@@ -38,6 +38,7 @@ public class ManualAdjustmentTrackerTest
 		tracker = new ManualAdjustmentTracker(api, mock(FlipSmartConfig.class, CALLS_REAL_METHODS), store);
 		tracker.setOnHighlightSlot((slot, price) -> events.add("glow " + slot + " @" + price));
 		tracker.setOnClearHighlight(slot -> events.add("clear " + slot));
+		tracker.setOnAdjustmentPrompt((msg, itemId) -> events.add("prompt " + msg));
 	}
 
 	private OfferRecord sell(int slot, int itemId, long price)
@@ -87,7 +88,19 @@ public class ManualAdjustmentTrackerTest
 
 		tracker.checkTimers();
 
-		assertEquals(List.of("glow 2 @6"), events);
+		assertTrue(events.contains("glow 2 @6"));
+		assertFalse(events.stream().anyMatch(e -> e.startsWith("glow") && !e.equals("glow 2 @6")));
+	}
+
+	@Test
+	public void sellPromptUsesRenderableCopy()
+	{
+		track(sell(2, FIRE_RUNE, 15));
+		answer(response("readjust_sell", 6L));
+
+		tracker.checkTimers();
+
+		assertTrue(events.contains("prompt Relist item554 at 6 gp (was 15 gp)"));
 	}
 
 	@Test
@@ -110,7 +123,7 @@ public class ManualAdjustmentTrackerTest
 
 		tracker.resetTimer(2);
 
-		assertEquals(List.of("glow 2 @6", "clear 2"), events);
+		assertEquals(List.of("glow 2 @6", "clear 2"), events.stream().filter(e -> !e.startsWith("prompt")).collect(java.util.stream.Collectors.toList()));
 	}
 
 	@Test

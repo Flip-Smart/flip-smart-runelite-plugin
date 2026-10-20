@@ -404,10 +404,10 @@ public class ManualAdjustmentTracker
 	private void handleBuyAdjustment(OfferAdjustmentState state, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
-		String msg = String.format("Adjust %s buy price %s → %s gp",
+		String msg = String.format("Rebuy %s at %s (was %s)",
 			state.itemName,
-			GpUtils.formatGPWithSuffix(offer.getPrice()),
-			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
+			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()),
+			GpUtils.formatGPWithSuffix(offer.getPrice()));
 
 		log.debug("Manual adjustment: {}", msg);
 
@@ -434,10 +434,10 @@ public class ManualAdjustmentTracker
 	private void handleSellAdjustment(OfferAdjustmentState state, OfferRecord offer,
 		FlipAdjustmentResponse response)
 	{
-		String msg = String.format("Adjust %s sell price %s → %s gp",
+		String msg = String.format("Relist %s at %s (was %s)",
 			state.itemName,
-			GpUtils.formatGPWithSuffix(offer.getPrice()),
-			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()));
+			GpUtils.formatGPWithSuffix(response.getRecommendedPrice()),
+			GpUtils.formatGPWithSuffix(offer.getPrice()));
 
 		log.debug("Manual adjustment: {}", msg);
 		notifyPrompt(msg, state.itemId);
