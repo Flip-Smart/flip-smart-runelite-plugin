@@ -147,8 +147,9 @@ public class ServiceWiring
 			geSlotOverlay.setAdjustmentHighlight(slot, recommendedPrice));
 		manualAdjustmentTracker.setOnClearHighlight(geSlotOverlay::clearAdjustmentHighlight);
 
-		manualAdjustmentTracker.setOnHighlightInventoryItem(inventoryHighlightOverlay::addHighlight);
-		manualAdjustmentTracker.setOnClearInventoryItem(inventoryHighlightOverlay::removeHighlight);
+		// Fired from API callbacks; canonicalize needs the client thread.
+		manualAdjustmentTracker.setOnHighlightInventoryItem(id -> plugin.runOnClientThread(() -> inventoryHighlightOverlay.addHighlight(id)));
+		manualAdjustmentTracker.setOnClearInventoryItem(id -> plugin.runOnClientThread(() -> inventoryHighlightOverlay.removeHighlight(id)));
 		manualAdjustmentTracker.setOnSellPriceAdjusted((itemId, price) ->
 		{
 			if (session != null)
