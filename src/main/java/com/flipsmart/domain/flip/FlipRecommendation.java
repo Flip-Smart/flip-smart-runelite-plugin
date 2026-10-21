@@ -63,5 +63,8 @@ public class FlipRecommendation
 	@SerializedName("total_cost")
 	private long totalCost;
 
+	@SerializedName("is_proven")
+	private boolean proven;
+
 }
 
