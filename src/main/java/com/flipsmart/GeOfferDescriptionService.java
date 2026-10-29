@@ -552,10 +552,13 @@ public class GeOfferDescriptionService
 		{
 			trackedResetsProfile = profile;
 			pendingLimitResets.clear();
-			for (String key : configManager.getRSProfileConfigurationKeys(OUR_CONFIG_GROUP, profile, BUY_LIMIT_KEY_PREFIX))
+			for (String group : new String[]{OUR_CONFIG_GROUP, GE_CONFIG_GROUP})
 			{
-				int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
-				trackLimitReset(itemId, readStoredLimitReset(itemId));
+				for (String key : configManager.getRSProfileConfigurationKeys(group, profile, BUY_LIMIT_KEY_PREFIX))
+				{
+					int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
+					trackLimitReset(itemId, readStoredLimitReset(itemId));
+				}
 			}
 		}
 		notifyLimitResets(Instant.now());
