@@ -87,6 +87,7 @@ public class GeOfferDescriptionService
 	private Instant cachedLimitReset;
 
 	// Running windows to announce when they end; reloaded whenever the RS profile changes.
+	@SuppressWarnings("PMD.UseConcurrentHashMap")
 	private final Map<Integer, Instant> pendingLimitResets = new HashMap<>();
 	private String trackedResetsProfile;
 
