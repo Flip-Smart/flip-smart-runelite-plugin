@@ -44,6 +44,21 @@ public class FavoritesSortAndPaginationTest
 	}
 
 	@Test
+	public void totalProfitSortsHighToLowIndependentOfCycleProfit()
+	{
+		List<FavoriteItem> list = new ArrayList<>();
+		list.add(item("A", 900, 1));
+		list.add(item("B", 100, 1));
+		list.add(item("C", 500, 1));
+		list.get(0).setTotalProfit(-50);
+		list.get(1).setTotalProfit(2_000_000);
+		list.sort(FavoritesSort.TOTAL_PROFIT.comparator());
+		assertEquals("B", list.get(0).getItemName());
+		assertEquals("C", list.get(1).getItemName());
+		assertEquals("A", list.get(2).getItemName());
+	}
+
+	@Test
 	public void alphabeticalSortsAtoZCaseInsensitive()
 	{
 		List<FavoriteItem> list = new ArrayList<>();

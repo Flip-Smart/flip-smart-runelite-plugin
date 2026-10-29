@@ -8,6 +8,7 @@ public enum FavoritesSort
 {
 	PROFIT("Profit", Comparator.comparingLong(FavoriteItem::getProfit).reversed()),
 	VOLUME("Volume", Comparator.comparingInt(FavoriteItem::getVolume).reversed()),
+	TOTAL_PROFIT("Total", Comparator.comparingLong(FavoriteItem::getTotalProfit).reversed()),
 	ALPHABETICAL("A-Z", Comparator.comparing(
 		f -> f.getItemName() == null ? "" : f.getItemName(), String.CASE_INSENSITIVE_ORDER));
 
