@@ -25,7 +25,11 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -82,7 +86,8 @@ public class GeOfferDescriptionService
 	private int cachedLimitResetItemId = -1;
 	private Instant cachedLimitReset;
 
-	private final BuyLimitResetAlerts buyLimitResetAlerts;
+	// Running windows to announce when they end; reloaded whenever the RS profile changes.
+	private final Map<Integer, Instant> pendingLimitResets = new HashMap<>();
 	private String trackedResetsProfile;
 
 	// Slot the user explicitly clicked to open the offer-status panel.
@@ -99,6 +104,7 @@ public class GeOfferDescriptionService
 	private final FlipAssistOverlay flipAssistOverlay;
 	private final ConfigManager configManager;
 	private final FlipSmartConfig config;
+	private final Notifier notifier;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -120,8 +126,7 @@ public class GeOfferDescriptionService
 		this.flipAssistOverlay = flipAssistOverlay;
 		this.configManager = configManager;
 		this.config = config;
-		this.buyLimitResetAlerts = new BuyLimitResetAlerts(
-			notifier, config::buyLimitResetAlert, plugin::getItemName, System::currentTimeMillis);
+		this.notifier = notifier;
 	}
 
 	// ---------------------------------------------------------------------
@@ -528,43 +533,50 @@ public class GeOfferDescriptionService
 		Instant existing = readStoredLimitReset(itemId);
 		if (existing != null && existing.isAfter(Instant.now()))
 		{
-			buyLimitResetAlerts.track(itemId, existing);
+			trackLimitReset(itemId, existing);
 			return;
 		}
 		Instant resetAt = Instant.now().plus(Duration.ofHours(4));
 		configManager.setRSProfileConfiguration(OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, resetAt);
-		buyLimitResetAlerts.track(itemId, resetAt);
+		trackLimitReset(itemId, resetAt);
 		if (cachedLimitResetItemId == itemId)
 		{
 			cachedLimitResetItemId = -1;
 		}
 	}
 
-	/**
-	 * Per game tick: alert on any buy limit window that just ended. Windows still
-	 * running are (re)loaded from the stored records whenever the RS profile changes.
-	 */
 	public void checkBuyLimitResets()
 	{
 		String profile = configManager.getRSProfileKey();
 		if (profile != null && !profile.equals(trackedResetsProfile))
 		{
 			trackedResetsProfile = profile;
-			buyLimitResetAlerts.clear();
+			pendingLimitResets.clear();
 			for (String key : configManager.getRSProfileConfigurationKeys(OUR_CONFIG_GROUP, profile, BUY_LIMIT_KEY_PREFIX))
 			{
-				try
-				{
-					int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
-					buyLimitResetAlerts.track(itemId, readStoredLimitReset(itemId));
-				}
-				catch (NumberFormatException e)
-				{
-					log.debug("Skipping malformed buy limit key {}", key);
-				}
+				int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
+				trackLimitReset(itemId, readStoredLimitReset(itemId));
 			}
 		}
-		buyLimitResetAlerts.poll();
+		notifyLimitResets(Instant.now());
+	}
+
+	void notifyLimitResets(Instant now)
+	{
+		List<String> names = new ArrayList<>();
+		pendingLimitResets.entrySet().removeIf(e -> !e.getValue().isAfter(now) && names.add(plugin.getItemName(e.getKey())));
+		if (!names.isEmpty())
+		{
+			notifier.notify(config.buyLimitResetAlert(), "Buy limit reset: " + String.join(", ", names));
+		}
+	}
+
+	private void trackLimitReset(int itemId, Instant resetAt)
+	{
+		if (resetAt != null && resetAt.isAfter(Instant.now()))
+		{
+			pendingLimitResets.put(itemId, resetAt);
+		}
 	}
 
 	private void refreshSetupBuyDescription(int itemId)
