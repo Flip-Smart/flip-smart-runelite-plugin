@@ -15,6 +15,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -81,6 +82,9 @@ public class GeOfferDescriptionService
 	private int cachedLimitResetItemId = -1;
 	private Instant cachedLimitReset;
 
+	private final BuyLimitResetAlerts buyLimitResetAlerts;
+	private String trackedResetsProfile;
+
 	// Slot the user explicitly clicked to open the offer-status panel.
 	// GE_SELECTEDSLOT tracks the *hovered* slot tile rather than the open
 	// panel, so we capture clicks via onMenuOptionClicked instead.
@@ -105,7 +109,8 @@ public class GeOfferDescriptionService
 		ItemManager itemManager,
 		FlipAssistOverlay flipAssistOverlay,
 		ConfigManager configManager,
-		FlipSmartConfig config)
+		FlipSmartConfig config,
+		Notifier notifier)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
@@ -115,6 +120,8 @@ public class GeOfferDescriptionService
 		this.flipAssistOverlay = flipAssistOverlay;
 		this.configManager = configManager;
 		this.config = config;
+		this.buyLimitResetAlerts = new BuyLimitResetAlerts(
+			notifier, config::buyLimitResetAlert, plugin::getItemName, System::currentTimeMillis);
 	}
 
 	// ---------------------------------------------------------------------
@@ -521,14 +528,43 @@ public class GeOfferDescriptionService
 		Instant existing = readStoredLimitReset(itemId);
 		if (existing != null && existing.isAfter(Instant.now()))
 		{
+			buyLimitResetAlerts.track(itemId, existing);
 			return;
 		}
-		configManager.setRSProfileConfiguration(
-			OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, Instant.now().plus(Duration.ofHours(4)));
+		Instant resetAt = Instant.now().plus(Duration.ofHours(4));
+		configManager.setRSProfileConfiguration(OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, resetAt);
+		buyLimitResetAlerts.track(itemId, resetAt);
 		if (cachedLimitResetItemId == itemId)
 		{
 			cachedLimitResetItemId = -1;
 		}
+	}
+
+	/**
+	 * Per game tick: alert on any buy limit window that just ended. Windows still
+	 * running are (re)loaded from the stored records whenever the RS profile changes.
+	 */
+	public void checkBuyLimitResets()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (profile != null && !profile.equals(trackedResetsProfile))
+		{
+			trackedResetsProfile = profile;
+			buyLimitResetAlerts.clear();
+			for (String key : configManager.getRSProfileConfigurationKeys(OUR_CONFIG_GROUP, profile, BUY_LIMIT_KEY_PREFIX))
+			{
+				try
+				{
+					int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
+					buyLimitResetAlerts.track(itemId, readStoredLimitReset(itemId));
+				}
+				catch (NumberFormatException e)
+				{
+					log.debug("Skipping malformed buy limit key {}", key);
+				}
+			}
+		}
+		buyLimitResetAlerts.poll();
 	}
 
 	private void refreshSetupBuyDescription(int itemId)

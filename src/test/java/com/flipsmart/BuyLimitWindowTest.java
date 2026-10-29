@@ -3,6 +3,7 @@ package com.flipsmart;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -12,6 +13,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
@@ -20,6 +22,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -54,7 +57,8 @@ public class BuyLimitWindowTest
 			mock(ItemManager.class),
 			mock(FlipAssistOverlay.class),
 			configManager,
-			mock(FlipSmartConfig.class));
+			mock(FlipSmartConfig.class),
+			mock(Notifier.class));
 	}
 
 	private static GrandExchangeOffer offer(GrandExchangeOfferState state, int quantitySold)
@@ -215,5 +219,21 @@ public class BuyLimitWindowTest
 		long minutesOut = Duration.between(before, reset).toMinutes();
 		assertTrue("reset should land ~4h out, got " + minutesOut + "m",
 			minutesOut >= 239 && minutesOut <= 240);
+	}
+
+	@Test
+	public void storedWindowsAreLoadedOncePerProfile()
+	{
+		when(configManager.getRSProfileKey()).thenReturn("rsprofile.a", "rsprofile.a", "rsprofile.b");
+		when(configManager.getRSProfileConfigurationKeys(eq(OUR_GROUP), any(), eq("buylimit.")))
+			.thenReturn(Collections.singletonList(KEY));
+		stubStored(OUR_GROUP, Instant.now().plus(Duration.ofHours(1)));
+
+		service.checkBuyLimitResets();
+		service.checkBuyLimitResets();
+		service.checkBuyLimitResets();
+
+		verify(configManager, times(1)).getRSProfileConfigurationKeys(OUR_GROUP, "rsprofile.a", "buylimit.");
+		verify(configManager, times(1)).getRSProfileConfigurationKeys(OUR_GROUP, "rsprofile.b", "buylimit.");
 	}
 }
