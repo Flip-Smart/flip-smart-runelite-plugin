@@ -187,7 +187,7 @@ public class OfflineSyncService
 	{
 		persistOfferState();
 		offerStore.importRecords(new ArrayList<>());
-		storeOwnerRsn = null;
+		storeOwnerRsn = null; // NOPMD NullAssignment
 	}
 
 	public void persistOfferState()
