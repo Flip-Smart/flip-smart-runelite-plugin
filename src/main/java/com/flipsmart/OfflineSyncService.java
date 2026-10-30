@@ -102,6 +102,7 @@ public class OfflineSyncService
 	private final GEHistoryService geHistoryService;
 	private final OfferStore offerStore;
 	private String storeOwnerRsn;
+	private String preloadedRsn;
 	private final ItemManager itemManager;
 	private final RoundTripLedger roundTripLedger;
 	private final TransactionLogger transactionLogger;
@@ -177,10 +178,6 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Persist the current GE offer state to config for offline tracking.
-	 * Called when the player logs out or plugin shuts down.
-	 */
-	/**
 	 * Save the outgoing account's offers, then empty the store so the next login starts clean.
 	 */
 	public void releaseForLogout()
@@ -190,6 +187,30 @@ public class OfflineSyncService
 		storeOwnerRsn = null; // NOPMD NullAssignment
 	}
 
+	/**
+	 * Restore the per-account state a login preload skipped because the RSN was not known yet.
+	 */
+	public void onRsnResolved()
+	{
+		String rsn = session.getRsn();
+		if (rsn == null || rsn.isEmpty() || rsn.equals(preloadedRsn))
+		{
+			return;
+		}
+		preloadedRsn = rsn;
+		storeOwnerRsn = rsn;
+		offerStore.raiseNextOfferId(loadPersistedNextOfferId(rsn));
+		offerStore.watermarks().mergeFrom(loadPersistedWatermarks());
+		if (!restorePersistedLedger(rsn))
+		{
+			preloadLedgerState(rsn);
+		}
+	}
+
+	/**
+	 * Persist the current GE offer state to config for offline tracking.
+	 * Called when the player logs out or plugin shuts down.
+	 */
 	public void persistOfferState()
 	{
 		String rsn = resolvePersistenceRsn();
@@ -312,10 +333,11 @@ public class OfflineSyncService
 	 */
 	private boolean importPersistedLedger(String rsn)
 	{
-		if (rsn == null || !roundTripLedger.isEmpty(rsn))
-		{
-			return false;
-		}
+		return rsn != null && roundTripLedger.isEmpty(rsn) && restorePersistedLedger(rsn);
+	}
+
+	private boolean restorePersistedLedger(String rsn)
+	{
 		String json = configManager.getConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn);
 		if (json != null && !json.isEmpty())
 		{
@@ -364,8 +386,9 @@ public class OfflineSyncService
 		// The saved mark can lag ids already sent (it only reaches disk on a lazy flush), so start
 		// every login's ids above every earlier login's instead of trusting it alone. Both floors go
 		// ahead of the early return: records can all age out while the mark survives.
+		preloadedRsn = resolvePersistenceRsn();
 		offerStore.raiseNextOfferId(clock.getAsLong());
-		offerStore.raiseNextOfferId(loadPersistedNextOfferId(resolvePersistenceRsn()));
+		offerStore.raiseNextOfferId(loadPersistedNextOfferId(preloadedRsn));
 
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
 		if (persistedRecords.isEmpty())

@@ -1510,6 +1510,7 @@ public class FlipSmartPlugin extends Plugin
 		session.setRsn(rsn);
 		lastKnownRsn = rsn;
 		configManager.setRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
+		offlineSyncService.onRsnResolved();
 		if (previous != null && !previous.equals(rsn))
 		{
 			log.debug("RSN switched: {} -> {}", previous, rsn);
@@ -1565,6 +1566,7 @@ public class FlipSmartPlugin extends Plugin
 					session.setRsn(liveRsn);
 					lastKnownRsn = liveRsn;
 					configManager.setRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, liveRsn);
+					offlineSyncService.onRsnResolved();
 				}
 				rsnMissingWarned = false;
 				return Optional.of(liveRsn);

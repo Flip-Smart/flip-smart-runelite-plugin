@@ -624,6 +624,23 @@ public class OfflineSyncPersistenceTest
 	}
 
 	@Test
+	public void rsnResolvingAfterPreload_restoresThatAccountsLedger()
+	{
+		com.flipsmart.trading.RoundTripLedger saved = new com.flipsmart.trading.RoundTripLedger();
+		saved.recordFill("Zezima", 555, true, 40);
+		configStore.put("roundTripLedger_Zezima", new Gson().toJson(saved.export("Zezima")));
+
+		when(session.getRsn()).thenReturn(null);
+		service.preloadPersistedOffers();
+		assertEquals("nothing to restore before the RSN is known", 0, ledger.heldQuantity("Zezima", 555));
+
+		when(session.getRsn()).thenReturn("Zezima");
+		service.onRsnResolved();
+
+		assertEquals(40, ledger.heldQuantity("Zezima", 555));
+	}
+
+	@Test
 	public void releaseForLogout_savesThenEmptiesTheStore()
 	{
 		when(session.getRsn()).thenReturn("Zezima");
