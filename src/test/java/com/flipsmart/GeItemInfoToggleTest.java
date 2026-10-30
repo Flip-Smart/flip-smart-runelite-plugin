@@ -6,6 +6,7 @@ import net.runelite.api.events.ScriptCallbackEvent;
 import net.runelite.api.gameval.InterfaceID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.widgets.Widget;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -62,7 +63,8 @@ public class GeItemInfoToggleTest
 			mock(ItemManager.class),
 			mock(FlipAssistOverlay.class),
 			mock(ConfigManager.class),
-			config);
+			config,
+			mock(Notifier.class));
 	}
 
 	private static ScriptCallbackEvent buyExamine()

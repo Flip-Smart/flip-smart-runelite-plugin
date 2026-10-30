@@ -15,6 +15,7 @@ import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.gameval.VarbitID;
 import net.runelite.api.widgets.Widget;
 import net.runelite.api.widgets.WidgetTextAlignment;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -24,7 +25,11 @@ import javax.inject.Inject;
 import javax.inject.Singleton;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -81,6 +86,11 @@ public class GeOfferDescriptionService
 	private int cachedLimitResetItemId = -1;
 	private Instant cachedLimitReset;
 
+	// Running windows to announce when they end; reloaded whenever the RS profile changes.
+	@SuppressWarnings("PMD.UseConcurrentHashMap")
+	private final Map<Integer, Instant> pendingLimitResets = new HashMap<>();
+	private String trackedResetsProfile;
+
 	// Slot the user explicitly clicked to open the offer-status panel.
 	// GE_SELECTEDSLOT tracks the *hovered* slot tile rather than the open
 	// panel, so we capture clicks via onMenuOptionClicked instead.
@@ -95,6 +105,7 @@ public class GeOfferDescriptionService
 	private final FlipAssistOverlay flipAssistOverlay;
 	private final ConfigManager configManager;
 	private final FlipSmartConfig config;
+	private final Notifier notifier;
 
 	@Inject
 	public GeOfferDescriptionService(
@@ -105,7 +116,8 @@ public class GeOfferDescriptionService
 		ItemManager itemManager,
 		FlipAssistOverlay flipAssistOverlay,
 		ConfigManager configManager,
-		FlipSmartConfig config)
+		FlipSmartConfig config,
+		Notifier notifier)
 	{
 		this.client = client;
 		this.clientThread = clientThread;
@@ -115,6 +127,7 @@ public class GeOfferDescriptionService
 		this.flipAssistOverlay = flipAssistOverlay;
 		this.configManager = configManager;
 		this.config = config;
+		this.notifier = notifier;
 	}
 
 	// ---------------------------------------------------------------------
@@ -521,13 +534,52 @@ public class GeOfferDescriptionService
 		Instant existing = readStoredLimitReset(itemId);
 		if (existing != null && existing.isAfter(Instant.now()))
 		{
+			trackLimitReset(itemId, existing);
 			return;
 		}
-		configManager.setRSProfileConfiguration(
-			OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, Instant.now().plus(Duration.ofHours(4)));
+		Instant resetAt = Instant.now().plus(Duration.ofHours(4));
+		configManager.setRSProfileConfiguration(OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, resetAt);
+		trackLimitReset(itemId, resetAt);
 		if (cachedLimitResetItemId == itemId)
 		{
 			cachedLimitResetItemId = -1;
+		}
+	}
+
+	public void checkBuyLimitResets()
+	{
+		String profile = configManager.getRSProfileKey();
+		if (profile != null && !profile.equals(trackedResetsProfile))
+		{
+			trackedResetsProfile = profile;
+			pendingLimitResets.clear();
+			for (String group : new String[]{OUR_CONFIG_GROUP, GE_CONFIG_GROUP})
+			{
+				for (String key : configManager.getRSProfileConfigurationKeys(group, profile, BUY_LIMIT_KEY_PREFIX))
+				{
+					int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
+					trackLimitReset(itemId, readStoredLimitReset(itemId));
+				}
+			}
+		}
+		notifyLimitResets(Instant.now());
+	}
+
+	void notifyLimitResets(Instant now)
+	{
+		List<String> names = new ArrayList<>();
+		pendingLimitResets.entrySet().removeIf(e -> !e.getValue().isAfter(now) && names.add(plugin.getItemName(e.getKey())));
+		if (!names.isEmpty())
+		{
+			notifier.notify(config.buyLimitResetAlert(), "Buy limit reset: " + String.join(", ", names));
+		}
+	}
+
+	private void trackLimitReset(int itemId, Instant resetAt)
+	{
+		if (resetAt != null && resetAt.isAfter(Instant.now()))
+		{
+			pendingLimitResets.put(itemId, resetAt);
 		}
 	}
 

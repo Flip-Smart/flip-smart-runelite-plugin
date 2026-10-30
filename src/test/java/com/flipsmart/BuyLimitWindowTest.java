@@ -3,6 +3,7 @@ package com.flipsmart;
 import net.runelite.api.Client;
 import net.runelite.api.GrandExchangeOffer;
 import net.runelite.api.GrandExchangeOfferState;
+import net.runelite.client.Notifier;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
@@ -12,14 +13,17 @@ import org.mockito.ArgumentCaptor;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,34 +39,46 @@ import static org.mockito.Mockito.when;
 public class BuyLimitWindowTest
 {
 	private static final int CANNONBALL_ID = 2;
+	private static final int WHIP_ID = 4151;
 	private static final String OUR_GROUP = "flipsmart";
 	private static final String STOCK_GROUP = "grandexchange";
 	private static final String KEY = "buylimit." + CANNONBALL_ID;
 
 	private ConfigManager configManager;
+	private Notifier notifier;
 	private GeOfferDescriptionService service;
 
 	@Before
 	public void setUp()
 	{
 		configManager = mock(ConfigManager.class);
+		notifier = mock(Notifier.class);
+		FlipSmartPlugin plugin = mock(FlipSmartPlugin.class);
+		when(plugin.getItemName(CANNONBALL_ID)).thenReturn("Cannonball");
+		when(plugin.getItemName(WHIP_ID)).thenReturn("Abyssal whip");
 		service = new GeOfferDescriptionService(
 			mock(Client.class),
 			mock(ClientThread.class),
 			mock(FlipSmartApiClient.class),
-			mock(FlipSmartPlugin.class),
+			plugin,
 			mock(ItemManager.class),
 			mock(FlipAssistOverlay.class),
 			configManager,
-			mock(FlipSmartConfig.class));
+			mock(FlipSmartConfig.class),
+			notifier);
 	}
 
 	private static GrandExchangeOffer offer(GrandExchangeOfferState state, int quantitySold)
 	{
+		return offer(state, quantitySold, CANNONBALL_ID);
+	}
+
+	private static GrandExchangeOffer offer(GrandExchangeOfferState state, int quantitySold, int itemId)
+	{
 		GrandExchangeOffer o = mock(GrandExchangeOffer.class);
 		when(o.getState()).thenReturn(state);
 		when(o.getQuantitySold()).thenReturn(quantitySold);
-		when(o.getItemId()).thenReturn(CANNONBALL_ID);
+		when(o.getItemId()).thenReturn(itemId);
 		return o;
 	}
 
@@ -215,5 +231,82 @@ public class BuyLimitWindowTest
 		long minutesOut = Duration.between(before, reset).toMinutes();
 		assertTrue("reset should land ~4h out, got " + minutesOut + "m",
 			minutesOut >= 239 && minutesOut <= 240);
+	}
+
+	@Test
+	public void storedWindowsAreLoadedOncePerProfile()
+	{
+		when(configManager.getRSProfileKey()).thenReturn("rsprofile.a", "rsprofile.a", "rsprofile.b");
+		when(configManager.getRSProfileConfigurationKeys(eq(OUR_GROUP), any(), eq("buylimit.")))
+			.thenReturn(Collections.singletonList(KEY));
+		stubStored(OUR_GROUP, Instant.now().plus(Duration.ofHours(1)));
+
+		service.checkBuyLimitResets();
+		service.checkBuyLimitResets();
+		service.checkBuyLimitResets();
+
+		verify(configManager, times(1)).getRSProfileConfigurationKeys(OUR_GROUP, "rsprofile.a", "buylimit.");
+		verify(configManager, times(1)).getRSProfileConfigurationKeys(OUR_GROUP, "rsprofile.b", "buylimit.");
+	}
+
+	// -----------------------------------------------------------------
+	// Reset notification
+	// -----------------------------------------------------------------
+
+	private static Instant hoursFromNow(double hours)
+	{
+		return Instant.now().plusSeconds((long) (hours * 3600));
+	}
+
+	@Test
+	public void aResetIsAnnouncedOnceWhenTheWindowEnds()
+	{
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 1));
+
+		service.notifyLimitResets(hoursFromNow(3.9));
+		verify(notifier, never()).notify(any(), anyString());
+
+		service.notifyLimitResets(hoursFromNow(4.1));
+		service.notifyLimitResets(hoursFromNow(4.2));
+		verify(notifier, times(1)).notify(any(), eq("Buy limit reset: Cannonball"));
+	}
+
+	@Test
+	public void windowsEndingTogetherShareOneNotification()
+	{
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 1));
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BOUGHT, 70, WHIP_ID));
+
+		service.notifyLimitResets(hoursFromNow(5));
+
+		verify(notifier, times(1)).notify(any(), anyString());
+	}
+
+	@Test
+	public void aWindowThatEndedWhileLoggedOutIsNotAnnounced()
+	{
+		when(configManager.getRSProfileKey()).thenReturn("rsprofile.a");
+		when(configManager.getRSProfileConfigurationKeys(eq(OUR_GROUP), any(), eq("buylimit.")))
+			.thenReturn(Collections.singletonList(KEY));
+		stubStored(OUR_GROUP, Instant.now().minus(Duration.ofMinutes(10)));
+
+		service.checkBuyLimitResets();
+		service.notifyLimitResets(hoursFromNow(5));
+
+		verify(notifier, never()).notify(any(), anyString());
+	}
+
+	@Test
+	public void aWindowStillRunningAtLoginIsAnnounced()
+	{
+		when(configManager.getRSProfileKey()).thenReturn("rsprofile.a");
+		when(configManager.getRSProfileConfigurationKeys(eq(OUR_GROUP), any(), eq("buylimit.")))
+			.thenReturn(Collections.singletonList(KEY));
+		stubStored(OUR_GROUP, hoursFromNow(1));
+
+		service.checkBuyLimitResets();
+		service.notifyLimitResets(hoursFromNow(1.5));
+
+		verify(notifier, times(1)).notify(any(), eq("Buy limit reset: Cannonball"));
 	}
 }

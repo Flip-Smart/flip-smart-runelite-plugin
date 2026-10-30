@@ -435,6 +435,18 @@ public interface FlipSmartConfig extends Config
 		return Notification.ON;
 	}
 
+	@ConfigItem(
+		keyName = "buyLimitResetAlert",
+		name = "Buy Limit Reset",
+		description = "Notify when an item's 4 hour buy limit resets, so you can buy it again.",
+		section = NOTIFICATIONS_SECTION,
+		position = 4
+	)
+	default Notification buyLimitResetAlert()
+	{
+		return Notification.OFF;
+	}
+
 	@ConfigSection(
 		name = "Experimental",
 		description = "Opt-in features under active testing. May change or be removed.",
