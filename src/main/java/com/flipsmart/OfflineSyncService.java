@@ -42,7 +42,6 @@ public class OfflineSyncService
 	private static final String CONFIG_GROUP = "flipsmart";
 	private static final String UNKNOWN_RSN_FALLBACK = "unknown";
 	private static final String PERSISTED_OFFERS_KEY_PREFIX = "persistedOffers_";
-	private static final String PERSISTED_OFFERS_FALLBACK_KEY = "persistedOffers_lastSession";
 	private static final String FLIP_FINDER_SOURCED_KEY_PREFIX = "flipFinderSourced_";
 	private static final String ROUND_TRIP_LEDGER_KEY_PREFIX = "roundTripLedger_";
 	private static final String LAST_KNOWN_RSN_KEY = "lastKnownRsn";
@@ -102,6 +101,8 @@ public class OfflineSyncService
 	private final ActiveFlipTracker activeFlipTracker;
 	private final GEHistoryService geHistoryService;
 	private final OfferStore offerStore;
+	private String storeOwnerRsn;
+	private String preloadedRsn;
 	private final ItemManager itemManager;
 	private final RoundTripLedger roundTripLedger;
 	private final TransactionLogger transactionLogger;
@@ -177,6 +178,36 @@ public class OfflineSyncService
 	}
 
 	/**
+	 * Save the outgoing account's offers, then empty the store so the next login starts clean.
+	 */
+	public void releaseForLogout()
+	{
+		persistOfferState();
+		offerStore.importRecords(new ArrayList<>());
+		storeOwnerRsn = null; // NOPMD NullAssignment
+	}
+
+	/**
+	 * Restore the per-account state a login preload skipped because the RSN was not known yet.
+	 */
+	public void onRsnResolved()
+	{
+		String rsn = session.getRsn();
+		if (rsn == null || rsn.isEmpty() || rsn.equals(preloadedRsn))
+		{
+			return;
+		}
+		preloadedRsn = rsn;
+		storeOwnerRsn = rsn;
+		offerStore.raiseNextOfferId(loadPersistedNextOfferId(rsn));
+		offerStore.watermarks().mergeFrom(loadPersistedWatermarks());
+		if (!restorePersistedLedger(rsn))
+		{
+			preloadLedgerState(rsn);
+		}
+	}
+
+	/**
 	 * Persist the current GE offer state to config for offline tracking.
 	 * Called when the player logs out or plugin shuts down.
 	 */
@@ -208,7 +239,6 @@ public class OfflineSyncService
 			{
 				String json = gson.toJson(offersToSave);
 				configManager.setConfiguration(CONFIG_GROUP, offersKey, json);
-				configManager.setConfiguration(CONFIG_GROUP, PERSISTED_OFFERS_FALLBACK_KEY, json);
 				log.debug("Persisted {} offer records for {} (offline sync)", offersToSave.size(), rsn);
 			}
 			catch (Exception e)
@@ -303,10 +333,11 @@ public class OfflineSyncService
 	 */
 	private boolean importPersistedLedger(String rsn)
 	{
-		if (rsn == null || !roundTripLedger.isEmpty(rsn))
-		{
-			return false;
-		}
+		return rsn != null && roundTripLedger.isEmpty(rsn) && restorePersistedLedger(rsn);
+	}
+
+	private boolean restorePersistedLedger(String rsn)
+	{
 		String json = configManager.getConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn);
 		if (json != null && !json.isEmpty())
 		{
@@ -355,8 +386,9 @@ public class OfflineSyncService
 		// The saved mark can lag ids already sent (it only reaches disk on a lazy flush), so start
 		// every login's ids above every earlier login's instead of trusting it alone. Both floors go
 		// ahead of the early return: records can all age out while the mark survives.
+		preloadedRsn = resolvePersistenceRsn();
 		offerStore.raiseNextOfferId(clock.getAsLong());
-		offerStore.raiseNextOfferId(loadPersistedNextOfferId(resolvePersistenceRsn()));
+		offerStore.raiseNextOfferId(loadPersistedNextOfferId(preloadedRsn));
 
 		List<OfferRecord> persistedRecords = loadPersistedOfferRecords();
 		if (persistedRecords.isEmpty())
@@ -970,19 +1002,24 @@ public class OfflineSyncService
 	// =====================
 
 	/**
-	 * Single resolution point for the RSN used to key persistence: live session
-	 * RSN first, then the persisted last-known RSN. Returns null only when neither
-	 * is available (e.g. mid-logout transition) so callers skip the write rather
-	 * than emit a {@code null}-keyed config entry.
+	 * Single resolution point for the RSN used to key persistence: live session RSN, then the
+	 * account that owns the in-memory store, then this account's last-known RSN. Every fallback is
+	 * account-scoped so a second client can never redirect the write. Returns null when none is
+	 * available so callers skip the write rather than emit a {@code null}-keyed config entry.
 	 */
 	String resolvePersistenceRsn()
 	{
 		String rsn = session.getRsn();
 		if (rsn != null && !rsn.isEmpty())
 		{
+			storeOwnerRsn = rsn;
 			return rsn;
 		}
-		String persisted = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+		if (storeOwnerRsn != null)
+		{
+			return storeOwnerRsn;
+		}
+		String persisted = configManager.getRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
 		if (persisted != null && !persisted.isEmpty())
 		{
 			return persisted;
@@ -1000,57 +1037,21 @@ public class OfflineSyncService
 	}
 
 	/**
-	 * Load the raw persisted {@link OfferRecord} list (RSN key, then fallback /
-	 * key-scan). This is the canonical persisted state restored into the store.
+	 * Load the current account's persisted {@link OfferRecord} list. Never falls back to another
+	 * account's records: with no known RSN there is nothing to load.
 	 */
 	List<OfferRecord> loadPersistedOfferRecords()
 	{
+		if (session.getRsn() == null || session.getRsn().isEmpty())
+		{
+			return new ArrayList<>();
+		}
 		List<OfferRecord> records = tryLoadRecordsFromKey(getPersistedOffersKey());
 		if (!records.isEmpty())
 		{
 			log.debug("Loaded {} persisted offer records for {}", records.size(), session.getRsn());
-			return records;
 		}
-		return loadPersistedOfferRecordsByKeyScan();
-	}
-
-	/**
-	 * Scan all config keys matching persistedOffers_* to find offer data
-	 * when the RSN-specific key lookup failed (cold start, RSN not yet available).
-	 */
-	private List<OfferRecord> loadPersistedOfferRecordsByKeyScan()
-	{
-		try
-		{
-			List<OfferRecord> result = tryLoadRecordsFromKey(PERSISTED_OFFERS_FALLBACK_KEY);
-			if (!result.isEmpty())
-			{
-				log.debug("Loaded {} offer records from fallback key", result.size());
-				return result;
-			}
-
-			String prefix = CONFIG_GROUP + "." + PERSISTED_OFFERS_KEY_PREFIX;
-			List<String> keys = configManager.getConfigurationKeys(prefix);
-			for (String fullKey : keys)
-			{
-				String keyPart = fullKey.substring((CONFIG_GROUP + ".").length());
-				if (keyPart.equals(PERSISTED_OFFERS_FALLBACK_KEY))
-				{
-					continue;
-				}
-				result = tryLoadRecordsFromKey(keyPart);
-				if (!result.isEmpty())
-				{
-					log.debug("Loaded {} offer records via key scan (key: {})", result.size(), keyPart);
-					return result;
-				}
-			}
-		}
-		catch (Exception e)
-		{
-			log.error("Failed to load persisted offer records by key scan: {}", e.getMessage());
-		}
-		return new ArrayList<>();
+		return records;
 	}
 
 	private List<OfferRecord> tryLoadRecordsFromKey(String key)

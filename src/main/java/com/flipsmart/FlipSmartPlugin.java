@@ -1020,7 +1020,7 @@ public class FlipSmartPlugin extends Plugin
 		}
 		if (rsnForPersistence == null || rsnForPersistence.isEmpty())
 		{
-			rsnForPersistence = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+			rsnForPersistence = configManager.getRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
 		}
 		if (rsnForPersistence != null && !rsnForPersistence.isEmpty())
 		{
@@ -1201,11 +1201,15 @@ public class FlipSmartPlugin extends Plugin
 	{
 		pushFinalCapitalSnapshot();
 		session.onLogout();
-		offlineSyncService.persistOfferState();
 		geHistoryService.reset();
 		persistAutoRecommendState();
 		persistExitTradesState();
 		v9Store().persist(configManager, resolveStateRsn(session.getRsn(), lastKnownRsn));
+		offlineSyncService.releaseForLogout();
+		if (activeOfferAdvisorService != null)
+		{
+			activeOfferAdvisorService.reconcile(Collections.emptySet());
+		}
 		geSlotDecorator.revertAll();
 
 		// Stop auto-recommend on logout
@@ -1265,7 +1269,7 @@ public class FlipSmartPlugin extends Plugin
 		// name as soon as it's available. Issue #556.
 		if (session.getRsn() == null || session.getRsn().isEmpty())
 		{
-			String persistedRsn = configManager.getConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
+			String persistedRsn = configManager.getRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY);
 			if (persistedRsn != null && !persistedRsn.isEmpty())
 			{
 				session.setRsn(persistedRsn);
@@ -1505,7 +1509,8 @@ public class FlipSmartPlugin extends Plugin
 		String previous = session.getRsn();
 		session.setRsn(rsn);
 		lastKnownRsn = rsn;
-		configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
+		configManager.setRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, rsn);
+		offlineSyncService.onRsnResolved();
 		if (previous != null && !previous.equals(rsn))
 		{
 			log.debug("RSN switched: {} -> {}", previous, rsn);
@@ -1560,7 +1565,8 @@ public class FlipSmartPlugin extends Plugin
 					log.debug("RSN refreshed from client: {} -> {}", cached, liveRsn);
 					session.setRsn(liveRsn);
 					lastKnownRsn = liveRsn;
-					configManager.setConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, liveRsn);
+					configManager.setRSProfileConfiguration(CONFIG_GROUP, LAST_KNOWN_RSN_KEY, liveRsn);
+					offlineSyncService.onRsnResolved();
 				}
 				rsnMissingWarned = false;
 				return Optional.of(liveRsn);

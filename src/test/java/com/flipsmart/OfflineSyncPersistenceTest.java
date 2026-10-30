@@ -55,6 +55,8 @@ public class OfflineSyncPersistenceTest
 	private TransactionLogger transactionLogger;
 	private ItemManager itemManager;
 	private Map<String, String> configStore;
+	/** Per-account (RuneLite RS profile) config, kept apart from the profile-wide store. */
+	private Map<String, String> rsProfileStore;
 	/** Retries the last scheduled sync spent waiting before it resolved. */
 	private int pollsElapsed;
 	/**
@@ -75,6 +77,7 @@ public class OfflineSyncPersistenceTest
 		geHistoryService = mock(GEHistoryService.class);
 		store = new OfferStore();
 		configStore = new HashMap<>();
+		rsProfileStore = new HashMap<>();
 
 		when(session.getCollectedItemIds()).thenReturn(Collections.emptySet());
 
@@ -90,6 +93,8 @@ public class OfflineSyncPersistenceTest
 
 		when(configManager.getConfiguration(eq(CONFIG_GROUP), anyString()))
 			.thenAnswer(inv -> configStore.get(inv.<String>getArgument(1)));
+		when(configManager.getRSProfileConfiguration(eq(CONFIG_GROUP), anyString()))
+			.thenAnswer(inv -> rsProfileStore.get(inv.<String>getArgument(1)));
 
 		// Execute clientThread.invokeLater runnables synchronously so tests can verify
 		// side-effects that happen inside the callback.
@@ -554,7 +559,7 @@ public class OfflineSyncPersistenceTest
 	public void persist_fallsBackToLastKnownRsn_whenSessionRsnMissing()
 	{
 		when(session.getRsn()).thenReturn(null);
-		configStore.put("lastKnownRsn", "Durial321");
+		rsProfileStore.put("lastKnownRsn", "Durial321");
 
 		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
 		service.persistOfferState();
@@ -563,6 +568,89 @@ public class OfflineSyncPersistenceTest
 			configStore.containsKey("persistedOffers_Durial321"));
 		assertFalse("no unknown-RSN key written",
 			configStore.containsKey("persistedOffers_unknown"));
+	}
+
+	@Test
+	public void load_doesNotBorrowAnotherAccountsOffers()
+	{
+		when(session.getRsn()).thenReturn("Durial321");
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		service.persistOfferState();
+		configStore.put("persistedOffers_lastSession", configStore.get("persistedOffers_Durial321"));
+
+		when(session.getRsn()).thenReturn("Zezima");
+
+		assertTrue("an account with no saved offers must not load another account's",
+			service.loadPersistedOfferRecords().isEmpty());
+	}
+
+	@Test
+	public void persist_ignoresProfileWideLastKnownRsnFromAnotherClient()
+	{
+		when(session.getRsn()).thenReturn(null);
+		configStore.put("lastKnownRsn", "Durial321");
+
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		service.persistOfferState();
+
+		assertFalse("offers must not be saved under another client's RSN",
+			configStore.containsKey("persistedOffers_Durial321"));
+	}
+
+	@Test
+	public void persist_usesTheStoresOwnerOnceSessionRsnClears()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		service.preloadPersistedOffers();
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+
+		when(session.getRsn()).thenReturn(null);
+		rsProfileStore.put("lastKnownRsn", "Durial321");
+		service.persistOfferState();
+
+		assertTrue("saved under the account the offers belong to",
+			configStore.containsKey("persistedOffers_Zezima"));
+		assertFalse(configStore.containsKey("persistedOffers_Durial321"));
+	}
+
+	@Test
+	public void persist_writesNoProfileWideSharedKey()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+		service.persistOfferState();
+
+		assertFalse(configStore.containsKey("persistedOffers_lastSession"));
+	}
+
+	@Test
+	public void rsnResolvingAfterPreload_restoresThatAccountsLedger()
+	{
+		com.flipsmart.trading.RoundTripLedger saved = new com.flipsmart.trading.RoundTripLedger();
+		saved.recordFill("Zezima", 555, true, 40);
+		configStore.put("roundTripLedger_Zezima", new Gson().toJson(saved.export("Zezima")));
+
+		when(session.getRsn()).thenReturn(null);
+		service.preloadPersistedOffers();
+		assertEquals("nothing to restore before the RSN is known", 0, ledger.heldQuantity("Zezima", 555));
+
+		when(session.getRsn()).thenReturn("Zezima");
+		service.onRsnResolved();
+
+		assertEquals(40, ledger.heldQuantity("Zezima", 555));
+	}
+
+	@Test
+	public void releaseForLogout_savesThenEmptiesTheStore()
+	{
+		when(session.getRsn()).thenReturn("Zezima");
+		store.apply(sig(0, GrandExchangeOfferState.BUYING, 1234, 0, 10), 1000L);
+
+		service.releaseForLogout();
+
+		assertTrue("the next account must start from an empty store", store.export().isEmpty());
+		assertEquals("the outgoing account's offers are saved first", 1,
+			service.loadPersistedOfferRecords().size());
 	}
 
 	/**
