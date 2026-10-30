@@ -21,7 +21,7 @@ import com.flipsmart.session.SessionStatsView;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
 import com.flipsmart.trading.RealizedFlipProfit;
 import com.flipsmart.ui.panel.CardWidgets;
-import com.flipsmart.ui.panel.FavoritesSort;
+import com.flipsmart.ui.panel.RecommendationSort;
 import com.flipsmart.ui.panel.ItemNameFit;
 import com.flipsmart.ui.panel.LoginPanel;
 import com.flipsmart.ui.panel.Paginator;
@@ -71,7 +71,7 @@ public class FlipFinderPanel extends PluginPanel
 	private static final String CONFIG_KEY_FLIP_STYLE = "flipStyle";
 	private static final String CONFIG_KEY_FLIP_TIMEFRAME = "flipTimeframe";
 	private static final String CONFIG_KEY_COMPLETED_SORT = "completedSort";
-	private static final String CONFIG_KEY_FAVORITES_SORT = "favoritesSort";
+	private static final String CONFIG_KEY_RECOMMENDATION_SORT = "recommendationSort";
 	private static final String CONFIG_KEY_FLIP_ONLY_FAVORITES = "flipOnlyFavorites";
 	private static final int FAVORITES_PAGE_SIZE = 10;
 	private static final String CONFIG_KEY_MIN_PROFIT = "minProfit";
@@ -208,9 +208,9 @@ public class FlipFinderPanel extends PluginPanel
 	private final Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
 
 	// Favorites tab sort + pagination controls
-	private FavoritesSort favoritesSort = FavoritesSort.PROFIT;
 	private int favoritesPage = 0;
-	private final Map<FavoritesSort, JLabel> favoritesSortTabs = new java.util.EnumMap<>(FavoritesSort.class);
+	private RecommendationSort recommendationSort = RecommendationSort.RANK;
+	private final Map<RecommendationSort, JLabel> recommendationSortTabs = new java.util.EnumMap<>(RecommendationSort.class);
 	private JLabel favoritesPageLabel;
 	private JLabel favoritesPrevPageLabel;
 	private JLabel favoritesNextPageLabel;
@@ -219,7 +219,6 @@ public class FlipFinderPanel extends PluginPanel
 	// In-tab favorites view (toggled from within the Recommended tab, no separate tab)
 	private boolean favoritesViewActive;
 	private JButton favoritesToggleButton;
-	private JPanel favoritesControlsPanel;
 	private JPanel recommendedCardPanel;
 	private final CardLayout recommendedCardLayout = new CardLayout();
 	private static final String CARD_ALGORITHM = "algorithm";
@@ -289,10 +288,10 @@ public class FlipFinderPanel extends PluginPanel
 		this.configManager = configManager;
 
 		// Restore the persisted Completed-tab sort (defaults to Recency)
-		this.completedSort = loadCompletedSort();
+		this.completedSort = loadSort(CONFIG_KEY_COMPLETED_SORT, CompletedSort.RECENCY);
 
 		// Restore the persisted Favorites-tab sort (defaults to Profit)
-		this.favoritesSort = loadFavoritesSort();
+		this.recommendationSort = loadSort(CONFIG_KEY_RECOMMENDATION_SORT, RecommendationSort.RANK);
 
 		// Restore the persisted "flip only from favorites" toggle
 		this.flipOnlyFavorites = loadFlipOnlyFavorites();
@@ -691,18 +690,12 @@ public class FlipFinderPanel extends PluginPanel
 		favoritesToggleButton.addActionListener(e -> toggleFavoritesView());
 		toggleBar.add(favoritesToggleButton);
 
-		// Favorites controls (sort row + flip-only checkbox), shown only in favorites view
-		favoritesControlsPanel = new JPanel();
-		favoritesControlsPanel.setLayout(new BoxLayout(favoritesControlsPanel, BoxLayout.Y_AXIS));
-		favoritesControlsPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
-		favoritesControlsPanel.add(buildFavoritesSortRow());
-		favoritesControlsPanel.setVisible(false);
-
 		JPanel recommendedControls = new JPanel();
 		recommendedControls.setLayout(new BoxLayout(recommendedControls, BoxLayout.Y_AXIS));
 		recommendedControls.setBackground(ColorScheme.DARK_GRAY_COLOR);
 		recommendedControls.add(toggleBar);
-		recommendedControls.add(favoritesControlsPanel);
+		recommendedControls.add(buildSortRow(RecommendationSort.values(), RecommendationSort::getLabel,
+			this::selectRecommendationSort, recommendationSortTabs, () -> styleSortTabs(recommendationSortTabs, recommendationSort)));
 
 		recommendedCardPanel = new JPanel(recommendedCardLayout);
 		recommendedCardPanel.setBackground(ColorScheme.DARK_GRAY_COLOR);
@@ -1985,6 +1978,51 @@ public class FlipFinderPanel extends PluginPanel
 		return sorted;
 	}
 
+	/** Highlight the active sort tab (orange) and dim the others. */
+	private static <T extends Enum<T>> void styleSortTabs(Map<T, JLabel> tabs, T active)
+	{
+		for (Map.Entry<T, JLabel> entry : tabs.entrySet())
+		{
+			boolean selected = entry.getKey() == active;
+			entry.getValue().setForeground(selected ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
+			entry.getValue().setBackground(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARK_GRAY_COLOR);
+		}
+	}
+
+	/** Read a persisted sort, falling back when unset or no longer a valid option. */
+	private <T extends Enum<T>> T loadSort(String key, T fallback)
+	{
+		String saved = configManager.getConfiguration(CONFIG_GROUP, key);
+		try
+		{
+			return saved == null ? fallback : Enum.valueOf(fallback.getDeclaringClass(), saved);
+		}
+		catch (IllegalArgumentException e)
+		{
+			return fallback;
+		}
+	}
+
+	private void selectRecommendationSort(RecommendationSort sort)
+	{
+		if (sort == recommendationSort)
+		{
+			return;
+		}
+		recommendationSort = sort;
+		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_RECOMMENDATION_SORT, sort.name());
+		styleSortTabs(recommendationSortTabs, recommendationSort);
+		if (favoritesViewActive)
+		{
+			favoritesPage = 0;
+			populateFavorites();
+		}
+		else
+		{
+			repopulateRecommendationsGated();
+		}
+	}
+
 	/**
 	 * Build the secondary sort row shown above the Completed list (AC5/AC6).
 	 * Two tab-style labels — Recency and Profit — styled like the main tab row.
@@ -1992,7 +2030,7 @@ public class FlipFinderPanel extends PluginPanel
 	private JPanel buildCompletedSortRow()
 	{
 		return buildSortRow(CompletedSort.values(), sort -> sort.label,
-			this::selectCompletedSort, completedSortTabs, this::applyCompletedSortTabStyles);
+			this::selectCompletedSort, completedSortTabs, () -> styleSortTabs(completedSortTabs, completedSort));
 	}
 
 	/**
@@ -2043,43 +2081,13 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		completedSort = sort;
 		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_COMPLETED_SORT, sort.name());
-		applyCompletedSortTabStyles();
+		styleSortTabs(completedSortTabs, completedSort);
 		if (!currentCompletedFlips.isEmpty())
 		{
 			populateCompletedFlips(currentCompletedFlips);
 		}
 	}
 
-	/** Highlight the active sort tab (orange) and dim the others. */
-	private void applyCompletedSortTabStyles()
-	{
-		for (Map.Entry<CompletedSort, JLabel> entry : completedSortTabs.entrySet())
-		{
-			boolean selected = entry.getKey() == completedSort;
-			JLabel tab = entry.getValue();
-			tab.setForeground(selected ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
-			tab.setBackground(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARK_GRAY_COLOR);
-		}
-	}
-
-	/** Read the persisted Completed-tab sort, defaulting to Recency (AC9). */
-	private CompletedSort loadCompletedSort()
-	{
-		String saved = configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_COMPLETED_SORT);
-		if (saved != null)
-		{
-			try
-			{
-				return CompletedSort.valueOf(saved);
-			}
-			catch (IllegalArgumentException ignored)
-			{
-				// Unknown/legacy value — fall through to the default.
-			}
-		}
-		return CompletedSort.RECENCY;
-	}
-	
 	/**
 	 * Display both active flips and pending orders. The projection is non-overlapping by
 	 * construction — a pending buy row is a live BUY offer, a projected active flip is a
@@ -2490,7 +2498,9 @@ public class FlipFinderPanel extends PluginPanel
 			? service.getCurrentRecommendation() : null;
 
 		int displayed = 0;
-		for (FlipRecommendation rec : recommendations)
+		List<FlipRecommendation> sorted = new ArrayList<>(recommendations);
+		sorted.sort(recommendationSort.comparator());
+		for (FlipRecommendation rec : sorted)
 		{
 			if (!shouldDisplay(rec))
 			{
@@ -2538,7 +2548,6 @@ public class FlipFinderPanel extends PluginPanel
 	/** Show/hide the favorites list, controls, pagination and update the toggle button for the current view. */
 	private void applyFavoritesViewState()
 	{
-		favoritesControlsPanel.setVisible(favoritesViewActive);
 		if (favoritesViewActive)
 		{
 			favoritesToggleButton.setText("Algorithm");
@@ -2579,8 +2588,12 @@ public class FlipFinderPanel extends PluginPanel
 	private void populateFavorites()
 	{
 		favoritesListContainer.removeAll();
-		List<FavoriteItem> sorted = new ArrayList<>(currentFavorites);
-		sorted.sort(favoritesSort.comparator());
+		List<FlipRecommendation> sorted = new ArrayList<>();
+		for (FavoriteItem item : currentFavorites)
+		{
+			sorted.add(favoriteAsRecommendation(item));
+		}
+		sorted.sort(recommendationSort.comparator());
 		int pages = Paginator.pageCount(sorted.size(), FAVORITES_PAGE_SIZE);
 		if (favoritesPage > pages - 1)
 		{
@@ -2590,7 +2603,7 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			favoritesPage = 0;
 		}
-		List<FavoriteItem> visible = Paginator.page(sorted, favoritesPage, FAVORITES_PAGE_SIZE);
+		List<FlipRecommendation> visible = Paginator.page(sorted, favoritesPage, FAVORITES_PAGE_SIZE);
 		if (visible.isEmpty())
 		{
 			favoritesListContainer.add(createEmptyStatePanel(
@@ -2600,9 +2613,9 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		else
 		{
-			for (FavoriteItem item : visible)
+			for (FlipRecommendation rec : visible)
 			{
-				favoritesListContainer.add(createFavoriteCard(item));
+				favoritesListContainer.add(createRecommendationPanel(rec));
 				favoritesListContainer.add(Box.createRigidArea(new Dimension(0, 4)));
 			}
 		}
@@ -2617,60 +2630,6 @@ public class FlipFinderPanel extends PluginPanel
 	{
 		int count = currentFavorites.size();
 		statusLabel.setText(count == 1 ? "1 favorite" : count + " favorites");
-	}
-
-	/**
-	 * Build the sort row shown above the Favorites list, mirroring the Completed-tab
-	 * sort idiom: tab-style labels, one per {@link FavoritesSort}.
-	 */
-	private JPanel buildFavoritesSortRow()
-	{
-		return buildSortRow(FavoritesSort.values(), FavoritesSort::getLabel,
-			this::selectFavoritesSort, favoritesSortTabs, this::applyFavoritesSortTabStyles);
-	}
-
-	/** Persist the chosen sort, reset to page 0, restyle the tabs, and re-render the list. */
-	private void selectFavoritesSort(FavoritesSort sort)
-	{
-		if (sort == favoritesSort)
-		{
-			return;
-		}
-		favoritesSort = sort;
-		favoritesPage = 0;
-		configManager.setConfiguration(CONFIG_GROUP, CONFIG_KEY_FAVORITES_SORT, sort.name());
-		applyFavoritesSortTabStyles();
-		populateFavorites();
-	}
-
-	/** Highlight the active sort tab (orange) and dim the others. */
-	private void applyFavoritesSortTabStyles()
-	{
-		for (Map.Entry<FavoritesSort, JLabel> entry : favoritesSortTabs.entrySet())
-		{
-			boolean selected = entry.getKey() == favoritesSort;
-			JLabel tab = entry.getValue();
-			tab.setForeground(selected ? Color.WHITE : COLOR_TEXT_DIM_GRAY);
-			tab.setBackground(selected ? ColorScheme.BRAND_ORANGE : ColorScheme.DARK_GRAY_COLOR);
-		}
-	}
-
-	/** Read the persisted Favorites-tab sort, defaulting to Profit. */
-	private FavoritesSort loadFavoritesSort()
-	{
-		String saved = configManager.getConfiguration(CONFIG_GROUP, CONFIG_KEY_FAVORITES_SORT);
-		if (saved != null)
-		{
-			try
-			{
-				return FavoritesSort.valueOf(saved);
-			}
-			catch (IllegalArgumentException ignored)
-			{
-				// Unknown/legacy value — fall through to the default.
-			}
-		}
-		return FavoritesSort.PROFIT;
 	}
 
 	/**
@@ -2811,11 +2770,6 @@ public class FlipFinderPanel extends PluginPanel
 	 * of item, so it gets the identical layout, colours, and click-to-focus behaviour. The
 	 * favorite's server-sent buy limit is the quantity its profit is sized to (one full cycle).
 	 */
-	private JPanel createFavoriteCard(FavoriteItem item)
-	{
-		return createRecommendationPanel(favoriteAsRecommendation(item));
-	}
-
 	/** Map a favorite onto a {@link FlipRecommendation} so the recommendation renderer can draw it. */
 	private static FlipRecommendation favoriteAsRecommendation(FavoriteItem item)
 	{
@@ -2829,6 +2783,7 @@ public class FlipFinderPanel extends PluginPanel
 		rec.setRecommendedQuantity(quantity);
 		rec.setBuyLimit(quantity);
 		rec.setDailyVolume(item.getVolume());
+		rec.setPotentialProfit(item.getProfit());
 		rec.setRiskScore(item.getRiskScore());
 		rec.setRiskRating(item.getRiskRating());
 		return rec;

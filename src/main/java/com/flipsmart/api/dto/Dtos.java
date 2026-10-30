@@ -319,9 +319,6 @@ public final class Dtos
 
 		private long profit;
 
-		@SerializedName("total_profit")
-		private long totalProfit;
-
 		private int volume;
 
 		@SerializedName("risk_score")
