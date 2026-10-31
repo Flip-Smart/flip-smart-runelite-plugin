@@ -286,6 +286,11 @@ public class GrandExchangeTracker
 			session.removeRecommendedPrice(ctx.itemId);
 		}
 
+		if (autoRecommendService != null)
+		{
+			autoRecommendService.recordCancelCooldown(ctx.itemId);
+		}
+
 		// Notify auto-recommend AFTER the store cancellation is applied
 		if (isAutoRecommendActive())
 		{
