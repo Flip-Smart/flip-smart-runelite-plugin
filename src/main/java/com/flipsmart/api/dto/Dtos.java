@@ -451,6 +451,9 @@ public final class Dtos
 
 		private Subscription subscription;
 
+		/** Server-supplied message shown in place of an empty recommendation list. */
+		private String notice;
+
 		/**
 		 * Check if the user has premium subscription
 		 */

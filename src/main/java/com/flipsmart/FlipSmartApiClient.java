@@ -261,6 +261,11 @@ public class FlipSmartApiClient
 		flips.clearCache();
 	}
 
+	public void setHardcoreWorld(boolean hardcoreWorld)
+	{
+		transport.setHardcoreWorld(hardcoreWorld);
+	}
+
 	public void invalidateCache(int itemId)
 	{
 		flips.invalidateCache(itemId);
