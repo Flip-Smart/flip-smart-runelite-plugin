@@ -237,4 +237,18 @@ public class StaleOfferQueueTest
 		assertNull(q.getResellPrice(11));
 		assertNull(q.getResellNet(11));
 	}
+
+	@Test
+	public void isPromptedTracksQueuedItemsUntilRemoved()
+	{
+		StaleOfferQueue queue = new StaleOfferQueue();
+		assertFalse(queue.isPrompted(4151));
+
+		queue.addIfAbsent(OfferRecord.newOffer(1L, 0, 4151, "Abyssal whip", false, 1, 100, 1000L));
+		assertTrue(queue.isPrompted(4151));
+		assertFalse(queue.isPrompted(561));
+
+		queue.removePrompted(4151);
+		assertFalse(queue.isPrompted(4151));
+	}
 }

@@ -2255,8 +2255,10 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private boolean shouldDisplay(FlipRecommendation rec)
 	{
+		AutoRecommendService service = plugin.getAutoRecommendService();
 		return FocusedFlip.passesRecommendationFilters(
-			rec, config.priceOffset(), config.minimumProfit(), config.minimumVolume());
+			rec, config.priceOffset(), config.minimumProfit(), config.minimumVolume())
+			&& (service == null || !service.isCancelCoolingDown(rec.getItemId()));
 	}
 
 	/** Returns the number of recommendations that pass the current profit filter. */

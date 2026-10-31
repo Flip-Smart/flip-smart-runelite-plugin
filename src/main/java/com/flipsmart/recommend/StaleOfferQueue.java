@@ -95,6 +95,11 @@ public final class StaleOfferQueue
 		promptedStaleItems.remove(itemId);
 	}
 
+	public boolean isPrompted(int itemId)
+	{
+		return promptedStaleItems.contains(itemId);
+	}
+
 	/**
 	 * Forget an item entirely: drop it from the queue and its resell price.
 	 * Used by buy/cancel/collect handlers when the offer leaves the GE.

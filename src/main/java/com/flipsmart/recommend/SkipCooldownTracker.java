@@ -5,18 +5,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
 /**
- * Tracks a short per-item "leave me alone" window after a Flip Assist skip.
- *
- * When the player skips a recommendation or an action in auto-mode, that item is
- * held out of auto-surfacing for {@link #COOLDOWN_MS} so it does not immediately
- * re-appear on the next GE event, game tick, or Flip Finder refresh. Suppression is
- * intentionally limited to auto-surfacing — the passive orange highlight and a manual
- * GE offer-screen pull-up are unaffected.
- *
- * The window survives Flip Finder refreshes (the map is never touched by a refresh)
- * and is cleared only by natural expiry or an auto-mode toggle off-and-on via
- * {@link #clearAll()}. The clock is injectable so the cooldown can be unit-tested
- * without wall-clock sleeps.
+ * Per-item window that holds an item out of recommendations after a skip or a cancel.
+ * Survives Flip Finder refreshes; ends on expiry or {@link #clearAll()}.
  */
 public class SkipCooldownTracker
 {
@@ -51,6 +41,12 @@ public class SkipCooldownTracker
 		{
 			pruneExpired();
 		}
+	}
+
+	/** Like skip, but never shortens a longer window already running. */
+	public void extend(int itemId, long durationMs)
+	{
+		cooldownUntilMillis.merge(itemId, clock.getAsLong() + durationMs, Math::max);
 	}
 
 	/** True while the item is inside its skip window. Expires lazily on read. */
