@@ -70,7 +70,7 @@ public class ApiHttpTransport
 	private boolean isRsnBlocked = false;
 
 	@Setter
-	private volatile boolean hardcoreWorld = false;
+	private volatile boolean hardcoreWorld;
 
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
