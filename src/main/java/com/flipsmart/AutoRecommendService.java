@@ -93,6 +93,11 @@ public class AutoRecommendService
 		// green/red-border competitiveness check must not suppress those prompts.
 		return timeframe != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS;
 	}
+
+	static long cancelCooldownMs(FlipSmartConfig.FlipTimeframe timeframe, boolean prompted)
+	{
+		return timeframe != FlipSmartConfig.FlipTimeframe.ACTIVE ? 0 : prompted ? 1_800_000L : SkipCooldownTracker.COOLDOWN_MS;
+	}
 	/** Maximum age of persisted state before it's considered stale (30 minutes) */
 	static final long MAX_PERSISTED_AGE_MS = 30 * 60 * 1000L;
 	private static final String MSG_WAITING_FOR_FLIPS = "Waiting for flips";
@@ -135,6 +140,8 @@ public class AutoRecommendService
 	// 5-minute per-item skip window: a skipped buy/action is held out of auto-surfacing
 	// so it does not immediately re-appear. Cleared on auto-mode toggle, survives refreshes.
 	private final SkipCooldownTracker skipCooldown = new SkipCooldownTracker();
+
+	private final SkipCooldownTracker cancelCooldown = new SkipCooldownTracker();
 
 	private final List<Runnable> deferredActions = new ArrayList<>();
 
@@ -650,6 +657,22 @@ public class AutoRecommendService
 		adjustments.removeBuyPrice(itemId);
 		log.debug("Auto-recommend: Sell completed for item {} - checking next action", itemId);
 		focusNextAvailableAction();
+	}
+
+	/** Call before onOfferCancelled, which clears the prompted flag. */
+	public synchronized void recordCancelCooldown(int itemId)
+	{
+		cancelCooldown.extend(itemId, cancelCooldownMs(config.flipTimeframe(), staleOffers.isPrompted(itemId)));
+	}
+
+	public boolean isCancelCoolingDown(int itemId)
+	{
+		return config.flipTimeframe() == FlipSmartConfig.FlipTimeframe.ACTIVE && cancelCooldown.isCoolingDown(itemId);
+	}
+
+	private boolean isHeldBack(int itemId)
+	{
+		return skipCooldown.isCoolingDown(itemId) || isCancelCoolingDown(itemId);
 	}
 
 	/**
@@ -2565,7 +2588,7 @@ public class AutoRecommendService
 			plugin.getActiveFlipItemIds(),
 			next -> FocusedFlip.calculateAdjustedProfit(next, priceOffset),
 			minProfit,
-			skipCooldown::isCoolingDown);
+			this::isHeldBack);
 
 		if (queue.cursorBeyondEnd())
 		{
@@ -3334,7 +3357,7 @@ public class AutoRecommendService
 		int surfaceableItemId = -1;
 		List<FlipRecommendation> view = queue.view();
 		int idx = firstAvailableBuyIndex(view, plugin.getActiveFlipItemIds(),
-			excludeItemId, config.priceOffset(), config.minimumProfit(), skipCooldown::isCoolingDown);
+			excludeItemId, config.priceOffset(), config.minimumProfit(), this::isHeldBack);
 		if (idx >= 0 && idx < view.size())
 		{
 			hasSurfaceable = true;

@@ -128,4 +128,47 @@ public class SkipCooldownTrackerTest
 		assertFalse(tracker.isCoolingDown(ITEM));
 		assertTrue(tracker.isCoolingDown(OTHER_ITEM));
 	}
+
+	private static final long THIRTY_MIN = 30 * 60 * 1000L;
+	private static final long FIVE_MIN = 5 * 60 * 1000L;
+
+	@Test
+	public void extendHoldsForTheGivenDurationThenExpires()
+	{
+		tracker.extend(ITEM, THIRTY_MIN);
+
+		now += THIRTY_MIN - 1;
+		assertTrue(tracker.isCoolingDown(ITEM));
+		now += 1;
+		assertFalse(tracker.isCoolingDown(ITEM));
+	}
+
+	@Test
+	public void shorterExtendNeverCutsALongerWindowShort()
+	{
+		tracker.extend(ITEM, THIRTY_MIN);
+		now += 1_000;
+		tracker.extend(ITEM, FIVE_MIN);
+
+		now += FIVE_MIN + 60_000;
+		assertTrue(tracker.isCoolingDown(ITEM));
+	}
+
+	@Test
+	public void longerExtendLengthensAShorterWindow()
+	{
+		tracker.extend(ITEM, FIVE_MIN);
+		tracker.extend(ITEM, THIRTY_MIN);
+
+		now += FIVE_MIN + 60_000;
+		assertTrue(tracker.isCoolingDown(ITEM));
+	}
+
+	@Test
+	public void extendOnlyAffectsItsOwnItem()
+	{
+		tracker.extend(ITEM, THIRTY_MIN);
+
+		assertFalse(tracker.isCoolingDown(OTHER_ITEM));
+	}
 }
