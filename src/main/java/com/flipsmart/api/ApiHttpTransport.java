@@ -44,6 +44,7 @@ public class ApiHttpTransport
 	private static final String JSON_KEY_STATUS = "status";
 	private static final String DEVICE_INFO = "RuneLite Plugin";
 	private static final String HEADER_AUTHORIZATION = "Authorization";
+	static final String HEADER_ECONOMY = "X-Economy";
 	private static final String BEARER_PREFIX = "Bearer ";
 	private static final int HTTP_SERVER_ERROR_THRESHOLD = 500;
 	private static final int HTTP_TOO_MANY_REQUESTS = 429;
@@ -67,6 +68,9 @@ public class ApiHttpTransport
 
 	// RSN-level blocked status (updated on entitlements fetch)
 	private boolean isRsnBlocked = false;
+
+	@Setter
+	private volatile boolean hardcoreWorld = false;
 
 	// Lock for authentication to prevent concurrent auth attempts
 	private final Object authLock = new Object();
@@ -157,9 +161,10 @@ public class ApiHttpTransport
 	/**
 	 * Add Authorization header with Bearer token to a request builder.
 	 */
-	private Request.Builder withAuthHeader(Request.Builder builder)
+	Request.Builder withAuthHeader(Request.Builder builder)
 	{
-		return builder.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken());
+		return builder.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
+			.header(HEADER_ECONOMY, hardcoreWorld ? "hardcore" : "main");
 	}
 
 	/**

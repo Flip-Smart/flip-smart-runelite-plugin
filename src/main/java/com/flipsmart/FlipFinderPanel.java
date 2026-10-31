@@ -1650,7 +1650,7 @@ public class FlipFinderPanel extends PluginPanel
 			if (response.getRecommendations() == null || response.getRecommendations().isEmpty())
 			{
 				currentRecommendations.clear();
-				showNoRecommendationsAvailable();
+				showNoRecommendationsAvailable(response.getNotice());
 				updatePremiumStatus();
 				restoreScrollPosition(recommendedScrollPane, scrollPos);
 				return;
@@ -2284,11 +2284,11 @@ public class FlipFinderPanel extends PluginPanel
 		showErrorInContainer(recommendedListContainer, "Flip Finder", message);
 	}
 
-	private void showNoRecommendationsAvailable()
+	private void showNoRecommendationsAvailable(String notice)
 	{
 		statusLabel.setText("No available trades");
-		showErrorInContainer(recommendedListContainer, "Flip Finder",
-			"There are currently no available trades for your cash stack amount and flip style.");
+		showErrorInContainer(recommendedListContainer, "Flip Finder", notice != null ? notice
+			: "There are currently no available trades for your cash stack amount and flip style.");
 	}
 
 	/**

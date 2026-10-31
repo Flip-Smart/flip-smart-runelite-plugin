@@ -342,7 +342,9 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	public void updateMembersWorldCache()
 	{
-		membersWorld = client.getWorldType().contains(WorldType.MEMBERS);
+		Set<WorldType> worldTypes = client.getWorldType();
+		membersWorld = worldTypes.contains(WorldType.MEMBERS);
+		apiClient.setHardcoreWorld(worldTypes.contains(WorldType.HARDCORE_MAIN));
 	}
 
 	/**
