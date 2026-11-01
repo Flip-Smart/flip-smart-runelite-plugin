@@ -191,6 +191,7 @@ public class OfflineSyncService
 	{
 		roundTripLedger.clear();
 		offerStore.watermarks().clear();
+		session.restoreFlipFinderSourced(null, 0L);
 	}
 
 	/**
