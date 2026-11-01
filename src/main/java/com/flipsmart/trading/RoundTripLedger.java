@@ -384,6 +384,14 @@ public final class RoundTripLedger
         }
     }
 
+    public void clear()
+    {
+        synchronized (lock)
+        {
+            byRsn.clear();
+        }
+    }
+
     /** True when no state has ever been recorded for {@code rsn} (cold start / first run). */
     public boolean isEmpty(String rsn)
     {

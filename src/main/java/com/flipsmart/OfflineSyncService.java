@@ -156,9 +156,8 @@ public class OfflineSyncService
 
 	private Set<Integer> loadPersistedFlipFinderSourced()
 	{
-		String key = session.getRsn() == null || session.getRsn().isEmpty()
-			? FLIP_FINDER_SOURCED_KEY_PREFIX + UNKNOWN_RSN_FALLBACK
-			: FLIP_FINDER_SOURCED_KEY_PREFIX + session.getRsn();
+		String key = key(FLIP_FINDER_SOURCED_KEY_PREFIX, session.getRsn() == null || session.getRsn().isEmpty()
+			? UNKNOWN_RSN_FALLBACK : session.getRsn());
 		try
 		{
 			String json = configManager.getConfiguration(CONFIG_GROUP, key);
@@ -185,6 +184,14 @@ public class OfflineSyncService
 		persistOfferState();
 		offerStore.importRecords(new ArrayList<>());
 		storeOwnerRsn = null; // NOPMD NullAssignment
+	}
+
+	/** Drop in-memory ledger and fill marks so the next preload reads the new economy's. */
+	public void forgetEconomyState()
+	{
+		roundTripLedger.clear();
+		offerStore.watermarks().clear();
+		session.restoreFlipFinderSourced(null, 0L);
 	}
 
 	/**
@@ -220,7 +227,7 @@ public class OfflineSyncService
 			return;
 		}
 
-		String offersKey = PERSISTED_OFFERS_KEY_PREFIX + rsn;
+		String offersKey = key(PERSISTED_OFFERS_KEY_PREFIX, rsn);
 
 		persistWatermarks(rsn);
 
@@ -269,7 +276,7 @@ public class OfflineSyncService
 		{
 			try
 			{
-				configManager.setConfiguration(CONFIG_GROUP, FLIP_FINDER_SOURCED_KEY_PREFIX + rsn,
+				configManager.setConfiguration(CONFIG_GROUP, key(FLIP_FINDER_SOURCED_KEY_PREFIX, rsn),
 					gson.toJson(new ArrayList<>(sourced)));
 			}
 			catch (Exception e)
@@ -295,7 +302,7 @@ public class OfflineSyncService
 		}
 		try
 		{
-			configManager.setConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn, gson.toJson(entries));
+			configManager.setConfiguration(CONFIG_GROUP, key(ROUND_TRIP_LEDGER_KEY_PREFIX, rsn), gson.toJson(entries));
 		}
 		catch (Exception e)
 		{
@@ -338,7 +345,7 @@ public class OfflineSyncService
 
 	private boolean restorePersistedLedger(String rsn)
 	{
-		String json = configManager.getConfiguration(CONFIG_GROUP, ROUND_TRIP_LEDGER_KEY_PREFIX + rsn);
+		String json = configManager.getConfiguration(CONFIG_GROUP, key(ROUND_TRIP_LEDGER_KEY_PREFIX, rsn));
 		if (json != null && !json.isEmpty())
 		{
 			try
@@ -484,16 +491,17 @@ public class OfflineSyncService
 		}
 	}
 
-	/**
-	 * Save the high-water fill marks. Written unconditionally: unlike the offer records, an empty
-	 * mark set carries no risk of wiping useful state, because a restore only ever raises marks.
-	 */
+	/** Save the high-water fill marks. Skipped when empty: marks are cleared on an economy switch. */
 	private void persistWatermarks(String rsn)
 	{
+		Map<String, long[]> marks = offerStore.watermarks().export();
+		if (marks.isEmpty())
+		{
+			return;
+		}
 		try
 		{
-			configManager.setConfiguration(CONFIG_GROUP, WATERMARKS_KEY_PREFIX + rsn,
-				gson.toJson(offerStore.watermarks().export()));
+			configManager.setConfiguration(CONFIG_GROUP, key(WATERMARKS_KEY_PREFIX, rsn), gson.toJson(marks));
 		}
 		catch (Exception e)
 		{
@@ -516,7 +524,7 @@ public class OfflineSyncService
 			long current = offerStore.nextOfferId();
 			if (current > loadPersistedNextOfferId(rsn))
 			{
-				configManager.setConfiguration(CONFIG_GROUP, NEXT_OFFER_ID_KEY_PREFIX + rsn,
+				configManager.setConfiguration(CONFIG_GROUP, key(NEXT_OFFER_ID_KEY_PREFIX, rsn),
 					Long.toString(current));
 			}
 		}
@@ -529,7 +537,7 @@ public class OfflineSyncService
 	/** Saved high-water offer id for {@code rsn}, or 0 when none is stored or it is unreadable. */
 	private long loadPersistedNextOfferId(String rsn)
 	{
-		String raw = rsn == null ? null : configManager.getConfiguration(CONFIG_GROUP, NEXT_OFFER_ID_KEY_PREFIX + rsn);
+		String raw = rsn == null ? null : configManager.getConfiguration(CONFIG_GROUP, key(NEXT_OFFER_ID_KEY_PREFIX, rsn));
 		try
 		{
 			// Absent, blank and corrupt all mean the same thing: no usable mark, so do not raise.
@@ -549,7 +557,7 @@ public class OfflineSyncService
 		{
 			return Collections.emptyMap();
 		}
-		String json = configManager.getConfiguration(CONFIG_GROUP, WATERMARKS_KEY_PREFIX + rsn);
+		String json = configManager.getConfiguration(CONFIG_GROUP, key(WATERMARKS_KEY_PREFIX, rsn));
 		if (json == null || json.isEmpty())
 		{
 			return Collections.emptyMap();
@@ -1029,11 +1037,13 @@ public class OfflineSyncService
 
 	public String getPersistedOffersKey()
 	{
-		if (session.getRsn() == null || session.getRsn().isEmpty())
-		{
-			return PERSISTED_OFFERS_KEY_PREFIX + UNKNOWN_RSN_FALLBACK;
-		}
-		return PERSISTED_OFFERS_KEY_PREFIX + session.getRsn();
+		return key(PERSISTED_OFFERS_KEY_PREFIX, session.getRsn() == null || session.getRsn().isEmpty()
+			? UNKNOWN_RSN_FALLBACK : session.getRsn());
+	}
+
+	private String key(String prefix, String rsn)
+	{
+		return PlayerSession.economyKey(prefix + rsn, session.isHardcoreWorld());
 	}
 
 	/**
