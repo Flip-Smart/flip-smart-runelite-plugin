@@ -884,6 +884,8 @@ public final class Endpoints
 		private final Map<Integer, WikiPrice> wikiPriceCache = new ConcurrentHashMap<>();
 		private final AtomicLong lastWikiPriceFetch = new AtomicLong(0);
 		private final AtomicBoolean wikiPriceFetchInProgress = new AtomicBoolean(false);
+		// Bumped by clearCache so a fetch still in flight from the previous economy is discarded.
+		private final AtomicLong wikiPriceEpoch = new AtomicLong();
 
 		private final Map<Integer, CachedDailyVolume> dailyVolumeCache = new ConcurrentHashMap<>();
 		// In-flight fetches keyed by item id. onBeforeRender rebuilds the GE offer
@@ -895,6 +897,16 @@ public final class Endpoints
 		{
 			this.transport = transport;
 			this.gson = transport.getGson();
+		}
+
+		public void clearCache()
+		{
+			wikiPriceEpoch.incrementAndGet();
+			wikiPriceCache.clear();
+			lastWikiPriceFetch.set(0);
+			wikiPriceFetchInProgress.set(false);
+			dailyVolumeCache.clear();
+			inFlightDailyVolume.clear();
 		}
 
 		/**
@@ -940,6 +952,7 @@ public final class Endpoints
 			}
 
 			lastWikiPriceFetch.set(now);
+			long epoch = wikiPriceEpoch.get();
 
 			String url = String.format("%s/plugin/prices", transport.getApiUrl());
 			Request.Builder requestBuilder = new Request.Builder()
@@ -948,11 +961,20 @@ public final class Endpoints
 
 			CompletableFuture<Void> future = transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
-				parseWikiPriceResponse(jsonData);
+				if (epoch == wikiPriceEpoch.get())
+				{
+					parseWikiPriceResponse(jsonData);
+				}
 				return null;
 			}, error -> log.warn("Failed to fetch wiki prices: {}", error));
 
-			future.whenComplete((result, ex) -> wikiPriceFetchInProgress.set(false));
+			future.whenComplete((result, ex) ->
+			{
+				if (epoch == wikiPriceEpoch.get())
+				{
+					wikiPriceFetchInProgress.set(false);
+				}
+			});
 		}
 
 		/**
