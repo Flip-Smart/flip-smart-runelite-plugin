@@ -62,10 +62,13 @@ public final class FillWatermarks
 		return new Delta((int) (raisedFilled - priorFilled), raisedSpent - priorSpent);
 	}
 
-	public synchronized void clear()
+	public void clear()
 	{
-		marks.clear();
-		slotGeneration.clear();
+		synchronized (this)
+		{
+			marks.clear();
+			slotGeneration.clear();
+		}
 	}
 
 	/** The generation currently in force for {@code slot}. */
