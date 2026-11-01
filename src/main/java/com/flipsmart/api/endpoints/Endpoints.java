@@ -1070,6 +1070,7 @@ public final class Endpoints
 
 		private CompletableFuture<Integer> fetchDailyVolume(int itemId)
 		{
+			long epoch = wikiPriceEpoch.get();
 			String url = String.format("%s/items/%d/daily-volume", transport.getApiUrl(), itemId);
 			Request.Builder requestBuilder = new Request.Builder()
 				.url(url)
@@ -1081,7 +1082,10 @@ public final class Endpoints
 				Integer volume = (obj != null && obj.has("daily_volume") && !obj.get("daily_volume").isJsonNull())
 					? obj.get("daily_volume").getAsInt()
 					: null;
-				dailyVolumeCache.put(itemId, new CachedDailyVolume(volume, DAILY_VOLUME_CACHE_TTL_MS));
+				if (epoch == wikiPriceEpoch.get())
+				{
+					dailyVolumeCache.put(itemId, new CachedDailyVolume(volume, DAILY_VOLUME_CACHE_TTL_MS));
+				}
 				return volume;
 			});
 
@@ -1090,7 +1094,7 @@ public final class Endpoints
 			// short-lived negative entry in that case to throttle the render loop.
 			future.whenComplete((volume, ex) ->
 			{
-				if (!dailyVolumeCache.containsKey(itemId))
+				if (epoch == wikiPriceEpoch.get() && !dailyVolumeCache.containsKey(itemId))
 				{
 					dailyVolumeCache.put(itemId, new CachedDailyVolume(null, DAILY_VOLUME_ERROR_CACHE_TTL_MS));
 				}
