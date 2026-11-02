@@ -241,7 +241,8 @@ public class BankSnapshotService
 
 	/**
 	 * Every item in the array as a BankItemId record (canonical item_id + quantity,
-	 * no client-side price). Noted and worn variants resolve to their base item.
+	 * no client-side price). Noted and worn variants resolve to their base item;
+	 * bank placeholders are skipped, since canonicalize would value them as the real item.
 	 */
 	private List<BankItemId> collectItemIds(Item[] items)
 	{
@@ -254,7 +255,8 @@ public class BankSnapshotService
 		{
 			int itemId = item.getId();
 			int quantity = item.getQuantity();
-			if (itemId <= 0 || quantity <= 0)
+			if (itemId <= 0 || quantity <= 0
+				|| itemManager.getItemComposition(itemId).getPlaceholderTemplateId() != -1)
 			{
 				continue;
 			}
