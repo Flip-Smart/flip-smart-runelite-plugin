@@ -336,15 +336,35 @@ public class FlipSmartPlugin extends Plugin
 		return membersWorld;
 	}
 
+	public boolean isHardcoreWorld()
+	{
+		return session.isHardcoreWorld();
+	}
+
 	/**
-	 * Refresh the cached members-world state from the Client API.
-	 * Must be called on the client thread.
+	 * Refresh the cached world flags from the Client API. Must be called on the client thread.
+	 *
+	 * <p>A main/Hardcore economy change is handled like an account switch: the outgoing economy's
+	 * state is saved and released under its own keys, and the login that always follows a world
+	 * change preloads the incoming economy's.</p>
 	 */
 	public void updateMembersWorldCache()
 	{
 		Set<WorldType> worldTypes = client.getWorldType();
 		membersWorld = worldTypes.contains(WorldType.MEMBERS);
-		apiClient.setHardcoreWorld(worldTypes.contains(WorldType.HARDCORE_MAIN));
+		boolean hardcore = worldTypes.contains(WorldType.HARDCORE_MAIN);
+		if (hardcore == session.isHardcoreWorld())
+		{
+			return;
+		}
+		if (session.isLoggedIntoRunescape())
+		{
+			releaseAccountState();
+		}
+		offlineSyncService.forgetEconomyState();
+		session.setHardcoreWorld(hardcore);
+		apiClient.setHardcoreWorld(hardcore);
+		apiClient.clearCache();
 	}
 
 	/**
@@ -1204,9 +1224,19 @@ public class FlipSmartPlugin extends Plugin
 		pushFinalCapitalSnapshot();
 		session.onLogout();
 		geHistoryService.reset();
+		releaseAccountState();
+
+		if (flipFinderPanel != null)
+		{
+			SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
+		}
+	}
+
+	private void releaseAccountState()
+	{
 		persistAutoRecommendState();
 		persistExitTradesState();
-		v9Store().persist(configManager, resolveStateRsn(session.getRsn(), lastKnownRsn));
+		v9Store().persist(configManager, v9StateKey());
 		offlineSyncService.releaseForLogout();
 		if (activeOfferAdvisorService != null)
 		{
@@ -1230,11 +1260,11 @@ public class FlipSmartPlugin extends Plugin
 		{
 			manualAdjustmentTracker.clearAll();
 		}
+	}
 
-		if (flipFinderPanel != null)
-		{
-			SwingUtilities.invokeLater(() -> flipFinderPanel.showLoggedOutOfGameState());
-		}
+	private String v9StateKey()
+	{
+		return PlayerSession.economyKey(resolveStateRsn(session.getRsn(), lastKnownRsn), session.isHardcoreWorld());
 	}
 
 	/**
@@ -1312,7 +1342,7 @@ public class FlipSmartPlugin extends Plugin
 
 		restoreAutoRecommendState();
 		restoreExitTradesState();
-		v9Store().restore(configManager, resolveStateRsn(session.getRsn(), lastKnownRsn));
+		v9Store().restore(configManager, v9StateKey());
 
 		// Start the refresh timer if not already running (needed for manual adjustment checks)
 		if (!scheduler.isAutoRecommendRefreshTimerRunning())
@@ -3055,9 +3085,9 @@ public class FlipSmartPlugin extends Plugin
 		}
 		if (rsn == null || rsn.isEmpty())
 		{
-			return prefix + UNKNOWN_RSN_FALLBACK;
+			rsn = UNKNOWN_RSN_FALLBACK;
 		}
-		return prefix + rsn;
+		return PlayerSession.economyKey(prefix + rsn, session.isHardcoreWorld());
 	}
 
 	/**

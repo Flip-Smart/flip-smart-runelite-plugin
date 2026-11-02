@@ -34,6 +34,16 @@ public class PlayerSession
 	@Setter
 	private volatile int lastLoginTick;
 
+	@Getter
+	@Setter
+	private volatile boolean hardcoreWorld;
+
+	/** Hardcore World state lives under suffixed keys; main keeps its original keys unchanged. */
+	public static String economyKey(String key, boolean hardcore)
+	{
+		return hardcore && key != null && !key.isEmpty() ? key + "_hc" : key;
+	}
+
 	// =====================
 	// Player Inventory
 	// =====================
