@@ -7,6 +7,7 @@ import com.flipsmart.api.dto.Dtos.BankSnapshotResult;
 import net.runelite.api.Client;
 import net.runelite.api.InventoryID;
 import net.runelite.api.Item;
+import net.runelite.api.ItemComposition;
 import net.runelite.api.ItemContainer;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.chat.ChatMessageManager;
@@ -54,6 +55,9 @@ public class BankSnapshotServiceTest
 		ClientThread clientThread = mock(ClientThread.class);
 		itemManager = mock(ItemManager.class);
 		when(itemManager.canonicalize(anyInt())).thenAnswer(inv -> inv.getArgument(0));
+		ItemComposition realItem = mock(ItemComposition.class);
+		when(realItem.getPlaceholderTemplateId()).thenReturn(-1);
+		when(itemManager.getItemComposition(anyInt())).thenReturn(realItem);
 		chatMessageManager = mock(ChatMessageManager.class);
 
 		doAnswer(inv -> {
@@ -243,5 +247,28 @@ public class BankSnapshotServiceTest
 		assertEquals(RUNE_PLATEBODY, inv.getValue().get(0).itemId);
 		assertEquals(50, inv.getValue().get(0).quantity);
 		assertEquals(AVERNIC_TREADS_MAX, gear.getValue().get(0).itemId);
+	}
+
+	private static final int TWISTED_BOW = 20997;
+	private static final int TWISTED_BOW_PLACEHOLDER = 21000;
+	private static final int PLACEHOLDER_TEMPLATE = 14401;
+
+	@Test
+	public void bankPlaceholdersAreNeverSent()
+	{
+		ItemComposition placeholder = mock(ItemComposition.class);
+		when(placeholder.getPlaceholderTemplateId()).thenReturn(PLACEHOLDER_TEMPLATE);
+		when(itemManager.getItemComposition(TWISTED_BOW_PLACEHOLDER)).thenReturn(placeholder);
+		when(itemManager.canonicalize(TWISTED_BOW_PLACEHOLDER)).thenReturn(TWISTED_BOW);
+		when(bank.getItems()).thenReturn(new Item[]{
+			new Item(995, 25_000), new Item(TWISTED_BOW_PLACEHOLDER, 1), new Item(RUNE_PLATEBODY, 3),
+		});
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+
+		service.onBankContainerChanged(RSN);
+
+		List<BankItem> sent = sentBankItems();
+		assertEquals(List.of(995, RUNE_PLATEBODY), sent.stream().map(i -> i.itemId).collect(Collectors.toList()));
+		assertEquals(List.of(25_000, 3), sent.stream().map(i -> i.quantity).collect(Collectors.toList()));
 	}
 }
