@@ -259,6 +259,7 @@ public class FlipSmartApiClient
 	public void clearCache()
 	{
 		flips.clearCache();
+		marketData.clearCache();
 	}
 
 	public void setHardcoreWorld(boolean hardcoreWorld)

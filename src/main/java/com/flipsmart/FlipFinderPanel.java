@@ -182,6 +182,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final JPanel completedFlipsListContainer = new JPanel();
 	private final JLabel statusLabel = new JLabel("Loading...");
 	private final JButton refreshButton = new JButton("Refresh");
+	private final JLabel hardcoreBadge = CardWidgets.label("Hardcore prices", ColorScheme.BRAND_ORANGE, FONT_PLAIN_11);
 	private final JComboBox<FlipSmartConfig.FlipStyle> flipStyleDropdown;
 	private final JComboBox<FlipSmartConfig.FlipTimeframe> flipTimeframeDropdown;
 	private final List<FlipRecommendation> currentRecommendations = new ArrayList<>();
@@ -439,7 +440,10 @@ public class FlipFinderPanel extends PluginPanel
 		JLabel brandLink = buildWebsiteLink();
 		brandLink.setAlignmentX(Component.LEFT_ALIGNMENT);
 
+		hardcoreBadge.setAlignmentX(Component.LEFT_ALIGNMENT);
+		syncHardcoreBadge(hardcoreBadge, plugin);
 		titleBox.add(titleLabel);
+		titleBox.add(hardcoreBadge);
 		titleBox.add(brandLink);
 
 		// Logout button with compact styling
@@ -1193,6 +1197,11 @@ public class FlipFinderPanel extends PluginPanel
 		showLoginPanel();
 	}
 
+	static void syncHardcoreBadge(JLabel badge, FlipSmartPlugin plugin)
+	{
+		badge.setVisible(plugin.isHardcoreWorld());
+	}
+
 	/**
 	 * Refresh flip recommendations, active flips, and completed flips.
 	 * Uses deterministic recommendations (no randomization) for auto-refresh.
@@ -1238,6 +1247,7 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	public void refresh(boolean shuffleSuggestions)
 	{
+		syncHardcoreBadge(hardcoreBadge, plugin);
 		// Skip API calls if player is not logged into RuneScape
 		// This saves API requests and battery when at the login screen
 		if (!plugin.isLoggedIntoRunescape())
