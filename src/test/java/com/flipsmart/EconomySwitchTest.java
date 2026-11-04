@@ -1,12 +1,15 @@
 package com.flipsmart;
 
+import com.flipsmart.util.GeTax;
 import com.google.gson.Gson;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.lang.reflect.Field;
 import java.util.EnumSet;
 import javax.swing.JLabel;
 import net.runelite.api.Client;
 import net.runelite.api.WorldType;
 import net.runelite.client.config.ConfigManager;
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 import org.mockito.InOrder;
@@ -14,6 +17,7 @@ import org.mockito.InOrder;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -51,6 +55,12 @@ public class EconomySwitchTest
 		inject("configManager", configManager);
 		inject("gson", new Gson());
 		inject("geSlotDecorator", mock(GeSlotWidgetDecorator.class));
+	}
+
+	@After
+	public void resetTaxEconomy()
+	{
+		GeTax.setHardcoreWorld(false);
 	}
 
 	private void inject(String field, Object value) throws Exception
@@ -145,5 +155,35 @@ public class EconomySwitchTest
 		when(p.isHardcoreWorld()).thenReturn(false);
 		FlipFinderPanel.syncHardcoreBadge(badge, p);
 		assertFalse(badge.isVisible());
+	}
+
+	@Test
+	public void outgoingStateIsReleasedUnderItsOwnTaxEconomyThenTaxFollowsTheNewWorld()
+	{
+		AtomicBoolean taxFreeDuringRelease = new AtomicBoolean(true);
+		doAnswer(inv -> { taxFreeDuringRelease.set(GeTax.isHardcoreWorld()); return null; })
+			.when(offlineSync).releaseForLogout();
+		session.onLoggedIn();
+		world(WorldType.MEMBERS, WorldType.HARDCORE_MAIN);
+
+		plugin.updateMembersWorldCache();
+
+		assertFalse(taxFreeDuringRelease.get());
+		assertTrue(GeTax.isHardcoreWorld());
+
+		world(WorldType.MEMBERS);
+		plugin.updateMembersWorldCache();
+		assertFalse(GeTax.isHardcoreWorld());
+	}
+
+	@Test
+	public void staleTaxEconomyIsCorrectedEvenWhenTheSessionEconomyIsUnchanged()
+	{
+		GeTax.setHardcoreWorld(true);
+		world(WorldType.MEMBERS);
+
+		plugin.updateMembersWorldCache();
+
+		assertFalse(GeTax.isHardcoreWorld());
 	}
 }

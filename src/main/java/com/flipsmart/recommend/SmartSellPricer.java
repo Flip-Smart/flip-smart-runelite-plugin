@@ -32,6 +32,10 @@ public final class SmartSellPricer
 		{
 			return 0;
 		}
+		if (GeTax.isHardcoreWorld())
+		{
+			return buyPrice + 1;
+		}
 		return Math.min((long) Math.ceil(buyPrice / 0.98), buyPrice + GeTax.GE_TAX_CAP) + 1;
 	}
 

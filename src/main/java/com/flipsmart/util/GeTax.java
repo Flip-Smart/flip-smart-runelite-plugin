@@ -26,6 +26,7 @@ public final class GeTax
 	private static final double GE_TAX_RATE = 0.02;
 	public static final int GE_TAX_CAP = 5_000_000;
 	private static final int GE_TAX_EXEMPT_PRICE_THRESHOLD = 50;
+	private static volatile boolean hardcoreWorld;
 
 	/** Items the GE never taxes regardless of sell price. */
 	public static final Set<Integer> EXEMPT_ITEM_IDS;
@@ -49,19 +50,31 @@ public final class GeTax
 		// Utility class - prevent instantiation
 	}
 
+	/** The GE charges no tax at all on Hardcore Worlds. Set from the current world type. */
+	public static void setHardcoreWorld(boolean hardcore)
+	{
+		hardcoreWorld = hardcore;
+	}
+
+	public static boolean isHardcoreWorld()
+	{
+		return hardcoreWorld;
+	}
+
+	private static boolean isTaxFree(long sellPrice)
+	{
+		return hardcoreWorld || sellPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD;
+	}
+
 	/**
 	 * Whether the given item id and sell price is exempt from GE tax.
 	 *
-	 * Two reasons an item is exempt: sell price &le; 50gp, or the item id is
+	 * Exempt on a Hardcore World, at a sell price &le; 50gp, or when the item id is
 	 * on the GE tax-free list.
 	 */
 	public static boolean isExempt(int itemId, long sellPrice)
 	{
-		if (sellPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
-		{
-			return true;
-		}
-		return isExemptItem(itemId);
+		return isTaxFree(sellPrice) || isExemptItem(itemId);
 	}
 
 	private static boolean isExemptItem(int itemId)
@@ -92,7 +105,7 @@ public final class GeTax
 	 */
 	public static int taxFor(long sellPrice)
 	{
-		if (sellPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
+		if (isTaxFree(sellPrice))
 		{
 			return 0;
 		}
@@ -121,7 +134,7 @@ public final class GeTax
 	 */
 	public static long breakevenSellPrice(long recordedBuyPrice)
 	{
-		if (recordedBuyPrice <= GE_TAX_EXEMPT_PRICE_THRESHOLD)
+		if (isTaxFree(recordedBuyPrice))
 		{
 			return recordedBuyPrice;
 		}
