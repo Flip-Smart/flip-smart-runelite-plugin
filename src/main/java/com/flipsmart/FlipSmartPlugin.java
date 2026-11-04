@@ -353,18 +353,18 @@ public class FlipSmartPlugin extends Plugin
 		Set<WorldType> worldTypes = client.getWorldType();
 		membersWorld = worldTypes.contains(WorldType.MEMBERS);
 		boolean hardcore = worldTypes.contains(WorldType.HARDCORE_MAIN);
-		if (hardcore == session.isHardcoreWorld())
+		if (hardcore != session.isHardcoreWorld())
 		{
-			return;
+			if (session.isLoggedIntoRunescape())
+			{
+				releaseAccountState();
+			}
+			offlineSyncService.forgetEconomyState();
+			session.setHardcoreWorld(hardcore);
+			apiClient.setHardcoreWorld(hardcore);
+			apiClient.clearCache();
 		}
-		if (session.isLoggedIntoRunescape())
-		{
-			releaseAccountState();
-		}
-		offlineSyncService.forgetEconomyState();
-		session.setHardcoreWorld(hardcore);
-		apiClient.setHardcoreWorld(hardcore);
-		apiClient.clearCache();
+		GeTax.setHardcoreWorld(hardcore);
 	}
 
 	/**
