@@ -1,0 +1,39 @@
+name: SAST
+
+# Static analysis on every PR: semgrep's Java and secrets rules in baseline
+# mode, so only findings a PR introduces fail it. No path filter, so the check
+# always reports. No Gradle build needed; runs in ~30s.
+on:
+  pull_request:
+
+concurrency:
+  group: sast-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: .github/sast/requirements.txt
+
+      - name: Install semgrep
+        run: pip install -r .github/sast/requirements.txt
+
+      - name: Semgrep (new findings only)
+        run: >-
+          semgrep scan --metrics=off --error
+          --config p/java --config p/secrets
+          --baseline-commit "${{ github.event.pull_request.base.sha }}" .
