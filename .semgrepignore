@@ -1,0 +1,19 @@
+# Semgrep reads this instead of its built-in defaults. Same list, minus the
+# defaults' test/ and tests/ entries, so test code (and any secret in a fixture)
+# is scanned too.
+.git/
+:include .gitignore
+node_modules/
+build/
+dist/
+vendor/
+.env/
+.venv/
+.tox/
+*.min.js
+.npm/
+.yarn/
+.semgrep
+.semgrep_logs/
+.gradle/
+gradle/wrapper/
