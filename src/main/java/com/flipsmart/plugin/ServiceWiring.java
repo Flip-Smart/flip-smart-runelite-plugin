@@ -135,6 +135,7 @@ public class ServiceWiring
 		ManualAdjustmentTracker manualAdjustmentTracker = new ManualAdjustmentTracker(plugin.getApiClient(), config, offerStore);
 
 		manualAdjustmentTracker.setOnAdjustmentPrompt(flipAssistOverlay::setAutoStatusMessage);
+		manualAdjustmentTracker.setOnPromptCleared(flipAssistOverlay::clearAutoStatusForItem);
 
 		manualAdjustmentTracker.setOnFocusFlip((focus, statusMsg) ->
 		{
