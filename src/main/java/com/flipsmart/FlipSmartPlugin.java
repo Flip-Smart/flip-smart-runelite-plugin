@@ -737,7 +737,8 @@ public class FlipSmartPlugin extends Plugin
 
 		// Guide price only when we have never held a real pair for this item.
 		// getItemPrice requires the client thread — return UNKNOWN if called off-thread.
-		if (!client.isClientThread())
+		// The guide price is the main game's, so a Hardcore World never falls back to it.
+		if (session.isHardcoreWorld() || !client.isClientThread())
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
@@ -756,6 +757,10 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private OfferCompetitiveness compareOfferPrice(long offerPrice, long targetPrice, boolean isBuy)
 	{
+		if (targetPrice <= 0)
+		{
+			return OfferCompetitiveness.UNKNOWN;
+		}
 		boolean isCompetitive = isBuy ? offerPrice >= targetPrice : offerPrice <= targetPrice;
 		return isCompetitive ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
 	}
@@ -1278,7 +1283,8 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void pushFinalCapitalSnapshot()
 	{
-		if (!session.isLoggedIntoRunescape())
+		// Capital is tracked for the main game only; Hardcore coins must never overwrite it.
+		if (!session.isLoggedIntoRunescape() || session.isHardcoreWorld())
 		{
 			return;
 		}
@@ -1787,7 +1793,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				// Never the override: this is the reported figure, not the one
 				// recommendations are built from. Zero is reported as zero.
-				return session.isLoggedIntoRunescape() ? session.getCurrentCashStack() : null;
+				return session.isLoggedIntoRunescape() && !session.isHardcoreWorld() ? session.getCurrentCashStack() : null;
 			}
 
 			@Override

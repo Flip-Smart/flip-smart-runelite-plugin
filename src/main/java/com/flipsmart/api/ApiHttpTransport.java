@@ -163,8 +163,19 @@ public class ApiHttpTransport
 	 */
 	Request.Builder withAuthHeader(Request.Builder builder)
 	{
+		return withAuthHeader(builder, currentEconomy());
+	}
+
+	/** Economy is pinned by the caller so a request keeps the world it was made on across an auth wait or retry. */
+	Request.Builder withAuthHeader(Request.Builder builder, String economy)
+	{
 		return builder.header(HEADER_AUTHORIZATION, BEARER_PREFIX + getJwtToken())
-			.header(HEADER_ECONOMY, hardcoreWorld ? "hardcore" : "main");
+			.header(HEADER_ECONOMY, economy);
+	}
+
+	public String currentEconomy()
+	{
+		return hardcoreWorld ? "hardcore" : "main";
 	}
 
 	/**
@@ -225,7 +236,9 @@ public class ApiHttpTransport
 							if (Boolean.TRUE.equals(authSuccess))
 							{
 								// Rebuild request with new token
-								Request retryRequest = withAuthHeader(request.newBuilder())
+								String economy = request.header(HEADER_ECONOMY);
+								Request retryRequest = withAuthHeader(request.newBuilder(),
+									economy != null ? economy : currentEconomy())
 									.build();
 
 								// Retry without auth retry to prevent infinite loop
@@ -291,6 +304,7 @@ public class ApiHttpTransport
 															  Function<String, T> responseHandler,
 															  Consumer<String> errorHandler)
 	{
+		String economy = currentEconomy();
 		return ensureAuthenticatedAsync().thenCompose(authenticated ->
 		{
 			if (!authenticated)
@@ -299,7 +313,7 @@ public class ApiHttpTransport
 				return CompletableFuture.completedFuture(null);
 			}
 
-			Request request = withAuthHeader(requestBuilder)
+			Request request = withAuthHeader(requestBuilder, economy)
 				.build();
 
 			return executeAsync(request, responseHandler, errorHandler, true);

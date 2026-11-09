@@ -72,7 +72,8 @@ public class BankSnapshotService
 	 */
 	public void onBankContainerChanged(String rsn)
 	{
-		if (session.isBankSnapshotInProgress())
+		// Wealth history is main-game only; a Hardcore bank must never be stored as main wealth.
+		if (session.isHardcoreWorld() || session.isBankSnapshotInProgress())
 		{
 			return;
 		}

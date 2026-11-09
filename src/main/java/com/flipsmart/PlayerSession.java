@@ -72,7 +72,8 @@ public class PlayerSession
 	// GE State
 	// =====================
 
-	private final Map<Integer, Long> recommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> mainRecommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> hardcoreRecommendedPrices = new ConcurrentHashMap<>();
 	private final Map<Integer, Long> originalMargins = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
@@ -251,20 +252,26 @@ public class PlayerSession
 	// Recommended Prices Methods
 	// =====================
 
+	/** Sell prices belong to the economy they were priced in, so a hop never carries one across. */
+	private Map<Integer, Long> recommendedPrices()
+	{
+		return hardcoreWorld ? hardcoreRecommendedPrices : mainRecommendedPrices;
+	}
+
 	public Long getRecommendedPrice(int itemId)
 	{
-		return recommendedPrices.get(itemId);
+		return recommendedPrices().get(itemId);
 	}
 
 	public void setRecommendedPrice(int itemId, long price)
 	{
-		recommendedPrices.put(itemId, price);
+		recommendedPrices().put(itemId, price);
 		log.debug("Stored recommended sell price for item {}: {}", itemId, price);
 	}
 
 	public void removeRecommendedPrice(int itemId)
 	{
-		recommendedPrices.remove(itemId);
+		recommendedPrices().remove(itemId);
 	}
 
 	/**
@@ -350,7 +357,8 @@ public class PlayerSession
 		collectedQuantities.clear();
 		collectOrigins.clear();
 		collectedAtMillis.clear();
-		recommendedPrices.clear();
+		mainRecommendedPrices.clear();
+		hardcoreRecommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 		flipFinderSourcedItems.clear();
 		flipFinderSourcedAtMs.clear();

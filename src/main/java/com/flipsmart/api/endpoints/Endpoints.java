@@ -604,8 +604,13 @@ public final class Endpoints
 				.url(url)
 				.get();
 
+			String economy = transport.currentEconomy();
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
+				if (!java.util.Objects.equals(economy, transport.currentEconomy()))
+				{
+					return null;
+				}
 				FlipAnalysis analysis = transport.parse(jsonData, FlipAnalysis.class);
 				if (analysis != null)
 				{

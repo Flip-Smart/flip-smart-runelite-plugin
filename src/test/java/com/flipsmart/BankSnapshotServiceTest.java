@@ -271,4 +271,15 @@ public class BankSnapshotServiceTest
 		assertEquals(List.of(995, RUNE_PLATEBODY), sent.stream().map(i -> i.itemId).collect(Collectors.toList()));
 		assertEquals(List.of(25_000, 3), sent.stream().map(i -> i.quantity).collect(Collectors.toList()));
 	}
+
+	@Test
+	public void aHardcoreBankIsNeverSentAsWealth()
+	{
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+		session.setHardcoreWorld(true);
+
+		service.onBankContainerChanged(RSN);
+
+		verify(apiClient, never()).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+	}
 }

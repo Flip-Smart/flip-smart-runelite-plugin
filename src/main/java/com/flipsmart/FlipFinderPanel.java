@@ -1311,9 +1311,14 @@ public class FlipFinderPanel extends PluginPanel
 
 		final boolean applyRecs = applyRecommendations;
 		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
+		String economy = apiClient.currentEconomy();
 		apiClient.getPluginSyncAsync(cashStack, getInventoryGp(), flipStyle, limit, randomSeed, timeframe, rsn,
 			filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(sync ->
 		{
+			if (!java.util.Objects.equals(economy, apiClient.currentEconomy()))
+			{
+				return;
+			}
 			if (sync == null)
 			{
 				showBundleError(applyRecs, recScrollPos, activeScrollPos, completedScrollPos, null);
@@ -1617,8 +1622,13 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Use unified /flip-finder endpoint with all parameters
 		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
+		String economy = apiClient.currentEconomy();
 		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(response ->
 		{
+			if (!java.util.Objects.equals(economy, apiClient.currentEconomy()))
+			{
+				return;
+			}
 			handleRecommendationsResponse(response, scrollPos);
 		}).exceptionally(throwable ->
 		{
