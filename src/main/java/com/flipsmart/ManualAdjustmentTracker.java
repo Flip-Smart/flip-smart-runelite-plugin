@@ -67,9 +67,12 @@ public class ManualAdjustmentTracker
 	@Setter
 	private volatile ObjIntConsumer<String> onAdjustmentPrompt;
 
-	// Callback to drop an item's prompt from FlipAssistOverlay once it no longer applies
 	@Setter
 	private volatile IntConsumer onPromptCleared;
+
+	private enum PromptKind { LIST, COLLECT }
+
+	private final Map<Integer, PromptKind> shownPrompts = new ConcurrentHashMap<>();
 
 	// Callback to set a FocusedFlip for buy adjustments
 	@Setter
@@ -369,6 +372,7 @@ public class ManualAdjustmentTracker
 	public void promptSellCollectedBuy(int itemId, String itemName)
 	{
 		notifyPrompt(String.format("Bought %s — list it to sell", itemName), itemId);
+		shownPrompts.put(itemId, PromptKind.LIST);
 		notifyInventoryHighlight(itemId);
 	}
 
@@ -376,14 +380,27 @@ public class ManualAdjustmentTracker
 	public void promptCollectSoldOffer(int itemId, String itemName)
 	{
 		notifyPrompt(String.format("Sold %s — collect from the GE", itemName), itemId);
+		shownPrompts.put(itemId, PromptKind.COLLECT);
 	}
 
-	/**
-	 * Drop the item's collect / list prompt: its sell was collected, or the bought items were
-	 * listed. Clears only a prompt for this item, so another item's prompt stays up.
-	 */
-	public void clearPromptForItem(int itemId)
+	/** The item's sold offer was collected: its "collect from the GE" prompt no longer applies. */
+	public void clearCollectPrompt(int itemId)
 	{
+		clearPrompt(itemId, PromptKind.COLLECT);
+	}
+
+	/** The item's bought stock was listed: its "list it to sell" prompt no longer applies. */
+	public void clearListPrompt(int itemId)
+	{
+		clearPrompt(itemId, PromptKind.LIST);
+	}
+
+	private void clearPrompt(int itemId, PromptKind kind)
+	{
+		if (!shownPrompts.remove(itemId, kind))
+		{
+			return;
+		}
 		IntConsumer cb = onPromptCleared;
 		if (cb != null)
 		{
@@ -470,6 +487,7 @@ public class ManualAdjustmentTracker
 
 	private void notifyPrompt(String msg, int itemId)
 	{
+		shownPrompts.remove(itemId);
 		ObjIntConsumer<String> cb = onAdjustmentPrompt;
 		if (cb != null)
 		{

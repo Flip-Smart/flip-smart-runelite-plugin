@@ -22,8 +22,8 @@ import static org.mockito.Mockito.when;
 /**
  * Manual-mode Flip Assist prompts ("Sold X — collect from the GE", "Bought X — list it to
  * sell") must disappear once the action is done, without waiting for another prompt to
- * replace them. Drives the real GE tracker and manual tracker; the overlay is a stand-in
- * with FlipAssistOverlay's set / clear-for-item semantics.
+ * replace them, and only the prompt the action resolves goes. Drives the real GE tracker,
+ * manual tracker and Flip Assist overlay prompt state.
  */
 public class ManualPromptClearingTest
 {
@@ -32,33 +32,57 @@ public class ManualPromptClearingTest
 	private static final int ITEM_B = 4151;
 	private static final String NAME_B = "Abyssal whip";
 
-	/** Mirrors FlipAssistOverlay.setAutoStatusMessage / clearAutoStatusForItem. */
-	private static final class FakeOverlay
+	/** The real overlay's prompt state, read through its own set / clear methods. */
+	private static final class Overlay
 	{
+		final FlipAssistOverlay real;
 		String message;
 		int itemId;
 
+		Overlay() throws Exception
+		{
+			java.lang.reflect.Constructor<FlipAssistOverlay> c = FlipAssistOverlay.class.getDeclaredConstructor(
+				FlipSmartPlugin.class, net.runelite.api.Client.class, net.runelite.client.callback.ClientThread.class,
+				FlipSmartConfig.class, ItemManager.class, TradeActivityLog.class, GEHistoryService.class);
+			c.setAccessible(true);
+			real = c.newInstance(null, null, null, null, null, null, null);
+		}
+
 		void set(String msg, int id)
 		{
-			message = msg;
-			itemId = id;
+			real.setAutoStatusMessage(msg, id);
+			sync();
 		}
 
 		void clearForItem(int id)
 		{
-			if (itemId == id)
+			real.clearAutoStatusForItem(id);
+			sync();
+		}
+
+		private void sync()
+		{
+			try
 			{
-				message = null;
-				itemId = 0;
+				java.lang.reflect.Field m = FlipAssistOverlay.class.getDeclaredField("autoStatusMessage");
+				java.lang.reflect.Field i = FlipAssistOverlay.class.getDeclaredField("autoStatusItemId");
+				m.setAccessible(true);
+				i.setAccessible(true);
+				message = (String) m.get(real);
+				itemId = (int) i.get(real);
+			}
+			catch (ReflectiveOperationException e)
+			{
+				throw new IllegalStateException(e);
 			}
 		}
 	}
 
-	private FakeOverlay overlay;
+	private Overlay overlay;
 	private GrandExchangeTracker tracker;
 
 	@Before
-	public void setUp()
+	public void setUp() throws Exception
 	{
 		PlayerSession session = new PlayerSession();
 		session.setRsn("TestPlayer");
@@ -73,7 +97,7 @@ public class ManualPromptClearingTest
 		tracker = new GrandExchangeTracker(session, api, activeFlips, mock(ItemManager.class), mock(TradeActivityLog.class));
 		tracker.setOfferStore(store);
 
-		overlay = new FakeOverlay();
+		overlay = new Overlay();
 		ManualAdjustmentTracker manual = new ManualAdjustmentTracker(api, mock(FlipSmartConfig.class, CALLS_REAL_METHODS), store);
 		manual.setOnAdjustmentPrompt(overlay::set);
 		manual.setOnPromptCleared(overlay::clearForItem);
@@ -150,5 +174,41 @@ public class ManualPromptClearingTest
 		event(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 100, 5, 0, 0);
 
 		assertEquals("Preparing to sell Water rune", overlay.message);
+	}
+
+	@Test
+	public void collectingACancelledSellKeepsItsRelistPrompt()
+	{
+		event(0, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 100, 5, 0, 0);
+		overlay.set("Relist Water rune at 4", ITEM_A);
+		event(0, GrandExchangeOfferState.CANCELLED_SELL, ITEM_A, NAME_A, 100, 5, 0, 0);
+		event(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 100, 5, 0, 0);
+
+		assertEquals("Relist Water rune at 4", overlay.message);
+	}
+
+	@Test
+	public void collectingOneLegKeepsTheOtherLegsPrompt()
+	{
+		completeSell(1, ITEM_A, NAME_A);
+		event(0, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 100, 4, 0, 0);
+		event(0, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 100, 4, 100, 400);
+		assertEquals("Bought Water rune — list it to sell", overlay.message);
+
+		event(1, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 100, 5, 0, 0);
+
+		assertEquals("Bought Water rune — list it to sell", overlay.message);
+	}
+
+	@Test
+	public void listPromptClearsWhenTheSellFillsOnPlacement()
+	{
+		event(0, GrandExchangeOfferState.BUYING, ITEM_A, NAME_A, 100, 4, 0, 0);
+		event(0, GrandExchangeOfferState.BOUGHT, ITEM_A, NAME_A, 100, 4, 100, 400);
+		event(0, GrandExchangeOfferState.EMPTY, ITEM_A, NAME_A, 100, 4, 0, 0);
+
+		event(0, GrandExchangeOfferState.SELLING, ITEM_A, NAME_A, 100, 5, 40, 200);
+
+		assertNull(overlay.message);
 	}
 }
