@@ -2,6 +2,7 @@ package com.flipsmart;
 import com.flipsmart.api.dto.Dtos.BankItemId;
 import com.flipsmart.api.dto.Dtos.BankItem;
 import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.offer.OfferSignal;
 
 import lombok.extern.slf4j.Slf4j;
@@ -72,8 +73,7 @@ public class BankSnapshotService
 	 */
 	public void onBankContainerChanged(String rsn)
 	{
-		// Wealth history is main-game only; a Hardcore bank must never be stored as main wealth.
-		if (session.isHardcoreWorld() || session.isBankSnapshotInProgress())
+		if (session.isBankSnapshotInProgress())
 		{
 			return;
 		}
@@ -291,6 +291,16 @@ public class BankSnapshotService
 	 * Get the GP value locked in a single GE offer (budget + items).
 	 * Returns 0 for null or empty offers.
 	 */
+	private long hardcoreItemPrice(int itemId)
+	{
+		WikiPrice price = apiClient.getLastKnownWikiPrice(itemId);
+		if (price == null)
+		{
+			return 0;
+		}
+		return Math.max(0, price.instaSell > 0 ? price.instaSell : price.instaBuy);
+	}
+
 	private long getGEOfferValue(GrandExchangeOffer offer)
 	{
 		if (offer == null || offer.getState() == GrandExchangeOfferState.EMPTY)
@@ -303,7 +313,10 @@ public class BankSnapshotService
 		int filledQty = offer.getQuantitySold();
 		int remainingQty = totalQty - filledQty;
 
-		long itemPrice = itemManager.getItemPrice(offer.getItemId());
+		// RuneLite's guide price is the main game's; a Hardcore offer is valued at Hardcore prices.
+		long itemPrice = session.isHardcoreWorld()
+			? hardcoreItemPrice(offer.getItemId())
+			: itemManager.getItemPrice(offer.getItemId());
 		if (itemPrice <= 0)
 		{
 			itemPrice = price;

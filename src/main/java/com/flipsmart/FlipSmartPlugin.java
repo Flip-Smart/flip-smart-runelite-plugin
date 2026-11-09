@@ -1287,8 +1287,7 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private void pushFinalCapitalSnapshot()
 	{
-		// Capital is tracked for the main game only; Hardcore coins must never overwrite it.
-		if (!session.isLoggedIntoRunescape() || session.isHardcoreWorld())
+		if (!session.isLoggedIntoRunescape())
 		{
 			return;
 		}
@@ -1296,10 +1295,10 @@ public class FlipSmartPlugin extends Plugin
 		getCurrentRsnSafe().ifPresent(rsn -> apiClient.pushRsnCapitalAsync(rsn, session.getCurrentCashStack()));
 	}
 
-	/** Inventory coins to report as capital: main-game only, so never on a Hardcore World. */
+	/** Inventory coins to report as capital; the request's world header files them under main or Hardcore. */
 	Long reportedInventoryGp()
 	{
-		return session.isLoggedIntoRunescape() && !session.isHardcoreWorld() ? session.getCurrentCashStack() : null;
+		return session.isLoggedIntoRunescape() ? session.getCurrentCashStack() : null;
 	}
 
 	public void handleLoggedInState()

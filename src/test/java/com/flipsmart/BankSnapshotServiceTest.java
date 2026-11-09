@@ -273,13 +273,34 @@ public class BankSnapshotServiceTest
 	}
 
 	@Test
-	public void aHardcoreBankIsNeverSentAsWealth()
+	public void aHardcoreBankIsSentSoHardcoreKeepsItsOwnWealthHistory()
 	{
+		// The request's world header files it under Hardcore; the API keeps it apart from main.
 		stubCreate(CompletableFuture.completedFuture(successResult()));
 		session.setHardcoreWorld(true);
 
 		service.onBankContainerChanged(RSN);
 
-		verify(apiClient, never()).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+		verify(apiClient, times(1)).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+	}
+
+	@Test
+	public void aHardcoreGeOfferIsValuedAtTheHardcorePriceNotRuneLitesMainPrice()
+	{
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+		session.setHardcoreWorld(true);
+		net.runelite.api.GrandExchangeOffer offer = mock(net.runelite.api.GrandExchangeOffer.class);
+		when(offer.getState()).thenReturn(net.runelite.api.GrandExchangeOfferState.BUYING);
+		when(offer.getItemId()).thenReturn(4151);
+		when(offer.getPrice()).thenReturn(100L);
+		when(offer.getTotalQuantity()).thenReturn(10);
+		when(offer.getQuantitySold()).thenReturn(10);
+		when(client.getGrandExchangeOffers()).thenReturn(new net.runelite.api.GrandExchangeOffer[]{offer});
+		when(itemManager.getItemPrice(4151)).thenReturn(1_000L);
+		when(apiClient.getLastKnownWikiPrice(4151)).thenReturn(new com.flipsmart.api.dto.Dtos.WikiPrice(60, 50));
+
+		service.onBankContainerChanged(RSN);
+
+		verify(apiClient).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), org.mockito.ArgumentMatchers.eq(500L));
 	}
 }

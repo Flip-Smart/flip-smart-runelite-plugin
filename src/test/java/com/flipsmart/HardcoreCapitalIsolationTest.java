@@ -10,15 +10,14 @@ import org.junit.Before;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Coins on a Hardcore character are never reported as the player's main-game capital. */
+/**
+ * Coins are reported from both worlds; the request's world header (pinned when the request is
+ * made) files a Hardcore reading under Hardcore, so it never overwrites main capital.
+ */
 public class HardcoreCapitalIsolationTest
 {
 	private FlipSmartPlugin plugin;
@@ -63,18 +62,18 @@ public class HardcoreCapitalIsolationTest
 	}
 
 	@Test
-	public void hardcoreCoinsAreNotReported() throws Exception
+	public void hardcoreCoinsAreReportedForHardcoresOwnCapital() throws Exception
 	{
 		session.setHardcoreWorld(true);
 		pushFinalCapital();
-		verify(apiClient, never()).pushRsnCapitalAsync(anyString(), anyLong());
+		verify(apiClient).pushRsnCapitalAsync("TestPlayer", 5_000_000L);
 	}
 
 	@Test
-	public void theSyncPollReportsNoCoinsFromHardcore()
+	public void theSyncPollReportsCoinsInBothWorlds()
 	{
 		assertEquals(Long.valueOf(5_000_000L), plugin.reportedInventoryGp());
 		session.setHardcoreWorld(true);
-		assertNull(plugin.reportedInventoryGp());
+		assertEquals(Long.valueOf(5_000_000L), plugin.reportedInventoryGp());
 	}
 }
