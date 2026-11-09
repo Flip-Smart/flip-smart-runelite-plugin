@@ -363,6 +363,10 @@ public class FlipSmartPlugin extends Plugin
 			session.setHardcoreWorld(hardcore);
 			apiClient.setHardcoreWorld(hardcore);
 			apiClient.clearCache();
+			if (flipFinderPanel != null)
+			{
+				flipFinderPanel.onEconomyChanged();
+			}
 		}
 		GeTax.setHardcoreWorld(hardcore);
 	}
@@ -737,7 +741,8 @@ public class FlipSmartPlugin extends Plugin
 
 		// Guide price only when we have never held a real pair for this item.
 		// getItemPrice requires the client thread — return UNKNOWN if called off-thread.
-		if (!client.isClientThread())
+		// The guide price is the main game's, so a Hardcore World never falls back to it.
+		if (session.isHardcoreWorld() || !client.isClientThread())
 		{
 			return OfferCompetitiveness.UNKNOWN;
 		}
@@ -756,6 +761,10 @@ public class FlipSmartPlugin extends Plugin
 	 */
 	private OfferCompetitiveness compareOfferPrice(long offerPrice, long targetPrice, boolean isBuy)
 	{
+		if (targetPrice <= 0)
+		{
+			return OfferCompetitiveness.UNKNOWN;
+		}
 		boolean isCompetitive = isBuy ? offerPrice >= targetPrice : offerPrice <= targetPrice;
 		return isCompetitive ? OfferCompetitiveness.COMPETITIVE : OfferCompetitiveness.UNCOMPETITIVE;
 	}
@@ -1286,6 +1295,12 @@ public class FlipSmartPlugin extends Plugin
 		getCurrentRsnSafe().ifPresent(rsn -> apiClient.pushRsnCapitalAsync(rsn, session.getCurrentCashStack()));
 	}
 
+	/** Inventory coins to report as capital; the request's world header files them under main or Hardcore. */
+	Long reportedInventoryGp()
+	{
+		return session.isLoggedIntoRunescape() ? session.getCurrentCashStack() : null;
+	}
+
 	public void handleLoggedInState()
 	{
 		log.debug("Player logged in");
@@ -1787,7 +1802,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				// Never the override: this is the reported figure, not the one
 				// recommendations are built from. Zero is reported as zero.
-				return session.isLoggedIntoRunescape() ? session.getCurrentCashStack() : null;
+				return reportedInventoryGp();
 			}
 
 			@Override
@@ -2203,10 +2218,11 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("active-offer advisor poll: {} offers (batched)", requests.size());
 		}
 		// On batch failure, skip this cycle — the next scheduled or event-driven poll retries.
+		long epoch = session.getEconomyEpoch();
 		apiClient.postOfferActionsBatchAsync(requests)
 			.thenAccept(batch ->
 			{
-				if (batch == null || batch.getResults() == null)
+				if (batch == null || batch.getResults() == null || session.getEconomyEpoch() != epoch)
 				{
 					return;
 				}
@@ -2365,10 +2381,11 @@ public class FlipSmartPlugin extends Plugin
 			.rsn(sess.getRsn())
 			.build();
 
+		long epoch = sess.getEconomyEpoch();
 		apiClient.postSellPriceCheckAsync(req)
 			.thenAccept(resp ->
 			{
-				if (resp == null)
+				if (resp == null || sess.getEconomyEpoch() != epoch)
 				{
 					return;
 				}
@@ -2377,7 +2394,13 @@ public class FlipSmartPlugin extends Plugin
 				{
 					return;
 				}
-				clientThread.invokeLater(() -> applyRecalced12hSellPrice(itemId, fresh));
+				clientThread.invokeLater(() ->
+				{
+					if (sess.getEconomyEpoch() == epoch)
+					{
+						applyRecalced12hSellPrice(itemId, fresh);
+					}
+				});
 			})
 			.exceptionally(ex ->
 			{

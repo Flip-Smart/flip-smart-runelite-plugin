@@ -267,6 +267,12 @@ public class FlipSmartApiClient
 		transport.setHardcoreWorld(hardcoreWorld);
 	}
 
+	/** The economy requests are made in right now ("main" or "hardcore"). */
+	public String currentEconomy()
+	{
+		return transport.currentEconomy();
+	}
+
 	public void invalidateCache(int itemId)
 	{
 		flips.invalidateCache(itemId);

@@ -2,6 +2,7 @@ package com.flipsmart;
 import com.flipsmart.api.dto.Dtos.BankItemId;
 import com.flipsmart.api.dto.Dtos.BankItem;
 import com.flipsmart.api.dto.Dtos.BankSnapshotResponse;
+import com.flipsmart.api.dto.Dtos.WikiPrice;
 import com.flipsmart.domain.offer.OfferSignal;
 
 import lombok.extern.slf4j.Slf4j;
@@ -40,7 +41,8 @@ public class BankSnapshotService
 	 * the server accepted a snapshot or answered rate-limited — its window is
 	 * 24h, so re-posting the full bank every minute would be wasted traffic.
 	 */
-	private volatile long currentCooldownMs = BANK_SNAPSHOT_COOLDOWN_MS;
+	private volatile long mainCooldownMs = BANK_SNAPSHOT_COOLDOWN_MS;
+	private volatile long hardcoreCooldownMs = BANK_SNAPSHOT_COOLDOWN_MS;
 
 	private final PlayerSession session;
 	private final FlipSmartApiClient apiClient;
@@ -78,7 +80,7 @@ public class BankSnapshotService
 		}
 
 		long now = System.currentTimeMillis();
-		if (now - session.getLastBankSnapshotAttempt() < currentCooldownMs)
+		if (now - session.getLastBankSnapshotAttempt() < cooldownMs())
 		{
 			return;
 		}
@@ -95,16 +97,17 @@ public class BankSnapshotService
 
 		session.setLastBankSnapshotAttempt(now);
 		session.setBankSnapshotInProgress(true);
-		currentCooldownMs = BANK_SNAPSHOT_COOLDOWN_MS;
+		final boolean hardcore = session.isHardcoreWorld();
+		setCooldownMs(hardcore, BANK_SNAPSHOT_COOLDOWN_MS);
 
-		clientThread.invokeLater(() -> captureBankSnapshot(rsn));
+		clientThread.invokeLater(() -> captureBankSnapshot(rsn, hardcore));
 	}
 
 	/**
 	 * Capture the current bank contents and send to API.
 	 * Must be called on client thread.
 	 */
-	private void captureBankSnapshot(String rsn)
+	private void captureBankSnapshot(String rsn, boolean hardcore)
 	{
 		try
 		{
@@ -134,12 +137,12 @@ public class BankSnapshotService
 					postBankSnapshotMessage(
 						String.format("Bank snapshot saved: %s GP total wealth", wealthStr),
 						false);
-					currentCooldownMs = BANK_SNAPSHOT_BACKOFF_MS;
+					setCooldownMs(hardcore, BANK_SNAPSHOT_BACKOFF_MS);
 				}
 				else if (result != null && result.isRateLimited())
 				{
 					log.debug("Bank snapshot rate limited by server - backing off");
-					currentCooldownMs = BANK_SNAPSHOT_BACKOFF_MS;
+					setCooldownMs(hardcore, BANK_SNAPSHOT_BACKOFF_MS);
 				}
 				else
 				{
@@ -286,6 +289,34 @@ public class BankSnapshotService
 		return totalValue;
 	}
 
+	private long cooldownMs()
+	{
+		return session.isHardcoreWorld() ? hardcoreCooldownMs : mainCooldownMs;
+	}
+
+	private void setCooldownMs(boolean hardcore, long cooldown)
+	{
+		if (hardcore)
+		{
+			hardcoreCooldownMs = cooldown;
+		}
+		else
+		{
+			mainCooldownMs = cooldown;
+		}
+	}
+
+	/** A Hardcore offer's item value, from Hardcore prices (RuneLite's guide price is the main game's). */
+	private long hardcoreItemPrice(int itemId)
+	{
+		WikiPrice price = apiClient.getLastKnownWikiPrice(itemId);
+		if (price == null)
+		{
+			return 0;
+		}
+		return Math.max(0, price.instaSell > 0 ? price.instaSell : price.instaBuy);
+	}
+
 	/**
 	 * Get the GP value locked in a single GE offer (budget + items).
 	 * Returns 0 for null or empty offers.
@@ -302,7 +333,10 @@ public class BankSnapshotService
 		int filledQty = offer.getQuantitySold();
 		int remainingQty = totalQty - filledQty;
 
-		long itemPrice = itemManager.getItemPrice(offer.getItemId());
+		// RuneLite's guide price is the main game's; a Hardcore offer is valued at Hardcore prices.
+		long itemPrice = session.isHardcoreWorld()
+			? hardcoreItemPrice(offer.getItemId())
+			: itemManager.getItemPrice(offer.getItemId());
 		if (itemPrice <= 0)
 		{
 			itemPrice = price;

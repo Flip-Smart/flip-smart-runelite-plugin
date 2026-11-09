@@ -155,4 +155,28 @@ public class FlipsEndpointsAnalysisCacheTest
 
 		assertEquals(2, requests.size());
 	}
+
+	@Test
+	public void aResponseFromBeforeAHopIsDroppedNotCached()
+	{
+		when(transport.currentEconomy()).thenReturn("main");
+		CompletableFuture<FlipAnalysis> first = endpoints.getItemAnalysisAsync(ITEM_ID);
+		when(transport.currentEconomy()).thenReturn("hardcore");
+		requests.get(0).completeWithBody(JSON_BODY);
+
+		assertNull("main analysis is not shown on Hardcore", first.join());
+		endpoints.getItemAnalysisAsync(ITEM_ID);
+		assertEquals("nothing was cached, so Hardcore fetches its own", 2, requests.size());
+	}
+
+	@Test
+	public void aHopDoesNotLeaveTheNewWorldWaitingOnTheOldWorldsRequest()
+	{
+		endpoints.getItemAnalysisAsync(ITEM_ID);
+		endpoints.clearCache();
+
+		endpoints.getItemAnalysisAsync(ITEM_ID);
+
+		assertEquals("the new world sends its own request", 2, requests.size());
+	}
 }

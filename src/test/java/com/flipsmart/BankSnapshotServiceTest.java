@@ -271,4 +271,48 @@ public class BankSnapshotServiceTest
 		assertEquals(List.of(995, RUNE_PLATEBODY), sent.stream().map(i -> i.itemId).collect(Collectors.toList()));
 		assertEquals(List.of(25_000, 3), sent.stream().map(i -> i.quantity).collect(Collectors.toList()));
 	}
+
+	@Test
+	public void aHardcoreBankIsSentSoHardcoreKeepsItsOwnWealthHistory()
+	{
+		// The request's world header files it under Hardcore; the API keeps it apart from main.
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+		session.setHardcoreWorld(true);
+
+		service.onBankContainerChanged(RSN);
+
+		verify(apiClient, times(1)).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+	}
+
+	@Test
+	public void aHardcoreGeOfferIsValuedAtTheHardcorePriceNotRuneLitesMainPrice()
+	{
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+		session.setHardcoreWorld(true);
+		net.runelite.api.GrandExchangeOffer offer = mock(net.runelite.api.GrandExchangeOffer.class);
+		when(offer.getState()).thenReturn(net.runelite.api.GrandExchangeOfferState.BUYING);
+		when(offer.getItemId()).thenReturn(4151);
+		when(offer.getPrice()).thenReturn(100L);
+		when(offer.getTotalQuantity()).thenReturn(10);
+		when(offer.getQuantitySold()).thenReturn(10);
+		when(client.getGrandExchangeOffers()).thenReturn(new net.runelite.api.GrandExchangeOffer[]{offer});
+		when(itemManager.getItemPrice(4151)).thenReturn(1_000L);
+		when(apiClient.getLastKnownWikiPrice(4151)).thenReturn(new com.flipsmart.api.dto.Dtos.WikiPrice(60, 50));
+
+		service.onBankContainerChanged(RSN);
+
+		verify(apiClient).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), org.mockito.ArgumentMatchers.eq(500L));
+	}
+
+	@Test
+	public void eachWorldHasItsOwnSnapshotCooldown()
+	{
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+		service.onBankContainerChanged(RSN);
+
+		session.setHardcoreWorld(true);
+		service.onBankContainerChanged(RSN);
+
+		verify(apiClient, times(2)).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+	}
 }

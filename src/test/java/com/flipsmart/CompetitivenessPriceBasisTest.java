@@ -47,7 +47,11 @@ public class CompetitivenessPriceBasisTest
         inject("apiClient", apiClient);
         inject("itemManager", itemManager);
         inject("client", client);
+        session = new PlayerSession();
+        inject("session", session);
     }
+
+    private PlayerSession session;
 
     private void inject(String field, Object value) throws Exception
     {
@@ -73,5 +77,27 @@ public class CompetitivenessPriceBasisTest
 
         assertEquals(FlipSmartPlugin.OfferCompetitiveness.UNCOMPETITIVE,
             plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true));
+    }
+
+    @Test
+    public void aHardcoreWorldNeverFallsBackToTheMainGuidePrice()
+    {
+        session.setHardcoreWorld(true);
+        when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(null);
+
+        assertEquals(FlipSmartPlugin.OfferCompetitiveness.UNKNOWN,
+            plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true));
+        verify(itemManager, never()).getItemPrice(anyInt());
+    }
+
+    @Test
+    public void aOneSidedPairGivesNoVerdictInsteadOfComparingAgainstZero()
+    {
+        when(apiClient.getLastKnownWikiPrice(WHIP)).thenReturn(new WikiPrice(INSTA_BUY, 0));
+
+        assertEquals("buy measured against a missing insta-sell", FlipSmartPlugin.OfferCompetitiveness.UNKNOWN,
+            plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, true));
+        assertEquals("sell still has its side", FlipSmartPlugin.OfferCompetitiveness.COMPETITIVE,
+            plugin.calculateCompetitiveness(WHIP, OFFER_PRICE, false));
     }
 }

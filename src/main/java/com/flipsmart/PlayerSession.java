@@ -35,8 +35,20 @@ public class PlayerSession
 	private volatile int lastLoginTick;
 
 	@Getter
-	@Setter
 	private volatile boolean hardcoreWorld;
+
+	/** Bumped on every main/Hardcore switch; a response requested under an older epoch is stale. */
+	@Getter
+	private volatile long economyEpoch;
+
+	public void setHardcoreWorld(boolean hardcore)
+	{
+		if (hardcore != hardcoreWorld)
+		{
+			hardcoreWorld = hardcore;
+			economyEpoch++;
+		}
+	}
 
 	/** Hardcore World state lives under suffixed keys; main keeps its original keys unchanged. */
 	public static String economyKey(String key, boolean hardcore)
@@ -72,8 +84,10 @@ public class PlayerSession
 	// GE State
 	// =====================
 
-	private final Map<Integer, Long> recommendedPrices = new ConcurrentHashMap<>();
-	private final Map<Integer, Long> originalMargins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> mainRecommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> hardcoreRecommendedPrices = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> mainOriginalMargins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> hardcoreOriginalMargins = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
 	// =====================
@@ -90,9 +104,26 @@ public class PlayerSession
 	@Setter
 	private volatile boolean bankSnapshotInProgress;
 
-	@Getter
-	@Setter
-	private volatile long lastBankSnapshotAttempt;
+	// Each world keeps its own bank-snapshot history, so each has its own snapshot cooldown.
+	private volatile long mainLastBankSnapshotAttempt;
+	private volatile long hardcoreLastBankSnapshotAttempt;
+
+	public long getLastBankSnapshotAttempt()
+	{
+		return hardcoreWorld ? hardcoreLastBankSnapshotAttempt : mainLastBankSnapshotAttempt;
+	}
+
+	public void setLastBankSnapshotAttempt(long millis)
+	{
+		if (hardcoreWorld)
+		{
+			hardcoreLastBankSnapshotAttempt = millis;
+		}
+		else
+		{
+			mainLastBankSnapshotAttempt = millis;
+		}
+	}
 
 	@Getter
 	@Setter
@@ -251,20 +282,31 @@ public class PlayerSession
 	// Recommended Prices Methods
 	// =====================
 
+	/** Sell prices belong to the economy they were priced in, so a hop never carries one across. */
+	private Map<Integer, Long> recommendedPrices()
+	{
+		return hardcoreWorld ? hardcoreRecommendedPrices : mainRecommendedPrices;
+	}
+
+	private Map<Integer, Long> originalMargins()
+	{
+		return hardcoreWorld ? hardcoreOriginalMargins : mainOriginalMargins;
+	}
+
 	public Long getRecommendedPrice(int itemId)
 	{
-		return recommendedPrices.get(itemId);
+		return recommendedPrices().get(itemId);
 	}
 
 	public void setRecommendedPrice(int itemId, long price)
 	{
-		recommendedPrices.put(itemId, price);
+		recommendedPrices().put(itemId, price);
 		log.debug("Stored recommended sell price for item {}: {}", itemId, price);
 	}
 
 	public void removeRecommendedPrice(int itemId)
 	{
-		recommendedPrices.remove(itemId);
+		recommendedPrices().remove(itemId);
 	}
 
 	/**
@@ -275,12 +317,12 @@ public class PlayerSession
 	 */
 	public Long getOriginalMargin(int itemId)
 	{
-		return originalMargins.get(itemId);
+		return originalMargins().get(itemId);
 	}
 
 	public void setOriginalMargin(int itemId, long margin)
 	{
-		originalMargins.put(itemId, margin);
+		originalMargins().put(itemId, margin);
 	}
 
 	// =====================
@@ -344,13 +386,15 @@ public class PlayerSession
 		this.bankGp = 0;
 		this.offlineSyncCompleted = false;
 		this.bankSnapshotInProgress = false;
-		this.lastBankSnapshotAttempt = 0;
+		this.mainLastBankSnapshotAttempt = 0;
+		this.hardcoreLastBankSnapshotAttempt = 0;
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
 		collectedQuantities.clear();
 		collectOrigins.clear();
 		collectedAtMillis.clear();
-		recommendedPrices.clear();
+		mainRecommendedPrices.clear();
+		hardcoreRecommendedPrices.clear();
 		staleNotifiedAutoRecommendItemIds.clear();
 		flipFinderSourcedItems.clear();
 		flipFinderSourcedAtMs.clear();
