@@ -363,6 +363,10 @@ public class FlipSmartPlugin extends Plugin
 			session.setHardcoreWorld(hardcore);
 			apiClient.setHardcoreWorld(hardcore);
 			apiClient.clearCache();
+			if (flipFinderPanel != null)
+			{
+				flipFinderPanel.onEconomyChanged();
+			}
 		}
 		GeTax.setHardcoreWorld(hardcore);
 	}
@@ -1281,6 +1285,12 @@ public class FlipSmartPlugin extends Plugin
 	 * startup, where the cash stack is still zero and reporting it would overwrite a
 	 * real stored value. Async, so logout is never delayed.
 	 */
+	/** Inventory coins to report as capital: main-game only, so never on a Hardcore World. */
+	Long reportedInventoryGp()
+	{
+		return session.isLoggedIntoRunescape() && !session.isHardcoreWorld() ? session.getCurrentCashStack() : null;
+	}
+
 	private void pushFinalCapitalSnapshot()
 	{
 		// Capital is tracked for the main game only; Hardcore coins must never overwrite it.
@@ -1793,7 +1803,7 @@ public class FlipSmartPlugin extends Plugin
 			{
 				// Never the override: this is the reported figure, not the one
 				// recommendations are built from. Zero is reported as zero.
-				return session.isLoggedIntoRunescape() && !session.isHardcoreWorld() ? session.getCurrentCashStack() : null;
+				return reportedInventoryGp();
 			}
 
 			@Override
@@ -2209,10 +2219,11 @@ public class FlipSmartPlugin extends Plugin
 			log.debug("active-offer advisor poll: {} offers (batched)", requests.size());
 		}
 		// On batch failure, skip this cycle — the next scheduled or event-driven poll retries.
+		long epoch = session.getEconomyEpoch();
 		apiClient.postOfferActionsBatchAsync(requests)
 			.thenAccept(batch ->
 			{
-				if (batch == null || batch.getResults() == null)
+				if (batch == null || batch.getResults() == null || session.getEconomyEpoch() != epoch)
 				{
 					return;
 				}
@@ -2371,10 +2382,11 @@ public class FlipSmartPlugin extends Plugin
 			.rsn(sess.getRsn())
 			.build();
 
+		long epoch = sess.getEconomyEpoch();
 		apiClient.postSellPriceCheckAsync(req)
 			.thenAccept(resp ->
 			{
-				if (resp == null)
+				if (resp == null || sess.getEconomyEpoch() != epoch)
 				{
 					return;
 				}
@@ -2383,7 +2395,13 @@ public class FlipSmartPlugin extends Plugin
 				{
 					return;
 				}
-				clientThread.invokeLater(() -> applyRecalced12hSellPrice(itemId, fresh));
+				clientThread.invokeLater(() ->
+				{
+					if (sess.getEconomyEpoch() == epoch)
+					{
+						applyRecalced12hSellPrice(itemId, fresh);
+					}
+				});
 			})
 			.exceptionally(ex ->
 			{

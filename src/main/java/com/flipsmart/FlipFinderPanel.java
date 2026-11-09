@@ -16,6 +16,7 @@ import com.flipsmart.exit.ExitTradesDialog;
 import com.flipsmart.recommend.SmartSellPricer;
 import com.flipsmart.session.OpenPositions;
 import com.flipsmart.session.SessionClock;
+import com.flipsmart.session.EconomySessionClocks;
 import com.flipsmart.session.SessionStats;
 import com.flipsmart.session.SessionStatsView;
 import com.flipsmart.trading.ActiveFlipCardMetrics;
@@ -192,7 +193,7 @@ public class FlipFinderPanel extends PluginPanel
 	private final Map<Integer, ActiveFlip> enrichmentByItemId = new java.util.HashMap<>();
 	private final List<CompletedFlip> currentCompletedFlips = new ArrayList<>();
 	private final JTabbedPane tabbedPane = new JTabbedPane();
-	private final SessionClock sessionClock = new SessionClock(System.currentTimeMillis());
+	private final EconomySessionClocks sessionClocks = new EconomySessionClocks(System.currentTimeMillis());
 	private final SessionStatsView sessionStatsView = new SessionStatsView();
 	private Timer sessionStatsTimer;
 	private SessionStats.ProfitBase sessionProfitBase = SessionStats.ProfitBase.EMPTY;
@@ -1311,12 +1312,13 @@ public class FlipFinderPanel extends PluginPanel
 
 		final boolean applyRecs = applyRecommendations;
 		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
-		String economy = apiClient.currentEconomy();
+		long epoch = economyEpoch();
 		apiClient.getPluginSyncAsync(cashStack, getInventoryGp(), flipStyle, limit, randomSeed, timeframe, rsn,
 			filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(sync ->
 		{
-			if (!java.util.Objects.equals(economy, apiClient.currentEconomy()))
+			if (economyChangedSince(epoch))
 			{
+				SwingUtilities.invokeLater(this::resetAfterDroppedRefresh);
 				return;
 			}
 			if (sync == null)
@@ -1329,11 +1331,11 @@ public class FlipFinderPanel extends PluginPanel
 			// sub-payload, leaving that section's prior state untouched.
 			if (applyRecs)
 			{
-				handleRecommendationsResponse(sync.getFlipFinder(), recScrollPos);
+				handleRecommendationsResponse(sync.getFlipFinder(), recScrollPos, epoch);
 			}
 			if (sync.getActiveFlips() != null)
 			{
-				applyActiveFlipsResponse(sync.getActiveFlips(), activeScrollPos);
+				applyActiveFlipsResponse(sync.getActiveFlips(), activeScrollPos, epoch);
 			}
 			applyStatisticsResponse(sync.getStatistics());
 			if (sync.getCompletedFlips() != null)
@@ -1415,7 +1417,7 @@ public class FlipFinderPanel extends PluginPanel
 	private void renderSessionStats()
 	{
 		sessionStatsView.render(SessionStats.snapshot(
-			sessionProfitBase, sessionClock.activeMs(System.currentTimeMillis())));
+			sessionProfitBase, sessionClock().activeMs(System.currentTimeMillis())));
 	}
 
 	/**
@@ -1448,9 +1450,9 @@ public class FlipFinderPanel extends PluginPanel
 		}
 		sessionProfitBase = SessionStats.computeBase(currentCompletedFlips,
 			OpenPositions.derive(projectedActiveFlips(), plugin::getLiveSellFilledQuantity),
-			sessionClock.startMs());
+			sessionClock().startMs());
 		log.debug("Session P&L recompute: {} completed flips, sessionStart={}, realised={}, unrealised={}",
-			currentCompletedFlips.size(), sessionClock.startMs(),
+			currentCompletedFlips.size(), sessionClock().startMs(),
 			sessionProfitBase.realisedProfit, sessionProfitBase.unrealisedProfit);
 		renderSessionStats();
 	}
@@ -1461,7 +1463,7 @@ public class FlipFinderPanel extends PluginPanel
 		{
 			sessionStatsTimer = new Timer(1000, e ->
 			{
-				sessionClock.update(plugin.isLoggedIntoRunescape(), System.currentTimeMillis());
+				sessionClocks.update(isHardcoreWorld(), plugin.isLoggedIntoRunescape(), System.currentTimeMillis());
 				renderSessionStats();
 			});
 		}
@@ -1622,14 +1624,10 @@ public class FlipFinderPanel extends PluginPanel
 
 		// Use unified /flip-finder endpoint with all parameters
 		boolean favoritesOnly = resolveFavoritesOnly(flipOnlyFavorites, plugin.isPremium());
-		String economy = apiClient.currentEconomy();
+		long epoch = economyEpoch();
 		apiClient.getFlipRecommendationsAsync(cashStack, flipStyle, limit, randomSeed, timeframe, rsn, filledSlots, plugin.isMembersWorld(), favoritesOnly).thenAccept(response ->
 		{
-			if (!java.util.Objects.equals(economy, apiClient.currentEconomy()))
-			{
-				return;
-			}
-			handleRecommendationsResponse(response, scrollPos);
+			handleRecommendationsResponse(response, scrollPos, epoch);
 		}).exceptionally(throwable ->
 		{
 			SwingUtilities.invokeLater(() ->
@@ -1646,10 +1644,62 @@ public class FlipFinderPanel extends PluginPanel
 	/**
 	 * Handle the recommendations response from either endpoint
 	 */
+	private long economyEpoch()
+	{
+		PlayerSession session = plugin.getSession();
+		return session != null ? session.getEconomyEpoch() : 0L;
+	}
+
+	/** True when the player has switched between main and Hardcore since {@code epoch}. */
+	private boolean economyChangedSince(long epoch)
+	{
+		return economyEpoch() != epoch;
+	}
+
+	/** A refresh whose answer belongs to the world the player left: don't show it, don't hang. */
+	private void resetAfterDroppedRefresh()
+	{
+		refreshButton.setEnabled(true);
+		statusLabel.setText("");
+	}
+
+	/** Prices remembered for the previous world must not be shown in the new one. */
+	public void onEconomyChanged()
+	{
+		displayedSellPrices.clear();
+		SwingUtilities.invokeLater(() ->
+		{
+			sessionClocks.update(isHardcoreWorld(), plugin.isLoggedIntoRunescape(), System.currentTimeMillis());
+			sessionProfitBase = SessionStats.ProfitBase.EMPTY;
+			renderSessionStats();
+		});
+	}
+
+	private boolean isHardcoreWorld()
+	{
+		PlayerSession session = plugin.getSession();
+		return session != null && session.isHardcoreWorld();
+	}
+
+	private SessionClock sessionClock()
+	{
+		return sessionClocks.current(isHardcoreWorld(), System.currentTimeMillis());
+	}
+
 	private void handleRecommendationsResponse(FlipFinderResponse response, int scrollPos)
+	{
+		handleRecommendationsResponse(response, scrollPos, economyEpoch());
+	}
+
+	private void handleRecommendationsResponse(FlipFinderResponse response, int scrollPos, long epoch)
 	{
 		SwingUtilities.invokeLater(() ->
 		{
+			if (economyChangedSince(epoch))
+			{
+				resetAfterDroppedRefresh();
+				return;
+			}
 			refreshButton.setEnabled(true);
 
 			if (response == null)
@@ -1758,8 +1808,17 @@ public class FlipFinderPanel extends PluginPanel
 	 */
 	private void applyActiveFlipsResponse(ActiveFlipsResponse response, int scrollPos)
 	{
+		applyActiveFlipsResponse(response, scrollPos, economyEpoch());
+	}
+
+	private void applyActiveFlipsResponse(ActiveFlipsResponse response, int scrollPos, long epoch)
+	{
 		SwingUtilities.invokeLater(() ->
 		{
+			if (economyChangedSince(epoch))
+			{
+				return;
+			}
 			// Clear cached sell prices - they'll be recalculated when panels are created
 			displayedSellPrices.clear();
 

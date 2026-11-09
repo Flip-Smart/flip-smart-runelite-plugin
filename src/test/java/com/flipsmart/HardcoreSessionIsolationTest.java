@@ -38,4 +38,30 @@ public class HardcoreSessionIsolationTest
 		session.setHardcoreWorld(false);
 		assertEquals(Long.valueOf(2_000_000L), session.getRecommendedPrice(ITEM));
 	}
+
+	@Test
+	public void theEconomyEpochMovesOnlyOnARealSwitch()
+	{
+		PlayerSession session = new PlayerSession();
+		long start = session.getEconomyEpoch();
+		session.setHardcoreWorld(false);
+		assertEquals(start, session.getEconomyEpoch());
+		session.setHardcoreWorld(true);
+		assertEquals(start + 1, session.getEconomyEpoch());
+		session.setHardcoreWorld(true);
+		session.setHardcoreWorld(false);
+		assertEquals(start + 2, session.getEconomyEpoch());
+	}
+
+	@Test
+	public void originalMarginsAreKeptPerWorld()
+	{
+		PlayerSession session = new PlayerSession();
+		session.setOriginalMargin(ITEM, 50_000L);
+		session.setHardcoreWorld(true);
+		assertNull(session.getOriginalMargin(ITEM));
+		session.setOriginalMargin(ITEM, 900L);
+		session.setHardcoreWorld(false);
+		assertEquals(Long.valueOf(50_000L), session.getOriginalMargin(ITEM));
+	}
 }

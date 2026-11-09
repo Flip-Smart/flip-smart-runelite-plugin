@@ -820,6 +820,7 @@ public final class Endpoints
 		public void clearCache()
 		{
 			analysisCache.clear();
+			inFlightAnalysis.clear();
 		}
 
 		/**

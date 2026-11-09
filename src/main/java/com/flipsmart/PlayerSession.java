@@ -35,8 +35,20 @@ public class PlayerSession
 	private volatile int lastLoginTick;
 
 	@Getter
-	@Setter
 	private volatile boolean hardcoreWorld;
+
+	/** Bumped on every main/Hardcore switch; a response requested under an older epoch is stale. */
+	@Getter
+	private volatile long economyEpoch;
+
+	public void setHardcoreWorld(boolean hardcore)
+	{
+		if (hardcore != hardcoreWorld)
+		{
+			hardcoreWorld = hardcore;
+			economyEpoch++;
+		}
+	}
 
 	/** Hardcore World state lives under suffixed keys; main keeps its original keys unchanged. */
 	public static String economyKey(String key, boolean hardcore)
@@ -74,7 +86,8 @@ public class PlayerSession
 
 	private final Map<Integer, Long> mainRecommendedPrices = new ConcurrentHashMap<>();
 	private final Map<Integer, Long> hardcoreRecommendedPrices = new ConcurrentHashMap<>();
-	private final Map<Integer, Long> originalMargins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> mainOriginalMargins = new ConcurrentHashMap<>();
+	private final Map<Integer, Long> hardcoreOriginalMargins = new ConcurrentHashMap<>();
 	// =====================
 	// Sync Status
 	// =====================
@@ -258,6 +271,11 @@ public class PlayerSession
 		return hardcoreWorld ? hardcoreRecommendedPrices : mainRecommendedPrices;
 	}
 
+	private Map<Integer, Long> originalMargins()
+	{
+		return hardcoreWorld ? hardcoreOriginalMargins : mainOriginalMargins;
+	}
+
 	public Long getRecommendedPrice(int itemId)
 	{
 		return recommendedPrices().get(itemId);
@@ -282,12 +300,12 @@ public class PlayerSession
 	 */
 	public Long getOriginalMargin(int itemId)
 	{
-		return originalMargins.get(itemId);
+		return originalMargins().get(itemId);
 	}
 
 	public void setOriginalMargin(int itemId, long margin)
 	{
-		originalMargins.put(itemId, margin);
+		originalMargins().put(itemId, margin);
 	}
 
 	// =====================

@@ -9,6 +9,8 @@ import net.runelite.api.GameState;
 import org.junit.Before;
 import org.junit.Test;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -66,5 +68,13 @@ public class HardcoreCapitalIsolationTest
 		session.setHardcoreWorld(true);
 		pushFinalCapital();
 		verify(apiClient, never()).pushRsnCapitalAsync(anyString(), anyLong());
+	}
+
+	@Test
+	public void theSyncPollReportsNoCoinsFromHardcore()
+	{
+		assertEquals(Long.valueOf(5_000_000L), plugin.reportedInventoryGp());
+		session.setHardcoreWorld(true);
+		assertNull(plugin.reportedInventoryGp());
 	}
 }

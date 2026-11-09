@@ -80,10 +80,14 @@ public class GeOfferDescriptionService
 	private static final String OUR_CONFIG_GROUP = "flipsmart";
 	private static final String GE_CONFIG_GROUP = "grandexchange";
 	private static final String BUY_LIMIT_KEY_PREFIX = "buylimit.";
+	// Hardcore Worlds have their own buy limits. The stock GE plugin doesn't tell the two apart,
+	// so on Hardcore only our own records are read.
+	private static final String HARDCORE_BUY_LIMIT_KEY_PREFIX = "buylimit_hc.";
 
 	// Snapshotted per item and held until the GE is reopened, so the per-frame
 	// description rebuild does not deserialize the stored Instant every frame.
 	private int cachedLimitResetItemId = -1;
+	private boolean cachedLimitResetHardcore;
 	private Instant cachedLimitReset;
 
 	// Running windows to announce when they end; reloaded whenever the RS profile changes.
@@ -480,10 +484,12 @@ public class GeOfferDescriptionService
 	 */
 	Long lookupLimitResetMillis(int itemId)
 	{
-		if (cachedLimitResetItemId != itemId)
+		boolean hardcore = isHardcoreWorld();
+		if (cachedLimitResetItemId != itemId || cachedLimitResetHardcore != hardcore)
 		{
 			cachedLimitReset = readStoredLimitReset(itemId);
 			cachedLimitResetItemId = itemId;
+			cachedLimitResetHardcore = hardcore;
 		}
 		if (cachedLimitReset == null)
 		{
@@ -493,19 +499,34 @@ public class GeOfferDescriptionService
 		return remaining > 0 ? remaining : null;
 	}
 
+	private boolean isHardcoreWorld()
+	{
+		PlayerSession session = plugin.getSession();
+		return session != null && session.isHardcoreWorld();
+	}
+
+	private String limitKeyPrefix()
+	{
+		return isHardcoreWorld() ? HARDCORE_BUY_LIMIT_KEY_PREFIX : BUY_LIMIT_KEY_PREFIX;
+	}
+
 	private Instant readStoredLimitReset(int itemId)
 	{
-		Instant ours = readLimitReset(OUR_CONFIG_GROUP, itemId);
-		Instant stock = readLimitReset(GE_CONFIG_GROUP, itemId);
+		Instant ours = readLimitReset(OUR_CONFIG_GROUP, limitKeyPrefix(), itemId);
+		if (isHardcoreWorld())
+		{
+			return ours;
+		}
+		Instant stock = readLimitReset(GE_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX, itemId);
 		return ours == null || (stock != null && stock.isAfter(ours)) ? stock : ours;
 	}
 
-	private Instant readLimitReset(String group, int itemId)
+	private Instant readLimitReset(String group, String prefix, int itemId)
 	{
 		try
 		{
 			return (Instant) configManager.getRSProfileConfiguration(
-				group, BUY_LIMIT_KEY_PREFIX + itemId, Instant.class);
+				group, prefix + itemId, Instant.class);
 		}
 		catch (Exception e)
 		{
@@ -538,7 +559,7 @@ public class GeOfferDescriptionService
 			return;
 		}
 		Instant resetAt = Instant.now().plus(Duration.ofHours(4));
-		configManager.setRSProfileConfiguration(OUR_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX + itemId, resetAt);
+		configManager.setRSProfileConfiguration(OUR_CONFIG_GROUP, limitKeyPrefix() + itemId, resetAt);
 		trackLimitReset(itemId, resetAt);
 		if (cachedLimitResetItemId == itemId)
 		{
@@ -549,15 +570,19 @@ public class GeOfferDescriptionService
 	public void checkBuyLimitResets()
 	{
 		String profile = configManager.getRSProfileKey();
-		if (profile != null && !profile.equals(trackedResetsProfile))
+		boolean hardcore = isHardcoreWorld();
+		String tracked = profile == null ? null : profile + (hardcore ? "|hc" : "");
+		if (tracked != null && !tracked.equals(trackedResetsProfile))
 		{
-			trackedResetsProfile = profile;
+			trackedResetsProfile = tracked;
 			pendingLimitResets.clear();
-			for (String group : new String[]{OUR_CONFIG_GROUP, GE_CONFIG_GROUP})
+			String prefix = limitKeyPrefix();
+			String[] groups = hardcore ? new String[]{OUR_CONFIG_GROUP} : new String[]{OUR_CONFIG_GROUP, GE_CONFIG_GROUP};
+			for (String group : groups)
 			{
-				for (String key : configManager.getRSProfileConfigurationKeys(group, profile, BUY_LIMIT_KEY_PREFIX))
+				for (String key : configManager.getRSProfileConfigurationKeys(group, profile, prefix))
 				{
-					int itemId = Integer.parseInt(key.substring(BUY_LIMIT_KEY_PREFIX.length()));
+					int itemId = Integer.parseInt(key.substring(prefix.length()));
 					trackLimitReset(itemId, readStoredLimitReset(itemId));
 				}
 			}

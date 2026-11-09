@@ -47,13 +47,14 @@ public class BuyLimitWindowTest
 	private ConfigManager configManager;
 	private Notifier notifier;
 	private GeOfferDescriptionService service;
+	private FlipSmartPlugin plugin;
 
 	@Before
 	public void setUp()
 	{
 		configManager = mock(ConfigManager.class);
 		notifier = mock(Notifier.class);
-		FlipSmartPlugin plugin = mock(FlipSmartPlugin.class);
+		plugin = mock(FlipSmartPlugin.class);
 		when(plugin.getItemName(CANNONBALL_ID)).thenReturn("Cannonball");
 		when(plugin.getItemName(WHIP_ID)).thenReturn("Abyssal whip");
 		service = new GeOfferDescriptionService(
@@ -308,5 +309,66 @@ public class BuyLimitWindowTest
 		service.notifyLimitResets(hoursFromNow(1.5));
 
 		verify(notifier, times(1)).notify(any(), eq("Buy limit reset: Cannonball"));
+	}
+
+	// -----------------------------------------------------------------
+	// Hardcore Worlds keep their own buy limits
+	// -----------------------------------------------------------------
+
+	private static final String HC_KEY = "buylimit_hc." + CANNONBALL_ID;
+
+	private void onHardcore()
+	{
+		PlayerSession session = new PlayerSession();
+		session.setHardcoreWorld(true);
+		when(plugin.getSession()).thenReturn(session);
+	}
+
+	@Test
+	public void aHardcoreBuyOpensItsOwnWindowAndLeavesMainAlone()
+	{
+		onHardcore();
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 1));
+
+		verify(configManager).setRSProfileConfiguration(eq(OUR_GROUP), eq(HC_KEY), any(Instant.class));
+		verify(configManager, never()).setRSProfileConfiguration(eq(OUR_GROUP), eq(KEY), any());
+	}
+
+	@Test
+	public void aMainWindowDoesNotStopAHardcoreBuyFromOpeningOne()
+	{
+		stubStored(OUR_GROUP, Instant.now().plus(Duration.ofHours(3)));
+		stubStored(STOCK_GROUP, Instant.now().plus(Duration.ofHours(3)));
+		onHardcore();
+
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 1));
+
+		verify(configManager).setRSProfileConfiguration(eq(OUR_GROUP), eq(HC_KEY), any(Instant.class));
+	}
+
+	@Test
+	public void hardcoreShowsNoResetTimerFromMainOrTheStockPlugin()
+	{
+		stubStored(OUR_GROUP, Instant.now().plus(Duration.ofHours(2)));
+		stubStored(STOCK_GROUP, Instant.now().plus(Duration.ofHours(2)));
+		onHardcore();
+
+		assertNull(service.lookupLimitResetMillis(CANNONBALL_ID));
+	}
+
+	@Test
+	public void hardcoreAlertsOnlyForHardcoreWindows()
+	{
+		onHardcore();
+		when(configManager.getRSProfileKey()).thenReturn("rsprofile.a");
+		when(configManager.getRSProfileConfigurationKeys(eq(OUR_GROUP), any(), eq("buylimit_hc.")))
+			.thenReturn(java.util.Collections.singletonList("buylimit_hc." + WHIP_ID));
+		when(configManager.getRSProfileConfiguration(eq(OUR_GROUP), eq("buylimit_hc." + WHIP_ID), any()))
+			.thenReturn(Instant.now().plusMillis(5));
+
+		service.checkBuyLimitResets();
+
+		verify(configManager, never()).getRSProfileConfigurationKeys(eq(STOCK_GROUP), any(), any());
+		verify(configManager, never()).getRSProfileConfigurationKeys(any(), any(), eq("buylimit."));
 	}
 }

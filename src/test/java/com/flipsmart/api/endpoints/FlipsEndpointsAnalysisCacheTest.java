@@ -168,4 +168,15 @@ public class FlipsEndpointsAnalysisCacheTest
 		endpoints.getItemAnalysisAsync(ITEM_ID);
 		assertEquals("nothing was cached, so Hardcore fetches its own", 2, requests.size());
 	}
+
+	@Test
+	public void aHopDoesNotLeaveTheNewWorldWaitingOnTheOldWorldsRequest()
+	{
+		endpoints.getItemAnalysisAsync(ITEM_ID);
+		endpoints.clearCache();
+
+		endpoints.getItemAnalysisAsync(ITEM_ID);
+
+		assertEquals("the new world sends its own request", 2, requests.size());
+	}
 }
