@@ -303,4 +303,16 @@ public class BankSnapshotServiceTest
 
 		verify(apiClient).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), org.mockito.ArgumentMatchers.eq(500L));
 	}
+
+	@Test
+	public void eachWorldHasItsOwnSnapshotCooldown()
+	{
+		stubCreate(CompletableFuture.completedFuture(successResult()));
+		service.onBankContainerChanged(RSN);
+
+		session.setHardcoreWorld(true);
+		service.onBankContainerChanged(RSN);
+
+		verify(apiClient, times(2)).createBankSnapshotAsync(anyString(), anyList(), anyList(), anyList(), anyLong());
+	}
 }

@@ -104,9 +104,26 @@ public class PlayerSession
 	@Setter
 	private volatile boolean bankSnapshotInProgress;
 
-	@Getter
-	@Setter
-	private volatile long lastBankSnapshotAttempt;
+	// Each world keeps its own bank-snapshot history, so each has its own snapshot cooldown.
+	private volatile long mainLastBankSnapshotAttempt;
+	private volatile long hardcoreLastBankSnapshotAttempt;
+
+	public long getLastBankSnapshotAttempt()
+	{
+		return hardcoreWorld ? hardcoreLastBankSnapshotAttempt : mainLastBankSnapshotAttempt;
+	}
+
+	public void setLastBankSnapshotAttempt(long millis)
+	{
+		if (hardcoreWorld)
+		{
+			hardcoreLastBankSnapshotAttempt = millis;
+		}
+		else
+		{
+			mainLastBankSnapshotAttempt = millis;
+		}
+	}
 
 	@Getter
 	@Setter
@@ -369,7 +386,8 @@ public class PlayerSession
 		this.bankGp = 0;
 		this.offlineSyncCompleted = false;
 		this.bankSnapshotInProgress = false;
-		this.lastBankSnapshotAttempt = 0;
+		this.mainLastBankSnapshotAttempt = 0;
+		this.hardcoreLastBankSnapshotAttempt = 0;
 		this.lastFlipFinderRefresh = 0;
 		collectedItemIds.clear();
 		collectedQuantities.clear();
