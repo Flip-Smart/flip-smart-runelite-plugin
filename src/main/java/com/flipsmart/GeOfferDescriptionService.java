@@ -83,6 +83,7 @@ public class GeOfferDescriptionService
 	// Hardcore Worlds have their own buy limits. The stock GE plugin doesn't tell the two apart,
 	// so on Hardcore only our own records are read.
 	private static final String HARDCORE_BUY_LIMIT_KEY_PREFIX = "buylimit_hc.";
+	private static final Duration STOCK_MATCH_TOLERANCE = Duration.ofMinutes(2);
 
 	// Snapshotted per item and held until the GE is reopened, so the per-frame
 	// description rebuild does not deserialize the stored Instant every frame.
@@ -518,7 +519,17 @@ public class GeOfferDescriptionService
 			return ours;
 		}
 		Instant stock = readLimitReset(GE_CONFIG_GROUP, BUY_LIMIT_KEY_PREFIX, itemId);
+		if (stock != null && isFromHardcoreBuy(stock, readLimitReset(OUR_CONFIG_GROUP, HARDCORE_BUY_LIMIT_KEY_PREFIX, itemId)))
+		{
+			stock = null;
+		}
 		return ours == null || (stock != null && stock.isAfter(ours)) ? stock : ours;
+	}
+
+	/** The stock plugin's window matches one we opened on Hardcore, so that buy wasn't on main. */
+	private static boolean isFromHardcoreBuy(Instant stock, Instant hardcore)
+	{
+		return hardcore != null && Duration.between(stock, hardcore).abs().compareTo(STOCK_MATCH_TOLERANCE) <= 0;
 	}
 
 	private Instant readLimitReset(String group, String prefix, int itemId)

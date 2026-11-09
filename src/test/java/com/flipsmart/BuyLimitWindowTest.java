@@ -371,4 +371,30 @@ public class BuyLimitWindowTest
 		verify(configManager, never()).getRSProfileConfigurationKeys(eq(STOCK_GROUP), any(), any());
 		verify(configManager, never()).getRSProfileConfigurationKeys(any(), any(), eq("buylimit."));
 	}
+
+	@Test
+	public void mainIgnoresTheStockRecordAHardcoreBuyLeftBehind()
+	{
+		// RuneLite's own GE plugin records every buy under one profile, so a Hardcore buy
+		// also writes its window. Ours on Hardcore matches it; main must not show it.
+		Instant hardcoreWindow = Instant.now().plus(Duration.ofHours(3));
+		stubStored(OUR_GROUP, null);
+		stubStored(STOCK_GROUP, hardcoreWindow.plusSeconds(20));
+		when(configManager.getRSProfileConfiguration(eq(OUR_GROUP), eq(HC_KEY), any())).thenReturn(hardcoreWindow);
+
+		assertNull(service.lookupLimitResetMillis(CANNONBALL_ID));
+		service.recordBuyLimitWindow(offer(GrandExchangeOfferState.BUYING, 1));
+		verify(configManager).setRSProfileConfiguration(eq(OUR_GROUP), eq(KEY), any(Instant.class));
+	}
+
+	@Test
+	public void mainStillUsesAStockRecordThatIsNotFromHardcore()
+	{
+		stubStored(OUR_GROUP, null);
+		stubStored(STOCK_GROUP, Instant.now().plus(Duration.ofHours(1)));
+		when(configManager.getRSProfileConfiguration(eq(OUR_GROUP), eq(HC_KEY), any()))
+			.thenReturn(Instant.now().plus(Duration.ofHours(3)));
+
+		assertNotNull(service.lookupLimitResetMillis(CANNONBALL_ID));
+	}
 }

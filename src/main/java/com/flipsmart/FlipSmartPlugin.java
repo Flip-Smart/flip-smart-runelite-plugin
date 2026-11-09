@@ -1285,12 +1285,6 @@ public class FlipSmartPlugin extends Plugin
 	 * startup, where the cash stack is still zero and reporting it would overwrite a
 	 * real stored value. Async, so logout is never delayed.
 	 */
-	/** Inventory coins to report as capital: main-game only, so never on a Hardcore World. */
-	Long reportedInventoryGp()
-	{
-		return session.isLoggedIntoRunescape() && !session.isHardcoreWorld() ? session.getCurrentCashStack() : null;
-	}
-
 	private void pushFinalCapitalSnapshot()
 	{
 		// Capital is tracked for the main game only; Hardcore coins must never overwrite it.
@@ -1300,6 +1294,12 @@ public class FlipSmartPlugin extends Plugin
 		}
 
 		getCurrentRsnSafe().ifPresent(rsn -> apiClient.pushRsnCapitalAsync(rsn, session.getCurrentCashStack()));
+	}
+
+	/** Inventory coins to report as capital: main-game only, so never on a Hardcore World. */
+	Long reportedInventoryGp()
+	{
+		return session.isLoggedIntoRunescape() && !session.isHardcoreWorld() ? session.getCurrentCashStack() : null;
 	}
 
 	public void handleLoggedInState()
