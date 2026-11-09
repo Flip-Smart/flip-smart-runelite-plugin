@@ -388,7 +388,19 @@ public class GrandExchangeTracker
 		}
 
 		notifyAutoRecommendCollection(collectedOffer);
+		if (!collectedOffer.isBuy())
+		{
+			clearManualPrompt(collectedOffer.getItemId());
+		}
 		schedulePanelRefresh();
+	}
+
+	private void clearManualPrompt(int itemId)
+	{
+		if (manualAdjustmentTracker != null && !isAutoRecommendActive())
+		{
+			manualAdjustmentTracker.clearPromptForItem(itemId);
+		}
 	}
 
 	private OfferSignal emptySignal(int slot, OfferRecord record)
@@ -747,6 +759,7 @@ public class GrandExchangeTracker
 	private void recordNewSellOrder(OfferContext ctx)
 	{
 		log.debug("Sell order placed for {} x{} - marking active flip as selling", ctx.itemName, ctx.totalQuantity);
+		clearManualPrompt(ctx.itemId);
 		if (onV9SellListed != null)
 		{
 			onV9SellListed.accept(ctx.itemId);

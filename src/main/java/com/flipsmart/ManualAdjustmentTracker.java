@@ -67,6 +67,10 @@ public class ManualAdjustmentTracker
 	@Setter
 	private volatile ObjIntConsumer<String> onAdjustmentPrompt;
 
+	// Callback to drop an item's prompt from FlipAssistOverlay once it no longer applies
+	@Setter
+	private volatile IntConsumer onPromptCleared;
+
 	// Callback to set a FocusedFlip for buy adjustments
 	@Setter
 	private volatile BiConsumer<FocusedFlip, String> onFocusFlip;
@@ -372,6 +376,19 @@ public class ManualAdjustmentTracker
 	public void promptCollectSoldOffer(int itemId, String itemName)
 	{
 		notifyPrompt(String.format("Sold %s — collect from the GE", itemName), itemId);
+	}
+
+	/**
+	 * Drop the item's collect / list prompt: its sell was collected, or the bought items were
+	 * listed. Clears only a prompt for this item, so another item's prompt stays up.
+	 */
+	public void clearPromptForItem(int itemId)
+	{
+		IntConsumer cb = onPromptCleared;
+		if (cb != null)
+		{
+			cb.accept(itemId);
+		}
 	}
 
 	/**
