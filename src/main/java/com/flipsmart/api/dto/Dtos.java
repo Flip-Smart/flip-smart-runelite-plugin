@@ -625,7 +625,7 @@ public final class Dtos
 		private FlipStatisticsResponse statistics;
 
 		@SerializedName("favorite_item_ids")
-		private java.util.List<Integer> favoriteItemIds;
+		private List<Integer> favoriteItemIds;
 
 		// The endpoint also returns `entitlements`, but the poll does not consume it:
 		// premium is sourced from the flip_finder payload (see FlipFinderPanel), and the

@@ -1858,7 +1858,7 @@ public class AutoRecommendService
 		// missed EMPTY event), which would keep nagging to reprice an order that no longer exists.
 		// If live GE shows no open offer for this item, drop it. Fails open when the GE view is
 		// unavailable (off client thread / not loaded) so a transient gap never clears a real one.
-		java.util.Set<Integer> activeInGe = plugin.geActiveItemIds();
+		Set<Integer> activeInGe = plugin.geActiveItemIds();
 		if (activeInGe != null && !activeInGe.contains(queued.getItemId()))
 		{
 			return true; // No live offer for this item in the GE

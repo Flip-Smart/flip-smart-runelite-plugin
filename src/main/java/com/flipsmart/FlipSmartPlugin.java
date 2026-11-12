@@ -208,8 +208,9 @@ public class FlipSmartPlugin extends Plugin
 	private PlayerSession session;
 
 	private V9FlipStateStore v9FlipStateStore;
-	private final java.util.Set<Integer> v9FirstListingInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
-	private final java.util.Set<Integer> v9ReadjustInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final Set<Integer> v9FirstListingInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final Set<Integer> v9ReadjustInFlight = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	private final java.util.Set<Integer> v9LoginMarketChecked = new java.util.HashSet<>();
 
 	// Timer / one-shot ownership extracted into PluginScheduler
 	private final PluginScheduler scheduler = new PluginScheduler();
@@ -626,7 +627,7 @@ public class FlipSmartPlugin extends Plugin
 	 * off the client thread, so callers fail open. Used to drop "maintenance" prompts whose offer
 	 * has already left the trade window.
 	 */
-	public java.util.Set<Integer> geActiveItemIds()
+	public Set<Integer> geActiveItemIds()
 	{
 		if (!isClientThread())
 		{
@@ -637,7 +638,7 @@ public class FlipSmartPlugin extends Plugin
 		{
 			return null;
 		}
-		java.util.Set<Integer> active = new java.util.HashSet<>();
+		Set<Integer> active = new HashSet<>();
 		for (GrandExchangeOffer offer : offers)
 		{
 			if (offer != null && offer.getState() != GrandExchangeOfferState.EMPTY)
@@ -1161,6 +1162,7 @@ public class FlipSmartPlugin extends Plugin
 		for (V9FlipState s : v9Store().snapshot().values())
 		{
 			maybeAdvanceV9Ladder(s.getItemId());
+			maybeV9MarketUpOnLogin(s.getItemId());
 		}
 
 		// On the first LOGGED_IN tick the local player is sometimes not yet
@@ -1234,6 +1236,7 @@ public class FlipSmartPlugin extends Plugin
 		session.onLogout();
 		geHistoryService.reset();
 		releaseAccountState();
+		v9LoginMarketChecked.clear();
 
 		if (flipFinderPanel != null)
 		{
@@ -2324,19 +2327,6 @@ public class FlipSmartPlugin extends Plugin
 		return ageMinutes >= LADDER_HANDOFF_MINUTES;
 	}
 
-	private OfferRecord findLiveSellForItem(int itemId)
-	{
-		for (OfferRecord o : offerStore.liveOffers())
-		{
-			if (o.getItemId() == itemId && !o.isBuy()
-				&& o.getState() != OfferState.FILLED)
-			{
-				return o;
-			}
-		}
-		return null;
-	}
-
 	public void maybeRecalc12hSellPrice(int itemId)
 	{
 		if (config.flipTimeframe() != FlipSmartConfig.FlipTimeframe.TWELVE_HOURS)
@@ -2354,7 +2344,7 @@ public class FlipSmartPlugin extends Plugin
 			return;
 		}
 		long now = System.currentTimeMillis();
-		if (ladderOwnsSell(findLiveSellForItem(itemId), now))
+		if (ladderOwnsSell(findLiveOfferForItem(itemId), now))
 		{
 			return;
 		}
@@ -2711,7 +2701,42 @@ public class FlipSmartPlugin extends Plugin
 		log.info("[V9] ladder due item={} rung={} tf={} listedMsAgo={} intervalMs={} ladder1ResolvedMsAgo={}",
 			itemId, dueRung, state.getTimeframe(), now - state.getListingTimestampMs(), interval,
 			state.getLadder1ResolvedAtMs() > 0 ? now - state.getLadder1ResolvedAtMs() : -1);
-		fireV9Readjustment(itemId, state, dueRung);
+		fireV9Readjustment(itemId, state, dueRung, false);
+	}
+
+	// Once per login: a V9 sell left below a market that rose while away is prompted to relist
+	// higher now instead of waiting for the next rung. Waits for offline sync and a warm price
+	// cache before deciding, and never advances the rung.
+	private void maybeV9MarketUpOnLogin(int itemId)
+	{
+		if (v9LoginMarketChecked.contains(itemId) || !session.isOfflineSyncCompleted())
+		{
+			return;
+		}
+		V9FlipState state = v9Store().get(itemId);
+		OfferRecord live = findLiveOfferForItem(itemId);
+		WikiPrice market = apiClient.getWikiPrice(itemId);
+		if (state == null || state.getListingTimestampMs() <= 0 || live == null || market == null)
+		{
+			return;
+		}
+		boolean rose = v9MarketRose(live.getPrice(), market.instaBuy);
+		if (rose && !v9ReadjustInFlight.add(itemId))
+		{
+			return;
+		}
+		v9LoginMarketChecked.add(itemId);
+		if (rose)
+		{
+			log.info("[V9] market up on login item={} listed={} instantSell={}", itemId, live.getPrice(), market.instaBuy);
+			fireV9Readjustment(itemId, state, V9_LADDER_RUNG_1, true);
+		}
+	}
+
+	// Beyond the undercut players commonly leave on purpose (Scapenomics): 5 gp, or 2 gp under 1k.
+	static boolean v9MarketRose(long listedPrice, long instantSell)
+	{
+		return instantSell - listedPrice > (instantSell < 1000 ? 2 : 5);
 	}
 
 	// Which rung is due now (0 = none). Ladder 1 becomes due one interval after listing (offline
@@ -2732,7 +2757,7 @@ public class FlipSmartPlugin extends Plugin
 		return 2;
 	}
 
-	private void fireV9Readjustment(int itemId, V9FlipState state, int rung)
+	private void fireV9Readjustment(int itemId, V9FlipState state, int rung, boolean marketUp)
 	{
 		if (getSession() == null)
 		{
@@ -2756,7 +2781,6 @@ public class FlipSmartPlugin extends Plugin
 			state.getScenario(), rung, state.getBuyPrice(), state.getTotalQty(),
 			state.getRemainingQty(), state.getRealizedProfit(), state.getOriginalTarget(),
 			instantSell, state.getScenarioBMid(), seed);
-		final int firedRung = rung;
 		apiClient.postReadjustmentAsync(itemId, body)
 			.thenAccept(resp ->
 			{
@@ -2764,7 +2788,7 @@ public class FlipSmartPlugin extends Plugin
 				{
 					return;
 				}
-				clientThread.invokeLater(() -> applyV9Readjustment(itemId, resp, firedRung));
+				clientThread.invokeLater(() -> applyV9Readjustment(itemId, resp, rung, marketUp));
 			})
 			.exceptionally(ex ->
 			{
@@ -2777,7 +2801,7 @@ public class FlipSmartPlugin extends Plugin
 			.whenComplete((r, t) -> v9ReadjustInFlight.remove(itemId));
 	}
 
-	private void applyV9Readjustment(int itemId, ReadjustmentResponse resp, int rung)
+	private void applyV9Readjustment(int itemId, ReadjustmentResponse resp, int rung, boolean marketUp)
 	{
 		V9FlipState state = v9Store().get(itemId);
 		if (state == null)
@@ -2788,8 +2812,10 @@ public class FlipSmartPlugin extends Plugin
 		Long listingPrice = resp.getListingPrice();
 		log.info("[V9] readjust response item={} rung={} action={} disposition={} listingPrice={}",
 			itemId, rung, action, resp.getDisposition(), listingPrice);
+		OfferRecord live = findLiveOfferForItem(itemId);
 		boolean priced = ("relist".equals(action) || "prompt_sell".equals(action))
-			&& listingPrice != null && listingPrice > 0;
+			&& listingPrice != null && listingPrice > 0
+			&& (!marketUp || live != null && listingPrice > live.getPrice());
 		if (priced)
 		{
 			PlayerSession sess = getSession();
@@ -2811,12 +2837,26 @@ public class FlipSmartPlugin extends Plugin
 				notifyV9Readjustment(message);
 			}
 		}
+		if (v9ResolveRung(state, rung, marketUp, System.currentTimeMillis()))
+		{
+			v9Store().put(state);
+		}
+	}
+
+	// Records the fired rung as resolved. A login market-up prompt prices at ladder 1 but is not
+	// a rung, so it leaves the ladder untouched. Returns whether the state changed.
+	static boolean v9ResolveRung(V9FlipState state, int rung, boolean marketUp, long now)
+	{
+		if (marketUp)
+		{
+			return false;
+		}
 		state.setLadderRung(rung);
 		if (rung == V9_LADDER_RUNG_1)
 		{
-			state.setLadder1ResolvedAtMs(System.currentTimeMillis());
+			state.setLadder1ResolvedAtMs(now);
 		}
-		v9Store().put(state);
+		return true;
 	}
 
 	// Player-facing re-adjustment copy, composed from the backend's terse disposition tag
@@ -2958,6 +2998,7 @@ public class FlipSmartPlugin extends Plugin
 		state.setLadderRung(0);
 		state.setLadder1ResolvedAtMs(0L);
 		v9Store().put(state);
+		v9LoginMarketChecked.add(itemId);
 		log.info("[V9] sell listed item={} scenario={} — ladder armed/anchored at real listing time",
 			itemId, state.getScenario());
 	}
