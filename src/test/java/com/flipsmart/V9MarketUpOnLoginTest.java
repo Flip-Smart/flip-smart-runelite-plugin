@@ -36,6 +36,30 @@ public class V9MarketUpOnLoginTest
 	}
 
 	@Test
+	public void marketUpPromptsOnlyWhenTheNewPriceIsHigher()
+	{
+		assertTrue(FlipSmartPlugin.v9Priced("relist", 10_400L, true, 10_000L));
+		assertFalse(FlipSmartPlugin.v9Priced("relist", 10_000L, true, 10_000L));
+		assertFalse(FlipSmartPlugin.v9Priced("relist", 9_800L, true, 10_000L));
+		assertFalse(FlipSmartPlugin.v9Priced("relist", 10_400L, true, null));
+	}
+
+	@Test
+	public void ladderPromptsAreNotHeldToTheHigherPriceRule()
+	{
+		assertTrue(FlipSmartPlugin.v9Priced("relist", 9_800L, false, 10_000L));
+		assertTrue(FlipSmartPlugin.v9Priced("prompt_sell", 9_800L, false, null));
+	}
+
+	@Test
+	public void unpricedResponsesNeverPrompt()
+	{
+		assertFalse(FlipSmartPlugin.v9Priced("bypass_to_ladder2", null, false, 10_000L));
+		assertFalse(FlipSmartPlugin.v9Priced("relist", 0L, false, 10_000L));
+		assertFalse(FlipSmartPlugin.v9Priced("relist", null, true, 10_000L));
+	}
+
+	@Test
 	public void marketUpPromptLeavesTheLadderUntouched()
 	{
 		V9FlipState state = new V9FlipState();
