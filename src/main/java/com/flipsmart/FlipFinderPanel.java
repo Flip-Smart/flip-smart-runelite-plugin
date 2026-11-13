@@ -207,12 +207,12 @@ public class FlipFinderPanel extends PluginPanel
 
 	// Completed tab sort controls
 	private CompletedSort completedSort = CompletedSort.RECENCY;
-	private final Map<CompletedSort, JLabel> completedSortTabs = new java.util.EnumMap<>(CompletedSort.class);
+	private final Map<CompletedSort, JLabel> completedSortTabs = new EnumMap<>(CompletedSort.class);
 
 	// Favorites tab sort + pagination controls
 	private int favoritesPage = 0;
 	private RecommendationSort recommendationSort = RecommendationSort.RANK;
-	private final Map<RecommendationSort, JLabel> recommendationSortTabs = new java.util.EnumMap<>(RecommendationSort.class);
+	private final Map<RecommendationSort, JLabel> recommendationSortTabs = new EnumMap<>(RecommendationSort.class);
 	private JLabel favoritesPageLabel;
 	private JLabel favoritesPrevPageLabel;
 	private JLabel favoritesNextPageLabel;
@@ -514,11 +514,11 @@ public class FlipFinderPanel extends PluginPanel
 				if (isSelected())
 				{
 					Graphics2D g2 = (Graphics2D) g.create();
-					g2.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
-						java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+					g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+						RenderingHints.VALUE_ANTIALIAS_ON);
 					Font f = getFont().deriveFont(Font.BOLD);
 					g2.setFont(f);
-					java.awt.FontMetrics fm = g2.getFontMetrics();
+					FontMetrics fm = g2.getFontMetrics();
 					String text = "Auto";
 					int x = (getWidth() - fm.stringWidth(text)) / 2;
 					int y = (getHeight() + fm.getAscent() - fm.getDescent()) / 2;
@@ -649,7 +649,7 @@ public class FlipFinderPanel extends PluginPanel
 		// Custom UI to make tabs fill the full width
 		tabbedPane.setUI(new javax.swing.plaf.basic.BasicTabbedPaneUI() {
 			@Override
-			protected int calculateTabWidth(int tabPlacement, int tabIndex, java.awt.FontMetrics metrics) {
+			protected int calculateTabWidth(int tabPlacement, int tabIndex, FontMetrics metrics) {
 				// Calculate equal width for all tabs
 				int totalWidth = tabbedPane.getWidth();
 				int tabCount = tabbedPane.getTabCount();

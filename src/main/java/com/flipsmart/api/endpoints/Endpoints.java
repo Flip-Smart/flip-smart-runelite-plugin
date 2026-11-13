@@ -61,6 +61,21 @@ public final class Endpoints
 	{
 	}
 
+	private static Request.Builder request(ApiHttpTransport transport, String path)
+	{
+		return new Request.Builder().url(transport.getApiUrl() + path);
+	}
+
+	private static Request.Builder post(ApiHttpTransport transport, String path, Object body)
+	{
+		return request(transport, path).post(RequestBody.create(JSON, body.toString()));
+	}
+
+	private static String rsnParam(String separator, String rsn)
+	{
+		return rsn == null || rsn.isEmpty() ? "" : separator + "rsn=" + urlEncode(rsn);
+	}
+
 	/**
 	 * Active-flip lifecycle, completed-flip and flip-statistics endpoints.
 	 */
@@ -101,10 +116,7 @@ public final class Endpoints
 				url.append(separator).append(query);
 				separator = "&";
 			}
-			if (rsn != null && !rsn.isEmpty())
-			{
-				url.append(separator).append("rsn=").append(urlEncode(rsn));
-			}
+			url.append(rsnParam(separator, rsn));
 
 			Request.Builder requestBuilder = new Request.Builder()
 				.url(url.toString())
@@ -135,20 +147,8 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Boolean> dismissActiveFlipAsync(int itemId, String rsn)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url;
-			if (rsn != null && !rsn.isEmpty())
-			{
-				url = String.format("%s/transactions/active-flips/%d?rsn=%s", apiUrl, itemId, urlEncode(rsn));
-			}
-			else
-			{
-				url = String.format("%s/transactions/active-flips/%d", apiUrl, itemId);
-			}
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.delete();
+			Request.Builder requestBuilder =
+				request(transport, String.format("/transactions/active-flips/%d", itemId) + rsnParam("?", rsn)).delete();
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -166,17 +166,6 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Boolean> cleanupStaleFlipsAsync(Set<Integer> activeItemIds, String rsn)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url;
-			if (rsn != null && !rsn.isEmpty())
-			{
-				url = String.format("%s/transactions/active-flips/cleanup?rsn=%s", apiUrl, urlEncode(rsn));
-			}
-			else
-			{
-				url = String.format("%s/transactions/active-flips/cleanup", apiUrl);
-			}
-
 			// Build the request body
 			JsonObject requestBody = new JsonObject();
 			JsonArray itemIdsArray = new JsonArray();
@@ -186,10 +175,8 @@ public final class Endpoints
 			}
 			requestBody.add("active_item_ids", itemIdsArray);
 
-			RequestBody body = RequestBody.create(JSON, requestBody.toString());
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(body);
+			Request.Builder requestBuilder =
+				post(transport, "/transactions/active-flips/cleanup" + rsnParam("?", rsn), requestBody);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -217,9 +204,6 @@ public final class Endpoints
 		public CompletableFuture<Boolean> syncActiveFlipAsync(int itemId, String itemName, int filledQuantity,
 				int orderQuantity, long pricePerItem, String rsn)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/transactions/active-flips/sync", apiUrl);
-
 			JsonObject requestBody = new JsonObject();
 			requestBody.addProperty(JSON_KEY_ITEM_ID, itemId);
 			requestBody.addProperty("filled_quantity", filledQuantity);
@@ -227,10 +211,7 @@ public final class Endpoints
 			requestBody.addProperty(JSON_KEY_PRICE_PER_ITEM, pricePerItem);
 			requestBody.addProperty(JSON_KEY_RSN, rsn);
 
-			RequestBody body = RequestBody.create(JSON, requestBody.toString());
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(body);
+			Request.Builder requestBuilder = post(transport, "/transactions/active-flips/sync", requestBody);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -256,12 +237,8 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Boolean> markActiveFlipSellingAsync(int itemId, String rsn)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/transactions/active-flips/%d/mark-selling?rsn=%s", apiUrl, itemId, urlEncode(rsn));
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(RequestBody.create(JSON, ""));
+			Request.Builder requestBuilder = post(transport,
+				String.format("/transactions/active-flips/%d/mark-selling?rsn=%s", itemId, urlEncode(rsn)), "");
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -313,8 +290,6 @@ public final class Endpoints
 
 		public CompletableFuture<Boolean> pushActiveFlipsSnapshotAsync(String rsn, List<ActiveFlip> flips)
 		{
-			String url = String.format("%s/plugin/active-flips-snapshot", transport.getApiUrl());
-
 			JsonObject body = new JsonObject();
 			body.addProperty(JSON_KEY_RSN, rsn);
 			body.addProperty("captured_at", Instant.now().toString());
@@ -322,8 +297,7 @@ public final class Endpoints
 			// straight into the snake_case shape the backend expects.
 			body.add("flips", gson.toJsonTree(flips));
 
-			RequestBody rb = RequestBody.create(JSON, body.toString());
-			Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+			Request.Builder requestBuilder = post(transport, "/plugin/active-flips-snapshot", body);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 				.exceptionally(e ->
@@ -369,9 +343,6 @@ public final class Endpoints
 			List<BankItemId> gearItems,
 			long geOffersValue)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/bank/snapshot", apiUrl);
-
 			JsonObject requestBody = new JsonObject();
 			requestBody.addProperty(JSON_KEY_RSN, rsn);
 			requestBody.addProperty("ge_offers_value", geOffersValue);
@@ -390,10 +361,7 @@ public final class Endpoints
 			requestBody.add("inventory_items", toItemIdArray(inventoryItems));
 			requestBody.add("gear_items", toItemIdArray(gearItems));
 
-			RequestBody body = RequestBody.create(JSON, requestBody.toString());
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(body);
+			Request.Builder requestBuilder = post(transport, "/bank/snapshot", requestBody);
 
 			// The error handler runs before the future completes with null, so the
 			// flag is visible to the thenApply below.
@@ -445,12 +413,7 @@ public final class Endpoints
 		 */
 		public CompletableFuture<BlocklistsResponse> getBlocklistsAsync()
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/blocklists", apiUrl);
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.get();
+			Request.Builder requestBuilder = request(transport, "/blocklists").get();
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, BlocklistsResponse.class));
@@ -462,9 +425,6 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Boolean> addItemToBlocklistAsync(int blocklistId, int itemId, String reason)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/blocklists/%d/items", apiUrl, blocklistId);
-
 			JsonObject jsonBody = new JsonObject();
 			jsonBody.addProperty(JSON_KEY_ITEM_ID, itemId);
 			if (reason != null && !reason.isEmpty())
@@ -472,11 +432,8 @@ public final class Endpoints
 				jsonBody.addProperty("reason", reason);
 			}
 
-			RequestBody body = RequestBody.create(JSON, jsonBody.toString());
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(body);
+			Request.Builder requestBuilder =
+				post(transport, String.format("/blocklists/%d/items", blocklistId), jsonBody);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -597,12 +554,8 @@ public final class Endpoints
 
 		private CompletableFuture<FlipAnalysis> fetchItemAnalysis(int itemId)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/analysis/%d?timeframe=1h", apiUrl, itemId);
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.get();
+			Request.Builder requestBuilder =
+				request(transport, String.format("/analysis/%d?timeframe=1h", itemId)).get();
 
 			String economy = transport.currentEconomy();
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
@@ -628,19 +581,13 @@ public final class Endpoints
 			Long cashStack, String flipStyle, int limit, Integer randomSeed, String timeframe, String rsn,
 			Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume, boolean favoritesOnly)
 		{
-			String apiUrl = transport.getApiUrl();
-
-			// Build URL with query parameters
 			StringBuilder urlBuilder = new StringBuilder(128);
-			urlBuilder.append(String.format("%s/flip-finder?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+			urlBuilder.append(String.format("/flip-finder?limit=%d&flip_style=%s", limit, flipStyle));
 			appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 			appendFilterParams(urlBuilder, minProfit, minVolume);
 			appendFavoritesOnly(urlBuilder, favoritesOnly);
 
-			String url = urlBuilder.toString();
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.get();
+			Request.Builder requestBuilder = request(transport, urlBuilder.toString()).get();
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, FlipFinderResponse.class));
@@ -669,10 +616,7 @@ public final class Endpoints
 				urlBuilder.append(String.format("&timeframe=%s", timeframe));
 			}
 
-			if (rsn != null && !rsn.isEmpty())
-			{
-				urlBuilder.append(String.format("&rsn=%s", urlEncode(rsn)));
-			}
+			urlBuilder.append(rsnParam("&", rsn));
 
 			if (filledSlots != null)
 			{
@@ -735,18 +679,14 @@ public final class Endpoints
 			Long cashStack, Long inventoryGp, String flipStyle, int limit, Integer randomSeed, String timeframe,
 			String rsn, Integer filledSlots, boolean isMembersWorld, int minProfit, int minVolume, boolean favoritesOnly)
 		{
-			String apiUrl = transport.getApiUrl();
-
 			StringBuilder urlBuilder = new StringBuilder(128);
-			urlBuilder.append(String.format("%s/plugin/sync?limit=%d&flip_style=%s", apiUrl, limit, flipStyle));
+			urlBuilder.append(String.format("/plugin/sync?limit=%d&flip_style=%s", limit, flipStyle));
 			appendSharedQueryParams(urlBuilder, cashStack, randomSeed, timeframe, rsn, filledSlots, isMembersWorld);
 			appendFilterParams(urlBuilder, minProfit, minVolume);
 			appendInventoryGp(urlBuilder, inventoryGp);
 			appendFavoritesOnly(urlBuilder, favoritesOnly);
 
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(urlBuilder.toString())
-				.get();
+			Request.Builder requestBuilder = request(transport, urlBuilder.toString()).get();
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, PluginSyncResponse.class));
@@ -765,9 +705,7 @@ public final class Endpoints
 			body.addProperty(JSON_KEY_RSN, rsn);
 			body.addProperty("inventory_gp", inventoryGp);
 
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(String.format("%s/rsn/capital", transport.getApiUrl()))
-				.post(RequestBody.create(JSON, body.toString()));
+			Request.Builder requestBuilder = post(transport, "/rsn/capital", body);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 				.exceptionally(e -> false);
@@ -779,9 +717,6 @@ public final class Endpoints
 		 */
 		public CompletableFuture<FlipAdjustmentResponse> getFlipAdjustmentAsync(FlipAdjustmentRequest req)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/flips/adjustment", apiUrl);
-
 			JsonObject jsonBody = new JsonObject();
 			jsonBody.addProperty(JSON_KEY_ITEM_ID, req.itemId);
 			jsonBody.addProperty("is_buy_offer", req.isBuyOffer);
@@ -804,11 +739,7 @@ public final class Endpoints
 				jsonBody.addProperty("style", req.style);
 			}
 
-			RequestBody body = RequestBody.create(JSON, jsonBody.toString());
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(body);
+			Request.Builder requestBuilder = post(transport, "/flips/adjustment", jsonBody);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, FlipAdjustmentResponse.class));
@@ -960,10 +891,7 @@ public final class Endpoints
 			lastWikiPriceFetch.set(now);
 			long epoch = wikiPriceEpoch.get();
 
-			String url = String.format("%s/plugin/prices", transport.getApiUrl());
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.get();
+			Request.Builder requestBuilder = request(transport, "/plugin/prices").get();
 
 			CompletableFuture<Void> future = transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -1077,10 +1005,8 @@ public final class Endpoints
 		private CompletableFuture<Integer> fetchDailyVolume(int itemId)
 		{
 			long epoch = wikiPriceEpoch.get();
-			String url = String.format("%s/items/%d/daily-volume", transport.getApiUrl(), itemId);
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.get();
+			Request.Builder requestBuilder =
+				request(transport, String.format("/items/%d/daily-volume", itemId)).get();
 
 			CompletableFuture<Integer> future = transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -1176,18 +1102,16 @@ public final class Endpoints
 
 		public CompletableFuture<OfferAdviceBatchResponse> postOfferActionsBatchAsync(List<OfferAdviceRequest> reqs)
 		{
-			String url = String.format("%s/flip-finder/active/offer-actions", transport.getApiUrl());
-			RequestBody body = RequestBody.create(JSON, FlipSmartApiClient.buildOfferActionsBody(reqs).toString());
-			Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+			Request.Builder requestBuilder =
+				post(transport, "/flip-finder/active/offer-actions", FlipSmartApiClient.buildOfferActionsBody(reqs));
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, OfferAdviceBatchResponse.class));
 		}
 
 		public CompletableFuture<SellPriceCheckResponse> postSellPriceCheckAsync(SellPriceCheckRequest req)
 		{
-			String url = String.format("%s/flip-finder/active/sell-price-check", transport.getApiUrl());
-			RequestBody body = RequestBody.create(JSON, FlipSmartApiClient.buildSellPriceCheckBody(req).toString());
-			Request.Builder requestBuilder = new Request.Builder().url(url).post(body);
+			Request.Builder requestBuilder =
+				post(transport, "/flip-finder/active/sell-price-check", FlipSmartApiClient.buildSellPriceCheckBody(req));
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, SellPriceCheckResponse.class));
 		}
@@ -1212,11 +1136,8 @@ public final class Endpoints
 			StringBuilder url = new StringBuilder(transport.getApiUrl())
 				.append("/price-targets/").append(itemId)
 				.append("?buy_price=").append(buyPrice)
-				.append("&original_sell_price=").append(originalSellPrice);
-			if (rsn != null && !rsn.isEmpty())
-			{
-				url.append("&rsn=").append(urlEncode(rsn));
-			}
+				.append("&original_sell_price=").append(originalSellPrice)
+				.append(rsnParam("&", rsn));
 			Request.Builder requestBuilder = new Request.Builder().url(url.toString()).get();
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, PriceTargetResponse.class));
@@ -1224,9 +1145,8 @@ public final class Endpoints
 
 		public CompletableFuture<ReadjustmentResponse> postReadjustmentAsync(int itemId, JsonObject body)
 		{
-			String url = String.format("%s/price-targets/%d/readjustment", transport.getApiUrl(), itemId);
-			RequestBody rb = RequestBody.create(JSON, body.toString());
-			Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+			Request.Builder requestBuilder =
+				post(transport, String.format("/price-targets/%d/readjustment", itemId), body);
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 				transport.parse(jsonData, ReadjustmentResponse.class));
 		}
@@ -1253,8 +1173,6 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Boolean> pushTradeStationSlotsAsync(String rsn, List<Integer> itemIds)
 		{
-			String url = String.format("%s/trade-station/runelite-slots", transport.getApiUrl());
-
 			JsonObject body = new JsonObject();
 			body.addProperty(JSON_KEY_RSN, rsn);
 			JsonArray arr = new JsonArray();
@@ -1264,8 +1182,7 @@ public final class Endpoints
 			}
 			body.add("item_ids", arr);
 
-			RequestBody rb = RequestBody.create(JSON, body.toString());
-			Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+			Request.Builder requestBuilder = post(transport, "/trade-station/runelite-slots", body);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData -> Boolean.TRUE)
 				.exceptionally(e ->
@@ -1299,9 +1216,6 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Void> recordTransactionAsync(TransactionRequest request)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/transactions", apiUrl);
-
 			// Create JSON body
 			JsonObject jsonBody = new JsonObject();
 			jsonBody.addProperty(JSON_KEY_ITEM_ID, request.itemId);
@@ -1346,11 +1260,7 @@ public final class Endpoints
 				jsonBody.addProperty("timeframe", request.timeframe);
 			}
 
-			RequestBody body = RequestBody.create(JSON, jsonBody.toString());
-
-			Request.Builder requestBuilder = new Request.Builder()
-				.url(url)
-				.post(body);
+			Request.Builder requestBuilder = post(transport, "/transactions", jsonBody);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
@@ -1387,9 +1297,6 @@ public final class Endpoints
 		 */
 		public CompletableFuture<Void> recordHistoryBackfillBatchAsync(String rsn, List<HistoryBackfillEntry> entries)
 		{
-			String apiUrl = transport.getApiUrl();
-			String url = String.format("%s/transactions/history-backfill-batch", apiUrl);
-
 			JsonObject body = new JsonObject();
 			body.addProperty(JSON_KEY_RSN, rsn);
 			JsonArray arr = new JsonArray();
@@ -1406,8 +1313,7 @@ public final class Endpoints
 			}
 			body.add("entries", arr);
 
-			RequestBody rb = RequestBody.create(JSON, body.toString());
-			Request.Builder requestBuilder = new Request.Builder().url(url).post(rb);
+			Request.Builder requestBuilder = post(transport, "/transactions/history-backfill-batch", body);
 
 			return transport.executeAuthenticatedAsync(requestBuilder, jsonData ->
 			{
