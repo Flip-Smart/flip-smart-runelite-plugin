@@ -111,6 +111,31 @@ public class TradeStationSlotPushServiceTest
 	}
 
 	@Test
+	public void sameSnapshotIsPushedAgainAfterAWorldHop() throws Exception
+	{
+		when(apiClient.currentEconomy()).thenReturn("main");
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		Thread.sleep(50);
+		when(apiClient.currentEconomy()).thenReturn("hardcore");
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		Thread.sleep(50);
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		Thread.sleep(50);
+		verify(apiClient, times(2)).pushTradeStationSlotsAsync(eq(RSN), eq(List.of(ABYSSAL_WHIP)));
+	}
+
+	@Test
+	public void sameSnapshotIsPushedAgainForAnotherRsn() throws Exception
+	{
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		Thread.sleep(50);
+		when(session.getRsnSafe()).thenReturn(Optional.of("AltPlayer"));
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		Thread.sleep(50);
+		verify(apiClient, times(1)).pushTradeStationSlotsAsync(eq("AltPlayer"), eq(List.of(ABYSSAL_WHIP)));
+	}
+
+	@Test
 	public void noPushWhenRsnUnavailable() throws Exception
 	{
 		when(session.getRsnSafe()).thenReturn(Optional.empty());
