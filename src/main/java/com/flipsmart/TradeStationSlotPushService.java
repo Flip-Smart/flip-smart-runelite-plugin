@@ -191,7 +191,6 @@ public class TradeStationSlotPushService
 			apiClient.pushTradeStationSlotsAsync(rsn, itemIds)
 				.thenAccept(ok ->
 				{
-					// Only a delivered push may suppress the next identical one, or a failure is never retried.
 					if (Boolean.TRUE.equals(ok))
 					{
 						lastPushed.set(pushKey);
