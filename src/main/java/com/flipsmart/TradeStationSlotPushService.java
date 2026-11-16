@@ -189,15 +189,22 @@ public class TradeStationSlotPushService
 		try
 		{
 			apiClient.pushTradeStationSlotsAsync(rsn, itemIds)
+				.thenAccept(ok ->
+				{
+					// Only a delivered push may suppress the next identical one, or a failure is never retried.
+					if (Boolean.TRUE.equals(ok))
+					{
+						lastPushed.set(pushKey);
+					}
+				})
 				.exceptionally(e ->
 				{
 					if (log.isDebugEnabled())
 					{
 						log.debug("Trade-station slot push failed: {}", e.getMessage());
 					}
-					return false;
+					return null;
 				});
-			lastPushed.set(pushKey);
 		}
 		catch (RuntimeException e)
 		{
