@@ -13,6 +13,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
@@ -108,6 +109,48 @@ public class TradeStationSlotPushServiceTest
 		Thread.sleep(50);
 		// Second push has the same snapshot so the service should short-circuit.
 		verify(apiClient, times(1)).pushTradeStationSlotsAsync(any(), any());
+	}
+
+	@Test
+	public void sameSnapshotIsPushedAgainAfterAWorldHop()
+	{
+		when(apiClient.currentEconomy()).thenReturn("main");
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, timeout(2000).times(1)).pushTradeStationSlotsAsync(eq(RSN), eq(List.of(ABYSSAL_WHIP)));
+
+		when(apiClient.currentEconomy()).thenReturn("hardcore");
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, timeout(2000).times(2)).pushTradeStationSlotsAsync(eq(RSN), eq(List.of(ABYSSAL_WHIP)));
+
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, after(200).times(2)).pushTradeStationSlotsAsync(eq(RSN), eq(List.of(ABYSSAL_WHIP)));
+	}
+
+	@Test
+	public void sameSnapshotIsPushedAgainForAnotherRsn()
+	{
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, timeout(2000).times(1)).pushTradeStationSlotsAsync(eq(RSN), eq(List.of(ABYSSAL_WHIP)));
+
+		when(session.getRsnSafe()).thenReturn(Optional.of("AltPlayer"));
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, timeout(2000).times(1)).pushTradeStationSlotsAsync(eq("AltPlayer"), eq(List.of(ABYSSAL_WHIP)));
+	}
+
+	@Test
+	public void failedPushIsRetriedForTheSameSnapshot()
+	{
+		when(apiClient.pushTradeStationSlotsAsync(any(), any()))
+			.thenReturn(CompletableFuture.completedFuture(false))
+			.thenReturn(CompletableFuture.completedFuture(true));
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, timeout(2000).times(1)).pushTradeStationSlotsAsync(any(), any());
+
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, timeout(2000).times(2)).pushTradeStationSlotsAsync(any(), any());
+
+		service.pushNow(List.of(ABYSSAL_WHIP));
+		verify(apiClient, after(200).times(2)).pushTradeStationSlotsAsync(any(), any());
 	}
 
 	@Test

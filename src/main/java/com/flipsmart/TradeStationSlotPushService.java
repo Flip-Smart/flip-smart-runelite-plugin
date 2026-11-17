@@ -3,6 +3,7 @@ package com.flipsmart;
 import com.google.inject.Inject;
 import com.google.inject.Singleton;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -52,7 +53,7 @@ public class TradeStationSlotPushService
 	private ScheduledExecutorService scheduler; // NOPMD DoNotUseThreads - desktop plugin, not J2EE
 
 	private final AtomicReference<ScheduledFuture<?>> pending = new AtomicReference<>();
-	private final AtomicReference<List<Integer>> lastPushed = new AtomicReference<>();
+	private final AtomicReference<List<Object>> lastPushed = new AtomicReference<>();
 
 	@Inject
 	public TradeStationSlotPushService(
@@ -175,8 +176,8 @@ public class TradeStationSlotPushService
 			log.debug("Skipping trade-station slot push: no RSN");
 			return;
 		}
-		List<Integer> previous = lastPushed.get();
-		if (previous != null && previous.equals(itemIds))
+		List<Object> pushKey = Arrays.asList(rsn, apiClient.currentEconomy(), itemIds);
+		if (pushKey.equals(lastPushed.get()))
 		{
 			if (log.isDebugEnabled())
 			{
@@ -188,15 +189,21 @@ public class TradeStationSlotPushService
 		try
 		{
 			apiClient.pushTradeStationSlotsAsync(rsn, itemIds)
+				.thenAccept(ok ->
+				{
+					if (Boolean.TRUE.equals(ok))
+					{
+						lastPushed.set(pushKey);
+					}
+				})
 				.exceptionally(e ->
 				{
 					if (log.isDebugEnabled())
 					{
 						log.debug("Trade-station slot push failed: {}", e.getMessage());
 					}
-					return false;
+					return null;
 				});
-			lastPushed.set(itemIds);
 		}
 		catch (RuntimeException e)
 		{
